@@ -1,0 +1,21 @@
+[package]
+name = "onceover-py"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Python bindings for onceover (pyo3 + pyo3-polars)"
+
+[lib]
+name = "onceover_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+onceover = { workspace = true }
+onceover-report = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py310"] }
+pyo3-polars = { workspace = true }
+polars = { workspace = true }
+serde_json = { workspace = true }

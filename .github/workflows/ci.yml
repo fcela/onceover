@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: '2'
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: python scripts/release.py check
+      - run: python -m pip install pytest
+      - run: python -m pytest scripts/test_release.py -q
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  wheels:
+    name: Wheel / ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: '2_28'
+            interpreter: python3.13
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: '2_28'
+            interpreter: python3.13
+          - name: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            manylinux: 'off'
+            interpreter: python
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            manylinux: 'off'
+            interpreter: python
+          - name: windows-x86_64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            manylinux: 'off'
+            interpreter: python
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build stable-ABI wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          maturin-version: v1.15.0
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.manylinux }}
+          args: --release --locked --jobs 2 --out dist --interpreter ${{ matrix.platform.interpreter }}
+          sccache: true
+      - name: Test wheel on Python 3.13
+        run: |
+          python -m pip install --only-binary=:all: dist/*.whl pytest 'scipy>=1.15'
+          python -m pytest tests/ -q
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - name: Test minimum Python version
+        run: |
+          python -m pip install --only-binary=:all: dist/*.whl pytest 'scipy>=1.15'
+          python -m pytest tests/ -q
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.15'
+      - name: Test latest Python version
+        run: |
+          python -m pip install --only-binary=:all: dist/*.whl pytest
+          python -m pytest tests/ -q
+      - uses: actions/upload-artifact@v6
+        with:
+          name: python-${{ matrix.platform.name }}
+          path: dist/*.whl
+          if-no-files-found: error

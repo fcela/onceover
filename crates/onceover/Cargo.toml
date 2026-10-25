@@ -1,0 +1,21 @@
+[package]
+name = "onceover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Evidence-first, Rust-native data profiler for Polars DataFrames"
+
+[dependencies]
+onceover-report = { workspace = true }
+onceover-core = { workspace = true }
+onceover-deps = { workspace = true }
+onceover-mines = { workspace = true }
+polars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rayon = { workspace = true }
+
+[dev-dependencies]
+polars = { workspace = true, features = ["fmt"] }
