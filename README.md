@@ -66,7 +66,7 @@ multiple-testing guarantees.
 ## Rust
 
 ```bash
-cargo add onceover
+cargo add onceover polars@0.55
 ```
 
 ```rust
@@ -102,8 +102,8 @@ cargo test --workspace --locked
 pytest tests/
 ```
 
-Publishing setup is described in [RELEASING.md](RELEASING.md).
+Publishing setup is described in [RELEASING.md](https://github.com/fcela/onceover/blob/main/RELEASING.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/fcela/onceover/blob/main/LICENSE).
