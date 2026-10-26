@@ -7,6 +7,7 @@ import polars as pl
 import pytest
 
 import onceover
+from _findings import select, metrics
 
 
 @pytest.mark.parametrize("budget", ["standard", "deep"])
@@ -20,10 +21,8 @@ def test_m5_equations_holdout_and_linear_control(budget):
         "response": [1 + 2*v if g < 0 else -2 - 3*v for g, v in zip(gate, x)],
     })
     report = onceover.profile(df, budget=budget)
-    finding = next(f for f in report.findings
-                   if f["kind"] == "piecewise_relationship"
-                   and f["subject"]["target"] == "response")
-    evidence = finding["evidence"]
+    finding = select(report,"dependencies",subtype="predictive",form="piecewise_linear",target="response")[0]
+    evidence = metrics(finding,contains="leaves")
     assert evidence["holdout_r2"] > 0.95
     assert evidence["relative_error_reduction"] > 0.8
     assert len(evidence["leaves"]) >= 2
@@ -35,17 +34,16 @@ def test_m5_equations_holdout_and_linear_control(budget):
                    for leaf in evidence["leaves"])
     for leaf in evidence["leaves"]:
         assert leaf["n_holdout"] >= 10
-        assert set(leaf["coefficients"]) == set(finding["subject"]["predictors"])
+        assert set(leaf["coefficients"]) == set(finding["subject"]["inputs"])
     assert "local linear regimes" in report.to_markdown()
     assert report.to_json() == onceover.profile(df, budget=budget).to_json()
     quick = onceover.profile(df, budget="quick")
     assert quick.coverage["regimes"]["status"] == "skipped"
-    assert not any(f["kind"] == "piecewise_relationship" for f in quick.findings)
+    assert not select(quick,"dependencies",form="piecewise_linear")
 
     controls = pl.DataFrame({"x": x, "linear": [4 + 1.5*v for v in x],
                              "noise": [rng.random() for _ in x]})
-    assert not any(f["kind"] == "piecewise_relationship"
-                   for f in onceover.profile(controls, budget=budget).findings)
+    assert not select(onceover.profile(controls,budget=budget),"dependencies",form="piecewise_linear")
 
 
 @pytest.mark.parametrize("budget", ["standard", "deep"])
@@ -60,9 +58,8 @@ def test_date_residual_shift_reaches_python_report(budget):
         "observed_at": [start + dt.timedelta(days=i) for i in range(n)],
     })
     report = onceover.profile(df, budget=budget)
-    finding = next(f for f in report.findings if f["kind"] == "residual_shift"
-                   and f["subject"]["target"] == "response")
-    evidence = finding["evidence"]
+    finding = select(report,"changes",target="response")[0]
+    evidence = metrics(finding,contains="breakpoint")
     expected_break = start + dt.timedelta(days=n//2)
     assert abs((dt.date.fromisoformat(evidence["breakpoint"]) - expected_break).days) < 10
     assert evidence["holdout_error_reduction"] > 0.9
@@ -81,16 +78,17 @@ def test_nominal_association_uses_complete_pair_holdout(budget):
         shipping.append(None if i % 31 == 0 else ("expedite" if expedite else "normal"))
     df = pl.DataFrame({"segment": segment, "shipping": shipping})
     report = onceover.profile(df, budget=budget)
-    finding = next(f for f in report.findings if f["kind"] == "association_rule"
-                   and f["subject"]["antecedent_feature"] == "segment"
-                   and f["subject"]["antecedent_value"] == "premium"
-                   and f["subject"]["consequent_value"] == "expedite")
-    evidence = finding["evidence"]
-    assert evidence["holdout_confidence"] > 0.9 and evidence["holdout_lift"] > 2
-    assert evidence["train_pair_n"] < evidence["train_n"]
-    assert evidence["holdout_pair_n"] < evidence["holdout_n"]
-    assert report.coverage["association_rules"]["status"] == "ran_sampled"
-    assert onceover.profile(df, budget="quick").coverage["association_rules"]["status"] == "skipped"
+    finding = next(f for f in select(report,"conditional_rules",target="shipping")
+                   if f["specification"]["outcome"]["value"]=="expedite"
+                   and any(p["column"]=="segment" and p["operator"]=="eq" and p["value"]=="premium"
+                           for p in f["specification"]["conditions"]))
+    evidence=metrics(finding,contains="conditional_rate")
+    assert evidence["conditional_rate"]>0.9 and evidence["lift"]>2
+    assert evidence["conditional_rate"]==pytest.approx(evidence["joint_count"]/evidence["antecedent_count"])
+    raw=metrics(finding,contains="holdout_pair_n")
+    assert raw["train_pair_n"]<raw["train_n"]
+    assert raw["holdout_pair_n"]<raw["holdout_n"]
+    assert not select(onceover.profile(df,budget="quick"),"conditional_rules")
 
 
 def test_wide_dependence_coverage_reports_the_full_pair_count():

@@ -1,10 +1,11 @@
 //! Date and sequence intelligence: gap detection (weekday-aware for daily
 //! series), modal interval, irregular intervals.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
 use onceover_core::TypedCol;
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use onceover_core::dateutil::{is_weekend, iso_date};
@@ -55,22 +56,22 @@ pub fn analyze_dates(name: &str, vals: &[Option<i32>]) -> (Vec<Finding>, Option<
         let cv = var.sqrt() / mean;
         if cv > 0.5 && diffs.len() >= 10 {
             out.push(Finding::new(
-                "irregular_interval",
-                BTreeMap::from([("column".into(), json!(name))]),
-                format!(
+Pattern::IntervalVariation,
+BTreeMap::from([("column".into(), json!(name))]),
+format!(
                     "column {} has irregular spacing (modal {} days, coefficient of variation {:.2})",
                     name, modal, cv
                 ),
-                Confidence::Exact,
-                0.35,
-                BTreeMap::from([
+EvidenceBasis::Measured,
+0.35,
+BTreeMap::from([
                     ("modal_interval_days".into(), json!(modal)),
                     ("median_interval_days".into(), json!(median)),
                     ("cv".into(), json!(cv)),
                 ]),
-                Some("do not assume a regular time index".into()),
-                "exact interval scan (onceover v0.1)",
-            ));
+Some("do not assume a regular time index".into()),
+Method::new("dates", "interval_variation", "exact interval scan (onceover v0.1)")
+));
         }
     }
 
@@ -93,12 +94,12 @@ pub fn analyze_dates(name: &str, vals: &[Option<i32>]) -> (Vec<Finding>, Option<
             }
         } else if modal == 7 {
             if d > 10 {
-                Some((d / 7).max(1))
+                Some(((d - 1) / 7).max(1))
             } else {
                 None
             }
         } else if d > (modal * 3) / 2 && d > modal + 2 {
-            Some((((d as f64) / modal as f64).round() as i64).max(1))
+            Some(((d - 1) / modal).max(1))
         } else {
             None
         };
@@ -117,7 +118,7 @@ pub fn analyze_dates(name: &str, vals: &[Option<i32>]) -> (Vec<Finding>, Option<
             _ => "interval",
         };
         out.push(Finding::new(
-            "date_gap",
+            Pattern::Gap,
             BTreeMap::from([
                 ("column".into(), json!(name)),
                 ("from".into(), json!(iso_date(from))),
@@ -133,17 +134,32 @@ pub fn analyze_dates(name: &str, vals: &[Option<i32>]) -> (Vec<Finding>, Option<
                 iso_date(to),
                 diff
             ),
-            Confidence::Exact,
+            EvidenceBasis::Measured,
             0.58 + 0.2 * ((missing as f64) / 40.0).min(1.0),
             BTreeMap::from([
                 ("missing".into(), json!(missing)),
+                ("reference_source".into(), json!("inferred")),
+                ("n".into(), json!(vals.len())),
+                ("cadence_days".into(), json!(modal)),
+                (
+                    "reference".into(),
+                    json!(if modal == 1 {
+                        "weekdays"
+                    } else {
+                        "modal_interval"
+                    }),
+                ),
                 ("from".into(), json!(iso_date(from))),
                 ("to".into(), json!(iso_date(to))),
                 ("elapsed_days".into(), json!(diff)),
                 ("approximate".into(), json!(approx)),
             ]),
             Some("check for missing periods (ETL gaps, holidays not modeled, outages)".into()),
-            "exact calendar scan, weekday-aware (onceover v0.1)",
+            Method::new(
+                "dates",
+                "calendar_intervals",
+                "exact calendar scan, weekday-aware (onceover v0.1)",
+            ),
         ));
     }
     let _ = total_missing;
@@ -188,7 +204,10 @@ pub fn analyze_temporal(table: &onceover_core::TypedTable) -> DatesOutcome {
     } else {
         format!(
             "{n_cols} temporal columns, {} gap events",
-            findings.iter().filter(|f| f.kind == "date_gap").count()
+            findings
+                .iter()
+                .filter(|f| f.category == onceover_report::Category::Gaps)
+                .count()
         )
     };
     DatesOutcome {
@@ -226,9 +245,12 @@ mod tests {
         days.remove(10);
         let (findings, modal) = analyze_dates("date", &days);
         assert_eq!(modal, Some(1));
-        let gaps: Vec<_> = findings.iter().filter(|f| f.kind == "date_gap").collect();
+        let gaps: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == onceover_report::Category::Gaps)
+            .collect();
         assert_eq!(gaps.len(), 1, "expected 1 merged gap event");
-        assert_eq!(gaps[0].evidence["missing"].as_i64(), Some(2));
+        assert_eq!(gaps[0].metrics()["missing"].as_i64(), Some(2));
     }
 
     #[test]
@@ -244,11 +266,13 @@ mod tests {
         let (findings, modal) = analyze_dates("date", &days);
         assert_eq!(modal, Some(1));
         assert!(
-            !findings.iter().any(|f| f.kind == "date_gap"),
+            !findings
+                .iter()
+                .any(|f| f.category == onceover_report::Category::Gaps),
             "gaps: {:?}",
             findings
                 .iter()
-                .filter(|f| f.kind == "date_gap")
+                .filter(|f| f.category == onceover_report::Category::Gaps)
                 .map(|f| f.claim.clone())
                 .collect::<Vec<_>>()
         );

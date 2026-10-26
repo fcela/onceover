@@ -2,10 +2,11 @@
 //! stats, concentration, top values, format signatures — plus card-level
 //! findings.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
 use onceover_report::{
-    BoolStats, ColumnCard, Concentration, Confidence, Finding, NumericStats, PatternCount,
+    BoolStats, ColumnCard, Concentration, EvidenceBasis, Finding, NumericStats, PatternCount,
     StringStats, TemporalStats, ValueCount,
 };
 use rustc_hash::FxHashMap;
@@ -33,7 +34,7 @@ fn fmt_value(key: &VKey, dtype: &str) -> String {
 }
 
 fn finding(
-    kind: &str,
+    pattern: Pattern,
     subject_cols: &[&str],
     claim: String,
     interest: f64,
@@ -45,14 +46,18 @@ fn finding(
         subject.insert("column".to_string(), json!(c));
     }
     Finding::new(
-        kind,
+        pattern,
         subject,
         claim,
-        Confidence::Exact,
+        EvidenceBasis::Measured,
         interest,
         evidence,
         hint.map(|s| s.to_string()),
-        "onceover v0.1 column pass",
+        Method::new(
+            "column_profile",
+            "column_statistics",
+            "onceover column pass",
+        ),
     )
 }
 
@@ -75,9 +80,10 @@ fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
     }
 }
 
-fn numeric_stats_f64(vals: &[f64], integral_forced: bool) -> NumericStats {
-    let mut sorted = vals.to_vec();
-    sorted.sort_by(|a, b| a.total_cmp(b));
+fn numeric_stats_f64(vals: Vec<f64>, integral_forced: bool) -> NumericStats {
+    let mut sorted = vals;
+    sorted.sort_unstable_by(|a, b| a.total_cmp(b));
+    let vals = &sorted;
     let n = vals.len();
     let mean = if n > 0 {
         Some(vals.iter().sum::<f64>() / n as f64)
@@ -134,7 +140,7 @@ fn format_pattern(s: &str) -> Box<str> {
 pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     let n = col.len();
     let null_count = col.null_count();
-    let counts = build_counts(col, 1_000_000);
+    let counts = build_counts(col, 4096);
     let distinct = counts.distinct;
     let n_nonnull = counts.n_nonnull;
     let distinct_ratio = distinct as f64 / n_nonnull.max(1) as f64;
@@ -148,7 +154,9 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     let mut action_hints: Vec<String> = Vec::new();
 
     // ---- role inference ----
-    let role = if n_nonnull == 0 {
+    let role = if matches!(col, TypedCol::Other { .. }) {
+        "other"
+    } else if n_nonnull == 0 {
         "all_null"
     } else if distinct <= 1 {
         "constant"
@@ -189,11 +197,11 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     match col {
         TypedCol::I64 { vals } => {
             let f: Vec<f64> = vals.iter().flatten().map(|v| *v as f64).collect();
-            numeric_stats = Some(numeric_stats_f64(&f, true));
+            numeric_stats = Some(numeric_stats_f64(f, true));
         }
         TypedCol::F64 { vals } => {
             let f: Vec<f64> = vals.iter().flatten().copied().collect();
-            numeric_stats = Some(numeric_stats_f64(&f, false));
+            numeric_stats = Some(numeric_stats_f64(f, false));
         }
         TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
             let mut lens: Vec<usize> = Vec::new();
@@ -224,8 +232,9 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             });
         }
         TypedCol::Date { vals } => {
-            let mut ds: Vec<i32> = vals.iter().flatten().copied().collect();
-            ds.sort_unstable();
+            let ds: Vec<i32> = vals.iter().flatten().copied().collect();
+            let bounds = [ds.iter().min().copied(), ds.iter().max().copied()];
+            let ds: Vec<i32> = bounds.into_iter().flatten().collect();
             temporal_stats = Some(TemporalStats {
                 min: ds.first().map(|d| iso_date(*d as i64)),
                 max: ds.last().map(|d| iso_date(*d as i64)),
@@ -237,8 +246,9 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             });
         }
         TypedCol::Datetime { vals } => {
-            let mut ds: Vec<i64> = vals.iter().flatten().copied().collect();
-            ds.sort_unstable();
+            let ds: Vec<i64> = vals.iter().flatten().copied().collect();
+            let bounds = [ds.iter().min().copied(), ds.iter().max().copied()];
+            let ds: Vec<i64> = bounds.into_iter().flatten().collect();
             temporal_stats = Some(TemporalStats {
                 min: ds.first().map(|v| iso_datetime(*v)),
                 max: ds.last().map(|v| iso_datetime(*v)),
@@ -259,7 +269,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         .take(5)
         .map(|(k, c)| ValueCount {
             value: fmt_value(k, dtype),
-            count: *c as usize,
+            count: *c,
             share: *c as f64 / n_nonnull.max(1) as f64,
         })
         .collect();
@@ -306,7 +316,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             let second_share = second.1 as f64 / n_str as f64;
             if top_share < 0.9 && second_share >= 0.05 {
                 findings.push(finding(
-                    "format_inconsistency",
+                    Pattern::FormatVariation,
                     &[name],
                     format!(
                         "column {} mixes value formats ({}: {:.0}% '{}' vs {:.0}% '{}')",
@@ -333,7 +343,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
 
     if role == "all_null" {
         findings.push(finding(
-            "all_null",
+            Pattern::MissingValues,
             &[name],
             format!("column {} is entirely null", name),
             0.15,
@@ -344,7 +354,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     } else if role == "constant" {
         let val = counts.top.first().map(|(k, _)| fmt_value(k, dtype));
         findings.push(finding(
-            "constant_column",
+            Pattern::ValueConcentration,
             &[name],
             format!(
                 "column {} is constant{}",
@@ -367,7 +377,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                 let top = &counts.top[0];
                 let second = &counts.top[1];
                 findings.push(finding(
-                    "near_constant",
+                    Pattern::ValueConcentration,
                     &[name],
                     format!(
                         "column {} is nearly constant: {} '{}' vs {} '{}'",
@@ -400,7 +410,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             ev.insert("top_count".into(), json!(c));
         }
         findings.push(finding(
-            "likely_categorical",
+            Pattern::CategoricalRole,
             &[name],
             format!(
                 "numeric column {} behaves like a category ({} distinct values)",
@@ -418,8 +428,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             if let Some(t1) = c.top1_share {
                 if t1 >= 0.9 {
                     let top = &counts.top[0];
-                    findings.push(finding(
-                        "high_concentration",
+                    findings.push(finding(Pattern::ValueConcentration,
                         &[name],
                         format!(
                             "column {} is highly concentrated: {} '{}' (effective cardinality {:.2})",
@@ -443,7 +452,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     // identifier-like
     if distinct_ratio >= 0.98 && n_nonnull >= 100 && !counts.capped {
         findings.push(finding(
-            "identifier_like",
+            Pattern::IdentifierRole,
             &[name],
             format!(
                 "column {} looks like a unique identifier ({} distinct of {} values)",
@@ -491,25 +500,36 @@ mod tests {
     #[test]
     fn constant_and_identifier_roles() {
         let col = TypedCol::I64 {
-            vals: vec![Some(1); 10],
+            vals: vec![Some(1); 10].into(),
         };
         let out = column_card("c", "int64", &col);
         assert_eq!(out.card.role, "constant");
-        assert!(out.findings.iter().any(|f| f.kind == "constant_column"));
+        assert!(out
+            .findings
+            .iter()
+            .any(|f| f.category == onceover_report::Category::Concentration));
 
         let ids: Vec<Option<i64>> = (0..500).map(Some).collect();
-        let col = TypedCol::I64 { vals: ids };
+        let col = TypedCol::I64 { vals: ids.into() };
         let out = column_card("id", "int64", &col);
         assert_eq!(out.card.role, "identifier");
-        assert!(out.findings.iter().any(|f| f.kind == "identifier_like"));
+        assert!(out
+            .findings
+            .iter()
+            .any(|f| f.category == onceover_report::Category::ColumnRoles
+                && f.specification.definition.get("role") == Some(&json!("identifier"))));
     }
 
     #[test]
     fn likely_categorical_numeric() {
         let vals: Vec<Option<i64>> = (0..1000).map(|i| Some(i % 5)).collect();
-        let out = column_card("code", "int64", &TypedCol::I64 { vals });
+        let out = column_card("code", "int64", &TypedCol::I64 { vals: vals.into() });
         assert_eq!(out.card.role, "categorical");
-        assert!(out.findings.iter().any(|f| f.kind == "likely_categorical"));
+        assert!(out
+            .findings
+            .iter()
+            .any(|f| f.category == onceover_report::Category::ColumnRoles
+                && f.specification.definition.get("role") == Some(&json!("categorical"))));
     }
 
     #[test]
@@ -528,6 +548,6 @@ mod tests {
         assert!(out
             .findings
             .iter()
-            .any(|f| f.kind == "format_inconsistency"));
+            .any(|f| f.category == onceover_report::Category::Formats));
     }
 }

@@ -7,79 +7,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Schema version of the report contract. Additive-only evolution.
-pub const SCHEMA_VERSION: &str = "0.1";
+mod finding;
+mod ledger;
+pub use finding::*;
+pub use ledger::{
+    finalize_ledger, group_findings, select_findings, SelectionPolicy, SelectionSummary,
+};
 
-/// How a finding was computed. `Exact` claims are verified on full data;
-/// `Sampled` claims ran on a deterministic subsample (n reported in evidence);
-/// `Heuristic` claims are rule-of-thumb inferences.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Confidence {
-    Exact,
-    Sampled,
-    Heuristic,
-}
-
-impl Confidence {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Confidence::Exact => "exact",
-            Confidence::Sampled => "sampled",
-            Confidence::Heuristic => "heuristic",
-        }
-    }
-}
-
-/// A single evidence-backed claim about the data.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Finding {
-    /// Stable id within the report, e.g. "functional_dependency-003".
-    pub id: String,
-    /// Kind taxonomy, e.g. "likely_primary_key", "threshold_relationship".
-    pub kind: String,
-    /// What the finding is about (columns, lhs/rhs, x/y, ...). Values are JSON.
-    pub subject: BTreeMap<String, serde_json::Value>,
-    /// One precise sentence an agent can quote verbatim.
-    pub claim: String,
-    /// How the claim was computed.
-    pub confidence: Confidence,
-    /// Deterministic interestingness in [0, 1]; drives ledger ranking.
-    pub interestingness: f64,
-    /// Machine-checkable evidence: support, effect size, counts, method.
-    pub evidence: BTreeMap<String, serde_json::Value>,
-    /// Suggested modeling/data-handling implication, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_hint: Option<String>,
-    /// Provenance: algorithm + origin (paper/lineage).
-    pub provenance: String,
-}
-
-impl Finding {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        kind: &str,
-        subject: BTreeMap<String, serde_json::Value>,
-        claim: String,
-        confidence: Confidence,
-        interestingness: f64,
-        evidence: BTreeMap<String, serde_json::Value>,
-        action_hint: Option<String>,
-        provenance: &str,
-    ) -> Self {
-        Finding {
-            id: String::new(), // assigned by the ledger after ranking
-            kind: kind.to_string(),
-            subject,
-            claim,
-            confidence,
-            interestingness: (interestingness * 100.0).round() / 100.0,
-            evidence,
-            action_hint,
-            provenance: provenance.to_string(),
-        }
-    }
-}
+/// Breaking report-schema revision: statements are independent of detectors.
+pub const SCHEMA_VERSION: &str = "0.2";
 
 /// Statistics for numeric columns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -255,6 +191,10 @@ pub struct ProfileReport {
     pub columns: BTreeMap<String, ColumnCard>,
     /// The ranked findings ledger. Order is the product.
     pub findings: Vec<Finding>,
+    #[serde(default)]
+    pub groups: Vec<FindingGroup>,
+    #[serde(default)]
+    pub selection: SelectionSummary,
     /// What was tested, at what scale, what was skipped and why.
     pub coverage: BTreeMap<String, PassInfo>,
 }
@@ -299,20 +239,29 @@ impl ProfileReport {
             md.push_str("_No notable findings at this budget.\n\n");
         }
         for f in &self.findings {
+            let label = format!(
+                "{}{}{}",
+                f.category.as_str(),
+                f.finding_type
+                    .as_ref()
+                    .map(|t| format!("/{t}"))
+                    .unwrap_or_default(),
+                f.specification
+                    .form
+                    .as_ref()
+                    .map(|form| format!(" ({form})"))
+                    .unwrap_or_default()
+            );
             md.push_str(&format!(
                 "- **[{}·{}] {}** — {}\n",
                 f.interestingness,
-                f.confidence.as_str(),
-                f.kind,
+                format!("{:?}", f.primary_evidence().basis).to_lowercase(),
+                label,
                 f.claim
             ));
-            if f.kind == "piecewise_relationship" {
-                let target = f
-                    .subject
-                    .get("target")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("target");
-                if let Some(leaves) = f.evidence.get("leaves").and_then(|v| v.as_array()) {
+            if f.specification.form.as_deref() == Some("piecewise_linear") {
+                let target = f.subject.target.as_deref().unwrap_or("target");
+                if let Some(leaves) = f.metrics().get("leaves").and_then(|v| v.as_array()) {
                     for (idx, leaf) in leaves.iter().enumerate() {
                         let Some(rendered) = render_piecewise_leaf(leaf, target) else {
                             continue;
@@ -324,6 +273,18 @@ impl ProfileReport {
         }
         md.push('\n');
 
+        if !self.groups.is_empty() {
+            md.push_str("## Related finding groups\n\n");
+            for group in &self.groups {
+                md.push_str(&format!(
+                    "- {}: {}. {}\n",
+                    group.id,
+                    group.columns.join(", "),
+                    group.description
+                ));
+            }
+            md.push('\n');
+        }
         md.push_str("## Columns\n\n");
         md.push_str(
             "| column | role | nulls | distinct | concentration (top1 / eff. cardinality) |\n",
@@ -421,134 +382,5 @@ fn render_piecewise_leaf(leaf: &serde_json::Value, target: &str) -> Option<Strin
     ))
 }
 
-/// Assign stable ids and deterministic ranking to a findings vector.
-/// Sorts by (interestingness desc, kind asc, subject asc) and renumbers
-/// ids as `{kind}-{nnn}` within each kind.
-pub fn finalize_ledger(mut findings: Vec<Finding>) -> Vec<Finding> {
-    findings.sort_by(|a, b| {
-        b.interestingness
-            .total_cmp(&a.interestingness)
-            .then_with(|| a.kind.cmp(&b.kind))
-            .then_with(|| {
-                serde_json::to_string(&a.subject)
-                    .unwrap_or_default()
-                    .cmp(&serde_json::to_string(&b.subject).unwrap_or_default())
-            })
-    });
-    let mut counters: BTreeMap<String, usize> = BTreeMap::new();
-    for f in findings.iter_mut() {
-        let c = counters.entry(f.kind.clone()).or_insert(0);
-        *c += 1;
-        f.id = format!("{}-{:03}", f.kind, *c);
-    }
-    findings
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_finding(kind: &str, interest: f64, subject_key: &str) -> Finding {
-        let mut subject = BTreeMap::new();
-        subject.insert(subject_key.to_string(), serde_json::json!("x"));
-        Finding::new(
-            kind,
-            subject,
-            format!("claim {}", subject_key),
-            Confidence::Exact,
-            interest,
-            BTreeMap::new(),
-            None,
-            "test",
-        )
-    }
-
-    #[test]
-    fn ledger_orders_deterministically() {
-        let f1 = test_finding("a_kind", 0.5, "z");
-        let f2 = test_finding("b_kind", 0.9, "x");
-        let f3 = test_finding("a_kind", 0.5, "y");
-        let out = finalize_ledger(vec![f1, f2, f3]);
-        assert_eq!(out[0].kind, "b_kind");
-        assert_eq!(out[0].id, "b_kind-001");
-        assert_eq!(out[1].subject["y"], serde_json::json!("x"));
-        assert_eq!(out[1].id, "a_kind-001");
-        assert_eq!(out[2].id, "a_kind-002");
-    }
-
-    #[test]
-    fn json_roundtrip() {
-        let mut ev = BTreeMap::new();
-        ev.insert("violations".to_string(), serde_json::json!(0));
-        let f = Finding::new(
-            "functional_dependency",
-            BTreeMap::new(),
-            "a → b".into(),
-            Confidence::Exact,
-            0.85,
-            ev,
-            Some("join key".into()),
-            "tane",
-        );
-        let ledger = finalize_ledger(vec![f]);
-        let report = ProfileReport {
-            schema_version: SCHEMA_VERSION.into(),
-            overview: Overview {
-                n_rows: 10,
-                n_columns: 2,
-                headline: "test".into(),
-                dtype_counts: BTreeMap::new(),
-                role_counts: BTreeMap::new(),
-                top_findings: vec![],
-            },
-            columns: BTreeMap::new(),
-            findings: ledger,
-            coverage: BTreeMap::new(),
-        };
-        let js = report.to_json();
-        let back: ProfileReport = serde_json::from_str(&js).unwrap();
-        assert_eq!(back, report);
-        assert!(report.to_markdown().contains("## Findings"));
-    }
-
-    #[test]
-    fn markdown_renders_piecewise_leaf_equations_and_skips_malformed() {
-        let mut evidence = BTreeMap::new();
-        evidence.insert("leaves".into(), serde_json::json!([
-            {"conditions":[{"column":"age","operator":"<=","threshold":42.5}],"intercept":1.0,"coefficients":{"income":0.00000012,"score":-2.0},"n_train":80,"n_holdout":20},
-            {"conditions":[{"column":"age","operator":">","threshold":42.5}],"intercept":3.0,"coefficients":{"income":4.0},"n_train":70,"n_holdout":18},
-            {"conditions":"bad","intercept":"bad"}
-        ]));
-        let finding = Finding::new(
-            "piecewise_relationship",
-            BTreeMap::from([("target".into(), serde_json::json!("y"))]),
-            "piecewise fit".into(),
-            Confidence::Sampled,
-            0.8,
-            evidence,
-            None,
-            "test",
-        );
-        let report = ProfileReport {
-            schema_version: SCHEMA_VERSION.into(),
-            overview: Overview {
-                n_rows: 100,
-                n_columns: 3,
-                headline: "test".into(),
-                dtype_counts: BTreeMap::new(),
-                role_counts: BTreeMap::new(),
-                top_findings: vec![],
-            },
-            columns: BTreeMap::new(),
-            findings: vec![finding],
-            coverage: BTreeMap::new(),
-        };
-        let md = report.to_markdown();
-        assert!(md.contains("age <= 42.5"));
-        assert!(md.contains("y ≈ 1 + 1.200e-7·income - 2·score"));
-        assert!(md.contains("train support 80, holdout support 20"));
-        assert!(md.contains("age > 42.5"));
-        assert!(md.contains("3 + 4·income"));
-        assert_eq!(md.matches("Leaf ").count(), 2);
-    }
-}
+mod tests;

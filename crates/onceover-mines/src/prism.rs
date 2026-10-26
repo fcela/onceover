@@ -5,9 +5,10 @@
 //! Hot path uses precomputed bitset masks: candidate evaluation is a few
 //! hundred word-ANDs instead of row scans.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use crate::encode::{EncodedMatrix, MISSING};
@@ -246,31 +247,47 @@ pub fn prism_rules(
                         }
                     })
                     .collect();
-                findings.push(Finding::new(
-                    "prism_rule",
-                    BTreeMap::from([
-                        ("column".into(), json!(res.name)),
-                        ("class".into(), json!(labels[class])),
-                    ]),
-                    format!(
-                        "{} = '{}' when {} (precision {:.2}, support {})",
-                        res.name,
-                        labels[class],
-                        cond_strs.join(" and "),
-                        acc,
-                        support
+                findings.push(
+                    Finding::new(
+                        Pattern::ConditionalRule,
+                        BTreeMap::from([
+                            ("column".into(), json!(res.name)),
+                            ("class".into(), json!(labels[class])),
+                        ]),
+                        format!(
+                            "{} = '{}' when {} (precision {:.2}, support {})",
+                            res.name,
+                            labels[class],
+                            cond_strs.join(" and "),
+                            acc,
+                            support
+                        ),
+                        EvidenceBasis::Estimated,
+                        0.55 + 0.25 * acc,
+                        BTreeMap::from([
+                            ("conditions".into(), json!(cond_strs)),
+                            ("discovery_score".into(), json!(acc)),
+                            ("newly_covered_positives".into(), json!(support)),
+                            ("rows_used".into(), json!(enc.n)),
+                        ]),
+                        None,
+                        Method::new(
+                            "prism",
+                            "prism_covering",
+                            "PRISM covering algorithm (Cendrowska 1987; onceover v0.1)",
+                        ),
+                    )
+                    .with_rule(
+                        conds
+                            .iter()
+                            .flat_map(|(fi, code)| enc.predicates(feat_pool[*fi], *code))
+                            .collect(),
+                        onceover_report::Predicate::equal(
+                            res.name.clone(),
+                            enc.literal(own_feat.expect("encoded target"), &labels[class]),
+                        ),
                     ),
-                    Confidence::Sampled,
-                    0.55 + 0.25 * acc,
-                    BTreeMap::from([
-                        ("conditions".into(), json!(cond_strs)),
-                        ("precision".into(), json!(acc)),
-                        ("support".into(), json!(support)),
-                        ("rows_used".into(), json!(enc.n)),
-                    ]),
-                    None,
-                    "PRISM covering algorithm (Cendrowska 1987; onceover v0.1)",
-                ));
+                );
                 // Mark covered positives.
                 for (i, &p) in positions.iter().enumerate() {
                     if ids[p as usize] as usize == class
@@ -325,6 +342,7 @@ mod tests {
             n_train: 160,
             n_holdout: 40,
             rounds: 1,
+            inputs: Vec::new(),
             top_features: vec![],
             cat_ids: Some((ids, vec!["0".into(), "1".into()])),
         };
@@ -335,9 +353,9 @@ mod tests {
         let (rules, _) = prism_rules(&enc, &[&target], &cfg);
         assert_eq!(rules.len(), 2);
         for rule in &rules {
-            assert_eq!(rule.evidence["support"], json!(90));
-            assert_eq!(rule.evidence["precision"], json!(0.9));
-            let conditions = rule.evidence["conditions"].as_array().unwrap();
+            assert_eq!(rule.metrics()["newly_covered_positives"], json!(90));
+            assert_eq!(rule.metrics()["discovery_score"], json!(0.9));
+            let conditions = rule.metrics()["conditions"].as_array().unwrap();
             assert_eq!(conditions.len(), 1);
             assert!(conditions[0].as_str().unwrap().starts_with("signal = "));
         }

@@ -3,6 +3,93 @@
 //! compact columns; polars API surface is confined to this module.
 
 use polars::prelude::*;
+use polars_arrow::bitmap::Bitmap;
+
+/// Int64/Float64 columns borrow dense or nullable Arrow buffers, including
+/// multiple chunks. Conversions from other numeric dtypes use an owned fallback.
+#[derive(Debug)]
+pub enum NumericValues<'a, T> {
+    Borrowed(&'a [T]),
+    Chunked(Vec<NumericChunk<'a, T>>),
+    Owned(Vec<Option<T>>),
+}
+
+#[derive(Debug)]
+pub struct NumericChunk<'a, T> {
+    end: usize,
+    values: &'a [T],
+    validity: Option<&'a Bitmap>,
+}
+
+pub trait NumericScalar: Copy {
+    fn canonical_ref(&self) -> Option<&Self>;
+}
+impl NumericScalar for i64 {
+    fn canonical_ref(&self) -> Option<&Self> {
+        Some(self)
+    }
+}
+impl NumericScalar for f64 {
+    fn canonical_ref(&self) -> Option<&Self> {
+        if !self.is_finite() {
+            None
+        } else if *self == 0.0 {
+            Some(&0.0)
+        } else {
+            Some(self)
+        }
+    }
+}
+
+impl<'a, T: NumericScalar> NumericValues<'a, T> {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Borrowed(v) => v.len(),
+            Self::Owned(v) => v.len(),
+            Self::Chunked(chunks) => chunks.last().map_or(0, |c| c.end),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    fn get_ref(&self, i: usize) -> Option<&T> {
+        match self {
+            Self::Borrowed(v) => Some(&v[i]),
+            Self::Owned(v) => v[i].as_ref(),
+            Self::Chunked(chunks) => {
+                let c = &chunks[chunks.partition_point(|c| c.end <= i)];
+                let local = i - (c.end - c.values.len());
+                if c.validity.is_some_and(|valid| !valid.get_bit(local)) {
+                    return None;
+                }
+                c.values[local].canonical_ref()
+            }
+        }
+    }
+    pub fn at(&self, i: usize) -> Option<T> {
+        self.get_ref(i).copied()
+    }
+    pub fn get(&self, i: usize) -> Option<Option<T>> {
+        (i < self.len()).then(|| self.at(i))
+    }
+    pub fn iter<'s>(
+        &'s self,
+    ) -> impl DoubleEndedIterator<Item = Option<&'s T>> + Clone + use<'a, 's, T> {
+        (0..self.len()).map(move |i| self.get_ref(i))
+    }
+}
+
+impl<T> From<Vec<Option<T>>> for NumericValues<'_, T> {
+    fn from(v: Vec<Option<T>>) -> Self {
+        Self::Owned(v)
+    }
+}
+
+impl<T: NumericScalar + PartialEq> PartialEq<Vec<Option<T>>> for NumericValues<'_, T> {
+    fn eq(&self, rhs: &Vec<Option<T>>) -> bool {
+        self.len() == rhs.len() && self.iter().map(|v| v.copied()).eq(rhs.iter().copied())
+    }
+}
 
 /// A column extracted into onceover's normalized representation.
 /// `Str` borrows directly from the source DataFrame (zero-copy).
@@ -10,11 +97,11 @@ use polars::prelude::*;
 pub enum TypedCol<'a> {
     /// All integer dtypes (int8..64, uint8..32; uint64 when values fit i64).
     I64 {
-        vals: Vec<Option<i64>>,
+        vals: NumericValues<'a, i64>,
     },
     /// Floats (NaN/inf treated as null; -0.0 normalized to +0.0).
     F64 {
-        vals: Vec<Option<f64>>,
+        vals: NumericValues<'a, f64>,
     },
     /// Strings (borrowed, zero-copy).
     Str {
@@ -172,6 +259,59 @@ pub fn extract(df: &DataFrame) -> TypedTable<'_> {
 /// Extract a single Series into a TypedCol. Categorical/Enum columns are
 /// materialized to strings (they are low-cardinality by construction).
 pub fn extract_series(s: &Series) -> TypedCol<'_> {
+    if let Ok(ca) = s.i64() {
+        if let Ok(values) = ca.cont_slice() {
+            return TypedCol::I64 {
+                vals: NumericValues::Borrowed(values),
+            };
+        }
+    }
+    if let Ok(ca) = s.f64() {
+        if let Ok(values) = ca.cont_slice() {
+            if values
+                .iter()
+                .all(|v| v.is_finite() && (*v != 0.0 || !v.is_sign_negative()))
+            {
+                return TypedCol::F64 {
+                    vals: NumericValues::Borrowed(values),
+                };
+            }
+        }
+    }
+    if let Ok(ca) = s.i64() {
+        let mut end = 0;
+        let chunks = ca
+            .downcast_iter()
+            .map(|array| {
+                end += array.len();
+                NumericChunk {
+                    end,
+                    values: array.values().as_slice(),
+                    validity: array.validity(),
+                }
+            })
+            .collect();
+        return TypedCol::I64 {
+            vals: NumericValues::Chunked(chunks),
+        };
+    }
+    if let Ok(ca) = s.f64() {
+        let mut end = 0;
+        let chunks = ca
+            .downcast_iter()
+            .map(|array| {
+                end += array.len();
+                NumericChunk {
+                    end,
+                    values: array.values().as_slice(),
+                    validity: array.validity(),
+                }
+            })
+            .collect();
+        return TypedCol::F64 {
+            vals: NumericValues::Chunked(chunks),
+        };
+    }
     match s.dtype() {
         DataType::Boolean => {
             let mut vals = Vec::with_capacity(s.len());
@@ -205,7 +345,7 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
                     _ => None,
                 });
             }
-            TypedCol::I64 { vals }
+            TypedCol::I64 { vals: vals.into() }
         }
         DataType::UInt64 => {
             // Collect as u64 first; fall back to f64 if any value overflows i64.
@@ -224,14 +364,14 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
                 }
             }
             if overflow {
-                let vals = raw
+                let vals: Vec<_> = raw
                     .into_iter()
                     .map(|o| o.and_then(|v| norm_f64(v as f64)))
                     .collect();
-                TypedCol::F64 { vals }
+                TypedCol::F64 { vals: vals.into() }
             } else {
-                let vals = raw.into_iter().map(|o| o.map(|v| v as i64)).collect();
-                TypedCol::I64 { vals }
+                let vals: Vec<_> = raw.into_iter().map(|o| o.map(|v| v as i64)).collect();
+                TypedCol::I64 { vals: vals.into() }
             }
         }
         DataType::Float32 | DataType::Float64 => {
@@ -244,7 +384,7 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
                     _ => None,
                 });
             }
-            TypedCol::F64 { vals }
+            TypedCol::F64 { vals: vals.into() }
         }
         DataType::String => {
             let mut vals = Vec::with_capacity(s.len());

@@ -1,9 +1,10 @@
 //! Arithmetic identity probe: y ≈ a·x + b on pairs with strong dependence
 //! (the cheap ancestor of BACON/BHUNT-style law discovery).
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use crate::dep::PairDep;
@@ -53,48 +54,72 @@ pub fn identities(
         .take(pair_cap)
         .collect();
 
-    let checked: Vec<Option<(usize, f64, f64, f64)>> = candidates
+    let fit_rows = crate::stride_rows(table.n, 20_000);
+    let checked: Vec<_> = candidates
         .par_iter()
-        .map(|d| {
-            let pairs = crate::dep::pairs_of(&table.cols[d.a], &table.cols[d.b]);
-            fit_affine(&pairs).map(|(a, b, frac)| (d.a, a, b, frac))
+        .filter_map(|d| {
+            let x = &table.cols[d.a];
+            let y = &table.cols[d.b];
+            let pairs = crate::dep::sampled_pairs(x, y, &fit_rows);
+            let (a, b, _) = fit_affine(&pairs)?;
+            let mut n = 0usize;
+            let mut matched = 0usize;
+            for row in 0..table.n {
+                if let (Some(x), Some(y)) = (
+                    crate::encode::numeric_at(x, row),
+                    crate::encode::numeric_at(y, row),
+                ) {
+                    n += 1;
+                    matched += usize::from((y - (a * x + b)).abs() <= 1e-9 * (1.0 + y.abs()));
+                }
+            }
+            let frac = matched as f64 / n.max(1) as f64;
+            (frac >= 0.999).then_some((d.a, d.b, a, b, frac, n, matched))
         })
         .collect();
 
     let mut out = Vec::new();
-    for r in checked.into_iter().flatten() {
-        let (a_idx, a, b, frac) = r;
-        if frac < 0.999 {
-            continue;
-        }
+    for (a_idx, b_idx, a, b, frac, n, matched) in checked {
         let x = &table.names[a_idx];
-        let y = &table.names[candidates
-            .iter()
-            .find(|d| d.a == a_idx)
-            .map(|d| d.b)
-            .unwrap_or(a_idx)];
-        let claim = if b.abs() < 1e-12 * (1.0 + a.abs()) {
-            format!("{y} = {a:.6}·{x} exactly on {frac:.2}% of rows")
+        let y = &table.names[b_idx];
+        let violations = n - matched;
+        let agreement = if violations == 0 {
+            format!("all {n} non-missing row pairs")
         } else {
-            format!("{y} = {a:.6}·{x} + {b:.6} exactly on {frac:.2}% of rows")
+            format!(
+                "{matched} of {n} non-missing row pairs ({violations} violation{})",
+                if violations == 1 { "" } else { "s" }
+            )
+        };
+        let claim = if b.abs() < 1e-12 * (1.0 + a.abs()) {
+            format!("{y} = {a:.6}·{x} within tolerance on {agreement}")
+        } else {
+            format!("{y} = {a:.6}·{x} + {b:.6} within tolerance on {agreement}")
         };
         out.push(Finding::new(
-            "arithmetic_identity",
-            BTreeMap::from([("x".into(), json!(x)), ("y".into(), json!(y))]),
-            claim,
-            Confidence::Exact,
-            0.75,
-            BTreeMap::from([
+Pattern::AffineDependency,
+BTreeMap::from([("x".into(), json!(x)), ("y".into(), json!(y))]),
+claim,
+EvidenceBasis::Measured,
+0.75,
+BTreeMap::from([
+                ("n".into(), json!(n)),
+                ("matching_rows".into(), json!(matched)),
+                ("violations".into(), json!(violations)),
                 ("a".into(), json!(a)),
                 ("b".into(), json!(b)),
                 ("exact_fraction".into(), json!(frac)),
-                ("tolerance".into(), json!("1e-9 relative")),
+                ("tolerance".into(), json!("1e-9 absolute + 1e-9 relative")),
+                ("absolute_tolerance".into(),json!(1e-9)),
+                ("relative_tolerance".into(),json!(1e-9)),
             ]),
-            Some(format!(
-                "{y} is derived from {x}; drop it or treat as a check column"
-            )),
-            "pairwise OLS + exact residual scan (BHUNT/BACON lineage, onceover v0.1)",
-        ));
+Some(if violations == 0 {
+                format!("{y} is derived from {x}; drop it or treat as a check column")
+            } else {
+                format!("inspect {violations} violating row pairs before treating {y} as derived from {x}")
+            }),
+Method::new("identities", "ols_residual_scan", "pairwise OLS + exact residual scan (BHUNT/BACON lineage, onceover v0.1)")
+));
     }
     let coverage = format!(
         "{} candidate pairs checked, {} identities",

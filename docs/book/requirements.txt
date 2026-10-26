@@ -1,0 +1,21 @@
+# Python dependencies for executing the book's notebooks.
+#   pip install -r docs/book/requirements.txt
+# Install the onceover wheel for the same interpreter (maturin develop
+# --release), and install MyST separately: npm install -g mystmd.
+ipykernel
+# `myst build --execute` drives cells through the Jupyter *server* API, not
+# ipykernel directly. Without jupyter-server every executable page fails with
+# "Could not load Jupyter session manager to run executable nodes".
+jupyter-server
+# The Python wrapper around the MyST build engine; provides the
+# `jupyter-book build --html --execute --strict` equivalent of `myst build`.
+jupyter-book>=2,<3
+nbclient
+nbformat
+numpy
+polars>=2.0,<3
+# Charts are Altair, never Matplotlib. vl-convert-python renders them to SVG.
+altair>=6,<7
+vl-convert-python>=1.9
+# Result tables are Great Tables (HTML for the site, wrapped long text).
+great_tables>=1,<2

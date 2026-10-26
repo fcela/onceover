@@ -5,10 +5,11 @@
 //! not a claim of behavioral parity with Weka M5P. Numeric features and targets
 //! are standardized on training data; reported equations use original units.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
 use onceover_core::{TypedCol, TypedTable};
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use crate::{encode::EncodedMatrix, gbm::TargetResult};
@@ -46,7 +47,7 @@ impl Default for RegimesConfig {
 fn numeric(col: &TypedCol<'_>, row: usize) -> Option<f64> {
     let v = match col {
         TypedCol::I64 { vals } => vals.get(row)?.map(|v| v as f64),
-        TypedCol::F64 { vals } => *vals.get(row)?,
+        TypedCol::F64 { vals } => vals.get(row)?,
         _ => None,
     }?;
     v.is_finite().then_some(v)
@@ -175,7 +176,7 @@ pub fn profile_regimes(
         }
         if let Some(time_col) = date {
             if let Some(f) = residual_shift(
-                table, res, &model, &x, &y, &rows, &train, &test, time_col, cfg,
+                table, res, &model, &x, &y, &rows, &train, &test, time_col, &features, cfg,
             ) {
                 findings.push(f);
             }
@@ -206,11 +207,16 @@ pub fn profile_regimes(
             "conditions": l.conditions.iter().map(|c| json!({"column": names[c.feature], "operator": if c.less_equal { "<=" } else { ">" }, "threshold": c.threshold})).collect::<Vec<_>>(),
             "intercept": l.intercept, "coefficients": names.iter().zip(&l.coefficients).map(|(n, c)| (n.clone(), *c)).collect::<BTreeMap<_, _>>(), "n_train": l.n_train, "n_holdout": supports[j]
         })).collect();
-        findings.push(Finding::new("piecewise_relationship", BTreeMap::from([("target".into(), json!(res.name)), ("predictors".into(), json!(names))]),
-            format!("{} follows {} local linear regimes (first split {} ≤ {:.6}; holdout R² {:.3} versus {:.3} for one linear model)", res.name, leaves.len(), names[first.feature], first.threshold, r2, linear_r2),
-            Confidence::Sampled, (0.6 + 0.25 * gain).min(0.9),
-            BTreeMap::from([("n_train".into(), json!(train.len())), ("n_holdout".into(), json!(test.len())), ("holdout_r2".into(), json!(r2)), ("global_linear_holdout_r2".into(), json!(linear_r2)), ("relative_error_reduction".into(), json!(gain)), ("leaves".into(), json!(leaf_evidence)), ("depth".into(), json!(model.depth())), ("pruning".into(), json!(cfg.model.prune)), ("smoothing".into(), json!(cfg.model.smoothing)), ("validation".into(), json!("deterministic diagnostic holdout; targets/features shortlisted by predictability screen; no inferential p-value"))]),
-            Some("inspect the regime conditions and equations before assuming a single global relationship".into()), "bounded M5-style tree: SDR growth, QR linear leaves, corrected-error pruning, ancestor smoothing (onceover)"));
+        findings.push(Finding::new(
+Pattern::PiecewiseDependency,
+BTreeMap::from([("target".into(), json!(res.name)), ("predictors".into(), json!(names))]),
+format!("{} follows {} local linear regimes (first split {} ≤ {:.6}; holdout R² {:.3} versus {:.3} for one linear model)", res.name, leaves.len(), names[first.feature], first.threshold, r2, linear_r2),
+EvidenceBasis::Estimated,
+(0.6 + 0.25 * gain).min(0.9),
+BTreeMap::from([("n_train".into(), json!(train.len())), ("n_holdout".into(), json!(test.len())), ("holdout_r2".into(), json!(r2)), ("global_linear_holdout_r2".into(), json!(linear_r2)), ("relative_error_reduction".into(), json!(gain)), ("leaves".into(), json!(leaf_evidence)), ("depth".into(), json!(model.depth())), ("pruning".into(), json!(cfg.model.prune)), ("smoothing".into(), json!(cfg.model.smoothing)), ("validation".into(), json!("deterministic diagnostic holdout; targets/features shortlisted by predictability screen; no inferential p-value"))]),
+Some("inspect the regime conditions and equations before assuming a single global relationship".into()),
+Method::new("regimes", "local_linear_model_tree", "bounded M5-style tree: SDR growth, QR linear leaves, corrected-error pruning, ancestor smoothing (onceover)")
+));
     }
     let coverage = format!("{} of {eligible} eligible numeric targets (cap {}), {fitted} fitted over at most {} rows / {} predictors / depth {}; {} incomplete row-target cases dropped; {skipped} insufficient/invalid targets; {} findings (numeric predictors only; first date column if present; diagnostic holdout)", candidates.len(), cfg.target_cap, cfg.row_cap, cfg.model.max_features, cfg.model.max_depth, incomplete, findings.len());
     (findings, coverage)
@@ -227,6 +233,7 @@ fn residual_shift(
     train: &[usize],
     test: &[usize],
     time_col: usize,
+    features: &[usize],
     cfg: &RegimesConfig,
 ) -> Option<Finding> {
     let mut ordered: Vec<_> = train
@@ -275,10 +282,19 @@ fn residual_shift(
         TypedCol::Date { .. } => onceover_core::dateutil::iso_date(threshold),
         _ => onceover_core::dateutil::iso_datetime(threshold),
     };
-    Some(Finding::new("residual_shift", BTreeMap::from([("target".into(), json!(res.name)), ("time_column".into(), json!(table.names[time_col]))]),
-        format!("{} shifts after {} along {}: a training-selected residual correction reduces holdout squared error by {:.1}%", res.name, display, table.names[time_col], 100.0 * gain),
-        Confidence::Sampled, (0.6 + 0.25 * gain).min(0.9), BTreeMap::from([("breakpoint".into(), json!(display)), ("breakpoint_raw".into(), json!(threshold)), ("train_before".into(), json!(shift.index)), ("train_after".into(), json!(ordered.len() - shift.index)), ("holdout_before".into(), json!(before)), ("holdout_after".into(), json!(after)), ("residual_mean_before".into(), json!(shift.left_mean * model.y_scale)), ("residual_mean_after".into(), json!(shift.right_mean * model.y_scale)), ("holdout_error_reduction".into(), json!(gain)), ("baseline".into(), json!("global linear numeric model")), ("validation".into(), json!("breakpoint and offsets learned on training rows; fixed correction evaluated on holdout; no p-value"))]),
-        Some("check for changes in collection, processing, or business behavior around this date".into()), "centered cumulative-sum one-break L2 scan of linear-model residuals; holdout validation (onceover)"))
+    let names: Vec<_> = features.iter().map(|&i| table.names[i].clone()).collect();
+    let (intercept, coefficients) = model.global_linear_model();
+    let coefficients: BTreeMap<_, _> = names.iter().cloned().zip(coefficients).collect();
+    Some(Finding::new(
+Pattern::ResidualShift,
+BTreeMap::from([("target".into(), json!(res.name)), ("time_column".into(), json!(table.names[time_col])), ("predictors".into(),json!(names))]),
+format!("{} shifts after {} along {}: a training-selected residual correction reduces holdout squared error by {:.1}%", res.name, display, table.names[time_col], 100.0 * gain),
+EvidenceBasis::Estimated,
+(0.6 + 0.25 * gain).min(0.9),
+BTreeMap::from([("breakpoint".into(), json!(display)), ("breakpoint_raw".into(), json!(threshold)), ("train_before".into(), json!(shift.index)), ("train_after".into(), json!(ordered.len() - shift.index)), ("holdout_before".into(), json!(before)), ("holdout_after".into(), json!(after)), ("residual_mean_before".into(), json!(shift.left_mean * model.y_scale)), ("residual_mean_after".into(), json!(shift.right_mean * model.y_scale)), ("holdout_error_reduction".into(), json!(gain)), ("baseline".into(), json!("global linear numeric model")), ("reference_model".into(),json!({"form":"linear","intercept":intercept,"coefficients":coefficients})), ("n_train".into(),json!(ordered.len())), ("n_holdout".into(),json!(before+after)), ("validation".into(), json!("breakpoint and offsets learned on training rows; fixed correction evaluated on holdout; no p-value"))]),
+Some("check for changes in collection, processing, or business behavior around this date".into()),
+Method::new("regimes", "residual_breakpoint", "centered cumulative-sum one-break L2 scan of linear-model residuals; holdout validation (onceover)")
+))
 }
 
 #[cfg(test)]
@@ -447,6 +463,7 @@ mod tests {
             n_train: 0,
             n_holdout: 0,
             rounds: 0,
+            inputs: Vec::new(),
             top_features: vec![("gate".into(), 0.6), ("x".into(), 0.4)],
             cat_ids: None,
         }
@@ -465,13 +482,18 @@ mod tests {
                         .iter()
                         .enumerate()
                         .map(|(i, r)| (i % 17 != 0).then_some(r[0]))
-                        .collect(),
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
                 TypedCol::F64 {
-                    vals: features.iter().map(|r| Some(r[1])).collect(),
+                    vals: features
+                        .iter()
+                        .map(|r| Some(r[1]))
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
                 TypedCol::F64 {
-                    vals: values.iter().copied().map(Some).collect(),
+                    vals: values.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
         };
@@ -482,10 +504,10 @@ mod tests {
         };
         let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &cfg);
         assert_eq!(f.len(), 1, "{cov}");
-        assert_eq!(f[0].kind, "piecewise_relationship");
-        assert!(f[0].evidence["holdout_r2"].as_f64().unwrap() > 0.95);
-        let train = f[0].evidence["n_train"].as_u64().unwrap();
-        let held = f[0].evidence["n_holdout"].as_u64().unwrap();
+        assert_eq!(f[0].specification.form.as_deref(), Some("piecewise_linear"));
+        assert!(f[0].metrics()["holdout_r2"].as_f64().unwrap() > 0.95);
+        let train = f[0].metrics()["n_train"].as_u64().unwrap();
+        let held = f[0].metrics()["n_holdout"].as_u64().unwrap();
         assert!(train > 0 && held > 0 && train + held < table.n as u64);
         assert!(train + held <= cfg.row_cap as u64);
         let text = serde_json::to_string(&f).unwrap();
@@ -511,13 +533,25 @@ mod tests {
             dtypes: vec!["float64".into(); 3],
             cols: vec![
                 TypedCol::F64 {
-                    vals: features.iter().map(|r| Some(r[0])).collect(),
+                    vals: features
+                        .iter()
+                        .map(|r| Some(r[0]))
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
                 TypedCol::F64 {
-                    vals: features.iter().map(|r| Some(r[1])).collect(),
+                    vals: features
+                        .iter()
+                        .map(|r| Some(r[1]))
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
                 TypedCol::F64 {
-                    vals: features.iter().map(|_| Some(rng.next_f64())).collect(),
+                    vals: features
+                        .iter()
+                        .map(|_| Some(rng.next_f64()))
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
             ],
         };
@@ -545,17 +579,18 @@ mod tests {
             ],
             cols: vec![
                 TypedCol::F64 {
-                    vals: x.iter().map(|v| Some(v * 2.0)).collect(),
+                    vals: x.iter().map(|v| Some(v * 2.0)).collect::<Vec<_>>().into(),
                 },
                 TypedCol::F64 {
-                    vals: x.iter().copied().map(Some).collect(),
+                    vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
                 TypedCol::F64 {
                     vals: x
                         .iter()
                         .enumerate()
                         .map(|(i, v)| Some(v * 3.0 + if i < n / 2 { 0.0 } else { 5.0 }))
-                        .collect(),
+                        .collect::<Vec<_>>()
+                        .into(),
                 },
                 TypedCol::Date {
                     vals: (0..n).map(|i| Some(20000 + i as i32)).collect(),
@@ -566,9 +601,9 @@ mod tests {
         let (f, _) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
         let shift = f
             .iter()
-            .find(|f| f.kind == "residual_shift")
+            .find(|f| f.category == onceover_report::Category::Changes)
             .expect("planted date shift");
-        assert!(shift.evidence["holdout_error_reduction"].as_f64().unwrap() > 0.9);
-        assert!((shift.evidence["breakpoint_raw"].as_i64().unwrap() - 21000).abs() < 10);
+        assert!(shift.metrics()["holdout_error_reduction"].as_f64().unwrap() > 0.9);
+        assert!((shift.metrics()["breakpoint_raw"].as_i64().unwrap() - 21000).abs() < 10);
     }
 }

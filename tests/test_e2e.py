@@ -61,93 +61,75 @@ def planted_df(n: int = 12_000) -> pl.DataFrame:
     ).with_columns(pl.col("event_date").cast(pl.Date))
 
 
-def kinds(report):
-    return [f["kind"] for f in report.findings]
-
 
 def test_profile_returns_report():
-    report = onceover.profile(planted_df(3_000))
+    report = onceover.profile(planted_df(3000))
     assert isinstance(report, onceover.ProfileReport)
-    assert not report.overview["headline"] == ""
-    assert len(report.findings) > 0
-    assert isinstance(report.coverage, dict)
+    assert report.overview["headline"]
+    assert report.findings and report.groups
     assert report.coverage["predictability_screen"]["status"] == "ran_sampled"
 
 
 def test_planted_structure_recovered():
-    report = onceover.profile(planted_df(6_000))
-    k = kinds(report)
-    claims = " | ".join(f["claim"] for f in report.findings)
-    assert "likely_primary_key" in k
-    assert "order_id" in claims
-    assert "functional_dependency" in k
-    assert "region_id → region_name" in claims
-    assert "date_gap" in k
-    assert "likely_categorical" in k  # region_id: numeric-but-categorical
-    # y is a planted function of x: the model-based screen must flag it.
-    assert "predictable_from" in k
-    assert any("y is predictable" in c for c in claims.split(" | "))
-    assert "arithmetic_identity" in k  # double_quantity = 2 · quantity
-    assert any("double_quantity" in c for c in claims.split(" | "))
+    from _findings import select
+    report=onceover.profile(planted_df(6000))
+    assert select(report,"uniqueness",column="order_id")
+    assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="region_name")
+    assert select(report,"gaps",column="event_date")
+    assert select(report,"column_roles",column="region_id")
+    assert select(report,"dependencies",subtype="predictive",target="y")
+    assert select(report,"dependencies",subtype="functional",form="affine",column="double_quantity")
 
 
 def test_json_roundtrip_and_determinism():
-    df = planted_df(1_500)
-    a = onceover.profile(df)
-    b = onceover.profile(df)
-    assert a.to_json() == b.to_json()
-    data = a.data
-    assert data["schema_version"] == "0.1"
-    assert isinstance(data["columns"], dict)
-    card = data["columns"]["region_id"]
-    assert card["role"] == "categorical"
+    df=planted_df(1500)
+    a=onceover.profile(df)
+    assert a.to_json()==onceover.profile(df).to_json()
+    assert a.data["schema_version"]=="0.2"
+    assert a.columns["region_id"]["role"]=="categorical"
+    for f in a.findings:
+        assert "kind" not in f and "confidence" not in f
+        assert isinstance(f['evidence'],list) and f['evidence']
+        assert f['subject']['columns'] == sorted(set(f['subject']['columns']))
 
 
 def test_quick_budget_skips_models():
-    report = onceover.profile(planted_df(1_500), budget="quick")
-    k = kinds(report)
-    assert "predictable_from" not in k
-    assert "functional_dependency" not in k
-    assert report.coverage["predictability_screen"]["status"] == "skipped"
+    from _findings import select
+    report=onceover.profile(planted_df(1500),budget="quick")
+    assert not select(report,"dependencies")
+    assert not select(report,"conditional_rules")
+    assert report.coverage['predictability_screen']['status']=='skipped'
 
 
 def test_bad_budget_raises():
     with pytest.raises(ValueError):
-        onceover.profile(planted_df(100), budget="yolo")
+        onceover.profile(planted_df(100),budget="yolo")
 
 
 def test_chatterjee_xi_matches_scipy():
-    scipy = pytest.importorskip("scipy.stats")
-    rng = __import__("random").Random(99)
-    xs = [i / 2000.0 for i in range(2000)]
-    ys = [x * x + 0.001 * rng.random() for x in xs]
-    df = pl.DataFrame({"x": xs, "y": ys})
-    report = onceover.profile(df)
-    dep = next(
-        (f for f in report.findings if f["kind"] == "dependence"), None
-    )
-    assert dep is not None, "expected a dependence finding for y ~ x^2"
-    ours = dep["evidence"]["xi_ab"]
-    theirs = scipy.chatterjeexi(xs, ys).statistic
-    assert abs(ours - theirs) < 1e-9, f"ours={ours} scipy={theirs}"
+    from _findings import select,metrics
+    scipy=pytest.importorskip('scipy.stats')
+    rng=__import__('random').Random(99)
+    xs=[i/2000 for i in range(2000)]
+    ys=[x*x+0.001*rng.random() for x in xs]
+    report=onceover.profile(pl.DataFrame({'x':xs,'y':ys}))
+    finding=select(report,'associations')[0]
+    m=metrics(finding,contains='xi_ab')
+    assert m['variables']==['x','y']
+    assert abs(m['xi_ab']-scipy.chatterjeexi(xs,ys).statistic)<1e-9
 
 
 def test_perf_standard_10k():
-    df = planted_df(10_000)
-    t0 = time.perf_counter()
-    report = onceover.profile(df)
-    dt = time.perf_counter() - t0
-    assert len(report.findings) > 0
-    assert dt < 5.0, f"standard tier on 10k×10 took {dt:.2f}s"
+    df=planted_df(10000)
+    t=time.perf_counter()
+    assert onceover.profile(df).findings
+    assert time.perf_counter()-t<5
 
 
 def test_markdown_and_save(tmp_path):
-    report = onceover.profile(planted_df(800))
-    md = report.to_markdown()
-    assert "# onceover report" in md
-    p = tmp_path / "report.json"
-    report.save(str(p))
     import json
-
-    loaded = json.loads(p.read_text())
-    assert loaded["schema_version"] == "0.1"
+    report=onceover.profile(planted_df(800))
+    assert '# onceover report' in report.to_markdown()
+    p=tmp_path/'report.json'
+    report.save(str(p))
+    assert json.loads(p.read_text())['schema_version']=='0.2'

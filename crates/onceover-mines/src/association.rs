@@ -1,12 +1,12 @@
 //! Bounded pairwise association rules for nominal encoded features.
 
 use crate::encode::{EncodedMatrix, MISSING};
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
+use onceover_report::{Method, Pattern};
 use serde_json::json;
 use std::collections::BTreeMap;
 
 pub struct AssociationConfig {
-    pub max_features: usize,
     pub max_levels: usize,
     pub min_support: usize,
     pub min_lift: f64,
@@ -17,7 +17,6 @@ pub struct AssociationConfig {
 impl Default for AssociationConfig {
     fn default() -> Self {
         Self {
-            max_features: 24,
             max_levels: 16,
             min_support: 30,
             min_lift: 1.5,
@@ -53,7 +52,7 @@ impl Mask {
 
 fn holdout(row: u32) -> bool {
     // Stable integer mix of the original row id. The split is independent of
-    // the deterministic stride used to construct EncodedMatrix.
+    // the deterministic stratified sample used to construct EncodedMatrix.
     let mut x = row as u64 + 0x9e3779b97f4a7c15;
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
@@ -67,13 +66,12 @@ pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<F
         || cfg.min_lift <= 0.0
         || !cfg.min_confidence.is_finite()
         || !(0.0..=1.0).contains(&cfg.min_confidence)
-        || cfg.max_features > 64
         || cfg.max_levels > 254
         || cfg.max_findings > 1000
     {
-        return (Vec::new(), "invalid association config: require min_support >= 1, finite positive min_lift, min_confidence in [0,1], max_features <= 64, max_levels <= 254, max_findings <= 1000".into());
+        return (Vec::new(), "invalid association config: require min_support >= 1, finite positive min_lift, min_confidence in [0,1], max_levels <= 254, max_findings <= 1000".into());
     }
-    let mut feats: Vec<usize> = (0..enc.bins.len())
+    let feats: Vec<usize> = (0..enc.bins.len())
         .filter(|&f| {
             enc.feat_nominal.get(f) == Some(&true)
                 && enc.n_bins.get(f).copied().unwrap_or(usize::MAX) <= cfg.max_levels
@@ -81,7 +79,6 @@ pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<F
         })
         .collect();
     let nominal = enc.feat_nominal.iter().filter(|&&v| v).count();
-    feats.truncate(cfg.max_features);
     let mut masks: Vec<Vec<(Mask, Mask)>> = Vec::new(); // per feature, level: train, holdout
     let mut valid: Vec<(Mask, Mask)> = Vec::new();
     let (mut ntr, mut nho) = (0usize, 0usize);
@@ -212,20 +209,23 @@ pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<F
                         }
                         let score = hc * hl.min(5.0);
                         let f = Finding::new(
-                            "association_rule",
-                            BTreeMap::from([
+Pattern::ConditionalRule,
+BTreeMap::from([
                                 ("antecedent_feature".into(), json!(enc.feat_names[lhs])),
                                 ("antecedent_value".into(), json!(lv)),
                                 ("consequent_feature".into(), json!(enc.feat_names[rhs])),
                                 ("consequent_value".into(), json!(rv)),
                             ]),
-                            format!("{} = {} is associated with {} = {} (holdout confidence {:.2}, lift {:.2})", enc.feat_names[lhs], lv, enc.feat_names[rhs], rv, hc, hl),
-                            Confidence::Sampled,
-                            (hc * 0.5 + ((hl - 1.0) / 4.0).min(1.0) * 0.5).min(1.0),
-                            ev,
-                            None,
-                            "Pairwise nominal association with deterministic row holdout",
-                        );
+format!("{} = {} is associated with {} = {} (holdout confidence {:.2}, lift {:.2})", enc.feat_names[lhs], lv, enc.feat_names[rhs], rv, hc, hl),
+EvidenceBasis::Estimated,
+(hc * 0.5 + ((hl - 1.0) / 4.0).min(1.0) * 0.5).min(1.0),
+ev,
+None,
+Method::new("association_rules", "nominal_pair_counts", "Pairwise nominal association with deterministic row holdout")
+).with_rule(
+    vec![onceover_report::Predicate::equal(enc.feat_names[lhs].clone(),enc.literal(lhs,&lv))],
+    onceover_report::Predicate::equal(enc.feat_names[rhs].clone(),enc.literal(rhs,&rv))
+);
                         found.push((
                             score,
                             (
@@ -253,8 +253,8 @@ pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<F
     (
         findings,
         format!(
-            "{} of {nominal} nominal features (feature cap {}, level cap {}); {ntr} train / {nho} diagnostic holdout rows; {count} rules passing criteria, {emitted} emitted (cap {})",
-            feats.len(), cfg.max_features, cfg.max_levels, cfg.max_findings
+            "{} of {nominal} nominal features (all eligible columns, level cap {}); {ntr} train / {nho} diagnostic holdout rows; {count} rules passing criteria, {emitted} emitted (cap {})",
+            feats.len(), cfg.max_levels, cfg.max_findings
         ),
     )
 }
@@ -278,6 +278,7 @@ mod tests {
             rows: (0..n as u32).collect(),
             n,
             feat_cols: (0..bins.len()).collect(),
+            feat_dtypes: vec!["string".into(); bins.len()],
             feat_names: names.into_iter().map(str::to_string).collect(),
             feat_nominal: nominal,
             n_bins: bins
@@ -317,8 +318,7 @@ mod tests {
         assert!(!f.is_empty());
         assert!(f
             .iter()
-            .any(|x| x.subject["antecedent_feature"] == "a"
-                && x.subject["consequent_feature"] == "b"));
+            .any(|x| x.subject.inputs == ["a"] && x.subject.target.as_deref() == Some("b")));
     }
     #[test]
     fn missing_values_are_excluded_from_pair_denominator_and_order_is_deterministic() {
@@ -356,8 +356,8 @@ mod tests {
         assert_eq!(x, y);
         assert!(!x.is_empty());
         assert!(
-            x[0].evidence["train_pair_n"].as_u64().unwrap()
-                < x[0].evidence["train_n"].as_u64().unwrap()
+            x[0].metrics()["train_pair_n"].as_u64().unwrap()
+                < x[0].metrics()["train_n"].as_u64().unwrap()
         );
     }
     #[test]

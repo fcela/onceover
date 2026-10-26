@@ -11,12 +11,13 @@ pub const MAX_BINS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct EncodedMatrix {
-    /// Subsampled original row ids (deterministic stride).
+    /// Subsampled original row ids (deterministic stratified sample).
     pub rows: Vec<u32>,
     pub n: usize,
     /// Original column index per feature.
     pub feat_cols: Vec<usize>,
     pub feat_names: Vec<String>,
+    pub feat_dtypes: Vec<String>,
     /// True for level-coded (nominal) features.
     pub feat_nominal: Vec<bool>,
     /// feature-major bins: bins[f][pos]; MISSING for null.
@@ -54,6 +55,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         n: m,
         feat_cols: Vec::new(),
         feat_names: Vec::new(),
+        feat_dtypes: Vec::new(),
         feat_nominal: Vec::new(),
         bins: Vec::new(),
         n_bins: Vec::new(),
@@ -154,18 +156,14 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         }
     }
 
+    out.feat_dtypes = out
+        .feat_cols
+        .iter()
+        .map(|&c| table.dtypes[c].clone())
+        .collect();
     let uncapped = out.feat_cols.len();
-    if out.feat_cols.len() > cfg.feature_cap {
-        out.feat_cols.truncate(cfg.feature_cap);
-        out.feat_names.truncate(cfg.feature_cap);
-        out.feat_nominal.truncate(cfg.feature_cap);
-        out.bins.truncate(cfg.feature_cap);
-        out.n_bins.truncate(cfg.feature_cap);
-        out.edges.truncate(cfg.feature_cap);
-        out.levels.truncate(cfg.feature_cap);
-    }
     let coverage = format!(
-        "{} rows ({} of {}), {} features (cap {}, {} skipped/unusable)",
+        "{} rows ({} of {}), {} features (all usable columns; per-model predictor budget {}, {} skipped/unusable)",
         out.n,
         out.n,
         table.n,
@@ -176,10 +174,10 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
     (out, coverage)
 }
 
-fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
+pub(crate) fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
     match col {
-        TypedCol::I64 { vals } => vals[r].map(|v| v as f64),
-        TypedCol::F64 { vals } => vals[r],
+        TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
+        TypedCol::F64 { vals } => vals.at(r),
         _ => None,
     }
 }
@@ -235,6 +233,51 @@ fn bin_numeric(vals: &[Option<f64>]) -> Option<(Vec<u8>, Vec<f64>)> {
 }
 
 impl EncodedMatrix {
+    /// Preserve data types; numeric-looking strings are still strings.
+    pub fn literal(&self, f: usize, label: &str) -> serde_json::Value {
+        match self.feat_dtypes.get(f).map(String::as_str) {
+            Some("boolean") => serde_json::json!(label == "true"),
+            Some(t) if t.starts_with("int") || t.starts_with("uint") || t.starts_with("float") => {
+                serde_json::from_str(label).unwrap_or_else(|_| serde_json::json!(label))
+            }
+            _ => serde_json::json!(label),
+        }
+    }
+
+    pub fn predicates(&self, f: usize, code: u8) -> Vec<onceover_report::Predicate> {
+        use onceover_report::{Operator, Predicate};
+        if self.feat_nominal[f] {
+            return vec![Predicate::equal(
+                self.feat_names[f].clone(),
+                self.literal(f, &self.levels[f][code as usize]),
+            )];
+        }
+        let edges = &self.edges[f];
+        let transform = matches!(
+            self.feat_dtypes.get(f).map(String::as_str),
+            Some("date" | "datetime")
+        )
+        .then(|| "day_index".to_string());
+        let mut result = Vec::new();
+        if code > 0 {
+            result.push(Predicate {
+                column: self.feat_names[f].clone(),
+                operator: Operator::Gt,
+                value: serde_json::json!(edges[code as usize - 1]),
+                transform: transform.clone(),
+            });
+        }
+        if (code as usize) < edges.len() {
+            result.push(Predicate {
+                column: self.feat_names[f].clone(),
+                operator: Operator::Le,
+                value: serde_json::json!(edges[code as usize]),
+                transform,
+            });
+        }
+        result
+    }
+
     /// Coarse label for a numeric bin (for human-readable rules):
     /// "lo..hi" using bin edges.
     pub fn numeric_bin_label(&self, f: usize, code: u8) -> Option<String> {

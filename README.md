@@ -4,6 +4,13 @@ Profile a Polars DataFrame with one call. `onceover` returns column summaries,
 ranked findings with evidence, and coverage describing what each pass examined.
 The computation runs in Rust; Python bindings release the GIL while profiling.
 
+**Documentation:** the full book — tutorials, case studies, per-pass
+methodology, implementation notes, and the report contract — is built from
+this repository and published at
+[https://fcela.github.io/onceover/](https://fcela.github.io/onceover/).
+The [analysis notebook](notebooks/onceover_analysis.ipynb) is a complete
+worked example with charts and controls.
+
 ## Install
 
 ```bash
@@ -31,8 +38,9 @@ print(report.overview["headline"])
 print(report.to_markdown())
 
 report.columns     # Per-column types, roles, counts, and statistics
-report.findings    # Ranked claims with evidence and confidence
+report.findings    # Selected statements with supporting evidence
 report.coverage    # Pass status, samples, caps, and skipped work
+report.groups      # Connected findings, without a redundancy claim
 report.data        # Complete JSON-compatible report
 report.save("profile.json")
 ```
@@ -59,9 +67,12 @@ wall-clock deadline can change which passes finish; coverage records skipped wor
 - Date gaps, irregular intervals, sortedness, constants, missing values,
   concentration, numeric category codes, and inconsistent string formats.
 
-Findings distinguish exact, sampled, and heuristic evidence. Model explanations
-and associations use diagnostic validation; they are not causal claims or
-multiple-testing guarantees.
+Finding categories describe the discovered pattern, while contributing methods
+are recorded in `evidence`. Scope, measurement basis, and validation are separate
+fields. Equivalent statements combine evidence; shared selection limits apply
+across detectors. See [the report schema](https://github.com/fcela/onceover/blob/main/docs/findings.md).
+Model explanations and associations use diagnostic validation; they do not
+establish causal effects or multiple-testing guarantees.
 
 ## Rust
 
@@ -83,13 +94,60 @@ fn main() -> PolarsResult<()> {
 
 The Rust API uses Polars 0.55. The `onceover` crate re-exports report types.
 
-## Limits
+## Large and wide tables
 
-Standard model screening examines up to 20,000 rows and 48 encoded columns.
-Decision tables and PRISM each select at most six eligible targets. Dependency,
-association, and regime searches have separate caps, disclosed in coverage.
-Column summaries and selected dependence pairs still examine full columns;
-runtime and memory grow with table size even when models use samples.
+The profiler accepts in-memory DataFrames with millions of rows and hundreds of
+columns. Column summaries examine every row and retain exact cardinality,
+null counts, distributions, and quantiles. Dense and nullable Int64/Float64
+columns borrow Arrow buffers; other dtypes can require normalized copies.
+This is an in-memory profiler, so input size and exact statistics still affect
+memory and runtime.
+
+Relationship discovery uses broad screening followed by bounded follow-up work:
+
+| Work | `standard` | `deep` |
+|---|---|---|
+| Encoded relationship sample | 20,000 rows, all usable columns | 50,000 rows, all usable columns |
+| Predictability | Every eligible target; up to 48 shortlisted predictors and 5,000 fitting rows per target | Up to 64 predictors and 10,000 fitting rows |
+| Numeric dependence | All pairs screened; up to 496 pairs examined over 20,000 rows | Up to 2,016 pairs over 50,000 rows |
+| Functional dependencies | Every eligible determinant/target screened; up to 16 determinants per target, verified over 200,000 rows | Up to 32 determinants, verified over 500,000 rows |
+| Decision tables / PRISM | Up to six promising targets per pass | Up to ten targets per pass |
+
+Predictor selection uses training rows. Nominal associations consider all eligible
+nominal columns. Arithmetic identities are fitted on a sample and their residuals
+are checked over all pair-complete input rows. Single-column key checks use exact
+full-column cardinality. Higher-order searches, category levels, and explanation
+output have additional budgets, described in `report.coverage`.
+
+Samples use deterministic stratified row selection. They can miss rare patterns;
+shortlisting can miss weak or interaction-only signals. Coverage records samples,
+shortlists, and skipped work. Absence of a finding is not proof of independence.
+
+Adjust the main relationship costs when needed:
+
+```python
+report = onceover.profile(
+    df,
+    sample_rows=50_000,
+    max_predictors=96,
+    max_pairs=2_000,
+)
+```
+
+These overrides keep exact column summaries and integrity checks on the full
+input. A deadline is soft: it skips later passes without interrupting a pass
+already running.
+
+See the [analysis notebook](https://github.com/fcela/onceover/blob/main/notebooks/onceover_analysis.ipynb) for planted examples,
+Altair charts, evidence, coverage, and a wide-table demonstration. Install its
+optional dependencies with `pip install 'onceover[notebook]'`.
+The [scale benchmark](https://github.com/fcela/onceover/blob/main/benchmarks/scale.py) measures runtime, peak resident memory,
+and recovery of relationships planted in the final columns:
+
+```bash
+pip install 'onceover[benchmark]'
+python benchmarks/scale.py --rows 2000000 --columns 200 --output /tmp/onceover-scale.json
+```
 
 ## Development
 

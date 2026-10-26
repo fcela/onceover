@@ -31,12 +31,12 @@ fn row_eq(t: &TypedTable, i: usize, j: usize) -> bool {
     for col in &t.cols {
         match col {
             TypedCol::I64 { vals } => {
-                if vals[i] != vals[j] {
+                if vals.at(i) != vals.at(j) {
                     return false;
                 }
             }
             TypedCol::F64 { vals } => {
-                if vals[i] != vals[j] {
+                if vals.at(i) != vals.at(j) {
                     return false;
                 }
             }
@@ -75,8 +75,8 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
     let mut h: u64 = 14695981039346656037;
     for (ci, col) in t.cols.iter().enumerate() {
         let vh = match col {
-            TypedCol::I64 { vals } => vals[i].map(|v| v as u64).unwrap_or(MISSING),
-            TypedCol::F64 { vals } => vals[i].map(|v| v.to_bits()).unwrap_or(MISSING),
+            TypedCol::I64 { vals } => vals.at(i).map(|v| v as u64).unwrap_or(MISSING),
+            TypedCol::F64 { vals } => vals.at(i).map(|v| v.to_bits()).unwrap_or(MISSING),
             TypedCol::Str { vals } => match vals[i] {
                 Some(s) => fnv64(s.as_bytes()),
                 None => MISSING,
@@ -105,10 +105,7 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
 /// Find exact duplicate rows. Returns None when the table has no
 /// comparable columns.
 pub fn find_duplicate_rows(t: &TypedTable) -> Option<DupInfo> {
-    let comparable = t
-        .cols
-        .iter()
-        .any(|c| !matches!(c, TypedCol::Null { .. } | TypedCol::Other { .. }));
+    let comparable = t.cols.iter().any(|c| !matches!(c, TypedCol::Other { .. }));
     if !comparable || t.n == 0 {
         return None;
     }

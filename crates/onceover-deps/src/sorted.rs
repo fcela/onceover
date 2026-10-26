@@ -2,9 +2,10 @@
 //! non-decreasing with row order is a strong structural signal (e.g.,
 //! "rows are in time order") that agents can rely on.
 
+use onceover_report::{Method, Pattern};
 use std::cmp::Ordering;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use onceover_core::{TypedCol, TypedTable};
@@ -25,7 +26,7 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
         };
         if let Some(strictly) = is_sorted {
             out.push(Finding::new(
-                "sorted_by_index",
+                Pattern::ColumnOrdering,
                 std::iter::once(("column".to_string(), json!(table.names[i]))).collect(),
                 format!(
                     "column {} is {} with row order",
@@ -36,7 +37,7 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
                         "non-decreasing"
                     }
                 ),
-                Confidence::Exact,
+                EvidenceBasis::Measured,
                 0.28,
                 evidence_map(strictly),
                 if strictly {
@@ -44,7 +45,11 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
                 } else {
                     Some("rows appear ordered by this column".into())
                 },
-                "OD-lite sortedness check (onceover v0.1)",
+                Method::new(
+                    "sortedness",
+                    "adjacent_value_scan",
+                    "OD-lite sortedness check (onceover v0.1)",
+                ),
             ));
         }
     }

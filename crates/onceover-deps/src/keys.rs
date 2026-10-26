@@ -1,9 +1,10 @@
 //! Key analysis: primary-key candidates, composite keys, dirty keys.
 //! Candidates are ranked by completeness, type affinity, and name patterns.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 use crate::fd::{key_score, DepsOutcome};
@@ -25,13 +26,13 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
         let score = key_score(&info[best]);
         out.pk = Some(info[best].name.clone());
         out.findings.push(Finding::new(
-            "likely_primary_key",
+            Pattern::Uniqueness,
             BTreeMap::from([("column".into(), json!(info[best].name))]),
             format!(
                 "{} uniquely identifies rows (primary key candidate)",
                 info[best].name
             ),
-            Confidence::Exact,
+            EvidenceBasis::Measured,
             0.95,
             BTreeMap::from([
                 ("distinct".into(), json!(info[best].distinct)),
@@ -39,7 +40,11 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
                 ("plausibility_score".into(), json!(score)),
             ]),
             Some("use as join key; exclude from numeric features".into()),
-            "exact uniqueness + folklore ranking (onceover v0.1)",
+            Method::new(
+                "keys",
+                "uniqueness",
+                "exact uniqueness + folklore ranking (onceover v0.1)",
+            ),
         ));
     }
 
@@ -51,20 +56,24 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
     }) {
         let names: Vec<&str> = best.iter().map(|&i| info[i].name.as_str()).collect();
         out.findings.push(Finding::new(
-            "composite_key",
+            Pattern::Uniqueness,
             BTreeMap::from([("columns".into(), json!(names))]),
             format!(
                 "({}) jointly identify rows (composite key)",
                 names.join(", ")
             ),
-            Confidence::Exact,
+            EvidenceBasis::Measured,
             0.88,
             BTreeMap::from([
                 ("n_columns".into(), json!(best.len())),
                 ("n".into(), json!(info[best[0]].n)),
             ]),
             Some("use the pair as join key".into()),
-            "exact composite uniqueness (onceover v0.1)",
+            Method::new(
+                "keys",
+                "composite_uniqueness",
+                "exact composite uniqueness (onceover v0.1)",
+            ),
         ));
     }
 
@@ -84,19 +93,23 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
                 evidence.insert("examples".into(), json!(c.dup_examples));
             }
             out.findings.push(Finding::new(
-                "dirty_key",
+                Pattern::Uniqueness,
                 BTreeMap::from([("column".into(), json!(c.name))]),
                 format!(
-                    "column {} is nearly unique: {} duplicated value{} breaks join/merge integrity",
+                    "column {} is nearly unique with {} repeated non-null value{}",
                     c.name,
                     dup,
                     if dup == 1 { "" } else { "s" }
                 ),
-                Confidence::Exact,
+                EvidenceBasis::Measured,
                 0.70,
                 evidence,
-                Some(format!("deduplicate {col_name} before using it as a key")),
-                "exact distinct-count analysis (onceover v0.1)",
+                Some(format!("if {col_name} is expected to be unique, inspect the repeated values before using it as a key")),
+                Method::new(
+                    "keys",
+                    "near_uniqueness",
+                    "exact distinct-count analysis (onceover v0.1)",
+                ),
             ));
         }
     }

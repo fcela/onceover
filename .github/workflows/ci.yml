@@ -90,6 +90,12 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: dist/*.whl pytest 'scipy>=1.15'
           python -m pytest tests/ -q
+      - name: Execute and render example notebook
+        if: matrix.platform.name == 'linux-x86_64'
+        run: |
+          python -m pip install nbclient nbformat ipykernel 'altair>=6,<7' vl-convert-python 'great_tables>=1.1,<2' nbconvert numpy
+          python scripts/check_notebook.py --notebook notebooks/onceover_analysis.ipynb --write
+          python scripts/render_notebook.py --notebook notebooks/onceover_analysis.ipynb
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'

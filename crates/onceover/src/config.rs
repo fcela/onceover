@@ -39,14 +39,28 @@ impl Budget {
 #[derive(Clone, Debug)]
 pub struct ProfileConfig {
     pub budget: Budget,
+    /// Explicit detector IDs; None selects all built-ins. Dependencies run as resources.
+    pub detectors: Option<std::collections::BTreeSet<String>>,
+    pub selection: onceover_report::SelectionPolicy,
     pub deadline: Option<Duration>,
+    /// Override sampled relationship rows (column summaries remain exact).
+    pub sample_rows: Option<usize>,
+    /// Maximum shortlisted predictors per fitted model, after screening all columns.
+    pub max_predictors: Option<usize>,
+    /// Maximum detailed numeric pairs, after screening every numeric pair.
+    pub max_pairs: Option<usize>,
 }
 
 impl Default for ProfileConfig {
     fn default() -> Self {
         ProfileConfig {
             budget: Budget::Standard,
+            detectors: None,
+            selection: Default::default(),
             deadline: None,
+            sample_rows: None,
+            max_predictors: None,
+            max_pairs: None,
         }
     }
 }
@@ -90,7 +104,6 @@ impl TierConfig {
                 fd: FdConfig {
                     lhs_cap: 16,
                     lhs3_cap: 12,
-                    rhs_cap: 60,
                     row_cap: 200_000,
                     max_lhs_size: 2,
                     afd_g1_max: 0.01,
@@ -118,7 +131,6 @@ impl TierConfig {
                 fd: FdConfig {
                     lhs_cap: 32,
                     lhs3_cap: 12,
-                    rhs_cap: 60,
                     row_cap: 500_000,
                     max_lhs_size: 3,
                     afd_g1_max: 0.01,
@@ -131,6 +143,8 @@ impl TierConfig {
                 },
                 screen: ScreenConfig {
                     max_rounds: 40,
+                    max_predictors: 64,
+                    max_model_rows: 10_000,
                     ..Default::default()
                 },
                 dtable: DtableConfig::default(),
@@ -147,7 +161,6 @@ impl TierConfig {
                     ..Default::default()
                 },
                 association: AssociationConfig {
-                    max_features: 32,
                     max_findings: 40,
                     ..Default::default()
                 },

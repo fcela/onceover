@@ -1,10 +1,11 @@
 //! Pairwise dependence screen: Pearson, Spearman, and Chatterjee's ξ
 //! (both directions), redundancy groups, and arithmetic identity candidates.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
 use onceover_core::TypedCol;
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
 
 /// Pairwise dependence results for one numeric pair.
@@ -17,6 +18,8 @@ pub struct PairDep {
     pub xi_ab: Option<f64>, // ξ(a → b): "b is a function of a" signal
     pub xi_ba: Option<f64>,
     pub n: usize,
+    pub population_rows: usize,
+    pub sampled: bool,
 }
 
 impl PairDep {
@@ -38,8 +41,8 @@ pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
     let get = |c: &TypedCol, i: usize| -> Option<f64> {
         match c {
-            TypedCol::I64 { vals } => vals[i].map(|v| v as f64),
-            TypedCol::F64 { vals } => vals[i],
+            TypedCol::I64 { vals } => vals.at(i).map(|v| v as f64),
+            TypedCol::F64 { vals } => vals.at(i),
             _ => None,
         }
     };
@@ -50,6 +53,18 @@ pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
         }
     }
     out
+}
+
+/// Extract bounded pair-complete observations over shared sampled row ids.
+pub fn sampled_pairs(a: &TypedCol, b: &TypedCol, rows: &[u32]) -> Vec<(f64, f64)> {
+    rows.iter()
+        .filter_map(|&r| {
+            Some((
+                crate::encode::numeric_at(a, r as usize)?,
+                crate::encode::numeric_at(b, r as usize)?,
+            ))
+        })
+        .collect()
 }
 
 pub fn pearson(pairs: &[(f64, f64)]) -> Option<f64> {
@@ -183,6 +198,14 @@ pub fn screen(
     table: &onceover_core::TypedTable,
     pair_cap: usize,
 ) -> (Vec<PairDep>, Vec<Finding>, String) {
+    screen_sampled(table, pair_cap, 20_000)
+}
+
+pub fn screen_sampled(
+    table: &onceover_core::TypedTable,
+    pair_cap: usize,
+    row_cap: usize,
+) -> (Vec<PairDep>, Vec<Finding>, String) {
     use rayon::prelude::*;
 
     let numeric: Vec<usize> = (0..table.cols.len())
@@ -196,14 +219,53 @@ pub fn screen(
     }
     let total_pairs = pair_list.len();
     let capped = total_pairs > pair_cap;
-    // Rank pairs by column order (deterministic); could rank by |pearson| but
-    // that requires computing all — keep the cap simple and deterministic.
-    pair_list.truncate(pair_cap);
+    // Cheap screening covers the entire pair universe. Detailed rank-based
+    // statistics use a bounded row sample for the strongest candidates.
+    if capped {
+        let (encoded, _) = crate::encode::encode(
+            table,
+            &crate::EncodeConfig {
+                row_cap: row_cap.min(2048),
+                feature_cap: usize::MAX,
+                nominal_max_levels: 32,
+            },
+        );
+        let slots: std::collections::BTreeMap<usize, usize> = encoded
+            .feat_cols
+            .iter()
+            .enumerate()
+            .map(|(f, &c)| (c, f))
+            .collect();
+        let positions: Vec<u32> = (0..encoded.n as u32).collect();
+        let mut ranked: Vec<_> = pair_list
+            .into_par_iter()
+            .map(|(a, b)| {
+                let score = match (slots.get(&a), slots.get(&b)) {
+                    (Some(&x), Some(&y)) => {
+                        crate::screen::information(&encoded.bins[x], &encoded.bins[y], &positions)
+                    }
+                    _ => 0.0,
+                };
+                ((a, b), score)
+            })
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(table.names[a.0 .0].cmp(&table.names[b.0 .0]))
+                .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
+        });
+        pair_list = ranked
+            .into_iter()
+            .take(pair_cap)
+            .map(|(pair, _)| pair)
+            .collect();
+    }
+    let rows = crate::stride_rows(table.n, row_cap);
 
     let deps: Vec<PairDep> = pair_list
         .par_iter()
         .map(|&(a, b)| {
-            let pairs = pairs_of(&table.cols[a], &table.cols[b]);
+            let pairs = sampled_pairs(&table.cols[a], &table.cols[b], &rows);
             PairDep {
                 a,
                 b,
@@ -215,6 +277,8 @@ pub fn screen(
                     chatterjee_xi(&flipped)
                 },
                 n: pairs.len(),
+                population_rows: table.n,
+                sampled: rows.len() < table.n,
             }
         })
         .collect();
@@ -243,69 +307,14 @@ pub fn screen(
     dep_findings.truncate(20);
     let findings: Vec<Finding> = dep_findings.into_iter().map(|(_, f)| f).collect();
 
-    // Redundancy groups via union-find on very strong dependence.
-    let mut parent: Vec<usize> = (0..table.cols.len()).collect();
-    fn find(p: &mut Vec<usize>, x: usize) -> usize {
-        if p[x] != x {
-            p[x] = find(p, p[x]);
-        }
-        p[x]
-    }
-    let mut n_links = 0;
-    for d in &deps {
-        let strong = d.spearman.map(|v| v.abs() >= 0.995).unwrap_or(false)
-            || d.pearson.map(|v| v.abs() >= 0.995).unwrap_or(false)
-            || d.xi_ab.map(|v| v >= 0.98).unwrap_or(false)
-            || d.xi_ba.map(|v| v >= 0.98).unwrap_or(false);
-        if strong {
-            n_links += 1;
-            let (ra, rb) = (find(&mut parent, d.a), find(&mut parent, d.b));
-            if ra != rb {
-                parent[ra] = rb;
-            }
-        }
-    }
-    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for c in 0..table.cols.len() {
-        let r = find(&mut parent, c);
-        groups.entry(r).or_default().push(c);
-    }
-    let mut findings = findings;
-    for (_, members) in groups {
-        if members.len() < 2 {
-            continue;
-        }
-        let names: Vec<&str> = members.iter().map(|&i| table.names[i].as_str()).collect();
-        let best = deps
-            .iter()
-            .filter(|d| members.contains(&d.a) && members.contains(&d.b))
-            .map(|d| d.max_signal())
-            .fold(0.0f64, f64::max);
-        findings.push(Finding::new(
-            "redundant_group",
-            BTreeMap::from([("columns".into(), json!(names))]),
-            format!(
-                "columns [{}] carry nearly the same information (max dependence {:.3})",
-                names.join(", "),
-                best
-            ),
-            Confidence::Heuristic,
-            0.68 + 0.03 * (members.len() - 1) as f64,
-            BTreeMap::from([
-                ("n_columns".into(), json!(members.len())),
-                ("max_dependence".into(), json!(best)),
-            ]),
-            Some("drop all but one before modeling".into()),
-            "union-find on |spearman|>=0.995 or ξ>=0.98 (onceover v0.1)",
-        ));
-    }
-
+    let n_links = deps.iter().filter(|d| d.max_signal() >= 0.98).count();
     let coverage = format!(
-        "{} of {} numeric pairs ({}), {} strong, {} redundancy links",
+        "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong, {} redundancy links",
         pair_list.len(),
         total_pairs,
         if capped { "capped" } else { "full" },
-        findings.iter().filter(|f| f.kind == "dependence").count(),
+        total_pairs, rows.len(), table.n,
+        findings.len(),
         n_links,
     );
 
@@ -317,42 +326,27 @@ fn dep_finding(table: &onceover_core::TypedTable, d: &PairDep, signal: f64) -> F
     let b = &table.names[d.b];
     let mut evidence = BTreeMap::from([
         ("n".into(), json!(d.n)),
+        ("population_rows".into(), json!(d.population_rows)),
+        ("row_sampled".into(), json!(d.sampled)),
         ("pearson".into(), json!(d.pearson)),
         ("spearman".into(), json!(d.spearman)),
         ("xi_ab".into(), json!(d.xi_ab)),
         ("xi_ba".into(), json!(d.xi_ba)),
     ]);
-    let functional =
-        d.xi_ab.map(|v| v >= 0.98).unwrap_or(false) || d.xi_ba.map(|v| v >= 0.98).unwrap_or(false);
-    let claim = if functional {
-        let (f, t) = if d.xi_ab.unwrap_or(0.0) >= d.xi_ba.unwrap_or(0.0) {
-            (a, b)
-        } else {
-            (b, a)
-        };
-        format!(
-            "{t} is nearly a function of {f} (ξ = {:.3})",
-            d.max_signal()
-        )
-    } else {
-        format!(
-            "{a} and {b} are dependent (max signal {:.3}: Pearson {:.3}, Spearman {:.3})",
-            signal,
-            d.pearson.unwrap_or(0.0),
-            d.spearman.unwrap_or(0.0)
-        )
-    };
+    let claim =
+        format!("{a} and {b} show numeric association (maximum measured effect {signal:.3})");
+    evidence.insert("variables".into(), json!([a, b]));
     evidence.insert("method".into(), json!("pearson+spearman+chatterjee_xi"));
     Finding::new(
-        "dependence",
-        BTreeMap::from([("x".into(), json!(a)), ("y".into(), json!(b))]),
-        claim,
-        Confidence::Heuristic,
-        0.35 + 0.4 * signal,
-        evidence,
-        None,
-        "Chatterjee ξ (Ann. Statist. 2021) + classic coefficients, exact ranks",
-    )
+Pattern::StatisticalAssociation,
+BTreeMap::from([("x".into(), json!(a)), ("y".into(), json!(b))]),
+claim,
+EvidenceBasis::Estimated,
+0.35 + 0.4 * signal,
+evidence,
+None,
+Method::new("numeric_dependence", "pearson_spearman_chatterjee", "Pearson/Spearman/Chatterjee ξ on disclosed row sample; pair selection by binned mutual information")
+)
 }
 
 #[cfg(test)]

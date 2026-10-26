@@ -9,18 +9,21 @@ from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
 
 __version__ = "0.1.0"
-__all__ = ["profile", "ProfileReport"]
+__all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.1"
+_SCHEMA_VERSION = "0.2"
 
 
-def profile(df, budget: str = "standard", deadline_seconds: float | None = None):
+def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
+            sample_rows: int | None = None, max_predictors: int | None = None,
+            max_pairs: int | None = None, detectors: list[str] | None = None,
+            max_findings: int = 100, max_rules: int = 20):
     """Give a Polars DataFrame a once-over.
 
     Parameters
     ----------
     df : polars.DataFrame
-        The table to profile (zero-copy Arrow interchange; polars >= 1.x).
+        The table to profile (Arrow interchange; Polars 2.x).
     budget : str
         "quick" (summaries and integrity checks), "standard" (all passes with caps),
         or "deep" (wider caps and deeper search).
@@ -28,12 +31,35 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None)
         Soft wall-clock budget. Deterministic by default (None); when set,
         remaining passes may be skipped and reported in `coverage`.
 
+    sample_rows : int, optional
+        Override row samples for relationship searches. Column summaries and
+        identity verification still examine all rows. Small samples can leave
+        too few rows for model fitting; check coverage.
+    max_predictors : int, optional
+        Predictors retained per model after screening all usable columns.
+    max_pairs : int, optional
+        Detailed numeric pairs retained after screening all numeric pairs.
+
+    detectors : list[str], optional
+        Detector IDs to select; None selects all. Required detectors can run
+        as resources without contributing their own findings.
+    max_findings, max_rules : int
+        Report-wide selection limits, applied across all contributing methods.
+
     Returns
     -------
     ProfileReport
         Ranked findings ledger + per-column cards + coverage block.
     """
-    return ProfileReport(_profile_native(df, budget, deadline_seconds))
+    return ProfileReport(_profile_native(df, budget, deadline_seconds, sample_rows=sample_rows,
+                                         max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
+                                         max_findings=max_findings, max_rules=max_rules))
+
+
+def available_detectors():
+    """Available detector IDs, produced categories, and resource dependencies."""
+    from onceover._native import available_detectors as _available
+    return _json.loads(_available())
 
 
 class ProfileReport:
@@ -79,6 +105,12 @@ class ProfileReport:
         """What was tested, at what scale, what was skipped and why."""
         self._ensure()
         return self._data["coverage"]
+
+    @property
+    def groups(self) -> list:
+        """Connected findings; group membership does not imply redundancy."""
+        self._ensure()
+        return self._data["groups"]
 
     def to_json(self) -> str:
         return self._native.to_json()

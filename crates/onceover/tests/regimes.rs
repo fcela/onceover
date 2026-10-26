@@ -1,4 +1,4 @@
-use onceover::{profile, Budget, ProfileConfig};
+use onceover::{profile, Budget, Category, ProfileConfig};
 use polars::prelude::*;
 
 #[test]
@@ -38,14 +38,17 @@ fn numeric_regimes_and_nominal_associations_reach_the_public_report() {
     let cfg = ProfileConfig::default();
     let report = profile(&df, &cfg);
     assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.kind == "piecewise_relationship" && f.subject["target"] == "y"),
+        report.findings.iter().any(
+            |f| f.specification.form.as_deref() == Some("piecewise_linear")
+                && f.subject.target.as_deref() == Some("y")
+        ),
         "{:?}",
         report.coverage
     );
-    assert!(report.findings.iter().any(|f| f.kind == "association_rule"));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.category == Category::ConditionalRules));
     assert!(report.coverage.contains_key("regimes"));
     assert!(report.coverage.contains_key("association_rules"));
     assert_eq!(report.to_json(), profile(&df, &cfg).to_json());
@@ -54,11 +57,12 @@ fn numeric_regimes_and_nominal_associations_reach_the_public_report() {
         &ProfileConfig {
             budget: Budget::Quick,
             deadline: None,
+            ..Default::default()
         },
     );
     assert!(!quick.findings.iter().any(|f| matches!(
-        f.kind.as_str(),
-        "piecewise_relationship" | "association_rule" | "residual_shift"
+        f.category,
+        Category::Dependencies | Category::ConditionalRules | Category::Changes
     )));
     assert_eq!(quick.coverage["regimes"].status, "skipped");
     assert_eq!(quick.coverage["association_rules"].status, "skipped");
@@ -67,6 +71,7 @@ fn numeric_regimes_and_nominal_associations_reach_the_public_report() {
         &ProfileConfig {
             budget: Budget::Standard,
             deadline: Some(std::time::Duration::ZERO),
+            ..Default::default()
         },
     );
     assert_eq!(expired.coverage["regimes"].status, "skipped");

@@ -6,7 +6,9 @@ pub mod card;
 pub mod counts;
 pub mod dateutil;
 pub mod dup;
+pub mod sampling;
 pub mod typed;
+pub use sampling::sample_rows;
 
 pub use card::{column_card, CardOut};
 pub use counts::{build_counts, ColCounts, VKey};

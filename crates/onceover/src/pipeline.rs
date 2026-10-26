@@ -2,6 +2,7 @@
 //! findings ledger, overview and coverage block. Deterministic end to end
 //! (unless an opt-in wall-clock deadline fires, which is reported honestly).
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -9,10 +10,11 @@ use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
-    profile_regimes, screen_dependence, screen_predictability,
+    profile_regimes, screen_predictability,
 };
 use onceover_report::{
-    finalize_ledger, ColumnCard, Finding, Overview, PassInfo, ProfileReport, SCHEMA_VERSION,
+    group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
+    ProfileReport, Sampling, SCHEMA_VERSION,
 };
 use polars::prelude::DataFrame;
 use serde_json::json;
@@ -21,8 +23,48 @@ use crate::config::{Budget, ProfileConfig, TierConfig};
 
 /// Profile a DataFrame. Returns the complete, deterministic report.
 pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
+    profile_with_detectors(df, cfg, &[])
+}
+
+pub fn profile_with_detectors(
+    df: &DataFrame,
+    cfg: &ProfileConfig,
+    extensions: &[&dyn crate::Detector],
+) -> ProfileReport {
+    let mut requested = cfg.detectors.clone();
+    if let Some(ids) = &mut requested {
+        loop {
+            let n = ids.len();
+            for detector in extensions {
+                let d = detector.descriptor();
+                if ids.contains(&d.id) {
+                    ids.extend(d.requires);
+                }
+            }
+            if ids.len() == n {
+                break;
+            }
+        }
+    }
+    let active = crate::detectors::active_detectors(requested.as_ref());
+    let enabled = |id: &str| active.contains(id);
+    let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
+    let mut shared_encoding = None;
     let start = Instant::now();
-    let tier = TierConfig::for_budget(cfg.budget);
+    let mut tier = TierConfig::for_budget(cfg.budget);
+    if let Some(rows) = cfg.sample_rows {
+        tier.encode.row_cap = rows.max(1);
+        tier.fd.row_cap = rows.max(1);
+        tier.screen.max_model_rows = rows.max(1);
+        tier.regimes.row_cap = rows.max(1);
+    }
+    if let Some(predictors) = cfg.max_predictors {
+        tier.screen.max_predictors = predictors.max(1);
+        tier.encode.feature_cap = predictors.max(1);
+    }
+    if let Some(pairs) = cfg.max_pairs {
+        tier.dep_pair_cap = pairs;
+    }
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
 
     let mut deadline_hit = false;
@@ -89,15 +131,30 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
     let mut columns: BTreeMap<String, ColumnCard> = BTreeMap::new();
     for c in cards {
         columns.insert(c.card.name.clone(), c.card.clone());
-        findings.extend(c.findings);
+        if enabled("column_profile") {
+            findings.extend(c.findings);
+        }
     }
 
     // ---------- duplicate rows ----------
     if check_deadline(&mut coverage, "row_duplicates") {
         deadline_hit = true;
     }
-    if !deadline_hit {
-        match find_duplicate_rows(&table) {
+    if !deadline_hit
+        && enabled("row_duplicates")
+        && table
+            .cols
+            .iter()
+            .any(|c| !matches!(c, onceover_core::TypedCol::Other { .. }))
+    {
+        match if info
+            .iter()
+            .any(|c| c.null_count == 0 && c.distinct == table.n)
+        {
+            None
+        } else {
+            find_duplicate_rows(&table)
+        } {
             Some(dup) => {
                 coverage.insert(
                     "row_duplicates".into(),
@@ -107,22 +164,27 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                     )),
                 );
                 let mut ev = BTreeMap::new();
+                ev.insert("n".into(), json!(table.n));
                 ev.insert("n_redundant".to_string(), json!(dup.n_redundant));
                 ev.insert("n_groups".to_string(), json!(dup.n_groups));
                 ev.insert("max_group_size".to_string(), json!(dup.max_group_size));
                 ev.insert("examples".to_string(), json!(dup.examples));
                 findings.push(Finding::new(
-                    "duplicate_rows",
-                    BTreeMap::new(),
+                    Pattern::Duplicates,
+                    BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
                     format!(
-                        "{} rows are exact duplicates of earlier rows ({} groups, largest {})",
+                        "{} rows repeat earlier values across the compared columns ({} groups, largest {})",
                         dup.n_redundant, dup.n_groups, dup.max_group_size
                     ),
-                    onceover_report::Confidence::Exact,
+                    onceover_report::EvidenceBasis::Measured,
                     0.70,
                     ev,
                     Some("deduplicate before joins or model training".into()),
-                    "exact row hashing + verification (onceover v0.1)",
+                    Method::new(
+                        "row_duplicates",
+                        "row_equality",
+                        "exact row hashing + verification (onceover v0.1)",
+                    ),
                 ));
             }
             None => {
@@ -134,32 +196,56 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
         }
     }
 
-    // ---------- keys & dependencies ----------
-    let (deps, key_findings): (DepsOutcome, Vec<Finding>) = if cfg.budget == Budget::Quick {
-        let d = quick_deps(&info, table.n);
+    if enabled("row_duplicates")
+        && table
+            .cols
+            .iter()
+            .all(|c| matches!(c, onceover_core::TypedCol::Other { .. }))
+    {
         coverage.insert(
-            "functional_dependencies".into(),
-            PassInfo::skipped("quick tier"),
+            "row_duplicates".into(),
+            PassInfo::na("no comparable columns"),
         );
-        let k = analyze_keys(&info, &d);
-        (d, k.findings)
-    } else {
-        if check_deadline(&mut coverage, "functional_dependencies") {
-            deadline_hit = true;
-        }
-        if deadline_hit {
-            (DepsOutcome::default(), Vec::new())
-        } else {
-            let d = discover(&table, &info, &tier.fd);
+    }
+
+    // ---------- keys & dependencies ----------
+    let (deps, key_findings): (DepsOutcome, Vec<Finding>) =
+        if cfg.budget == Budget::Quick || !enabled("functional_dependencies") {
+            let d = if cfg.budget == Budget::Quick {
+                quick_deps(&info, table.n)
+            } else if enabled("keys") {
+                onceover_deps::fd::discover_keys(&table, &info, &tier.fd)
+            } else {
+                DepsOutcome::default()
+            };
             coverage.insert(
                 "functional_dependencies".into(),
-                PassInfo::capped(d.coverage.clone()),
+                PassInfo::skipped("quick tier"),
             );
             let k = analyze_keys(&info, &d);
-            let mut d = d;
-            findings.extend(std::mem::take(&mut d.findings));
             (d, k.findings)
-        }
+        } else {
+            if check_deadline(&mut coverage, "functional_dependencies") {
+                deadline_hit = true;
+            }
+            if deadline_hit {
+                (DepsOutcome::default(), Vec::new())
+            } else {
+                let d = discover(&table, &info, &tier.fd);
+                coverage.insert(
+                    "functional_dependencies".into(),
+                    PassInfo::capped(d.coverage.clone()),
+                );
+                let k = analyze_keys(&info, &d);
+                let mut d = d;
+                findings.extend(std::mem::take(&mut d.findings));
+                (d, k.findings)
+            }
+        };
+    let key_findings = if enabled("keys") {
+        key_findings
+    } else {
+        Vec::new()
     };
     if !key_findings.is_empty() {
         coverage.insert(
@@ -186,7 +272,7 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
     if check_deadline(&mut coverage, "sortedness") {
         deadline_hit = true;
     }
-    if !deadline_hit {
+    if !deadline_hit && enabled("sortedness") {
         let sorted = sortedness(&table);
         coverage.insert(
             "sortedness".into(),
@@ -199,7 +285,7 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
     if check_deadline(&mut coverage, "dates") {
         deadline_hit = true;
     }
-    if !deadline_hit {
+    if !deadline_hit && enabled("dates") {
         let d = analyze_temporal(&table);
         coverage.insert("dates".into(), PassInfo::ran(d.coverage.clone()));
         // Backfill modal intervals into cards.
@@ -222,7 +308,15 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
             let (enc, enc_cov) = encode(&table, &tier.encode);
             coverage.insert("encoding".into(), PassInfo::sampled(enc_cov));
 
-            let screen = screen_predictability(&table, &enc, &tier.screen);
+            let screen = if enabled("gbm") {
+                screen_predictability(&table, &enc, &tier.screen)
+            } else {
+                onceover_mines::ScreenOutcome {
+                    findings: Vec::new(),
+                    results: Vec::new(),
+                    coverage: "not selected".into(),
+                }
+            };
             coverage.insert(
                 "predictability_screen".into(),
                 PassInfo::sampled(screen.coverage.clone()),
@@ -240,7 +334,11 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                 .collect();
             cat_targets.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
             let dtable_eligible = cat_targets.len();
-            cat_targets.truncate(tier.dtable_top_targets);
+            cat_targets.truncate(if enabled("decision_tables") {
+                tier.dtable_top_targets
+            } else {
+                0
+            });
             if !cat_targets.is_empty() {
                 let (f, cov) = decision_tables(&enc, &cat_targets, &tier.dtable);
                 let detail = format!(
@@ -279,7 +377,11 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                 .collect();
             prism_targets.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
             let prism_eligible = prism_targets.len();
-            prism_targets.truncate(tier.prism_top_targets);
+            prism_targets.truncate(if enabled("prism") {
+                tier.prism_top_targets
+            } else {
+                0
+            });
             let (f, cov) = prism_rules(&enc, &prism_targets, &tier.prism);
             let detail = format!(
                 "{cov}; {} of {prism_eligible} eligible targets selected (cap {})",
@@ -299,7 +401,7 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
             if check_deadline(&mut coverage, "regimes") {
                 deadline_hit = true;
             }
-            if !deadline_hit {
+            if !deadline_hit && enabled("regimes") {
                 let excluded: Vec<usize> = info
                     .iter()
                     .enumerate()
@@ -327,7 +429,7 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                     "association_rules".into(),
                     PassInfo::skipped("deadline reached"),
                 );
-            } else {
+            } else if enabled("association_rules") {
                 let (f, cov) = association_rules(&enc, &tier.association);
                 coverage.insert("association_rules".into(), PassInfo::sampled(cov));
                 findings.extend(f);
@@ -337,9 +439,12 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
             if check_deadline(&mut coverage, "dependence_screen") {
                 deadline_hit = true;
             }
-            if !deadline_hit && tier.dep_pair_cap > 0 {
-                let (deps_pair, dep_findings, dep_cov) =
-                    screen_dependence(&table, tier.dep_pair_cap);
+            if !deadline_hit && tier.dep_pair_cap > 0 && enabled("numeric_dependence") {
+                let (deps_pair, dep_findings, dep_cov) = onceover_mines::dep::screen_sampled(
+                    &table,
+                    tier.dep_pair_cap,
+                    tier.encode.row_cap,
+                );
                 let numeric = table
                     .cols
                     .iter()
@@ -357,12 +462,16 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                     if deps_pair.len() < possible_pairs {
                         PassInfo::capped(dep_cov)
                     } else {
-                        PassInfo::ran(dep_cov)
+                        if table.n > tier.encode.row_cap {
+                            PassInfo::sampled(dep_cov)
+                        } else {
+                            PassInfo::ran(dep_cov)
+                        }
                     },
                 );
                 findings.extend(dep_findings);
 
-                if tier.ident_pair_cap > 0 {
+                if tier.ident_pair_cap > 0 && enabled("identities") {
                     let (id_f, id_cov) = identities(&table, &deps_pair, tier.ident_pair_cap);
                     coverage.insert("arithmetic_identities".into(), PassInfo::ran(id_cov));
                     findings.extend(id_f);
@@ -373,6 +482,7 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
                     PassInfo::skipped("deadline reached"),
                 );
             }
+            shared_encoding = Some(enc);
         } else {
             coverage.insert(
                 "predictability_screen".into(),
@@ -404,15 +514,139 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
         });
     }
 
-    // ---------- suppress identifier_like for the chosen primary key ----------
-    if let Some(pk) = keys_pk(&findings) {
-        findings.retain(|f| {
-            !(f.kind == "identifier_like" && f.subject.get("column") == Some(&json!(pk)))
-        });
+    for detector in extensions {
+        let descriptor = detector.descriptor();
+        if cfg.detectors.is_some() && !active.contains(&descriptor.id) {
+            continue;
+        }
+        if check_deadline(&mut coverage, &descriptor.id) {
+            continue;
+        }
+        let context = crate::DetectorContext {
+            table: &table,
+            columns: &columns,
+            encoded: shared_encoding.as_ref(),
+            config: cfg,
+        };
+        match detector.discover(&context) {
+            Ok(mut candidates) => {
+                let invalid = candidates.iter().find_map(|f| {
+                    if !descriptor.categories.contains(&f.category) {
+                        return Some("undeclared category".to_string());
+                    }
+                    if f.subject.columns.iter().any(|c| !columns.contains_key(c)) {
+                        return Some("unknown subject column".to_string());
+                    }
+                    f.validate().err()
+                });
+                if let Some(reason) = invalid {
+                    coverage.insert(
+                        descriptor.id.clone(),
+                        PassInfo::skipped(format!("invalid detector output: {reason}")),
+                    );
+                    continue;
+                }
+                for f in &mut candidates {
+                    for e in &mut f.evidence {
+                        e.method.detector = descriptor.id.clone();
+                    }
+                }
+                coverage.insert(
+                    descriptor.id.clone(),
+                    PassInfo::ran(format!("{} candidate statements", candidates.len())),
+                );
+                findings.extend(candidates);
+            }
+            Err(message) => {
+                coverage.insert(
+                    descriptor.id.clone(),
+                    PassInfo::skipped(format!("detector failed: {message}")),
+                );
+            }
+        }
     }
-
-    // ---------- assemble ----------
-    let findings = finalize_ledger(findings);
+    findings.retain(|f| f.evidence.iter().any(|e| selected(&e.method.detector)));
+    for f in &mut findings {
+        for evidence in &mut f.evidence {
+            evidence.scope.population_rows.get_or_insert(table.n);
+            evidence.scope.missing_values=match evidence.method.detector.as_str(){
+                "column_profile"|"keys"=>"non-missing values counted; missingness reported separately",
+                "row_duplicates"=>"missing values compare equal; opaque fields excluded",
+                "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
+                "gbm"|"decision_tables"|"regimes"=>"missing targets excluded; predictor handling follows the recorded model",
+                "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
+                _=>evidence.scope.missing_values.as_str(),
+            }.to_string();
+            if evidence.scope.sampling == Sampling::Unspecified {
+                evidence.scope.sampling = match evidence.method.detector.as_str() {
+                    "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
+                    | "identities" => Sampling::Full,
+                    "association_rules" | "prism" => {
+                        if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
+                            Sampling::Sample
+                        } else {
+                            Sampling::Full
+                        }
+                    }
+                    _ => match evidence.scope.rows_evaluated {
+                        Some(n) if n < table.n => Sampling::Sample,
+                        Some(_) => Sampling::Full,
+                        None => Sampling::Unspecified,
+                    },
+                };
+            }
+        }
+    }
+    let candidate_count = findings.len();
+    let rule_candidates = findings
+        .iter()
+        .filter(|f| f.category == Category::ConditionalRules)
+        .count();
+    crate::rules::evaluate_rules(&table, &mut findings, tier.encode.row_cap, &cfg.selection);
+    let rules_kept = findings
+        .iter()
+        .filter(|f| f.category == Category::ConditionalRules)
+        .count();
+    if rule_candidates > 0 {
+        coverage.insert("rule_evaluation".into(),PassInfo::sampled(format!("{rules_kept} of {rule_candidates} candidates passed a common diagnostic partition; support and baseline evaluated on complete predicates and outcome; reused for selection")));
+    }
+    let verified_count = findings.len();
+    let distinct_count = findings
+        .iter()
+        .map(Finding::canonical_key)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    for (id, pass) in [
+        ("row_duplicates", "row_duplicates"),
+        ("keys", "keys"),
+        ("functional_dependencies", "functional_dependencies"),
+        ("sortedness", "sortedness"),
+        ("dates", "dates"),
+        ("gbm", "predictability_screen"),
+        ("decision_tables", "decision_tables"),
+        ("prism", "prism_rules"),
+        ("regimes", "regimes"),
+        ("association_rules", "association_rules"),
+        ("numeric_dependence", "dependence_screen"),
+        ("identities", "arithmetic_identities"),
+    ] {
+        if !enabled(id) {
+            coverage.insert(pass.into(), PassInfo::skipped("detector not enabled"));
+        } else if !selected(id) {
+            if let Some(info) = coverage.get_mut(pass) {
+                info.detail
+                    .push_str("; required as a resource; findings not selected");
+            }
+        }
+    }
+    let findings = select_findings(findings, &cfg.selection);
+    let groups = group_findings(&findings);
+    let selection = onceover_report::SelectionSummary {
+        candidates: candidate_count,
+        verified_candidates: verified_count,
+        distinct_statements: distinct_count,
+        selected: findings.len(),
+    };
     let overview = build_overview(&table, &columns, &findings, cfg);
     if deadline_hit {
         coverage.insert(
@@ -429,6 +663,8 @@ pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
         overview,
         columns,
         findings,
+        groups,
+        selection,
         coverage,
     }
 }
@@ -446,13 +682,14 @@ fn quick_deps(info: &[ColInfo], n: usize) -> DepsOutcome {
 fn keys_pk(findings: &[Finding]) -> Option<String> {
     findings
         .iter()
-        .find(|f| f.kind == "likely_primary_key")
-        .and_then(|f| {
-            f.subject
-                .get("column")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+        .find(|f| {
+            f.category == Category::Uniqueness
+                && f.subject.columns.len() == 1
+                && f.evidence
+                    .iter()
+                    .any(|e| e.method.algorithm == "uniqueness")
         })
+        .and_then(|f| f.subject.columns.first().cloned())
 }
 
 /// Duplicate value examples for dirty-key findings (dtype-aware display).
@@ -489,52 +726,23 @@ fn build_overview(
         *role_counts.entry(c.role.clone()).or_insert(0) += 1;
     }
 
-    let count = |kind: &str| findings.iter().filter(|f| f.kind == kind).count();
-    let n_fd = count("functional_dependency");
-    let n_afd = count("approximate_fd");
-    let n_pred = count("predictable_from");
-    let n_gaps = count("date_gap");
-    let n_dup = count("duplicate_rows");
-
+    let n_functional = findings
+        .iter()
+        .filter(|f| f.is(Category::Dependencies, Some("functional")))
+        .count();
+    let n_predictive = findings
+        .iter()
+        .filter(|f| f.is(Category::Dependencies, Some("predictive")))
+        .count();
+    let n_rules = findings
+        .iter()
+        .filter(|f| f.category == Category::ConditionalRules)
+        .count();
     let pk = keys_pk(findings)
-        .map(|k| format!("key: {k}; "))
+        .map(|k| format!("; key candidate: {k}"))
         .unwrap_or_default();
-
-    let headline = format!(
-        "{} rows × {} columns ({} budget); {}{} exact FD{}{}{}{}{}",
-        table.n,
-        table.cols.len(),
-        cfg.budget.as_str(),
-        pk,
-        n_fd,
-        if n_fd == 1 { "" } else { "s" },
-        if n_afd > 0 {
-            format!(", {n_afd} near-exact")
-        } else {
-            String::new()
-        },
-        if n_pred > 0 {
-            format!(
-                ", {n_pred} predictable column{}",
-                if n_pred == 1 { "" } else { "s" }
-            )
-        } else {
-            String::new()
-        },
-        if n_gaps > 0 {
-            format!(", {n_gaps} date gap{}", if n_gaps == 1 { "" } else { "s" })
-        } else {
-            String::new()
-        },
-        if n_dup > 0 {
-            format!(
-                ", {n_dup} duplicate-row group{}",
-                if n_dup == 1 { "" } else { "s" }
-            )
-        } else {
-            String::new()
-        },
-    );
+    let headline=format!("{} rows × {} columns ({} budget){}; {} functional dependencies, {} predictive dependencies, {} conditional rules",
+        table.n,table.cols.len(),cfg.budget.as_str(),pk,n_functional,n_predictive,n_rules);
 
     Overview {
         n_rows: table.n,

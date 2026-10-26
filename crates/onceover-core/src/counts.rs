@@ -1,11 +1,11 @@
 //! Exact value counts, concentration measures, and top-k values.
 //!
-//! One pass per column builds a value-count map (owned keys). `VKey` owns its
-//! data (strings are copied in) so counts outlive borrows; columns are
-//! uniform-dtype so mixed-variant comparisons never occur in practice.
+//! Adaptive hash counting / sorted runs retain exact counts at any cardinality.
+//! Only reported top values own string data; high-cardinality sorting borrows strings.
 
 use rustc_hash::FxHashMap;
 use serde_json::json;
+use std::{cmp::Reverse, collections::BinaryHeap, hash::Hash};
 
 use onceover_report::Concentration;
 
@@ -87,171 +87,145 @@ fn discriminant(v: &VKey) -> u8 {
 /// Result of counting one column's values.
 #[derive(Debug, Clone, Default)]
 pub struct ColCounts {
-    /// Exact distinct count over non-null values (lower bound if `capped`).
+    /// Exact distinct count over all non-null values.
     pub distinct: usize,
-    /// True when distinct exceeded `cap` and full counting was abandoned.
+    /// Retained for compatibility; exact counting no longer truncates.
     pub capped: bool,
     pub cap: usize,
     pub n_nonnull: usize,
-    /// Top values, sorted by (count desc, key asc). Empty when capped.
-    pub top: Vec<(VKey, u32)>,
-    /// Concentration measures (None when capped).
+    /// Top values, sorted by (count desc, key asc).
+    pub top: Vec<(VKey, usize)>,
+    /// Exact concentration over the full value distribution.
     pub concentration: Option<Concentration>,
 }
 
 const MAX_TOP: usize = 64;
 
-/// Count values of a column in one pass. `cap` bounds memory; when exceeded,
-/// counting is abandoned and reported honestly (`capped = true`).
-pub fn build_counts(col: &TypedCol, cap: usize) -> ColCounts {
-    let mut map: FxHashMap<VKey, u32> = FxHashMap::default();
-    let mut n_nonnull: usize = 0;
-    let mut capped = false;
-
+/// Exact counts: use a small hash map for low cardinality, then switch to
+/// sorting compact values when the map limit is reached. The limit controls
+/// the algorithm, never the accuracy or number of input rows examined.
+pub fn build_counts(col: &TypedCol, hash_limit: usize) -> ColCounts {
     match col {
-        TypedCol::I64 { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::I(*v)).or_insert(0) += 1;
-            }
-        }
-        TypedCol::F64 { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::F(v.to_bits())).or_insert(0) += 1;
-            }
-        }
-        TypedCol::Str { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::S(Box::from(*v))).or_insert(0) += 1;
-            }
-        }
-        TypedCol::StrOwned { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::S(Box::from(v.as_str()))).or_insert(0) += 1;
-            }
+        TypedCol::I64 { vals } => count_values(vals.iter().flatten().copied(), hash_limit, VKey::I),
+        TypedCol::F64 { vals } => count_values(
+            vals.iter().flatten().map(|v| v.to_bits()),
+            hash_limit,
+            VKey::F,
+        ),
+        TypedCol::Date { vals } => count_values(
+            vals.iter().flatten().map(|v| i64::from(*v)),
+            hash_limit,
+            VKey::I,
+        ),
+        TypedCol::Datetime { vals } => {
+            count_values(vals.iter().flatten().copied(), hash_limit, VKey::I)
         }
         TypedCol::Bool { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                *map.entry(VKey::B(*v)).or_insert(0) += 1;
-            }
+            count_values(vals.iter().flatten().copied(), hash_limit, VKey::B)
         }
-        TypedCol::Date { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::I(*v as i64)).or_insert(0) += 1;
-            }
+        TypedCol::Str { vals } => count_values(vals.iter().flatten().copied(), hash_limit, |v| {
+            VKey::S(Box::from(v))
+        }),
+        TypedCol::StrOwned { vals } => {
+            count_values(vals.iter().flatten().map(String::as_str), hash_limit, |v| {
+                VKey::S(Box::from(v))
+            })
         }
-        TypedCol::Datetime { vals } => {
-            for v in vals.iter().flatten() {
-                n_nonnull += 1;
-                if map.len() >= cap {
-                    capped = true;
-                    break;
-                }
-                *map.entry(VKey::I(*v)).or_insert(0) += 1;
-            }
-        }
-        TypedCol::Null { .. } | TypedCol::Other { .. } => {}
-    }
-
-    if capped {
-        return ColCounts {
-            distinct: cap,
-            capped,
-            cap,
-            n_nonnull,
-            top: Vec::new(),
-            concentration: None,
-        };
-    }
-
-    let distinct = map.len();
-    let mut top: Vec<(VKey, u32)> = map.into_iter().collect();
-    top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    top.truncate(MAX_TOP);
-
-    let concentration = if distinct >= 1 && n_nonnull > 0 {
-        Some(compute_concentration(&top, distinct, n_nonnull))
-    } else {
-        None
-    };
-
-    ColCounts {
-        distinct,
-        capped,
-        cap,
-        n_nonnull,
-        top,
-        concentration,
+        TypedCol::Null { .. } | TypedCol::Other { .. } => ColCounts::default(),
     }
 }
 
-/// HHI / entropy / effective cardinality / top-k shares.
-/// `top` must be the full sorted count list (desc) — shares over all values.
-fn compute_concentration(top: &[(VKey, u32)], distinct: usize, n_nonnull: usize) -> Concentration {
-    // Full shares require all values; recompute from counts. `top` may be
-    // truncated to MAX_TOP, but shares of truncated tail are negligible —
-    // still, compute exactly over what we have plus the tail.
-    // NOTE: caller passes truncated list; we compensate with the tail.
-    let listed: u64 = top.iter().map(|(_, c)| *c as u64).sum();
-    let tail = n_nonnull as u64 - listed.min(n_nonnull as u64);
-    let n = n_nonnull as f64;
-
-    let mut hhi = 0.0f64;
-    let mut entropy = 0.0f64;
-    for (_, c) in top {
-        let p = *c as f64 / n;
-        hhi += p * p;
-        entropy -= p * p.ln();
-    }
-    if tail > 0 && distinct > top.len() {
-        // Approximate tail as uniform over remaining distinct values.
-        let rest = (distinct - top.len()) as f64;
-        let p_each = tail as f64 / rest / n;
-        hhi += rest * p_each * p_each;
-        entropy -= rest * p_each * p_each.ln();
-    }
-
-    let top1 = top.first().map(|(_, c)| *c as f64 / n);
-    let top3: Option<f64> = {
-        let s3: u64 = top.iter().take(3).map(|(_, c)| *c as u64).sum();
-        if top.is_empty() {
-            None
-        } else {
-            Some(s3 as f64 / n)
+fn count_values<T, I>(values: I, hash_limit: usize, key: impl Fn(T) -> VKey) -> ColCounts
+where
+    T: Ord + Hash + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    let mut counts = FxHashMap::<T, usize>::default();
+    let mut overflow = false;
+    for v in values.clone() {
+        if counts.len() >= hash_limit && !counts.contains_key(&v) {
+            overflow = true;
+            break;
         }
-    };
+        *counts.entry(v).or_default() += 1;
+    }
+    let mut summary = CountSummary::default();
+    if overflow {
+        drop(counts);
+        let mut sorted: Vec<T> = values.collect();
+        sorted.sort_unstable();
+        let mut start = 0;
+        while start < sorted.len() {
+            let mut end = start + 1;
+            while end < sorted.len() && sorted[end] == sorted[start] {
+                end += 1;
+            }
+            summary.add(key(sorted[start].clone()), end - start);
+            start = end;
+        }
+    } else {
+        // Stable accumulation keeps concentration byte-deterministic.
+        let mut entries: Vec<_> = counts.into_iter().collect();
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        for (value, count) in entries {
+            summary.add(key(value), count);
+        }
+    }
+    summary.finish(hash_limit)
+}
 
-    Concentration {
-        hhi,
-        entropy_nats: entropy,
-        effective_cardinality: entropy.exp(),
-        top1_share: top1,
-        top3_share: top3,
+#[derive(Default)]
+struct CountSummary {
+    distinct: usize,
+    n: usize,
+    squares: f64,
+    count_log_count: f64,
+    // The worst retained entry is at the root: lowest count, largest key.
+    top: BinaryHeap<(Reverse<usize>, VKey)>,
+}
+
+impl CountSummary {
+    fn add(&mut self, key: VKey, count: usize) {
+        self.distinct += 1;
+        self.n += count;
+        let c = count as f64;
+        self.squares += c * c;
+        self.count_log_count += c * c.ln();
+        if let Some((Reverse(worst_count), worst_key)) = self.top.peek() {
+            if self.top.len() == MAX_TOP
+                && (count < *worst_count || (count == *worst_count && key >= *worst_key))
+            {
+                return;
+            }
+        }
+        self.top.push((Reverse(count), key));
+        if self.top.len() > MAX_TOP {
+            self.top.pop();
+        }
+    }
+
+    fn finish(self, hash_limit: usize) -> ColCounts {
+        let mut top: Vec<_> = self.top.into_iter().map(|(Reverse(c), k)| (k, c)).collect();
+        top.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let n = self.n as f64;
+        let concentration = (self.n > 0).then(|| {
+            let entropy = n.ln() - self.count_log_count / n;
+            Concentration {
+                hhi: self.squares / (n * n),
+                entropy_nats: entropy,
+                effective_cardinality: entropy.exp(),
+                top1_share: top.first().map(|(_, c)| *c as f64 / n),
+                top3_share: Some(top.iter().take(3).map(|(_, c)| *c).sum::<usize>() as f64 / n),
+            }
+        });
+        ColCounts {
+            distinct: self.distinct,
+            capped: false,
+            cap: hash_limit,
+            n_nonnull: self.n,
+            top,
+            concentration,
+        }
     }
 }
 
@@ -267,7 +241,7 @@ mod tests {
     #[test]
     fn counts_and_concentration() {
         let col = TypedCol::I64 {
-            vals: vec![Some(1), Some(1), Some(1), Some(2), Some(3)],
+            vals: vec![Some(1), Some(1), Some(1), Some(2), Some(3)].into(),
         };
         let c = build_counts(&col, 1_000_000);
         assert_eq!(c.distinct, 3);
@@ -281,15 +255,16 @@ mod tests {
     }
 
     #[test]
-    fn cap_triggers_honestly() {
+    fn hash_limit_switches_algorithm_without_truncating_counts() {
         let col = TypedCol::I64 {
-            vals: (0..100).map(Some).collect(),
+            vals: (0..100).map(Some).collect::<Vec<_>>().into(),
         };
         let c = build_counts(&col, 10);
-        assert!(c.capped);
-        assert_eq!(c.distinct, 10);
-        assert!(c.concentration.is_none());
-        assert!(c.top.is_empty());
+        assert!(!c.capped);
+        assert_eq!(c.distinct, 100);
+        assert_eq!(c.n_nonnull, 100);
+        assert!((c.concentration.unwrap().hhi - 0.01).abs() < 1e-12);
+        assert_eq!(c.top.len(), MAX_TOP);
     }
 
     #[test]

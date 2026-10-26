@@ -13,6 +13,9 @@ pub mod gbm;
 pub mod ident;
 pub mod prism;
 pub mod regimes;
+mod screen;
+pub mod targets;
+pub use targets::TargetProfile;
 
 pub use association::{association_rules, AssociationConfig};
 pub use dates::{analyze_temporal, DatesOutcome};
@@ -24,13 +27,9 @@ pub use ident::identities;
 pub use prism::{prism_rules, PrismConfig};
 pub use regimes::{profile_regimes, RegimesConfig};
 
-/// Deterministic stride subsample of row indices (0..n down to cap).
+/// Deterministic stratified subsample (one hashed offset per row interval) of row indices (0..n down to cap).
 pub fn stride_rows(n: usize, cap: usize) -> Vec<u32> {
-    if n <= cap {
-        return (0..n as u32).collect();
-    }
-    let stride = n.div_ceil(cap);
-    (0..n).step_by(stride).map(|i| i as u32).collect()
+    onceover_core::sample_rows(n, cap)
 }
 
 /// Compact float display (for class labels).

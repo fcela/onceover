@@ -5,9 +5,10 @@
 //! Hot path is allocation-free: coarse codes are precomputed once per
 //! feature and cell keys are packed into u64.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use rustc_hash::FxHashMap;
 use serde_json::json;
 
@@ -231,31 +232,31 @@ pub fn decision_tables(
         {
             let feats: Vec<&str> = subset.iter().map(|&f| enc.feat_names[f].as_str()).collect();
             findings.push(Finding::new(
-                "decision_table",
-                BTreeMap::from([("column".into(), json!(res.name))]),
-                format!(
-                    "{} is determined by [{}] — decision table with {:.3} CV accuracy (majority baseline {:.3})",
+Pattern::PredictiveDependency,
+BTreeMap::from([("column".into(), json!(res.name))]),
+format!(
+                    "{} is predicted from [{}] with {:.3} cross-validated accuracy (majority baseline {:.3})",
                     res.name,
                     feats.join(", "),
                     acc,
                     baseline
                 ),
-                Confidence::Sampled,
-                0.80,
-                BTreeMap::from([
+EvidenceBasis::Estimated,
+0.80,
+BTreeMap::from([
                     ("features".into(), json!(feats)),
                     ("cv_accuracy".into(), json!(acc)),
                     ("baseline".into(), json!(baseline)),
                     ("n".into(), json!(positions.len())),
                     ("folds".into(), json!(cfg.folds)),
                 ]),
-                Some(format!(
-                    "{} behaves as a lookup of {}; expect near-exact recovery",
+Some(format!(
+                    "inspect the validation of {} predicted from {}",
                     res.name,
                     feats.join(", ")
                 )),
-                "Kohavi decision-table search (Weka DecisionTable lineage; onceover v0.1)",
-            ));
+Method::new("decision_tables", "cross_validated_lookup", "Kohavi decision-table search (Weka DecisionTable lineage; onceover v0.1)")
+));
         }
     }
     let coverage = format!(
@@ -313,13 +314,14 @@ mod tests {
             n_train: 300,
             n_holdout: 100,
             rounds: 1,
+            inputs: Vec::new(),
             top_features: vec![],
             cat_ids: Some((ids, vec!["0".into(), "1".into()])),
         };
         let (tables, _) = decision_tables(&enc, &[&target], &DtableConfig::default());
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].evidence["features"], json!(["feature"]));
-        assert_eq!(tables[0].evidence["cv_accuracy"], json!(1.0));
-        assert_eq!(tables[0].evidence["n"], json!(369));
+        assert_eq!(tables[0].metrics()["features"], json!(["feature"]));
+        assert_eq!(tables[0].metrics()["cv_accuracy"], json!(1.0));
+        assert_eq!(tables[0].metrics()["n"], json!(369));
     }
 }

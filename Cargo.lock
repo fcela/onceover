@@ -1367,6 +1367,7 @@ version = "0.1.0"
 dependencies = [
  "onceover-report",
  "polars",
+ "polars-arrow",
  "rayon",
  "rustc-hash",
  "serde",

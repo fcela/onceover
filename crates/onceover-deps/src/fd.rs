@@ -11,9 +11,10 @@
 //! Semantics: FDs are evaluated on tuple-complete rows (rows with a null
 //! in the LHS or the RHS are excluded); `n_used` is always reported.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::json;
@@ -26,19 +27,17 @@ use crate::ColInfo;
 /// Configuration for the dependency pass.
 #[derive(Clone, Debug)]
 pub struct FdConfig {
-    /// Max number of candidate LHS columns (levels 1–2 pool).
+    /// Max shortlisted determinants per target after broad screening.
     pub lhs_cap: usize,
     /// Smaller pool for level-3 LHS triples (deep tier).
     pub lhs3_cap: usize,
-    /// Max candidate RHS columns.
-    pub rhs_cap: usize,
-    /// Row cap for FD evaluation (stride-subsampled beyond it).
+    /// Row cap for FD verification (stratified sampling beyond it).
     pub row_cap: usize,
     /// Max LHS set size: 2 (standard) or 3 (deep).
     pub max_lhs_size: usize,
     /// Max g1 error for approximate FDs.
     pub afd_g1_max: f64,
-    /// Pool size for composite-key (pair) UCC candidates.
+    /// Full-data verification budget after screening all composite-key pairs.
     pub key_pair_cap: usize,
 }
 
@@ -47,7 +46,6 @@ impl Default for FdConfig {
         FdConfig {
             lhs_cap: 16,
             lhs3_cap: 12,
-            rhs_cap: 60,
             row_cap: 200_000,
             max_lhs_size: 2,
             afd_g1_max: 0.01,
@@ -75,8 +73,8 @@ pub struct DepsOutcome {
 
 fn value_is_null(col: &TypedCol, r: usize) -> bool {
     match col {
-        TypedCol::I64 { vals } => vals[r].is_none(),
-        TypedCol::F64 { vals } => vals[r].is_none(),
+        TypedCol::I64 { vals } => vals.at(r).is_none(),
+        TypedCol::F64 { vals } => vals.at(r).is_none(),
         TypedCol::Str { vals } => vals[r].is_none(),
         TypedCol::StrOwned { vals } => vals[r].is_none(),
         TypedCol::Bool { vals } => vals[r].is_none(),
@@ -266,18 +264,16 @@ fn fd_finding(
     let mut evidence = BTreeMap::new();
     evidence.insert("violations".to_string(), json!(violations));
     evidence.insert("n_used".to_string(), json!(n_used));
-    let conf = if sampled {
-        Confidence::Sampled
-    } else {
-        Confidence::Exact
-    };
+    let conf = EvidenceBasis::Measured;
+    evidence.insert("sampled".into(), json!(sampled));
+    evidence.insert("population_rows".into(), json!(table.n));
     evidence.insert(
         "method".to_string(),
         json!(if sampled { "sampled_exact" } else { "exact" }),
     );
     if violations == 0 {
         Finding::new(
-            "functional_dependency",
+            Pattern::FunctionalDependency,
             subject,
             format!(
                 "{} → {} ({} is a function of {}; 0 violations in {} rows)",
@@ -291,15 +287,19 @@ fn fd_finding(
             0.85,
             evidence,
             Some(format!(
-                "consider dropping {rhs_name} or using it as a lookup"
+                "inspect the mapping and its scope before treating {rhs_name} as derived"
             )),
-            "tane-style lattice + exact verification (onceover v0.1)",
+            Method::new(
+                "functional_dependencies",
+                "value_mapping",
+                "tane-style lattice + exact verification (onceover v0.1)",
+            ),
         )
     } else {
         let g1 = violations as f64 / n_used as f64;
         evidence.insert("g1".to_string(), json!(g1));
         Finding::new(
-            "approximate_fd",
+            Pattern::FunctionalDependency,
             subject,
             format!(
                 "{} → {} holds on {:.2}% of rows ({} violations in {} rows)",
@@ -318,7 +318,11 @@ fn fd_finding(
                 lhs_names.join(", "),
                 violations
             )),
-            "tane-style lattice + exact verification (onceover v0.1)",
+            Method::new(
+                "functional_dependencies",
+                "value_mapping",
+                "tane-style lattice + exact verification (onceover v0.1)",
+            ),
         )
     }
 }
@@ -358,85 +362,80 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
             .then(info[a].distinct.cmp(&info[b].distinct))
             .then(a.cmp(&b))
     });
-    let lhs_capped = lhs_pool.len() > cfg.lhs_cap;
-    lhs_pool.truncate(cfg.lhs_cap);
-
-    let n_eligible_rhs = eligible.len();
-    let mut rhs_pool = eligible.clone();
-    rhs_pool.sort_by(|&a, &b| info[a].distinct.cmp(&info[b].distinct).then(a.cmp(&b)));
-    let rhs_capped = rhs_pool.len() > cfg.rhs_cap;
-    rhs_pool.truncate(cfg.rhs_cap);
-
-    if lhs_pool.is_empty() || rhs_pool.is_empty() {
-        out.coverage = "skipped: no eligible columns".into();
-        return out;
-    }
-
-    // ---- rows ----
+    // Broad screening considers every eligible determinant and target.
+    // Per-target shortlists keep lattice search tractable on wide tables and
+    // keep local bit masks below 64 slots, irrespective of input width.
+    let rhs_pool = eligible.clone();
+    let n_eligible_rhs = rhs_pool.len();
     let rows = subsample_rows(n, cfg.row_cap);
     let sampled = rows.len() < n;
-
-    // ---- hashes over pooled columns ----
-    let mut slot_of: FxHashMap<usize, usize> = FxHashMap::default();
-    let mut hash_cols: Vec<usize> = Vec::new();
-    for &c in lhs_pool.iter().chain(rhs_pool.iter()) {
-        if let std::collections::hash_map::Entry::Vacant(v) = slot_of.entry(c) {
-            v.insert(hash_cols.len());
-            hash_cols.push(c);
-        }
+    if lhs_pool.is_empty() || rhs_pool.is_empty() {
+        discover_uccs(table, info, cfg, &mut out);
+        out.coverage = format!(
+            "all {} columns checked for keys; no eligible dependency determinants",
+            info.len()
+        );
+        return out;
     }
-    let col_refs: Vec<&TypedCol> = hash_cols.iter().map(|&c| &table.cols[c]).collect();
-    let ch = build_hashes(&col_refs, &rows);
-
-    let lhs_slots: Vec<usize> = lhs_pool.iter().map(|&c| slot_of[&c]).collect();
-    let rhs_slots: Vec<usize> = rhs_pool.iter().map(|&c| slot_of[&c]).collect();
-
-    // ---- level-wise discovery ----
-    let mut known_exact: FxHashSet<(usize, u64)> = FxHashSet::default();
-    let mut all_cands: Vec<Cand> = Vec::new();
-
-    let level1: Vec<Vec<usize>> = lhs_slots.iter().map(|&a| vec![a]).collect();
-    let (new_exact, c1, a1) = run_level(&level1, &rhs_slots, &ch, &known_exact, cfg);
-    for e in &new_exact {
-        known_exact.insert(*e);
-    }
-    all_cands.extend(c1);
-    all_cands.extend(a1);
-
-    if cfg.max_lhs_size >= 2 {
-        let mut pairs = Vec::new();
-        for (i, &a) in lhs_slots.iter().enumerate() {
-            for &b in lhs_slots.iter().skip(i + 1) {
-                pairs.push(vec![a, b]);
+    let screen_rows = subsample_rows(n, 2048.min(cfg.row_cap));
+    let broad_cols: Vec<&TypedCol> = table.cols.iter().collect();
+    let broad = build_hashes(&broad_cols, &screen_rows);
+    let mut scores: Vec<Vec<(usize, f64)>> = vec![Vec::new(); info.len()];
+    for &lhs in &lhs_pool {
+        let groups = phase_a(&[lhs], &broad);
+        for &rhs in &rhs_pool {
+            if lhs == rhs {
+                continue;
+            }
+            if let Some((_, violations, used, _)) = eval_rhs(&groups, rhs, &broad) {
+                scores[rhs].push((lhs, violations as f64 / used as f64));
             }
         }
-        let (new_exact, c2, a2) = run_level(&pairs, &rhs_slots, &ch, &known_exact, cfg);
-        for e in &new_exact {
-            known_exact.insert(*e);
-        }
-        all_cands.extend(c2);
-        all_cands.extend(a2);
     }
-
-    if cfg.max_lhs_size >= 3 {
-        let prolific = level3_pool(&known_exact, &lhs_slots, cfg.lhs3_cap);
-        if prolific.len() >= 3 {
-            let triples = combinations(&prolific, 3);
-            let (new_exact, c3, a3) = run_level(&triples, &rhs_slots, &ch, &known_exact, cfg);
-            for e in &new_exact {
-                known_exact.insert(*e);
-            }
-            all_cands.extend(c3);
-            all_cands.extend(a3);
+    let mut all_cands = Vec::new();
+    let mut screened_pairs = 0usize;
+    for &rhs in &rhs_pool {
+        let ranked = &mut scores[rhs];
+        screened_pairs += ranked.len();
+        ranked.sort_by(|a, b| {
+            a.1.total_cmp(&b.1)
+                .then(info[a.0].distinct.cmp(&info[b.0].distinct))
+                .then(info[a.0].name.cmp(&info[b.0].name))
+        });
+        ranked.truncate(cfg.lhs_cap.min(62));
+        let mut hash_cols: Vec<usize> = ranked.iter().map(|&(c, _)| c).collect();
+        let rhs_slot = hash_cols.len();
+        hash_cols.push(rhs);
+        let refs: Vec<_> = hash_cols.iter().map(|&c| &table.cols[c]).collect();
+        let ch = build_hashes(&refs, &screen_rows);
+        let lhs_slots: Vec<_> = (0..rhs_slot).collect();
+        let mut known_exact = FxHashSet::default();
+        let mut local_cands = Vec::new();
+        for level in 1..=cfg.max_lhs_size {
+            let pool = if level >= 3 {
+                level3_pool(&known_exact, &lhs_slots, cfg.lhs3_cap)
+            } else {
+                lhs_slots.clone()
+            };
+            let sets = combinations(&pool, level);
+            let (exact, candidates, approximate) =
+                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg);
+            known_exact.extend(exact);
+            local_cands.extend(candidates);
+            local_cands.extend(approximate);
         }
+        all_cands.extend(local_cands.into_iter().map(|candidate| Cand {
+            lhs: candidate.lhs.iter().map(|&slot| hash_cols[slot]).collect(),
+            rhs,
+        }));
     }
 
     // ---- exact verification of all candidates (parallel) ----
     let verified: Vec<Option<(usize, usize)>> = all_cands
         .par_iter()
         .map(|c| {
-            let lhs_orig: Vec<usize> = c.lhs.iter().map(|&s| hash_cols[s]).collect();
-            let rhs_orig = hash_cols[c.rhs];
+            let lhs_orig: Vec<usize> = c.lhs.clone();
+            let rhs_orig = c.rhs;
             let (n_used, violations) = verify_fd(table, &rows, &lhs_orig, rhs_orig);
             if n_used < 30 {
                 return None;
@@ -452,8 +451,8 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
         let Some((n_used, violations)) = v else {
             continue;
         };
-        let lhs_orig: Vec<usize> = cand.lhs.iter().map(|&s| hash_cols[s]).collect();
-        let rhs_orig = hash_cols[cand.rhs];
+        let lhs_orig: Vec<usize> = cand.lhs.clone();
+        let rhs_orig = cand.rhs;
         if violations == 0 {
             out.findings
                 .push(fd_finding(table, &lhs_orig, rhs_orig, 0, n_used, sampled));
@@ -505,18 +504,11 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
 
     // ---- coverage ----
     let mut cov = format!(
-        "levels <= {}, lhs {} of {} eligible ({}), rhs {} of {} eligible ({}), rows {} ({})",
-        cfg.max_lhs_size,
-        lhs_pool.len(),
-        n_eligible_lhs,
-        if lhs_capped { "capped" } else { "full" },
-        rhs_pool.len(),
-        n_eligible_rhs,
-        if rhs_capped { "capped" } else { "full" },
-        rows.len(),
-        if sampled { "stride subsample" } else { "full" },
+        "all {} eligible lhs / {} eligible rhs columns screened ({} directed pairs over {} rows); per-target lhs cap {}; levels <= {}; verification rows {} ({})",
+        n_eligible_lhs, n_eligible_rhs, screened_pairs, screen_rows.len(), cfg.lhs_cap.min(62), cfg.max_lhs_size,
+        rows.len(), if sampled { "stratified sample" } else { "full" },
     );
-    cov.push_str(&format!("; {} exact FDs, {} AFDs", out.n_exact, out.n_afd));
+    cov.push_str(&format!("; {} exact FDs, {} AFDs; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, cfg.key_pair_cap));
     out.coverage = cov;
 
     out
@@ -657,6 +649,12 @@ fn subset_determines(lhs: &[usize], rhs: usize, known_exact: &FxHashSet<(usize, 
     false
 }
 
+pub fn discover_keys(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOutcome {
+    let mut out = DepsOutcome::default();
+    discover_uccs(table, info, cfg, &mut out);
+    out
+}
+
 fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut DepsOutcome) {
     let n = table.n;
     // Single-column keys: null-free and unique.
@@ -670,7 +668,7 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
     });
     out.single_unique = single;
 
-    if cfg.max_lhs_size < 2 || n < 30 {
+    if !out.single_unique.is_empty() || cfg.max_lhs_size < 2 || n < 30 {
         return;
     }
 
@@ -692,18 +690,32 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             .total_cmp(&info[a].distinct_ratio())
             .then(a.cmp(&b))
     });
-    ranked.truncate(cfg.key_pair_cap);
-
-    let mut composite: Vec<Vec<usize>> = Vec::new();
-    for (i, &a) in ranked.iter().enumerate() {
-        for &b in ranked.iter().skip(i + 1) {
-            if out.single_unique.contains(&a) || out.single_unique.contains(&b) {
-                continue;
+    let sample = subsample_rows(n, 2048);
+    let refs: Vec<_> = ranked.iter().map(|&c| &table.cols[c]).collect();
+    let hashes = build_hashes(&refs, &sample);
+    let mut candidates = Vec::new();
+    for i in 0..ranked.len() {
+        for j in i + 1..ranked.len() {
+            let mut seen = FxHashSet::default();
+            let unique =
+                (0..sample.len()).all(|r| seen.insert((hashes.hashes[i][r], hashes.hashes[j][r])));
+            if unique {
+                candidates.push((ranked[i], ranked[j]));
             }
-            // Cheap hash distinctness prefilter (exact check only if it passes).
-            if tuple_hash_unique(table, &[a, b]) && count_distinct_tuples(table, &[a, b]) == n {
-                composite.push(vec![a, b]);
-            }
+        }
+    }
+    candidates.sort_by(|&(a, b), &(c, d)| {
+        let score = |x: usize, y: usize| key_score(&info[x]) + key_score(&info[y]);
+        score(c, d)
+            .total_cmp(&score(a, b))
+            .then(info[a].name.cmp(&info[c].name))
+            .then(info[b].name.cmp(&info[d].name))
+    });
+    candidates.truncate(cfg.key_pair_cap);
+    let mut composite = Vec::new();
+    for (a, b) in candidates {
+        if tuple_hash_unique(table, &[a, b]) && count_distinct_tuples(table, &[a, b]) == n {
+            composite.push(vec![a, b]);
         }
     }
     if cfg.max_lhs_size >= 3 {
@@ -736,8 +748,8 @@ fn fnv64_local(bytes: &[u8]) -> u64 {
 
 fn value_hash64(col: &TypedCol, r: usize) -> u64 {
     match col {
-        TypedCol::I64 { vals } => vals[r].map(|v| v as u64).unwrap_or(0),
-        TypedCol::F64 { vals } => vals[r].map(|v| v.to_bits()).unwrap_or(0),
+        TypedCol::I64 { vals } => vals.at(r).map(|v| v as u64).unwrap_or(0),
+        TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_bits()).unwrap_or(0),
         TypedCol::Str { vals } => match vals[r] {
             Some(s) => fnv64_local(s.as_bytes()),
             None => 0,
@@ -853,7 +865,14 @@ mod tests {
         let exact: Vec<_> = out
             .findings
             .iter()
-            .filter(|f| f.kind == "functional_dependency")
+            .filter(|f| {
+                f.is(onceover_report::Category::Dependencies, Some("functional"))
+                    && f.specification.form.as_deref() == Some("value_mapping")
+                    && f.metrics()
+                        .get("violations")
+                        .and_then(serde_json::Value::as_u64)
+                        == Some(0)
+            })
             .collect();
         assert!(
             exact
@@ -868,12 +887,18 @@ mod tests {
         let afd: Vec<_> = out
             .findings
             .iter()
-            .filter(|f| f.kind == "approximate_fd")
+            .filter(|f| {
+                f.is(onceover_report::Category::Dependencies, Some("functional"))
+                    && f.metrics()
+                        .get("violations")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|n| n > 0)
+            })
             .collect();
         assert!(afd.iter().any(|f| f.claim.contains("region_id → manager")));
         assert!(afd
             .iter()
-            .any(|f| f.evidence["violations"].as_u64() == Some(2)));
+            .any(|f| f.metrics()["violations"].as_u64() == Some(2)));
     }
 
     #[test]
@@ -900,11 +925,18 @@ mod tests {
         let afd = out
             .findings
             .iter()
-            .find(|f| f.kind == "approximate_fd" && f.subject["rhs"] == "manager")
+            .find(|f| {
+                f.is(onceover_report::Category::Dependencies, Some("functional"))
+                    && f.metrics()
+                        .get("violations")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|n| n > 0)
+                    && f.subject.target.as_deref() == Some("manager")
+            })
             .expect("exact refinement must not suppress region_id ~> manager");
-        assert_eq!(afd.subject["lhs"], json!(["region_id"]));
-        assert_eq!(afd.evidence["violations"], json!(2));
-        assert_eq!(afd.evidence["n_used"], json!(n));
+        assert_eq!(afd.subject.inputs, vec!["region_id"]);
+        assert_eq!(afd.metrics()["violations"], json!(2));
+        assert_eq!(afd.metrics()["n_used"], json!(n));
     }
 
     #[test]

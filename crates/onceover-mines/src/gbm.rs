@@ -2,10 +2,11 @@
 //! boosting machine (depth-3, shrinkage, deterministic early stopping on a
 //! holdout) run for every eligible column as target against the rest.
 
+use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
 use onceover_core::{TypedCol, TypedTable};
-use onceover_report::{Confidence, Finding};
+use onceover_report::{EvidenceBasis, Finding};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde_json::json;
@@ -15,6 +16,8 @@ use crate::encode::{EncodedMatrix, MISSING};
 #[derive(Clone, Debug)]
 pub struct ScreenConfig {
     pub max_rounds: usize,
+    pub max_predictors: usize,
+    pub max_model_rows: usize,
     pub patience: usize,
     pub learning_rate: f32,
     pub max_depth: u32,
@@ -28,6 +31,8 @@ impl Default for ScreenConfig {
     fn default() -> Self {
         ScreenConfig {
             max_rounds: 30,
+            max_predictors: 48,
+            max_model_rows: 5_000,
             patience: 5,
             learning_rate: 0.3,
             max_depth: 3,
@@ -39,24 +44,7 @@ impl Default for ScreenConfig {
     }
 }
 
-/// Per-target screening result (also feeds decision tables / PRISM).
-#[derive(Clone, Debug)]
-pub struct TargetResult {
-    pub col: usize,
-    pub name: String,
-    pub is_categorical: bool,
-    /// R² (numeric) or accuracy (categorical).
-    pub metric: f64,
-    /// Majority baseline accuracy (categorical).
-    pub baseline: f64,
-    pub n_train: usize,
-    pub n_holdout: usize,
-    pub rounds: usize,
-    /// (feature name, cumulative gain share) — top features.
-    pub top_features: Vec<(String, f64)>,
-    /// Categorical targets: (class ids aligned to enc rows, labels).
-    pub cat_ids: Option<(Vec<u8>, Vec<String>)>,
-}
+pub use crate::targets::TargetProfile as TargetResult;
 
 pub struct ScreenOutcome {
     pub findings: Vec<Finding>,
@@ -308,8 +296,8 @@ fn class_str(col: &TypedCol, r: usize) -> Option<String> {
         TypedCol::Str { vals } => vals[r].map(|s| s.to_string()),
         TypedCol::StrOwned { vals } => vals[r].clone(),
         TypedCol::Bool { vals } => vals[r].map(|b| if b { "true".into() } else { "false".into() }),
-        TypedCol::I64 { vals } => vals[r].map(|v| v.to_string()),
-        TypedCol::F64 { vals } => vals[r].map(crate::fmt_float),
+        TypedCol::I64 { vals } => vals.at(r).map(|v| v.to_string()),
+        TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_string()),
         _ => None,
     }
 }
@@ -323,19 +311,34 @@ fn prepare_target(
     let col = &table.cols[ci];
     match col {
         TypedCol::I64 { .. } | TypedCol::F64 { .. } => {
-            let counts = onceover_core::build_counts(col, 1_000_000);
-            if counts.distinct <= cfg.cat_numeric_max_distinct {
+            // Target eligibility uses the same bounded row sample as fitting;
+            // do not recount millions of full-column values for every model.
+            let mut distinct = std::collections::BTreeSet::new();
+            for &r in &enc.rows {
+                let value = match col {
+                    TypedCol::I64 { vals } => vals.at(r as usize).map(|v| v as f64),
+                    TypedCol::F64 { vals } => vals.at(r as usize),
+                    _ => None,
+                };
+                if let Some(v) = value {
+                    distinct.insert(v.to_bits());
+                }
+                if distinct.len() > cfg.cat_numeric_max_distinct {
+                    break;
+                }
+            }
+            if distinct.len() <= cfg.cat_numeric_max_distinct {
                 cat_target(col, enc, cfg)
-            } else if counts.distinct >= 2 {
+            } else if distinct.len() >= 2 {
                 let mut ys = vec![f32::NAN; enc.n];
-                for j in 0..enc.n {
+                for (j, y) in ys.iter_mut().enumerate() {
                     let v = match col {
-                        TypedCol::I64 { vals } => vals[enc.rows[j] as usize].map(|x| x as f32),
-                        TypedCol::F64 { vals } => vals[enc.rows[j] as usize].map(|x| x as f32),
+                        TypedCol::I64 { vals } => vals.at(enc.rows[j] as usize).map(|x| x as f32),
+                        TypedCol::F64 { vals } => vals.at(enc.rows[j] as usize).map(|x| x as f32),
                         _ => None,
                     };
                     if let Some(v) = v {
-                        ys[j] = v;
+                        *y = v;
                     }
                 }
                 Some(TargetKind::Numeric(ys))
@@ -408,7 +411,7 @@ pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Sc
         } else {
             continue;
         };
-        let feats: Vec<String> = r.top_features.iter().map(|(n, _)| n.clone()).collect();
+        let feats: Vec<String> = r.inputs.clone();
         let claim = if r.is_categorical {
             format!(
                 "{} is predictable from [{}] (holdout accuracy {:.2} vs {:.2} majority baseline)",
@@ -426,34 +429,54 @@ pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Sc
             )
         };
         findings.push(Finding::new(
-            "predictable_from",
+            Pattern::PredictiveDependency,
             BTreeMap::from([("column".into(), json!(r.name))]),
             claim,
-            Confidence::Sampled,
+            EvidenceBasis::Estimated,
             interest,
             BTreeMap::from([
                 ("metric".into(), json!(r.metric)),
+                (
+                    "task".into(),
+                    json!(if r.is_categorical {
+                        "classification"
+                    } else {
+                        "regression"
+                    }),
+                ),
+                ("inputs".into(), json!(r.inputs)),
                 ("baseline".into(), json!(r.baseline)),
                 ("n_train".into(), json!(r.n_train)),
                 ("n_holdout".into(), json!(r.n_holdout)),
-                ("top_features".into(), json!(feats)),
+                (
+                    "top_features".into(),
+                    json!(r
+                        .top_features
+                        .iter()
+                        .map(|(name, _)| name)
+                        .collect::<Vec<_>>()),
+                ),
                 (
                     "gain_shares".into(),
-                    json!(r.top_features.iter().map(|(_, s)| s).collect::<Vec<_>>())
+                    json!(r.top_features.iter().map(|(_, s)| s).collect::<Vec<_>>()),
                 ),
                 ("rounds".into(), json!(r.rounds)),
                 ("rows_used".into(), json!(enc.n)),
             ]),
             Some(format!(
-                "{} carries little independent information; consider dropping or treating as derived",
+                "inspect the predictive inputs and validation before treating {} as derived",
                 r.name
             )),
-            "in-house histogram GBM screener (depth-3, early-stopped; onceover v0.1)",
+            Method::new(
+                "gbm",
+                "histogram_gradient_boosting",
+                "in-house histogram GBM screener (depth-3, early-stopped; onceover v0.1)",
+            ),
         ));
     }
 
     let coverage = format!(
-        "{} targets screened over {} rows / {} features; {} predictable",
+        "{} target columns considered over {} encoded rows / {} features; {} predictable; predictors shortlisted from all features on training rows (max {} predictors / {} fitting rows per target)",
         eligible_targets.len(),
         enc.n,
         enc.bins.len(),
@@ -463,7 +486,8 @@ pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Sc
                 r.metric >= if r.is_categorical { 0.7 } else { 0.3 }
                     && (!r.is_categorical || r.metric >= r.baseline + 0.05)
             })
-            .count()
+            .count(),
+        cfg.max_predictors, cfg.max_model_rows,
     );
     ScreenOutcome {
         findings,
@@ -494,13 +518,6 @@ pub fn screen_target(
         return None;
     }
 
-    // The target's own column must never be a feature.
-    let own_feat: Option<usize> = enc.feat_cols.iter().position(|&c| c == ci);
-
-    // Packed row-major bins, shared by every round (built once).
-    let packed = pack_row_major(enc);
-    let n_feats = enc.bins.len();
-
     let cat_payload: Option<(Vec<u8>, Vec<String>)> = match &target {
         TargetKind::Categorical(ids, labels) => Some((ids.clone(), labels.clone())),
         _ => None,
@@ -513,9 +530,40 @@ pub fn screen_target(
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
         order.swap(i, j);
     }
+    // Each target is considered. Bound fitting rows independently of table width.
+    order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
     let n_hold = order.len() / 4;
     let (train, holdout) = order.split_at(order.len() - n_hold);
     let min_leaf = (train.len() / 200).clamp(10, 1_000);
+    let own = enc.feat_cols.iter().position(|&c| c == ci)?;
+    let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
+    let mut selected: Vec<usize> = (0..enc.bins.len()).filter(|&f| f != own).collect();
+    if selected.len() > cfg.max_predictors {
+        let scores: Vec<f64> = selected
+            .iter()
+            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .collect();
+        selected.sort_by(|&a, &b| {
+            // selected initially contains every feature except own.
+            let ai = if a < own { a } else { a - 1 };
+            let bi = if b < own { b } else { b - 1 };
+            scores[bi]
+                .total_cmp(&scores[ai])
+                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        });
+        selected.truncate(cfg.max_predictors);
+    }
+    if selected.is_empty() {
+        return None;
+    }
+    let n_feats = selected.len();
+    let mut packed = vec![MISSING; enc.n * n_feats];
+    for (f, &original) in selected.iter().enumerate() {
+        for r in 0..enc.n {
+            packed[r * n_feats + f] = enc.bins[original][r];
+        }
+    }
+    let own_feat: Option<usize> = None; // target excluded before packing
 
     let finish =
         |metric: f64, baseline: f64, rounds: usize, cum_gains: &[f64]| -> Option<TargetResult> {
@@ -533,7 +581,7 @@ pub fn screen_target(
                 .filter(|(_, gv)| *gv > 0.0)
                 .map(|(f, gv)| {
                     (
-                        enc.feat_names[*f].clone(),
+                        enc.feat_names[selected[*f]].clone(),
                         if total > 0.0 { gv / total } else { 0.0 },
                     )
                 })
@@ -548,6 +596,12 @@ pub fn screen_target(
                 n_holdout: holdout.len(),
                 rounds,
                 top_features: top,
+                inputs: cum_gains
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, gain)| **gain > 0.0)
+                    .map(|(f, _)| enc.feat_names[selected[f]].clone())
+                    .collect(),
                 cat_ids: cat_payload,
             })
         };
@@ -557,7 +611,7 @@ pub fn screen_target(
             let y = ys.clone();
             let base: f32 = train.iter().map(|&p| y[p as usize]).sum::<f32>() / train.len() as f32;
             let mut pred = vec![base; enc.n];
-            let mut cum_gains = vec![0.0f64; enc.bins.len()];
+            let mut cum_gains = vec![0.0f64; n_feats];
             let mut best_gains = cum_gains.clone();
             let mut best_metric = f64::MIN;
             let mut best_rounds = 0;
@@ -628,7 +682,7 @@ pub fn screen_target(
             let base: Vec<f32> = prior.iter().map(|&p| (p / (1.0 - p + 1e-9)).ln()).collect();
             let mut scores = vec![base.clone(); enc.n];
             let baseline = prior.iter().cloned().fold(f32::MIN, f32::max) as f64;
-            let mut cum_gains = vec![0.0f64; enc.bins.len()];
+            let mut cum_gains = vec![0.0f64; n_feats];
             let mut best_gains = cum_gains.clone();
             let mut best_metric = 0.0f64;
             let mut best_rounds = 0;
@@ -739,10 +793,9 @@ mod tests {
         let out = screen(&table, &enc, &ScreenConfig::default());
         let y_res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert!(y_res.metric > 0.9, "r2 = {}", y_res.metric);
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.kind == "predictable_from" && f.claim.contains("y is predictable")));
+        assert!(out.findings.iter().any(|f| (f
+            .is(onceover_report::Category::Dependencies, Some("predictive")))
+            && f.claim.contains("y is predictable")));
     }
 
     #[test]

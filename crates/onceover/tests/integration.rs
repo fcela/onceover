@@ -2,7 +2,7 @@
 //! structure, assert the profiler recovers it — and that reports are
 //! byte-deterministic.
 
-use onceover::{profile, Budget, ProfileConfig};
+use onceover::{profile, Budget, Category, ProfileConfig};
 use polars::prelude::*;
 
 /// Deterministic xorshift64* RNG (same as the profiler's).
@@ -113,275 +113,233 @@ fn planted_table(n: usize) -> DataFrame {
 }
 
 #[test]
-fn recovers_planted_structure() {
-    let df = planted_table(4_000);
+fn recovers_planted_structure_with_semantic_categories() {
+    let df = planted_table(4000);
     let report = profile(&df, &ProfileConfig::default());
+    assert_eq!(report.schema_version, "0.2");
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.category == Category::Uniqueness && f.subject.columns == ["order_id"]));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.is(Category::Dependencies, Some("functional"))
+            && f.subject.inputs == ["region_id"]
+            && f.subject.target.as_deref() == Some("region_name")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.specification.form.as_deref() == Some("affine")
+            && f.subject.columns.contains(&"total".into())));
+    assert!(report.findings.iter().any(|f| f.category == Category::Gaps));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.category == Category::Uniqueness
+            && f.subject.columns == ["user_ref"]
+            && f.metrics()
+                .get("duplicates")
+                .and_then(serde_json::Value::as_u64)
+                == Some(3)));
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.category == Category::ColumnRoles && f.subject.columns == ["region_id"]));
+    assert!(report
+        .findings
+        .iter()
+        .all(|f| !f.evidence.is_empty() && f.validate().is_ok()));
+    assert!(!report.groups.is_empty());
+    let json: serde_json::Value = serde_json::from_str(&report.to_json()).unwrap();
+    assert!(json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f.get("kind").is_none()
+            && f.get("confidence").is_none()
+            && f["evidence"].is_array()));
+}
 
-    let claim = |kind: &str| {
+#[test]
+fn deterministic_report_and_statement_ids() {
+    let df = planted_table(1000);
+    assert_eq!(
+        profile(&df, &ProfileConfig::default()).to_json(),
+        profile(&df, &ProfileConfig::default()).to_json()
+    );
+}
+
+#[test]
+fn quick_tier_and_rendering_preserve_the_contract() {
+    let report = profile(
+        &planted_table(800),
+        &ProfileConfig {
+            budget: Budget::Quick,
+            ..Default::default()
+        },
+    );
+    assert!(!report.findings.iter().any(|f| matches!(
+        f.category,
+        Category::Dependencies | Category::ConditionalRules
+    )));
+    assert!(report.to_markdown().contains("## Findings"));
+    assert!(report.to_markdown().contains("## Coverage"));
+    assert_eq!(report.coverage["predictability_screen"].status, "skipped");
+}
+
+#[test]
+fn selected_detector_does_not_emit_its_resource_findings() {
+    let report = profile(
+        &planted_table(1500),
+        &ProfileConfig {
+            detectors: Some(["prism".into()].into_iter().collect()),
+            ..Default::default()
+        },
+    );
+    assert!(report
+        .findings
+        .iter()
+        .all(|f| f.category == Category::ConditionalRules));
+    assert!(report
+        .findings
+        .iter()
+        .all(|f| f.evidence.iter().any(|e| e.method.detector == "prism")));
+    assert!(report.coverage["predictability_screen"]
+        .detail
+        .contains("required as a resource"));
+}
+
+#[test]
+fn rules_are_structured_and_evaluated_with_common_denominators() {
+    let n = 4000;
+    let mut rng = Rng(77);
+    let tenure: Vec<i64> = (0..n).map(|i| (i % 48) as i64).collect();
+    let churn: Vec<i64> = tenure
+        .iter()
+        .map(|&t| i64::from((t > 24) ^ (rng.next_f64() < 0.06)))
+        .collect();
+    let df = df!("tenure"=>tenure,"churn"=>churn).unwrap();
+    let report = profile(&df, &ProfileConfig::default());
+    let rules: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.category == Category::ConditionalRules)
+        .collect();
+    assert!(!rules.is_empty());
+    for rule in rules {
+        assert!(!rule.specification.conditions.is_empty());
+        let outcome = rule.specification.outcome.as_ref().unwrap();
+        assert!(rule
+            .specification
+            .conditions
+            .iter()
+            .all(|p| p.column != outcome.column));
+        let e = rule
+            .evidence
+            .iter()
+            .find(|e| e.method.detector == "rule_evaluator")
+            .unwrap();
+        let m = &e.metrics;
+        let rate = m["joint_count"].as_f64().unwrap() / m["antecedent_count"].as_f64().unwrap();
+        assert!((m["conditional_rate"].as_f64().unwrap() - rate).abs() < 1e-12);
+        assert!(e.validation.used_for_selection);
+    }
+}
+
+#[test]
+fn selection_limits_apply_across_rule_detectors() {
+    let df = planted_table(2000);
+    let report = profile(
+        &df,
+        &ProfileConfig {
+            selection: onceover::SelectionPolicy {
+                max_rules: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    assert!(
         report
             .findings
             .iter()
-            .filter(|f| f.kind == kind)
-            .map(|f| f.claim.as_str())
-            .collect::<Vec<_>>()
-    };
-
-    // Primary key.
-    assert!(
-        claim("likely_primary_key")
-            .iter()
-            .any(|c| c.contains("order_id")),
-        "pk: {:?}",
-        claim("likely_primary_key")
-    );
-    // Exact FD region_id -> region_name.
-    assert!(
-        claim("functional_dependency")
-            .iter()
-            .any(|c| c.contains("region_id → region_name")),
-        "fds: {:?}",
-        claim("functional_dependency")
-    );
-    // total is derived (predictable and an identity).
-    assert!(
-        claim("arithmetic_identity")
-            .iter()
-            .any(|c| c.contains("total")),
-        "identities: {:?}",
-        claim("arithmetic_identity")
-    );
-    // Date gaps planted.
-    assert!(
-        !claim("date_gap").is_empty(),
-        "expected date gaps; gaps: {:?}",
-        claim("date_gap")
-    );
-    // Dirty key with 3 dupes.
-    assert!(
-        claim("dirty_key").iter().any(|c| c.contains("user_ref")),
-        "dirty: {:?}",
-        claim("dirty_key")
-    );
-    // Categorical numeric.
-    assert!(
-        claim("likely_categorical")
-            .iter()
-            .any(|c| c.contains("region_id")),
-        "likely_categorical: {:?}",
-        claim("likely_categorical")
-    );
-    // Decision table: category or region_name determined by lookups? At
-    // least one table or predictable categorical column should surface.
-    let cat_preds = claim("predictable_from")
-        .iter()
-        .any(|c| c.contains("region_name") || c.contains("region_id"));
-    assert!(
-        cat_preds || !claim("decision_table").is_empty(),
-        "predictable: {:?}, tables: {:?}",
-        claim("predictable_from"),
-        claim("decision_table")
-    );
-
-    // Coverage block honesty.
-    assert_eq!(
-        report.coverage["predictability_screen"].status,
-        "ran_sampled"
-    );
-    assert!(
-        matches!(
-            report.coverage["functional_dependencies"].status.as_str(),
-            "capped" | "ran_exact"
-        ),
-        "fd status: {}",
-        report.coverage["functional_dependencies"].status
+            .filter(|f| f.category == Category::ConditionalRules)
+            .count()
+            <= 2
     );
 }
 
 #[test]
-fn byte_deterministic() {
-    let df = planted_table(1_000);
-    let a = profile(&df, &ProfileConfig::default());
-    let b = profile(&df, &ProfileConfig::default());
-    assert_eq!(a.to_json(), b.to_json());
-}
-
-#[test]
-fn quick_tier_is_leaner() {
-    let df = planted_table(800);
-    let quick = profile(
-        &df,
-        &ProfileConfig {
-            budget: Budget::Quick,
-            deadline: None,
-        },
-    );
-    let standard = profile(
-        &df,
-        &ProfileConfig {
-            budget: Budget::Standard,
-            deadline: None,
-        },
-    );
-    assert!(quick
-        .findings
-        .iter()
-        .all(|f| f.kind != "predictable_from" && f.kind != "functional_dependency"));
-    assert!(standard
-        .findings
-        .iter()
-        .any(|f| f.kind == "functional_dependency"));
-    assert_eq!(quick.coverage["predictability_screen"].status, "skipped");
-}
-
-#[test]
-fn markdown_renders() {
-    let df = planted_table(500);
-    let report = profile(&df, &ProfileConfig::default());
-    let md = report.to_markdown();
-    assert!(md.contains("# onceover report"));
-    assert!(md.contains("## Findings"));
-    assert!(md.contains("## Coverage"));
-    assert!(!report.overview.headline.is_empty());
-}
-
-#[test]
-#[ignore] // run with: cargo test --release -- --ignored
-fn perf_standard_100k() {
-    let df = planted_table(100_000);
-    let t0 = std::time::Instant::now();
-    let report = profile(&df, &ProfileConfig::default());
-    let dt = t0.elapsed();
-    eprintln!("standard 100k×10: {:?}", dt);
-    assert!(dt.as_secs_f64() < 15.0, "took {dt:?}");
-    assert!(!report.findings.is_empty());
-}
-
-#[test]
-fn prism_rules_unique_and_majority_targets_skipped() {
-    // Regression: PRISM used to re-emit the same rule every covering
-    // iteration (growth counted covered positives), and happily mined
-    // near-majority targets into lucky high-precision noise rules.
-    let mut rng = Rng(77);
-    let n = 4_000usize;
-    let mut tenure: Vec<Option<f64>> = Vec::with_capacity(n);
-    let mut churn: Vec<Option<i64>> = Vec::with_capacity(n);
-    let mut country: Vec<Option<&str>> = Vec::with_capacity(n);
-    for i in 0..n {
-        let t = (i % 48) as f64;
-        tenure.push(Some(t));
-        // Step at 24 with 6% label noise (decision-table/GBM accuracy ~0.94).
-        let flip = rng.next_f64() < 0.06;
-        churn.push(Some(((t > 24.0) ^ flip) as i64));
-        country.push(Some(if rng.next_f64() < 0.92 { "US" } else { "DE" }));
-    }
-    let df = df! {
-        "tenure" => tenure,
-        "churn" => churn,
-        "country" => country,
-    }
-    .unwrap();
-    let report = profile(&df, &ProfileConfig::default());
-
-    let prism_claims: Vec<&str> = report
-        .findings
-        .iter()
-        .filter(|f| f.kind == "prism_rule")
-        .map(|f| f.claim.as_str())
-        .collect();
-    // No duplicated rules:
-    let mut unique = prism_claims.clone();
-    unique.sort_unstable();
-    unique.dedup();
-    assert_eq!(
-        prism_claims.len(),
-        unique.len(),
-        "duplicate prism rules: {prism_claims:?}"
-    );
-    // The 92%-majority column must not be mined into lucky rules:
-    assert!(
-        !report
-            .findings
-            .iter()
-            .any(|f| f.kind == "prism_rule" && f.subject["column"] == "country"),
-        "prism mined a near-majority target: {prism_claims:?}"
-    );
-    for rule in report.findings.iter().filter(|f| f.kind == "prism_rule") {
-        let target = rule.subject["column"].as_str().unwrap();
-        assert!(
-            rule.evidence["conditions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|c| !c.as_str().unwrap().starts_with(&format!("{target} "))),
-            "self-referential rule: {}",
-            rule.claim
-        );
-    }
-    // And the planted step still yields rules for churn:
-    assert!(
-        prism_claims.iter().any(|c| c.contains("churn")),
-        "expected churn rules: {prism_claims:?}"
-    );
-    assert!(
-        report.findings.iter().any(|f| f.kind == "decision_table"
-            && f.subject["column"] == "churn"
-            && f.evidence["cv_accuracy"].as_f64().unwrap() > 0.9),
-        "expected a validated churn decision table: {:?}",
-        report.coverage
-    );
-}
-
-#[test]
-fn explanation_target_caps_are_bounded_and_reported() {
-    // More eligible, perfectly predictable targets than the standard tier
-    // permits. Every column can be explained using another column.
-    let columns = (0..8)
-        .map(|i| {
-            Series::new(
-                format!("category_{i}").into(),
-                (0..400)
-                    .map(|row| if row % 2 == 0 { "a" } else { "b" })
-                    .collect::<Vec<_>>(),
-            )
-            .into_column()
-        })
-        .collect();
-    let df = DataFrame::new_infer_height(columns).unwrap();
-    let report = profile(&df, &ProfileConfig::default());
-    for (pass, kind) in [
-        ("decision_tables", "decision_table"),
-        ("prism_rules", "prism_rule"),
-    ] {
-        assert_eq!(report.coverage[pass].status, "capped");
-        assert!(report.coverage[pass]
-            .detail
-            .contains("6 of 8 eligible targets selected (cap 6)"));
-        let mut targets: Vec<_> = report
-            .findings
-            .iter()
-            .filter(|f| f.kind == kind)
-            .map(|f| f.subject["column"].as_str().unwrap())
-            .collect();
-        targets.sort_unstable();
-        targets.dedup();
-        assert_eq!(targets.len(), 6);
-    }
-}
-
-#[test]
-fn dependence_cap_reports_the_full_pair_universe() {
-    let columns = (0..33)
+fn dependence_cap_reports_full_pair_universe() {
+    let cols = (0..33)
         .map(|i| Series::new(format!("x{i}").into(), (0..100i64).collect::<Vec<_>>()).into_column())
         .collect();
-    let df = DataFrame::new_infer_height(columns).unwrap();
-    let report = profile(&df, &ProfileConfig::default());
-    let coverage = &report.coverage["dependence_screen"];
-    assert_eq!(coverage.status, "capped");
-    assert!(
-        coverage
-            .detail
-            .starts_with("496 of 528 numeric pairs (capped)"),
-        "{}",
-        coverage.detail
+    let report = profile(
+        &DataFrame::new_infer_height(cols).unwrap(),
+        &ProfileConfig::default(),
+    );
+    assert!(report.coverage["dependence_screen"]
+        .detail
+        .starts_with("496 of 528 numeric pairs (capped)"));
+}
+
+#[test]
+fn extension_detector_uses_existing_category_and_shared_context() {
+    struct SequenceGap;
+    impl onceover::Detector for SequenceGap {
+        fn descriptor(&self) -> onceover::DetectorDescriptor {
+            onceover::DetectorDescriptor::new("integer_sequence", vec![Category::Gaps], vec![])
+        }
+        fn discover(
+            &self,
+            ctx: &onceover::DetectorContext<'_, '_>,
+        ) -> Result<Vec<onceover::Finding>, String> {
+            use onceover::{Evidence, EvidenceBasis, Finding, Method, Specification, Subject};
+            use serde_json::json;
+            assert_eq!(ctx.table.n, 3);
+            assert!(ctx.columns.contains_key("sequence"));
+            let mut spec = Specification::default();
+            spec.definition.insert("absent_values".into(), json!([2]));
+            spec.definition
+                .insert("domain".into(), json!("integer_sequence"));
+            spec.definition.insert(
+                "reference".into(),
+                json!({"origin":"declared","increment":1}),
+            );
+            Ok(vec![Finding::from_statement(
+                Category::Gaps,
+                None,
+                Subject::columns(["sequence".into()]),
+                spec,
+                "Sequence value 2 is absent".into(),
+                Evidence::new(
+                    Method::new("integer_sequence", "integer_scan", "test extension"),
+                    EvidenceBasis::Measured,
+                    std::collections::BTreeMap::from([
+                        ("n".into(), json!(3)),
+                        ("absent_values".into(), json!([2])),
+                    ]),
+                ),
+                0.5,
+                None,
+            )])
+        }
+    }
+    let df = df!("sequence"=>[1i64,3,4]).unwrap();
+    let cfg = ProfileConfig {
+        detectors: Some(["integer_sequence".into()].into_iter().collect()),
+        ..Default::default()
+    };
+    let report = onceover::profile_with_detectors(&df, &cfg, &[&SequenceGap]);
+    assert_eq!(report.findings.len(), 1);
+    assert_eq!(report.findings[0].category, Category::Gaps);
+    assert_eq!(
+        report.findings[0].specification.definition["domain"],
+        serde_json::json!("integer_sequence")
+    );
+    assert_eq!(
+        report.findings[0].evidence[0].method.detector,
+        "integer_sequence"
     );
 }

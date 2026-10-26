@@ -56,7 +56,10 @@ the registry configuration exactly.
    constraints in `Cargo.toml`, `[project]` in `pyproject.toml`, and
    `__version__` in `python/onceover/__init__.py`.
 2. Run `cargo check --workspace` to update `Cargo.lock`, then
-   `python scripts/release.py check` and the test suites.
+   `python scripts/release.py check` and the test suites. Build and install the
+   release wheel, execute `python scripts/check_notebook.py`, and run the
+   [scale benchmark](benchmarks/README.md) against that wheel. Check exact key
+   counts and recovery of the relationships in the final columns before tagging.
 3. Commit, push, and tag the same version:
 
    ```bash

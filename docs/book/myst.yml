@@ -1,0 +1,54 @@
+version: 1
+project:
+  id: 0f1a17c0-b5ee-4a96-9c3b-90ec4871a05f
+  title: onceover
+  description: Give your data a once-over — an evidence-first, Rust-native profiler for Polars DataFrames.
+  keywords: [data-profiling, polars, data-quality, functional-dependencies, rust]
+  github: https://github.com/fcela/onceover
+  license: MIT
+  toc:
+    - file: intro.ipynb
+    - title: Part I — Using onceover
+      children:
+        - file: usage/install.ipynb
+        - file: usage/quickstart.ipynb
+        - file: usage/findings.ipynb
+        - file: usage/columns.ipynb
+        - file: usage/coverage.ipynb
+        - file: usage/large_tables.ipynb
+        - file: usage/serialization.ipynb
+    - title: Part II — Case studies
+      children:
+        - file: case_studies/vendor_extract.ipynb
+        - file: case_studies/feature_trimming.ipynb
+        - file: case_studies/churn_shift.ipynb
+    - title: Part III — Methodology
+      children:
+        - file: methodology/evidence.ipynb
+        - file: methodology/sampling.ipynb
+        - file: methodology/column_cards.ipynb
+        - file: methodology/keys_duplicates.ipynb
+        - file: methodology/functional_dependencies.ipynb
+        - file: methodology/predictability_screen.ipynb
+        - file: methodology/rules_tables.ipynb
+        - file: methodology/associations.ipynb
+        - file: methodology/dependence_measures.ipynb
+        - file: methodology/local_linear_regimes.ipynb
+        - file: methodology/temporal_analysis.ipynb
+    - title: Part IV — Implementation
+      children:
+        - file: implementation/architecture.ipynb
+        - file: implementation/extraction.ipynb
+        - file: implementation/counting.ipynb
+        - file: implementation/determinism.ipynb
+        - file: implementation/testing.ipynb
+    - title: Appendix
+      children:
+        - file: appendix/literature_review.ipynb
+        - file: appendix/directions.ipynb
+        - file: appendix/report_contract.ipynb
+        - file: appendix/glossary.ipynb
+site:
+  template: book-theme
+  options:
+    hide_search: false

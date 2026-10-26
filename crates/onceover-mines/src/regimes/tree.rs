@@ -216,6 +216,26 @@ impl ModelTree {
         v.is_finite().then_some(v)
     }
 
+    /// Global baseline in original units, so a residual finding identifies
+    /// the actual model used to define its residuals.
+    pub fn global_linear_model(&self) -> (f64, Vec<f64>) {
+        let coefficients: Vec<_> = self
+            .root
+            .model
+            .coefficients
+            .iter()
+            .enumerate()
+            .map(|(j, b)| self.y_scale * b / self.scales[j])
+            .collect();
+        let intercept = self.y_mean + self.y_scale * self.root.model.intercept
+            - coefficients
+                .iter()
+                .zip(&self.means)
+                .map(|(b, m)| b * m)
+                .sum::<f64>();
+        (intercept, coefficients)
+    }
+
     pub fn predict_linear(&self, x: &[f64]) -> Option<f64> {
         let v = self.y_mean + self.y_scale * self.root.model.predict(&self.normalized(x)?);
         v.is_finite().then_some(v)

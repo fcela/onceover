@@ -35,7 +35,7 @@ pub fn build_hashes(cols: &[&TypedCol], rows: &[u32]) -> ColHashes {
         match col {
             TypedCol::I64 { vals } => {
                 for (j, &r) in rows.iter().enumerate() {
-                    match vals[r as usize] {
+                    match vals.at(r as usize) {
                         Some(v) => h[j] = v as u64,
                         None => nul[j] = true,
                     }
@@ -43,7 +43,7 @@ pub fn build_hashes(cols: &[&TypedCol], rows: &[u32]) -> ColHashes {
             }
             TypedCol::F64 { vals } => {
                 for (j, &r) in rows.iter().enumerate() {
-                    match vals[r as usize] {
+                    match vals.at(r as usize) {
                         Some(v) => h[j] = v.to_bits(),
                         None => nul[j] = true,
                     }
@@ -122,14 +122,14 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
         };
     }
     match col {
-        TypedCol::I64 { vals } => match vals[row] {
+        TypedCol::I64 { vals } => match vals.at(row) {
             Some(v) => {
                 out.push(0x01);
                 push_u64!(v as u64);
             }
             None => out.push(0x00),
         },
-        TypedCol::F64 { vals } => match vals[row] {
+        TypedCol::F64 { vals } => match vals.at(row) {
             Some(v) => {
                 out.push(0x02);
                 push_u64!(v.to_bits());
@@ -181,13 +181,9 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
     }
 }
 
-/// Deterministic stride subsample of row indices (0..n down to cap).
+/// Deterministic stratified subsample of row indices (0..n down to cap).
 pub fn subsample_rows(n: usize, cap: usize) -> Vec<u32> {
-    if n <= cap {
-        return (0..n as u32).collect();
-    }
-    let stride = n.div_ceil(cap);
-    (0..n).step_by(stride).map(|i| i as u32).collect()
+    onceover_core::sample_rows(n, cap)
 }
 
 /// Deterministic pseudo-random seed (fixed — P5 determinism).

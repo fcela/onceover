@@ -10,6 +10,7 @@ description = "Column cards, typed extraction and PLI primitives for onceover"
 [dependencies]
 onceover-report = { workspace = true }
 polars = { workspace = true }
+polars-arrow = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true }

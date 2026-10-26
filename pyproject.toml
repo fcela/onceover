@@ -28,13 +28,20 @@ Issues = "https://github.com/fcela/onceover/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+notebook = ["jupyterlab>=4", "altair>=6,<7", "vl-convert-python>=1.9", "great_tables>=1.1,<2", "numpy>=2", "nbconvert>=7"]
+benchmark = ["numpy>=2", "psutil>=7"]
 
 [tool.maturin]
 manifest-path = "crates/onceover-py/Cargo.toml"
 python-source = "python"
 module-name = "onceover._native"
 features = ["pyo3/extension-module"]
-include = [{ path = "tests/**/*.py", format = "sdist" }]
+include = [
+    { path = "tests/**/*.py", format = "sdist" },
+    { path = "notebooks/*.ipynb", format = "sdist" },
+    { path = "notebooks/*.py", format = "sdist" },
+    { path = "benchmarks/*.py", format = "sdist" },
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
