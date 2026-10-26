@@ -34,14 +34,20 @@ jobs:
           python -m pip install 'maturin>=1.15,<2'
           python -m maturin build --release --locked --out dist --interpreter python
           python -m pip install dist/*.whl -r docs/book/requirements.txt
-      - name: Build the book with executed notebooks
+      - name: Build the book
         working-directory: docs/book
         env:
+          # Project Pages sites are served under /onceover/, so every asset
+          # and page link is prefixed at build time.
           BASE_URL: /onceover
-        run: bash build-html.sh
-      - name: Check the deployed asset prefix
-        working-directory: docs/book
-        run: grep -q 'href="/onceover/' _build/html/index.html
+          # Polars table reprs print a shape caption and a dtype row; neither
+          # is content, so hide both in the executed outputs.
+          POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION: '1'
+          POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES: '1'
+        run: |
+          jupyter-book build --execute --html --strict --ci --execute-parallel 2
+          test -f _build/html/index.html
+          grep -q 'href="/onceover/' _build/html/index.html
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
