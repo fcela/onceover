@@ -48,11 +48,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("association_rules", vec![ConditionalRules], &[]),
         make("numeric_dependence", vec![Associations], &[]),
         make("identities", vec![Dependencies], &["numeric_dependence"]),
-        make(
-            "views",
-            vec![Associations, Changes, Concentration],
-            &[],
-        ),
+        make("views", vec![Associations, Changes, Concentration], &[]),
     ]
 }
 

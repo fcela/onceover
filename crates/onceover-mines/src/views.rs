@@ -13,9 +13,7 @@
 //! or metrics (runtime is the caller's to measure, never embedded).
 
 use onceover_core::{sample_rows, TypedCol, TypedTable};
-use onceover_report::{
-    Category, Evidence, EvidenceBasis, Finding, Method,
-};
+use onceover_report::{Category, Evidence, EvidenceBasis, Finding, Method};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -90,8 +88,7 @@ fn ln_gamma(x: f64) -> f64 {
     ];
     if x < 0.5 {
         // Reflection: Gamma(1 - x) * Gamma(x) = pi / sin(pi * x).
-        return (std::f64::consts::PI / (std::f64::consts::PI * x).sin()).ln()
-            - ln_gamma(1.0 - x);
+        return (std::f64::consts::PI / (std::f64::consts::PI * x).sin()).ln() - ln_gamma(1.0 - x);
     }
     let z = x - 1.0;
     let mut a = C[0];
@@ -128,7 +125,8 @@ fn nig_log_predictive(x: f64, n: usize, mean: f64, m2: f64) -> f64 {
     let mu_n = (k0 * mu0 + nf * mean) / kn;
     let nu = 2.0 * an;
     let s2 = bn * (kn + 1.0) / (an * kn);
-    ln_gamma((nu + 1.0) / 2.0) - ln_gamma(nu / 2.0)
+    ln_gamma((nu + 1.0) / 2.0)
+        - ln_gamma(nu / 2.0)
         - 0.5 * (nu * std::f64::consts::PI * s2).ln()
         - ((nu + 1.0) / 2.0) * (1.0 + (x - mu_n).powi(2) / (nu * s2)).ln()
 }
@@ -183,13 +181,14 @@ fn extract_columns(
         let name = table.names[ci].clone();
         let vals_opt: Option<ViewCol> = match col {
             TypedCol::I64 { vals } => {
-                let raw: Vec<Option<f64>> =
-                    sample.iter().map(|&r| vals.at(r).map(|v| v as f64)).collect();
+                let raw: Vec<Option<f64>> = sample
+                    .iter()
+                    .map(|&r| vals.at(r).map(|v| v as f64))
+                    .collect();
                 Some(standardize(name.clone(), raw))
             }
             TypedCol::F64 { vals } => {
-                let raw: Vec<Option<f64>> =
-                    sample.iter().map(|&r| vals.at(r)).collect();
+                let raw: Vec<Option<f64>> = sample.iter().map(|&r| vals.at(r)).collect();
                 Some(standardize(name.clone(), raw))
             }
             TypedCol::Date { vals } => {
@@ -279,15 +278,22 @@ fn standardize(name: String, raw: Vec<Option<f64>>) -> ViewCol {
                 (0.0, 0.0)
             } else {
                 let mean = xs.iter().sum::<f64>() / n as f64;
-                let sd =
-                    (xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
+                let sd = (xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
                 (mean, sd)
             }
         }
     };
     let vals: Vec<Option<f64>> = raw
         .iter()
-        .map(|v| v.map(|x| if scale > 0.0 { (x - center) / scale } else { 0.0 }))
+        .map(|v| {
+            v.map(|x| {
+                if scale > 0.0 {
+                    (x - center) / scale
+                } else {
+                    0.0
+                }
+            })
+        })
         .collect();
     ViewCol {
         name,
@@ -329,9 +335,8 @@ fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol
     let vals: Vec<Option<f64>> = strs
         .iter()
         .map(|s| {
-            s.as_ref().map(|v| {
-                index.get(v).copied().unwrap_or(tail_id) as f64
-            })
+            s.as_ref()
+                .map(|v| index.get(v).copied().unwrap_or(tail_id) as f64)
         })
         .collect();
     ViewCol {
@@ -375,8 +380,14 @@ enum Acc {
 impl Acc {
     fn new(kind: ColKind, n_levels: usize) -> Acc {
         match kind {
-            ColKind::Continuous => Acc::Cont { n: 0, mean: 0.0, m2: 0.0 },
-            ColKind::Categorical => Acc::Cat { counts: vec![0; n_levels] },
+            ColKind::Continuous => Acc::Cont {
+                n: 0,
+                mean: 0.0,
+                m2: 0.0,
+            },
+            ColKind::Categorical => Acc::Cat {
+                counts: vec![0; n_levels],
+            },
         }
     }
 
@@ -530,7 +541,9 @@ fn phase_b(
                 continue;
             }
             for (jj, &ci) in col_idx.iter().enumerate() {
-                let Some(med) = thresholds[gi][jj] else { continue };
+                let Some(med) = thresholds[gi][jj] else {
+                    continue;
+                };
                 // Side counts for null placement (non-null rows only).
                 let mut left_nn = 0usize;
                 let mut right_nn = 0usize;
@@ -587,14 +600,11 @@ fn phase_b(
                 }
                 let mut gain = -penalty;
                 for k in 0..col_idx.len() {
-                    gain += left_acc[k].marginal() + right_acc[k].marginal()
-                        - whole[gi][k];
+                    gain += left_acc[k].marginal() + right_acc[k].marginal() - whole[gi][k];
                 }
                 let better = match best {
                     None => true,
-                    Some((bg, bgi, bj)) => {
-                        gain > bg || (gain == bg && (gi, jj) < (bgi, bj))
-                    }
+                    Some((bg, bgi, bj)) => gain > bg || (gain == bg && (gi, jj) < (bgi, bj)),
                 };
                 if better {
                     best = Some((gain, gi, jj));
@@ -810,9 +820,7 @@ fn groups_from_assignment(assignment: &[usize], n_clusters: usize) -> Vec<Vec<us
 const HONESTY: &str =
     "Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.";
 
-fn make_evidence(
-    metrics: BTreeMap<String, serde_json::Value>,
-) -> Evidence {
+fn make_evidence(metrics: BTreeMap<String, serde_json::Value>) -> Evidence {
     let mut e = Evidence::new(
         Method::new(
             "views",
@@ -862,7 +870,11 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         .iter()
         .map(|&r| r as usize)
         .collect();
-    let mut work = WorkBudget { used: 0, cap: cfg.work_budget, hit: false };
+    let mut work = WorkBudget {
+        used: 0,
+        cap: cfg.work_budget,
+        hit: false,
+    };
     let views = views_search(&cols, &search_pos, cfg, &mut work);
     let mut findings: Vec<Finding> = Vec::new();
     let mut total_score = 0.0;
@@ -895,21 +907,13 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         }
         total_score += view_score;
         findings.extend(emit_view_findings(
-            table,
-            &cols,
-            view,
-            &groups,
-            &stats,
-            &sample,
-            n_sample,
-            view_score,
-            cfg,
-            &dropped,
+            table, &cols, view, &groups, &stats, &sample, n_sample, view_score, cfg, &dropped,
         ));
     }
     total_score -= penalty_full * views.len() as f64;
     let n_findings = findings.len();
-    let coverage = format!(
+    let coverage =
+        format!(
         "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats{}",
         views.len(),
         views.iter().filter(|v| v.cols.len() > 1).count(),
@@ -992,7 +996,13 @@ fn summarize_clusters(
                     }
                 }
             }
-            ClusterSummary { rows_min, rows_max, n: g.len(), means, top_levels }
+            ClusterSummary {
+                rows_min,
+                rows_max,
+                n: g.len(),
+                means,
+                top_levels,
+            }
         })
         .collect()
 }
@@ -1077,7 +1087,11 @@ fn emit_view_findings(
                             }
                         }
                     }
-                    if m == f64::NEG_INFINITY { 0.0 } else { m }
+                    if m == f64::NEG_INFINITY {
+                        0.0
+                    } else {
+                        m
+                    }
                 }
                 ColKind::Categorical => {
                     let mut m = 0.0f64;
@@ -1118,7 +1132,8 @@ fn emit_view_findings(
                     json!(summaries
                         .iter()
                         .map(|s| {
-                            let mut o = json!({"rows_min": s.rows_min, "rows_max": s.rows_max, "n": s.n});
+                            let mut o =
+                                json!({"rows_min": s.rows_min, "rows_max": s.rows_max, "n": s.n});
                             if let Some(m) = s.means[jj] {
                                 o["mean"] = json!(m);
                             }
@@ -1130,7 +1145,8 @@ fn emit_view_findings(
                         })
                         .collect::<Vec<_>>()),
                 );
-                spec.definition.insert("headline_column".to_string(), json!(cols[ci].name));
+                spec.definition
+                    .insert("headline_column".to_string(), json!(cols[ci].name));
                 let mut m = base_metrics.clone();
                 m.insert("headline_shift".to_string(), json!(shift));
                 out.push(Finding::from_statement(
@@ -1409,7 +1425,11 @@ mod tests {
         let col = two_regime_col();
         let cols = vec![col];
         let search: Vec<usize> = (0..200).collect();
-        let mut work = WorkBudget { used: 0, cap: 10_000_000, hit: false };
+        let mut work = WorkBudget {
+            used: 0,
+            cap: 10_000_000,
+            hit: false,
+        };
         let cfg = ViewsConfig::default();
         let (groups, _) = phase_b(&cols, &[0], &search, &cfg, &mut work);
         assert_eq!(groups.len(), 2);
@@ -1450,8 +1470,12 @@ mod tests {
             names: vec!["temp".to_string(), "noise".to_string()],
             dtypes: vec!["float64".to_string(), "float64".to_string()],
             cols: vec![
-                TypedCol::F64 { vals: NumericValues::Owned(temp) },
-                TypedCol::F64 { vals: NumericValues::Owned(noise) },
+                TypedCol::F64 {
+                    vals: NumericValues::Owned(temp),
+                },
+                TypedCol::F64 {
+                    vals: NumericValues::Owned(noise),
+                },
             ],
         }
     }
@@ -1509,7 +1533,11 @@ mod tests {
             tail_share: 0.0,
         }];
         let search: Vec<usize> = (0..400).collect();
-        let mut work = WorkBudget { used: 0, cap: 10_000_000, hit: false };
+        let mut work = WorkBudget {
+            used: 0,
+            cap: 10_000_000,
+            hit: false,
+        };
         let cfg = ViewsConfig::default();
         let (groups, _) = phase_b(&cols, &[0], &search, &cfg, &mut work);
         assert_eq!(groups.len(), 2);
@@ -1533,8 +1561,12 @@ mod tests {
             names: vec!["a".to_string(), "b".to_string()],
             dtypes: vec!["int64".to_string(), "int64".to_string()],
             cols: vec![
-                TypedCol::I64 { vals: NumericValues::Owned(a) },
-                TypedCol::I64 { vals: NumericValues::Owned(b) },
+                TypedCol::I64 {
+                    vals: NumericValues::Owned(a),
+                },
+                TypedCol::I64 {
+                    vals: NumericValues::Owned(b),
+                },
             ],
         };
         let cfg = ViewsConfig {
@@ -1544,7 +1576,9 @@ mod tests {
         };
         let (findings, _) = views_pass(&table, &cfg);
         assert!(
-            !findings.iter().any(|f| f.category == Category::Associations),
+            !findings
+                .iter()
+                .any(|f| f.category == Category::Associations),
             "spurious view: {}",
             serde_json::to_string(&findings).unwrap()
         );
@@ -1567,7 +1601,9 @@ mod tests {
             n: 100,
             names: vec!["temp".to_string()],
             dtypes: vec!["float64".to_string()],
-            cols: vec![TypedCol::F64 { vals: NumericValues::Owned(temp) }],
+            cols: vec![TypedCol::F64 {
+                vals: NumericValues::Owned(temp),
+            }],
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -1577,17 +1613,21 @@ mod tests {
         let (findings, _) = views_pass(&table, &cfg);
         let j = serde_json::to_string(&findings).unwrap();
         assert!(
-            findings.iter().any(|f| f.category == Category::Concentration
-                && f.metrics().get("modal_value").and_then(|v| v.as_f64())
-                    == Some(21.5)
-                && f.metrics().get("modal_share").and_then(|v| v.as_f64())
-                    .is_some_and(|s| s >= 0.9)),
+            findings
+                .iter()
+                .any(|f| f.category == Category::Concentration
+                    && f.metrics().get("modal_value").and_then(|v| v.as_f64()) == Some(21.5)
+                    && f.metrics()
+                        .get("modal_share")
+                        .and_then(|v| v.as_f64())
+                        .is_some_and(|s| s >= 0.9)),
             "no degenerate finding: {}",
             j
         );
         assert!(
-            findings.iter().any(|f| f.category == Category::Concentration
-                && f.claim.contains("999.9")),
+            findings
+                .iter()
+                .any(|f| f.category == Category::Concentration && f.claim.contains("999.9")),
             "no spike finding: {}",
             j
         );
