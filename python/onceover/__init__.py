@@ -23,7 +23,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     Parameters
     ----------
     df : polars.DataFrame
-        The table to profile (Arrow interchange; Polars 2.x).
+        The table to profile (Arrow interchange; Polars 1.28–2.x).
     budget : str
         "quick" (summaries and integrity checks), "standard" (default passes with caps),
         or "deep" (wider caps and deeper search for those passes).

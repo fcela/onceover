@@ -17,7 +17,7 @@ worked example with charts and controls.
 pip install onceover
 ```
 
-Requires CPython 3.10+ and Polars 2.x. Binary wheels cover Linux x86_64 and
+Requires CPython 3.10+ and Polars 1.28–2.x. Binary wheels cover Linux x86_64 and
 aarch64, macOS Intel and Apple silicon, and Windows x86_64. Building the
 source distribution requires Rust and a C compiler.
 
