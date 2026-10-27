@@ -3,8 +3,8 @@
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-This is a breaking revision of report schema 0.1. The package version remains
-0.1.0 pending its initial publication.
+This is a breaking revision of report schema 0.1. The package version is
+0.1.1 pending its initial publication.
 
 ## Categories and statement definitions
 

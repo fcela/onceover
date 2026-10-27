@@ -8,7 +8,7 @@ import json as _json
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
 _SCHEMA_VERSION = "0.2"
