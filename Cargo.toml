@@ -10,18 +10,18 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/fcela/onceover"
 readme = "README.md"
 
 [workspace.dependencies]
-onceover = { path = "crates/onceover", version = "=0.1.1" }
-onceover-core = { path = "crates/onceover-core", version = "=0.1.1" }
-onceover-deps = { path = "crates/onceover-deps", version = "=0.1.1" }
-onceover-mines = { path = "crates/onceover-mines", version = "=0.1.1" }
-onceover-report = { path = "crates/onceover-report", version = "=0.1.1" }
+onceover = { path = "crates/onceover", version = "=0.1.2" }
+onceover-core = { path = "crates/onceover-core", version = "=0.1.2" }
+onceover-deps = { path = "crates/onceover-deps", version = "=0.1.2" }
+onceover-mines = { path = "crates/onceover-mines", version = "=0.1.2" }
+onceover-report = { path = "crates/onceover-report", version = "=0.1.2" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rayon = "1"
