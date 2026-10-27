@@ -80,7 +80,7 @@ S = sum (x_i - xbar)^2, the log marginal likelihood is:
     alpha_n = alpha0 + n / 2
     beta_n  = beta0 + S / 2 + kappa0 * n * (xbar - mu0)^2 / (2 * kappa_n)
     log p(x) = lgamma(alpha_n) - lgamma(alpha0)
-             + (alpha0 / 2) * log(beta0) - (alpha_n / 2) * log(beta_n)
+             + alpha0 * log(beta0) - alpha_n * log(beta_n)
              + (1 / 2) * (log(kappa0) - log(kappa_n))
              - (n / 2) * log(2 * pi)
 

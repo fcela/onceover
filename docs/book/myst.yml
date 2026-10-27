@@ -34,6 +34,7 @@ project:
         - file: methodology/associations.ipynb
         - file: methodology/dependence_measures.ipynb
         - file: methodology/view_clusters.ipynb
+        - file: methodology/view_clusters_reference.ipynb
         - file: methodology/local_linear_regimes.ipynb
         - file: methodology/temporal_analysis.ipynb
     - title: Part IV — Implementation
