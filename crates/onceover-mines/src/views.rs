@@ -76,14 +76,14 @@ pub struct ViewsOutcome {
 fn ln_gamma(x: f64) -> f64 {
     // Coefficients from the standard g = 7 Lanczos approximation.
     const C: [f64; 9] = [
-        0.99999999999980993,
+        0.999_999_999_999_809_9,
         676.5203681218851,
         -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
         12.507343278686905,
         -0.13857109526572012,
-        9.9843695780195716e-6,
+        9.984_369_578_019_572e-6,
         1.5056327351493116e-7,
     ];
     if x < 0.5 {
@@ -165,7 +165,6 @@ struct ViewCol {
     raw: Vec<Option<f64>>,
     n_levels: usize,
     level_names: Vec<String>,
-    tail_share: f64,
 }
 
 /// Extract eligible columns on the given sample row indices (original
@@ -238,9 +237,7 @@ fn extract_columns(
                 // A column with no non-null values on the sample carries
                 // no information; exclude it (recorded as dropped).
                 let any = vc.vals.iter().any(|v| v.is_some());
-                if !any {
-                    dropped.push(name);
-                } else if cols.len() >= cfg.max_columns {
+                if !any || cols.len() >= cfg.max_columns {
                     dropped.push(name);
                 } else {
                     cols.push(vc);
@@ -302,7 +299,6 @@ fn standardize(name: String, raw: Vec<Option<f64>>) -> ViewCol {
         raw,
         n_levels: 0,
         level_names: Vec::new(),
-        tail_share: 0.0,
     }
 }
 
@@ -311,10 +307,8 @@ fn standardize(name: String, raw: Vec<Option<f64>>) -> ViewCol {
 /// pool into one trailing `other` level.
 fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol {
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
-    let mut nonnull = 0usize;
     for s in strs.iter().flatten() {
         *counts.entry(s.clone()).or_insert(0) += 1;
-        nonnull += 1;
     }
     let mut levels: Vec<(String, u64)> = counts.into_iter().collect();
     levels.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -346,11 +340,6 @@ fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol
         raw: Vec::new(),
         n_levels: level_names.len(),
         level_names,
-        tail_share: if nonnull > 0 {
-            tail_count as f64 / nonnull as f64
-        } else {
-            0.0
-        },
     }
 }
 
@@ -427,13 +416,6 @@ impl Acc {
                     0.0
                 }
             }
-        }
-    }
-
-    fn n(&self) -> usize {
-        match self {
-            Acc::Cont { n, .. } => *n,
-            Acc::Cat { counts } => counts.iter().sum::<u64>() as usize,
         }
     }
 }
@@ -548,15 +530,12 @@ fn phase_b(
                 let mut left_nn = 0usize;
                 let mut right_nn = 0usize;
                 for &row in g {
-                    match cols[ci].vals[row] {
-                        Some(x) => {
-                            if x <= med {
-                                left_nn += 1;
-                            } else {
-                                right_nn += 1;
-                            }
+                    if let Some(x) = cols[ci].vals[row] {
+                        if x <= med {
+                            left_nn += 1;
+                        } else {
+                            right_nn += 1;
                         }
-                        None => {}
                     }
                 }
                 if left_nn == 0 || right_nn == 0 {
@@ -785,7 +764,7 @@ fn assign_rows(
     n_sample: usize,
 ) -> Vec<usize> {
     let mut assignment = vec![0usize; n_sample];
-    for p in 0..n_sample {
+    for (p, slot) in assignment.iter_mut().enumerate() {
         let mut best_k = 0usize;
         let mut best_s = f64::NEG_INFINITY;
         for (k, kstats) in stats.iter().enumerate() {
@@ -800,7 +779,7 @@ fn assign_rows(
                 best_k = k;
             }
         }
-        assignment[p] = best_k;
+        *slot = best_k;
     }
     assignment
 }
@@ -1007,6 +986,7 @@ fn summarize_clusters(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_view_findings(
     table: &TypedTable,
     cols: &[ViewCol],
@@ -1416,7 +1396,6 @@ mod tests {
             raw: Vec::new(),
             n_levels: 0,
             level_names: Vec::new(),
-            tail_share: 0.0,
         }
     }
 
@@ -1530,7 +1509,6 @@ mod tests {
             raw: Vec::new(),
             n_levels: 0,
             level_names: Vec::new(),
-            tail_share: 0.0,
         }];
         let search: Vec<usize> = (0..400).collect();
         let mut work = WorkBudget {
