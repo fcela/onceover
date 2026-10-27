@@ -50,18 +50,29 @@ report.save("profile.json")
 | Budget | Work |
 |---|---|
 | `quick` | Column summaries, single-column keys, duplicates, dates, and sortedness |
-| `standard` | All passes with bounded search and model samples |
-| `deep` | All passes with larger search caps and model samples |
+| `standard` | Default passes with bounded search and model samples |
+| `deep` | Default passes with larger search caps and model samples |
 
 Results are deterministic for the same data and configuration. An optional
 wall-clock deadline can change which passes finish; coverage records skipped work.
+
+Use `detectors=[...]` to select passes explicitly. The experimental `views`
+pass is disabled by default and can be selected at the standard or deep budget:
+
+```python
+onceover.available_detectors()
+report = onceover.profile(df, detectors=["keys", "numeric_dependence", "views"])
+```
+
+An explicit list replaces the default selection. Required passes may also run
+to supply resources; coverage identifies that work.
 
 ## Findings
 
 - Primary, composite, and nearly unique keys; duplicated rows.
 - Exact and approximate functional dependencies, with violation counts.
 - Predictable columns, cross-validated decision tables, and PRISM rules.
-- Pearson, Spearman, and Chatterjee's ξ dependence; redundant column groups.
+- Pearson, Spearman, and Chatterjee's ξ dependence; connected finding groups.
 - Arithmetic identities, M5-style local linear regimes, and dated residual shifts.
 - Nominal associations with training and diagnostic holdout evidence.
 - Date gaps, irregular intervals, sortedness, constants, missing values,

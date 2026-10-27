@@ -1,0 +1,424 @@
+{
+  "fixture": {
+    "id": "sensor-v1",
+    "seed": 20261027,
+    "rows": 50000,
+    "shift_row": 25000,
+    "stuck_start": 10000,
+    "stuck_end_exclusive": 10600,
+    "spike_rows": [
+      1784,
+      2305,
+      8694,
+      18691,
+      23223,
+      28332,
+      28464,
+      29415,
+      30747,
+      33761,
+      35702,
+      36962,
+      39019,
+      39555,
+      47714
+    ],
+    "device_change_row": 20000
+  },
+  "benchmark_source_sha256": "988e2ae9fc94200b516a9384a5f24c2d878bb59172562f5fb41c3f0441cf15d4",
+  "input_rows_sha256": "cbbe4e52d879a43ca4d82820370be2378d7b68c28f3f1559a757a1ea5690257a",
+  "environment": {
+    "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+    "python": "3.13.7",
+    "onceover": "0.1.1",
+    "numpy": "2.5.4",
+    "polars": "2.0.0",
+    "threads": 4,
+    "package": "/private/tmp/onceover-docs-venv/lib/python3.13/site-packages/onceover/__init__.py"
+  },
+  "results": {
+    "standard": {
+      "sample_rows": 20000,
+      "sampled_spike_rows": [
+        18691,
+        23223,
+        28332,
+        28464,
+        29415,
+        35702,
+        39019,
+        39555
+      ],
+      "flagged_temperature_rows": [
+        18691,
+        23223,
+        27460,
+        28332,
+        28464,
+        29415,
+        35702,
+        39019,
+        39555
+      ],
+      "recovered_spike_rows": [
+        18691,
+        23223,
+        28332,
+        28464,
+        29415,
+        35702,
+        39019,
+        39555
+      ],
+      "sampled_spikes": 8,
+      "recovered_spikes": 8,
+      "reported_temperature_cells": 9,
+      "reported_unplanted_temperature_cells": 1,
+      "spike_recall": 1.0,
+      "candidate_boundary_from_cluster_ranges": 49997,
+      "candidate_boundary_error_rows": 24997,
+      "temperature_cluster_contrasts": [
+        {
+          "columns": [
+            "device_id",
+            "temperature"
+          ],
+          "definition": {
+            "clusters": [
+              {
+                "mean": 891.8720361942754,
+                "n": 9,
+                "rows_max": 39555,
+                "rows_min": 18691
+              },
+              {
+                "mean": 19.984697710793643,
+                "n": 1999,
+                "rows_max": 24997,
+                "rows_min": 20000
+              },
+              {
+                "mean": 20.020394841905805,
+                "n": 7999,
+                "rows_max": 19999,
+                "rows_min": 1
+              },
+              {
+                "mean": 32.246404812116516,
+                "n": 5040,
+                "rows_max": 49969,
+                "rows_min": 25004
+              },
+              {
+                "mean": 34.78297260044379,
+                "n": 4953,
+                "rows_max": 49997,
+                "rows_min": 25000
+              }
+            ],
+            "headline_column": "temperature",
+            "reference_model": "single-component per column"
+          }
+        }
+      ],
+      "associations": [
+        {
+          "columns": [
+            "device_id",
+            "temperature"
+          ],
+          "evidence": [
+            {
+              "anomaly_cap": 20,
+              "anomaly_threshold_nats": 10.0,
+              "cluster_row_ranges": [
+                {
+                  "n": 9,
+                  "rows_max": 39555,
+                  "rows_min": 18691
+                },
+                {
+                  "n": 1999,
+                  "rows_max": 24997,
+                  "rows_min": 20000
+                },
+                {
+                  "n": 7999,
+                  "rows_max": 19999,
+                  "rows_min": 1
+                },
+                {
+                  "n": 5040,
+                  "rows_max": 49969,
+                  "rows_min": 25004
+                },
+                {
+                  "n": 4953,
+                  "rows_max": 49997,
+                  "rows_min": 25000
+                }
+              ],
+              "dropped_columns": [],
+              "gamma": 2.0,
+              "max_clusters": 8,
+              "max_columns": 64,
+              "merge_gain_nats": 164.73840732128411,
+              "n": 20000,
+              "n_clusters": 5,
+              "null_counts": {
+                "device_id": 0,
+                "temperature": 0
+              },
+              "population_rows": 50000,
+              "sampled": true,
+              "search_rows": 2000,
+              "view_columns": [
+                "temperature",
+                "device_id"
+              ],
+              "view_score_nats": 24972.24239940605
+            }
+          ]
+        }
+      ],
+      "coverage": {
+        "status": "ran_sampled",
+        "detail": "4 views (1 multi-column), 9 findings, sample 20000 of 50000 rows, total score 83623.8 nats"
+      },
+      "profile_seconds": 0.05955766700208187,
+      "deterministic": true,
+      "report_sha256": "abe3d781f20e255c70d0dcab20cce27999c19ef7cd2bb435a978f7ee8bc7e536"
+    },
+    "full_sample": {
+      "sample_rows": 50000,
+      "sampled_spike_rows": [
+        1784,
+        2305,
+        8694,
+        18691,
+        23223,
+        28332,
+        28464,
+        29415,
+        30747,
+        33761,
+        35702,
+        36962,
+        39019,
+        39555,
+        47714
+      ],
+      "flagged_temperature_rows": [
+        1784,
+        2305,
+        8694,
+        18691,
+        23223,
+        28332,
+        28464,
+        29415,
+        30747,
+        33761,
+        35702,
+        36962,
+        39019,
+        39555,
+        47714
+      ],
+      "recovered_spike_rows": [
+        1784,
+        2305,
+        8694,
+        18691,
+        23223,
+        28332,
+        28464,
+        29415,
+        30747,
+        33761,
+        35702,
+        36962,
+        39019,
+        39555,
+        47714
+      ],
+      "sampled_spikes": 15,
+      "recovered_spikes": 15,
+      "reported_temperature_cells": 15,
+      "reported_unplanted_temperature_cells": 0,
+      "spike_recall": 1.0,
+      "candidate_boundary_from_cluster_ranges": 24999,
+      "candidate_boundary_error_rows": 1,
+      "temperature_cluster_contrasts": [
+        {
+          "columns": [
+            "temperature"
+          ],
+          "definition": {
+            "clusters": [
+              {
+                "mean": 32.96222949517112,
+                "n": 19632,
+                "rows_max": 49996,
+                "rows_min": 25001
+              },
+              {
+                "mean": 37.616781592902846,
+                "n": 5529,
+                "rows_max": 49999,
+                "rows_min": 63
+              },
+              {
+                "mean": 19.40007091780314,
+                "n": 12892,
+                "rows_max": 24997,
+                "rows_min": 0
+              },
+              {
+                "mean": 20.697640780081752,
+                "n": 11947,
+                "rows_max": 24999,
+                "rows_min": 2
+              }
+            ],
+            "headline_column": "temperature",
+            "reference_model": "single-component per column"
+          }
+        }
+      ],
+      "associations": [],
+      "coverage": {
+        "status": "ran_exact",
+        "detail": "5 views (0 multi-column), 9 findings, sample 50000 of 50000 rows, total score 204946.9 nats"
+      },
+      "profile_seconds": 0.1211979161016643,
+      "deterministic": true,
+      "report_sha256": "6049933896c38baa48815904f78a38e2ae8cada5343387cd6d6502b55f2d96ad"
+    }
+  },
+  "controls": {
+    "stationary_noise_rows": 2000,
+    "stationary_noise_cluster_findings": [
+      {
+        "id": "changes-df4696f3085a9395",
+        "category": "changes",
+        "type": "residual_level",
+        "subject": {
+          "columns": [
+            "noise"
+          ]
+        },
+        "specification": {
+          "definition": {
+            "clusters": [
+              {
+                "mean": -1.789072013602879,
+                "n": 202,
+                "rows_max": 1982,
+                "rows_min": 7
+              },
+              {
+                "mean": -0.9285949115168258,
+                "n": 274,
+                "rows_max": 1994,
+                "rows_min": 0
+              },
+              {
+                "mean": 0.9119010374793572,
+                "n": 245,
+                "rows_max": 1988,
+                "rows_min": 9
+              },
+              {
+                "mean": 1.7333599120181684,
+                "n": 227,
+                "rows_max": 1999,
+                "rows_min": 18
+              },
+              {
+                "mean": -0.4834808688585585,
+                "n": 273,
+                "rows_max": 1983,
+                "rows_min": 1
+              },
+              {
+                "mean": -0.14098222866476376,
+                "n": 263,
+                "rows_max": 1997,
+                "rows_min": 22
+              },
+              {
+                "mean": 0.15646195116886175,
+                "n": 250,
+                "rows_max": 1995,
+                "rows_min": 4
+              },
+              {
+                "mean": 0.4721699938685194,
+                "n": 266,
+                "rows_max": 1998,
+                "rows_min": 2
+              }
+            ],
+            "headline_column": "noise",
+            "reference_model": "single-component per column"
+          }
+        },
+        "claim": "Rows split into 8 clusters; headline column noise shifts by 2.81 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+        "evidence": [
+          {
+            "method": {
+              "detector": "views",
+              "algorithm": "greedy_view_cluster",
+              "provenance": "deterministic greedy view/cluster partition; marginal-likelihood scores, not posterior probabilities"
+            },
+            "basis": "estimated",
+            "scope": {
+              "sampling": "full",
+              "population_rows": 2000,
+              "rows_evaluated": 2000,
+              "missing_values": "nulls excluded from component scores; null counts recorded in metrics"
+            },
+            "validation": {
+              "method": "none",
+              "used_for_selection": false
+            },
+            "metrics": {
+              "anomaly_cap": 20,
+              "anomaly_threshold_nats": 10.0,
+              "dropped_columns": [],
+              "gamma": 2.0,
+              "headline_shift": 2.8136202949965705,
+              "max_clusters": 8,
+              "max_columns": 64,
+              "merge_gain_nats": 0.0,
+              "n": 2000,
+              "n_clusters": 8,
+              "null_counts": {
+                "noise": 0
+              },
+              "population_rows": 2000,
+              "sampled": false,
+              "search_rows": 2000,
+              "view_columns": [
+                "noise"
+              ],
+              "view_score_nats": 684.9727611585653
+            }
+          }
+        ],
+        "interestingness": 0.6825,
+        "interpretation": "Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities."
+      }
+    ],
+    "views_disabled_by_default": true
+  },
+  "checks": {
+    "standard_repeat_identical": true,
+    "full_sample_repeat_identical": true,
+    "views_disabled_by_default": true,
+    "standard_reported_cells_use_evaluated_rows": true,
+    "full_sample_covers_all_planted_spikes": true
+  },
+  "scope": "Views-only sensor benchmark; cluster-range boundary is diagnostic, spike threshold is uncalibrated."
+}

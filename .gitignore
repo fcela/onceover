@@ -15,3 +15,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Local agent instructions
+/AGENTS.md
+/doc/WRITING_GUIDE.md

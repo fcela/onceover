@@ -2,11 +2,11 @@
 
 Two small demos, both runnable against the installed package:
 
-1. A shared regime: two continuous columns shift at the same row, plus
-   an independent noise control. The shifting pair merges into one
-   view; the control stays singleton.
+1. A shared partition: two columns have the same two operating states.
+   They merge into one view; an independently generated noise column
+   stays in a separate view.
 2. Spikes: a single column with three planted spikes at 999.9. The
-   spike cells rank first by log predictive density.
+   pass reports the planted spikes and may report other low-density cells.
 
 Run: python notebooks/views_example.py
 """
@@ -23,18 +23,21 @@ def show(report):
         print(finding["category"], finding["subject"]["columns"], "::", finding["claim"])
 
 
-def shared_regime():
-    print("== shared regime ==")
+def shared_partition():
+    print("== shared partition ==")
     rng = random.Random(3)
-    temperature = [20.0 + rng.gauss(0, 1) for _ in range(400)]
-    temperature += [32.0 + rng.gauss(0, 1) for _ in range(400)]
-    pressure = [1010.0 + rng.gauss(0, 5) for _ in range(400)]
-    pressure += [990.0 + rng.gauss(0, 5) for _ in range(400)]
+    temperature = [20.0] * 400 + [32.0] * 400
+    pressure = [1010.0] * 400 + [990.0] * 400
     humidity = [50.0 + rng.gauss(0, 10) for _ in range(800)]
     df = pl.DataFrame(
         {"temperature": temperature, "pressure": pressure, "humidity": humidity}
     )
-    show(onceover.profile(df, budget="standard", detectors=["views"]))
+    report = onceover.profile(df, budget="standard", detectors=["views"])
+    shared = [set(f["subject"]["columns"]) for f in report.findings
+              if f["category"] == "associations"]
+    assert {"temperature", "pressure"} in shared
+    assert all("humidity" not in columns for columns in shared)
+    show(report)
 
 
 def spikes():
@@ -44,11 +47,18 @@ def spikes():
     for i in (30, 100, 170):
         series[i] = 999.9
     df = pl.DataFrame({"temperature": series})
-    show(onceover.profile(df, budget="standard", detectors=["views"]))
+    report = onceover.profile(df, budget="standard", detectors=["views"])
+    rows = {cell["row"] for f in report.findings if f.get("type") == "spike_cells"
+            for e in f["evidence"] for cell in e["metrics"].get("cells", [])}
+    planted = {30, 100, 170}
+    assert planted <= rows
+    show(report)
+    print(f"Planted extreme values found: {len(rows & planted)}/{len(planted)}")
+    print(f"Other reported cells: {len(rows - planted)}")
 
 
 def main():
-    shared_regime()
+    shared_partition()
     spikes()
 
 
