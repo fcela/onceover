@@ -2,7 +2,7 @@ version: 1
 project:
   id: 0f1a17c0-b5ee-4a96-9c3b-90ec4871a05f
   title: onceover
-  description: Give your data a once-over — an evidence-first, Rust-native profiler for Polars DataFrames.
+  description: Rust profiler for Polars DataFrames with column summaries, relationship findings, and search coverage.
   keywords: [data-profiling, polars, data-quality, functional-dependencies, rust]
   github: https://github.com/fcela/onceover
   license: MIT

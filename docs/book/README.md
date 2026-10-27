@@ -4,8 +4,8 @@ The book is a [MyST](https://mystmd.org) site. Every chapter is an
 executable notebook; outputs are produced during the build and are never
 stored in the sources. The Part I tutorials, the case studies, and the
 code-bearing methodology and implementation chapters profile the
-**installed** `onceover` package, so the book cannot drift away from the
-wheel in the working tree.
+**installed** `onceover` package. Executing the chapters checks that the
+examples run with that installed version.
 
 ## Setup
 

@@ -3,8 +3,7 @@
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-This is a breaking revision of report schema 0.1. The package version is
-0.1.1 pending its initial publication.
+Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 
 ## Categories and statement definitions
 
@@ -115,6 +114,15 @@ Each registry entry lists its ID, produced categories, and resource dependencies
 Required detectors may execute to supply shared target descriptions without
 contributing their own findings. An empty selection still returns column
 summaries and coverage but no detector findings.
+
+The experimental `views` detector is excluded from the default selection.
+Request it explicitly at the standard or deep budget. It uses
+`concentration/modal_share` for concentrated modeled values within fitted clusters and
+`concentration/spike_cells` for cells below its predictive-density threshold.
+It also emits `changes/residual_level` for differences between unordered
+clusters; these findings do not identify a temporal breakpoint. See the
+[views reference](book/methodology/view_clusters_reference.ipynb) for how to
+interpret these outputs.
 
 Rust extensions implement `Detector`, declare a `DetectorDescriptor`, and return
 `Finding` candidates from `discover(&DetectorContext)`. The context provides the

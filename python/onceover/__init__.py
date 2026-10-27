@@ -25,8 +25,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     df : polars.DataFrame
         The table to profile (Arrow interchange; Polars 2.x).
     budget : str
-        "quick" (summaries and integrity checks), "standard" (all passes with caps),
-        or "deep" (wider caps and deeper search).
+        "quick" (summaries and integrity checks), "standard" (default passes with caps),
+        or "deep" (wider caps and deeper search for those passes).
     deadline_seconds : float, optional
         Soft wall-clock budget. Deterministic by default (None); when set,
         remaining passes may be skipped and reported in `coverage`.
@@ -41,8 +41,9 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects all. Required detectors can run
-        as resources without contributing their own findings.
+        Detector IDs to select; None selects the default set, which excludes
+        the experimental "views" pass. Required detectors can run as resources
+        without contributing their own findings.
     max_findings, max_rules : int
         Report-wide selection limits, applied across all contributing methods.
 
