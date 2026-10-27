@@ -54,9 +54,17 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
 
 pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String> {
     let specs = builtin_detectors();
-    let mut active = selected
-        .cloned()
-        .unwrap_or_else(|| specs.iter().map(|d| d.id.clone()).collect());
+    let mut active = selected.cloned().unwrap_or_else(|| {
+        // The greedy views pass is opt-in until its criterion review
+        // closes: it is experimental, and running it by default would
+        // change every standard/deep report. Request it explicitly via
+        // detectors=["views"].
+        specs
+            .iter()
+            .map(|d| d.id.clone())
+            .filter(|id| id != "views")
+            .collect()
+    });
     loop {
         let previous = active.len();
         for d in &specs {

@@ -490,12 +490,28 @@ pub fn profile_with_detectors(
             }
             if !deadline_hit && enabled("views") {
                 let (vf, vout) = onceover_mines::views_pass(&table, &tier.views);
+                // Dropped columns must be visible in coverage, not
+                // only in finding metrics: with no views findings at
+                // all, the exclusion would otherwise be silent. A
+                // budget-truncated run reports as capped, like the
+                // other truncated passes, not as a complete run.
+                let mut detail = vout.coverage.clone();
+                if !vout.dropped_columns.is_empty() {
+                    detail.push_str(&format!(
+                        "; dropped {} column(s) past the {}-column cap: {}",
+                        vout.dropped_columns.len(),
+                        tier.views.max_columns,
+                        vout.dropped_columns.join(", ")
+                    ));
+                }
                 coverage.insert(
                     "views".into(),
-                    if table.n > tier.views.row_cap {
-                        PassInfo::sampled(vout.coverage.clone())
+                    if vout.budget_hit {
+                        PassInfo::capped(detail)
+                    } else if table.n > tier.views.row_cap {
+                        PassInfo::sampled(detail)
                     } else {
-                        PassInfo::ran(vout.coverage.clone())
+                        PassInfo::ran(detail)
                     },
                 );
                 findings.extend(vf);

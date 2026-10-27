@@ -1349,7 +1349,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "onceover"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "onceover-core",
  "onceover-deps",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "onceover-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "onceover-report",
  "polars",
@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "onceover-deps"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "onceover-core",
  "onceover-report",
@@ -1389,7 +1389,7 @@ dependencies = [
 
 [[package]]
 name = "onceover-mines"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "onceover-core",
  "onceover-report",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "onceover-py"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "onceover",
  "onceover-report",
@@ -1414,7 +1414,7 @@ dependencies = [
 
 [[package]]
 name = "onceover-report"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",

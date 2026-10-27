@@ -110,8 +110,7 @@ fn nig_log_marginal(n: usize, mean: f64, m2: f64) -> f64 {
     let kn = k0 + nf;
     let an = a0 + nf / 2.0;
     let bn = b0 + m2 / 2.0 + k0 * nf * (mean - mu0).powi(2) / (2.0 * kn);
-    ln_gamma(an) - ln_gamma(a0) + (a0 / 2.0) * b0.ln() - (an / 2.0) * bn.ln()
-        + 0.5 * (k0.ln() - kn.ln())
+    ln_gamma(an) - ln_gamma(a0) + a0 * b0.ln() - an * bn.ln() + 0.5 * (k0.ln() - kn.ln())
         - (nf / 2.0) * (2.0 * std::f64::consts::PI).ln()
 }
 
@@ -304,7 +303,11 @@ fn standardize(name: String, raw: Vec<Option<f64>>) -> ViewCol {
 
 /// Level-encode a string/bool column: the most frequent levels (ties by
 /// level name ascending) keep their identity up to the cap; the rest
-/// pool into one trailing `other` level.
+/// pool into one trailing `other` level. The tail name must not
+/// collide with a kept level: if the literal string "other" is itself
+/// kept, the index map would otherwise overwrite its id with the tail
+/// id, remapping real "other" rows into the tail and leaving a
+/// zero-count ghost id.
 fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol {
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     for s in strs.iter().flatten() {
@@ -318,7 +321,11 @@ fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol
     let has_tail = tail_count > 0;
     let mut level_names = kept.clone();
     if has_tail {
-        level_names.push("other".to_string());
+        let mut tail_name = "other".to_string();
+        while level_names.contains(&tail_name) {
+            tail_name = format!("{tail_name} (pooled)");
+        }
+        level_names.push(tail_name);
     }
     let index: BTreeMap<String, usize> = level_names
         .iter()
@@ -361,6 +368,7 @@ impl WorkBudget {
 }
 
 /// Sufficient-statistic accumulator for one column within one cluster.
+#[derive(Clone)]
 enum Acc {
     Cont { n: usize, mean: f64, m2: f64 },
     Cat { counts: Vec<u64> },
@@ -398,6 +406,38 @@ impl Acc {
         }
     }
 
+    /// Inverse of `add`: remove one observation (inverse Welford for
+    /// continuous, decrement for categorical). Nulls are a no-op, as in
+    /// `add`. Used for leave-one-out scoring: a row must never be
+    /// scored under statistics that contain itself.
+    fn remove(&mut self, v: Option<f64>) {
+        let Some(x) = v else { return };
+        match self {
+            Acc::Cont { n, mean, m2 } => {
+                if *n == 0 {
+                    return;
+                }
+                if *n == 1 {
+                    *n = 0;
+                    *mean = 0.0;
+                    *m2 = 0.0;
+                    return;
+                }
+                let nf = *n as f64;
+                let mean_new = (nf * *mean - x) / (nf - 1.0);
+                *m2 -= (x - *mean) * (x - mean_new);
+                *mean = mean_new;
+                *n -= 1;
+            }
+            Acc::Cat { counts } => {
+                let i = x as usize;
+                if i < counts.len() {
+                    counts[i] = counts[i].saturating_sub(1);
+                }
+            }
+        }
+    }
+
     fn marginal(&self) -> f64 {
         match self {
             Acc::Cont { n, mean, m2 } => nig_log_marginal(*n, *mean, *m2),
@@ -413,7 +453,9 @@ impl Acc {
                 if i < counts.len() {
                     dm_log_predictive(i, counts, 1.0)
                 } else {
-                    0.0
+                    // Unreachable through encode, but an unknown level
+                    // is impossible, not certain: never score it 1.0.
+                    f64::NEG_INFINITY
                 }
             }
         }
@@ -713,6 +755,13 @@ fn views_search(
         if work.hit {
             break;
         }
+        // A merged view with a single cluster carries no partition
+        // evidence: two single-cluster columns would otherwise merge on
+        // pure penalty savings (2 * gamma * ln n) and report a vacuous
+        // dependence block. Merges must earn a real clustering.
+        if mgroups.len() < 2 {
+            continue;
+        }
         let delta = mscore - views[vi].score - views[vj].score + penalty;
         if delta > 0.0 {
             let gain = views[vi].merge_gain + views[vj].merge_gain + delta;
@@ -756,13 +805,27 @@ fn stats_for(cols: &[ViewCol], col_idx: &[usize], groups: &[Vec<usize>]) -> Vec<
 
 /// Assign every sample position to the cluster maximizing total log
 /// predictive density across the view's columns (nulls contribute 0).
-/// Ties go to the lowest cluster index.
+/// Ties go to the lowest cluster index. Scoring is leave-one-out: a
+/// row is scored under its own cluster's statistics with itself
+/// removed, so outliers cannot partly explain themselves; rows that
+/// did not contribute to `stats` (non-search rows on the first pass)
+/// score under the full statistics. `stat_groups` are the groups whose
+/// rows built `stats`.
 fn assign_rows(
     cols: &[ViewCol],
     col_idx: &[usize],
     stats: &[Vec<Acc>],
     n_sample: usize,
+    stat_groups: &[Vec<usize>],
 ) -> Vec<usize> {
+    let mut home = vec![None; n_sample];
+    for (k, g) in stat_groups.iter().enumerate() {
+        for &p in g {
+            if p < n_sample {
+                home[p] = Some(k);
+            }
+        }
+    }
     let mut assignment = vec![0usize; n_sample];
     for (p, slot) in assignment.iter_mut().enumerate() {
         let mut best_k = 0usize;
@@ -771,7 +834,13 @@ fn assign_rows(
             let mut s = 0.0;
             for (jj, &ci) in col_idx.iter().enumerate() {
                 if let Some(x) = cols[ci].vals[p] {
-                    s += kstats[jj].log_predictive(x);
+                    if home[p] == Some(k) {
+                        let mut loo = kstats[jj].clone();
+                        loo.remove(Some(x));
+                        s += loo.log_predictive(x);
+                    } else {
+                        s += kstats[jj].log_predictive(x);
+                    }
                 }
             }
             if s > best_s {
@@ -855,6 +924,20 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         hit: false,
     };
     let views = views_search(&cols, &search_pos, cfg, &mut work);
+    // A budget hit mid-singleton drops tail columns from the search
+    // entirely: they are in no view. They are not extract drops, so
+    // list them separately rather than losing them silently. (A hit
+    // later in search drops nothing: every column is already a view.)
+    let mut budget_dropped: Vec<String> = Vec::new();
+    if work.hit {
+        let covered: std::collections::BTreeSet<usize> =
+            views.iter().flat_map(|v| v.cols.iter().copied()).collect();
+        for (i, col) in cols.iter().enumerate() {
+            if !covered.contains(&i) {
+                budget_dropped.push(col.name.clone());
+            }
+        }
+    }
     let mut findings: Vec<Finding> = Vec::new();
     let mut total_score = 0.0;
     let penalty_full = cfg.gamma * (n_sample.max(1) as f64).ln();
@@ -865,13 +948,13 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         // Assignment: search stats -> assign -> full stats -> reassign
         // once -> final full stats. Deterministic and bounded.
         let search_stats = stats_for(&cols, &view.cols, &view.groups);
-        let a1 = assign_rows(&cols, &view.cols, &search_stats, n_sample);
+        let a1 = assign_rows(&cols, &view.cols, &search_stats, n_sample, &view.groups);
         let g1 = groups_from_assignment(&a1, view.groups.len());
         if g1.is_empty() {
             continue;
         }
         let stats1 = stats_for(&cols, &view.cols, &g1);
-        let a2 = assign_rows(&cols, &view.cols, &stats1, n_sample);
+        let a2 = assign_rows(&cols, &view.cols, &stats1, n_sample, &g1);
         let groups = groups_from_assignment(&a2, g1.len());
         if groups.is_empty() {
             continue;
@@ -891,8 +974,19 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     }
     total_score -= penalty_full * views.len() as f64;
     let n_findings = findings.len();
-    let coverage =
-        format!(
+    let budget_suffix = if work.hit {
+        if budget_dropped.is_empty() {
+            "; search work budget reached".to_string()
+        } else {
+            format!(
+                "; search work budget reached; columns omitted by budget: {}",
+                budget_dropped.join(", ")
+            )
+        }
+    } else {
+        String::new()
+    };
+    let coverage = format!(
         "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats{}",
         views.len(),
         views.iter().filter(|v| v.cols.len() > 1).count(),
@@ -900,7 +994,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         n_sample,
         table.n,
         total_score,
-        if work.hit { "; search work budget reached" } else { "" }
+        budget_suffix
     );
     (
         findings,
@@ -1009,6 +1103,13 @@ fn emit_view_findings(
     base_metrics.insert("population_rows".to_string(), json!(table.n));
     base_metrics.insert("sampled".to_string(), json!(n_sample < table.n));
     base_metrics.insert("search_rows".to_string(), json!(cfg.search_rows));
+    base_metrics.insert("max_columns".to_string(), json!(cfg.max_columns));
+    base_metrics.insert("max_clusters".to_string(), json!(cfg.max_clusters));
+    base_metrics.insert(
+        "anomaly_threshold_nats".to_string(),
+        json!(cfg.anomaly_threshold_nats),
+    );
+    base_metrics.insert("anomaly_cap".to_string(), json!(cfg.anomaly_cap));
     base_metrics.insert("view_columns".to_string(), json!(names));
     base_metrics.insert("n_clusters".to_string(), json!(groups.len()));
     base_metrics.insert("view_score_nats".to_string(), json!(view_score));
@@ -1038,7 +1139,7 @@ fn emit_view_findings(
             Subject::columns(names.clone()),
             Default::default(),
             format!(
-                "Columns {} form a dependence block under the greedy view partition (merge gain {:.1} nats over separate views; {}).",
+                "Columns {} form a dependence block under the greedy view partition (merge gain {:.1} nats over separate views on the search sample; {}).",
                 names.join(", "),
                 view.merge_gain,
                 HONESTY
@@ -1077,6 +1178,18 @@ fn emit_view_findings(
                     let mut m = 0.0f64;
                     for a in 0..groups.len() {
                         for b in (a + 1)..groups.len() {
+                            // An all-null cluster has no distribution;
+                            // its zero-vector distance (TV 0.5 against
+                            // anything) is arbitrary, not a shift.
+                            let (ta, tb) = match (&stats[a][jj], &stats[b][jj]) {
+                                (Acc::Cat { counts: ca }, Acc::Cat { counts: cb }) => {
+                                    (ca.iter().sum::<u64>(), cb.iter().sum::<u64>())
+                                }
+                                _ => (0, 0),
+                            };
+                            if ta == 0 || tb == 0 {
+                                continue;
+                            }
                             let pa = cat_dist(&stats[a][jj]);
                             let pb = cat_dist(&stats[b][jj]);
                             let tv: f64 = pa
@@ -1158,8 +1271,17 @@ fn emit_view_findings(
     // honest statement of that structure.
     for (jj, &ci) in view.cols.iter().enumerate() {
         let col = &cols[ci];
+        // Modal findings are one statement per column: collecting
+        // entries here keeps multiple modal clusters (and the spike
+        // finding below) from colliding on one selector key.
+        let mut modal_entries: Vec<(usize, usize, usize, usize, serde_json::Value, f64, usize)> =
+            Vec::new();
         for (k, g) in groups.iter().enumerate() {
-            if g.len() < cfg.min_degenerate_rows {
+            // The gate counts non-null observations, not rows: a
+            // cluster of 40 rows with 39 nulls holds one observation,
+            // not a degenerate finding.
+            let non_null = g.iter().filter(|&&p| col.vals[p].is_some()).count();
+            if non_null < cfg.min_degenerate_rows {
                 continue;
             }
             let (modal_value, modal_share, modal_n): (serde_json::Value, f64, usize) =
@@ -1168,7 +1290,12 @@ fn emit_view_findings(
                         let mut counts: BTreeMap<u64, (usize, f64)> = BTreeMap::new();
                         for &p in g {
                             if let (Some(z), Some(r)) = (col.vals[p], col.raw[p]) {
-                                let e = counts.entry(z.to_bits()).or_insert((0, r));
+                                // Canonicalize signed zero: +0.0 and
+                                // -0.0 are the same value and must count
+                                // together, or a mixed-sign zero column
+                                // escapes the modal test on bit keys.
+                                let key = if z == 0.0 { 0.0f64 } else { z }.to_bits();
+                                let e = counts.entry(key).or_insert((0, r));
                                 e.0 += 1;
                             }
                         }
@@ -1202,35 +1329,69 @@ fn emit_view_findings(
                 };
             if modal_share >= 0.9 {
                 let s = &summaries[k];
-                let mut m = base_metrics.clone();
-                m.insert("cluster".to_string(), json!(k));
-                m.insert("rows_min".to_string(), json!(s.rows_min));
-                m.insert("rows_max".to_string(), json!(s.rows_max));
-                m.insert("cluster_n".to_string(), json!(g.len()));
-                m.insert("modal_value".to_string(), modal_value.clone());
-                m.insert("modal_share".to_string(), json!(modal_share));
-                out.push(Finding::from_statement(
-                    Category::Concentration,
-                    None,
-                    Subject::columns([col.name.clone()]),
-                    Default::default(),
-                    format!(
-                        "{} of {} rows in cluster {} (rows {}-{}) hold {} at {} ({:.0}% of the cluster; {}).",
-                        modal_n,
-                        g.len(),
-                        k,
-                        s.rows_min,
-                        s.rows_max,
-                        col.name,
-                        modal_value,
-                        modal_share * 100.0,
-                        HONESTY
-                    ),
-                    make_evidence(m),
-                    0.60,
-                    Some(HONESTY.to_string()),
+                modal_entries.push((
+                    k,
+                    s.rows_min,
+                    s.rows_max,
+                    g.len(),
+                    modal_value,
+                    modal_share,
+                    modal_n,
                 ));
             }
+        }
+        if !modal_entries.is_empty() {
+            let mut m = base_metrics.clone();
+            let claim = if modal_entries.len() == 1 {
+                let (k, rmin, rmax, cn, mv, ms, mn) = &modal_entries[0];
+                m.insert("cluster".to_string(), json!(k));
+                m.insert("rows_min".to_string(), json!(rmin));
+                m.insert("rows_max".to_string(), json!(rmax));
+                m.insert("cluster_n".to_string(), json!(cn));
+                m.insert("modal_value".to_string(), mv.clone());
+                m.insert("modal_share".to_string(), json!(ms));
+                format!(
+                    "{} of {} rows in cluster {} (rows {}-{}) hold {} at {} ({:.0}% of the cluster; {}).",
+                    mn, cn, k, rmin, rmax, col.name, mv, ms * 100.0, HONESTY
+                )
+            } else {
+                let frags: Vec<String> = modal_entries
+                    .iter()
+                    .map(|(k, rmin, rmax, cn, mv, ms, mn)| {
+                        format!(
+                            "{} of {} rows in cluster {} (rows {}-{}) hold {} at {} ({:.0}% of the cluster)",
+                            mn, cn, k, rmin, rmax, col.name, mv, ms * 100.0
+                        )
+                    })
+                    .collect();
+                m.insert(
+                    "modal_clusters".to_string(),
+                    json!(modal_entries
+                        .iter()
+                        .map(|(k, rmin, rmax, cn, mv, ms, _)| {
+                            json!({
+                                "cluster": k,
+                                "rows_min": rmin,
+                                "rows_max": rmax,
+                                "cluster_n": cn,
+                                "modal_value": mv,
+                                "modal_share": ms,
+                            })
+                        })
+                        .collect::<Vec<_>>()),
+                );
+                format!("{} ({}).", frags.join("; "), HONESTY)
+            };
+            out.push(Finding::from_statement(
+                Category::Concentration,
+                Some("modal_share".to_string()),
+                Subject::columns([col.name.clone()]),
+                Default::default(),
+                claim,
+                make_evidence(m),
+                0.60,
+                Some(HONESTY.to_string()),
+            ));
         }
         // Spike cells: log predictive density below median - threshold.
         // Cells in small clusters (fewer than min_degenerate_rows rows)
@@ -1238,12 +1399,15 @@ fn emit_view_findings(
         // a handful of identical spikes would otherwise form their own
         // cluster and look perfectly typical under it, making them
         // invisible to exactly the score meant to catch them.
-        let background = groups
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, g)| g.len())
-            .map(|(k, _)| k)
-            .unwrap_or(0);
+        // First-wins on ties, matching the module's tie-break
+        // convention (max_by_key would take the last tied cluster).
+        let background = groups.iter().enumerate().fold(0, |best, (k, g)| {
+            if g.len() > groups[best].len() {
+                k
+            } else {
+                best
+            }
+        });
         let mut cells: Vec<(f64, usize, serde_json::Value)> = Vec::new();
         for (k, g) in groups.iter().enumerate() {
             let score_k = if g.len() < cfg.min_degenerate_rows && k != background {
@@ -1253,7 +1417,17 @@ fn emit_view_findings(
             };
             for &p in g {
                 if let Some(x) = col.vals[p] {
-                    let lp = stats[score_k][jj].log_predictive(x);
+                    // Leave-one-out when scoring under the cell's own
+                    // cluster, so a cell cannot explain itself; cells
+                    // scored under the background cluster are not in
+                    // its statistics and need no adjustment.
+                    let lp = if score_k == k {
+                        let mut loo = stats[k][jj].clone();
+                        loo.remove(Some(x));
+                        loo.log_predictive(x)
+                    } else {
+                        stats[score_k][jj].log_predictive(x)
+                    };
                     let value = match col.kind {
                         ColKind::Continuous => {
                             json!(col.raw[p])
@@ -1292,7 +1466,7 @@ fn emit_view_findings(
                 let lowest = &flagged[0];
                 out.push(Finding::from_statement(
                     Category::Concentration,
-                    None,
+                    Some("spike_cells".to_string()),
                     Subject::columns([col.name.clone()]),
                     Default::default(),
                     format!(
@@ -1362,13 +1536,241 @@ mod tests {
         // Design note section 5: raw [19, 20, 21] under median/IQR
         // scaling gives standardized [-1, 0, 1]: mean 0, S = 2.
         let v = nig_log_marginal(3, 0.0, 2.0);
-        assert!((v - (-3.46200)).abs() < 1e-4, "nig = {v}");
+        assert!((v - (-4.67500)).abs() < 1e-4, "nig = {v}");
+    }
+
+    #[test]
+    fn nig_predictive_is_marginal_ratio() {
+        // Regression test for the halved-beta-exponent bug: the
+        // posterior predictive must equal the marginal ratio, exactly.
+        // Cases: a typical value, a far value (where the old formula
+        // was off by tens of nats), and the empty-cluster prior.
+        for (vals, x) in [
+            (vec![-1.0, 0.0, 1.0], 0.5),
+            (vec![0.0; 50], 5.0),
+            (vec![], 0.7),
+        ] {
+            let (n, mean, m2) = {
+                let mut n = 0usize;
+                let mut mean = 0.0f64;
+                let mut m2 = 0.0f64;
+                for &v in &vals {
+                    n += 1;
+                    let d = v - mean;
+                    mean += d / n as f64;
+                    m2 += d * (v - mean);
+                }
+                (n, mean, m2)
+            };
+            let mut vals2 = vals.clone();
+            vals2.push(x);
+            let (n2, mean2, m2_2) = {
+                let mut n = 0usize;
+                let mut mean = 0.0f64;
+                let mut m2 = 0.0f64;
+                for &v in &vals2 {
+                    n += 1;
+                    let d = v - mean;
+                    mean += d / n as f64;
+                    m2 += d * (v - mean);
+                }
+                (n, mean, m2)
+            };
+            let ratio = nig_log_marginal(n2, mean2, m2_2) - nig_log_marginal(n, mean, m2);
+            let pred = nig_log_predictive(x, n, mean, m2);
+            assert!(
+                (ratio - pred).abs() < 1e-9,
+                "n = {n}, x = {x}: ratio = {ratio}, pred = {pred}"
+            );
+        }
     }
 
     #[test]
     fn dm_worked_example() {
         let v = dm_log_marginal(&[3, 1], 1.0);
         assert!((v - (-2.99573)).abs() < 1e-4, "dm = {v}");
+    }
+
+    fn cont_stats(vals: &[f64]) -> (usize, f64, f64) {
+        let mut n = 0usize;
+        let mut mean = 0.0f64;
+        let mut m2 = 0.0f64;
+        for &v in vals {
+            n += 1;
+            let d = v - mean;
+            mean += d / n as f64;
+            m2 += d * (v - mean);
+        }
+        (n, mean, m2)
+    }
+
+    #[test]
+    fn acc_remove_matches_from_scratch() {
+        let vals = vec![-1.0, 0.5, 2.0, -0.25];
+        let mut full = Acc::Cont {
+            n: 0,
+            mean: 0.0,
+            m2: 0.0,
+        };
+        for &v in &vals {
+            full.add(Some(v));
+        }
+        for i in 0..vals.len() {
+            let mut loo = full.clone();
+            loo.remove(Some(vals[i]));
+            let rest: Vec<f64> = vals
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, &v)| v)
+                .collect();
+            let (n, mean, m2) = cont_stats(&rest);
+            match loo {
+                Acc::Cont {
+                    n: ln,
+                    mean: lm,
+                    m2: lm2,
+                } => {
+                    assert_eq!(ln, n);
+                    assert!((lm - mean).abs() < 1e-12, "mean {lm} vs {mean}");
+                    assert!((lm2 - m2).abs() < 1e-12, "m2 {lm2} vs {m2}");
+                }
+                _ => panic!("expected Cont"),
+            }
+        }
+        // Removing the only value empties the accumulator.
+        let mut single = Acc::Cont {
+            n: 0,
+            mean: 0.0,
+            m2: 0.0,
+        };
+        single.add(Some(3.0));
+        single.remove(Some(3.0));
+        match single {
+            Acc::Cont { n, mean, m2 } => {
+                assert_eq!(n, 0);
+                assert_eq!(mean, 0.0);
+                assert_eq!(m2, 0.0);
+            }
+            _ => panic!("expected Cont"),
+        }
+        // Categorical: decrement, saturating at zero.
+        let mut cat = Acc::Cat {
+            counts: vec![3, 1, 2],
+        };
+        cat.remove(Some(1.0));
+        match cat {
+            Acc::Cat { counts } => assert_eq!(counts, vec![3, 0, 2]),
+            _ => panic!("expected Cat"),
+        }
+    }
+
+    #[test]
+    fn assign_rows_is_leave_one_out() {
+        // Cluster A {0, 0, 0, 1000} vs wide cluster B. Under
+        // self-inclusive scoring the 1000 row sticks to A (-9.1 vs
+        // about -22.8 under B); under leave-one-out it moves to B
+        // (-52.0 vs -22.8). Only the flip is asserted: the 0 rows may
+        // also move, which is correct LOO behavior for this fixture.
+        let vals = vec![0.0, 0.0, 0.0, 1000.0, -100.0, -50.0, 0.0, 50.0, 100.0];
+        let col = ViewCol {
+            name: "x".to_string(),
+            kind: ColKind::Continuous,
+            vals: vals.iter().map(|&v| Some(v)).collect(),
+            raw: Vec::new(),
+            n_levels: 0,
+            level_names: Vec::new(),
+        };
+        let cols = vec![col];
+        let groups = vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7, 8]];
+        let stats = stats_for(&cols, &[0], &groups);
+        let a = assign_rows(&cols, &[0], &stats, 9, &groups);
+        assert_eq!(a[3], 1, "outlier row must leave its own cluster");
+    }
+
+    #[test]
+    fn encode_levels_other_collision() {
+        // "other" is itself a kept level; the pooled tail must not
+        // steal its id (kept id would become a zero-count ghost and
+        // real "other" rows would remap to the tail).
+        let mut strs: Vec<Option<String>> = Vec::new();
+        for _ in 0..100 {
+            strs.push(Some("other".to_string()));
+        }
+        for _ in 0..100 {
+            strs.push(Some("a".to_string()));
+        }
+        for i in 0..40 {
+            strs.push(Some(format!("rare{i:02}")));
+        }
+        let col = encode_levels("x".to_string(), strs, 32);
+        // Kept: "a", "other", rare00..rare29; tail: rare30..rare39.
+        assert_eq!(col.n_levels, 33);
+        let other_id = col
+            .level_names
+            .iter()
+            .position(|s| s == "other")
+            .expect("real other level kept");
+        let tail_id = col.n_levels - 1;
+        assert_ne!(col.level_names[tail_id], "other");
+        assert!(col.vals[0..100].iter().all(|v| *v == Some(other_id as f64)));
+        assert!(col.vals[230..240]
+            .iter()
+            .all(|v| *v == Some(tail_id as f64)));
+    }
+
+    #[test]
+    fn modal_counts_signed_zero_together() {
+        // Mixed-sign zero values are one value for the modal test:
+        // without canonicalization the 50/50 bit split gives share
+        // 0.5 and no finding; with it, share 1.0.
+        let vals: Vec<Option<f64>> = (0..100)
+            .map(|i| Some(if i % 2 == 0 { 0.0 } else { -0.0 }))
+            .collect();
+        let col = ViewCol {
+            name: "z".to_string(),
+            kind: ColKind::Continuous,
+            vals: vals.clone(),
+            raw: vals.to_vec(),
+            n_levels: 0,
+            level_names: Vec::new(),
+        };
+        let cols = vec![col];
+        let groups = vec![(0..100).collect::<Vec<usize>>()];
+        let stats = stats_for(&cols, &[0], &groups);
+        let table = TypedTable {
+            n: 100,
+            names: vec!["z".to_string()],
+            dtypes: vec!["float64".to_string()],
+            cols: vec![],
+        };
+        let view = ViewState {
+            cols: vec![0],
+            groups: groups.clone(),
+            score: 0.0,
+            merge_gain: 0.0,
+        };
+        let sample: Vec<usize> = (0..100).collect();
+        let findings = emit_view_findings(
+            &table,
+            &cols,
+            &view,
+            &groups,
+            &stats,
+            &sample,
+            100,
+            0.0,
+            &ViewsConfig::default(),
+            &[],
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.category == Category::Concentration
+                    && f.finding_type.as_deref() == Some("modal_share")),
+            "expected a modal-share finding, got: {}",
+            serde_json::to_string(&findings).unwrap()
+        );
     }
 
     #[test]
@@ -1558,6 +1960,40 @@ mod tests {
                 .iter()
                 .any(|f| f.category == Category::Associations),
             "spurious view: {}",
+            serde_json::to_string(&findings).unwrap()
+        );
+    }
+
+    #[test]
+    fn views_pass_does_not_merge_constant_columns() {
+        // Two constant columns have single-cluster singletons and a
+        // single-cluster joint view: merging them would be pure
+        // penalty savings (2 * gamma * ln n) with no partition
+        // evidence, so no dependence block may be reported.
+        let table = TypedTable {
+            n: 500,
+            names: vec!["c1".to_string(), "c2".to_string()],
+            dtypes: vec!["float64".to_string(), "float64".to_string()],
+            cols: vec![
+                TypedCol::F64 {
+                    vals: NumericValues::Owned(vec![Some(7.0); 500]),
+                },
+                TypedCol::F64 {
+                    vals: NumericValues::Owned(vec![Some(3.0); 500]),
+                },
+            ],
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 500,
+            ..Default::default()
+        };
+        let (findings, _) = views_pass(&table, &cfg);
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.category == Category::Associations),
+            "constant columns merged: {}",
             serde_json::to_string(&findings).unwrap()
         );
     }

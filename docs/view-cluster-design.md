@@ -20,7 +20,9 @@ greedy search over the profiler's existing sample path.
   The name "CrossCat" appears nowhere in code or findings: the inference is
   different, so the name must say so honestly.
 - Budgets: standard and deep only, like the other model passes. Quick skips
-  it (quick has no model section at all).
+  it (quick has no model section at all). The pass is opt-in: it is
+  excluded from the default detector set and runs only when explicitly
+  requested via detectors=["views"], until its criterion review closes.
 - Inputs: the extracted `TypedTable` (zero-copy columns), never the raw
   Polars frame. The pass runs on the profiler's deterministic stratified
   sample (`onceover_core::sample_rows`), standard row cap 20,000, deep
@@ -176,14 +178,20 @@ A merge of views v1, v2 into m changes the score by:
     delta = score(m) - score(v1) - score(v2) + gamma * log(n_sample)
 
 (the last term because the view count drops by one). A merge is accepted
-iff delta > 0, computed on the search sample (section 2.3).
+iff delta > 0, computed on the search sample (section 2.3). Additionally,
+a merged view with a single cluster is never accepted: it carries no
+partition evidence and would merge on penalty savings alone (two
+constant columns gain exactly 2 * gamma * log n with zero marginal
+improvement).
 
 ### 2.2 Eligibility and caps
 
 - Eligible columns: non-`Null`, non-`Other`, with at least one non-null
   value on the sample.
 - `max_columns = 64`: the first 64 eligible columns in table order are
-  considered; dropped column names are recorded in evidence metrics.
+  considered; dropped column names are recorded in evidence metrics
+  and in the views coverage detail (so the exclusion is visible even
+  when no views findings are emitted).
 - `max_clusters = 8` per view.
 - `search_rows = 2000`: search decisions (pair pre-screen, splits, merge
   acceptance) run on `sample_rows(n_sample, 2000)` mapped through the
@@ -325,40 +333,52 @@ jobs, and the design does not pretend otherwise.
 
 ## 4. Findings translation
 
-Every claim carries the honesty line: "greedy point estimate; scores
-are marginal-likelihood values, not posterior probabilities." Evidence
-basis is `estimated` (a fitted partition, not a measurement), validation
-method `none`, scope `sample` with `rows_evaluated` (sample rows) and
-`population_rows` (table rows). Interestingness values below are
-selection priorities (0–1), not probabilities, fixed per kind so
-selection is deterministic.
+Every claim carries the honesty line: "Greedy deterministic partition;
+scores are marginal-likelihood values, not posterior probabilities."
+Evidence basis is `estimated` (a fitted partition, not a
+measurement), validation method `none`, scope `sample` with
+`rows_evaluated` (sample rows) and `population_rows` (table rows).
+Interestingness values below are the detector's per-kind priorities
+(0–1), not probabilities. They do not survive the report layer
+unchanged: the report selector overwrites them with its own score,
+which demotes associations (no pearson/spearman/xi keys are emitted,
+so strength reads 0) and equalizes the two concentration kinds (it
+reads `top_share`, not the emitted `modal_share`). The emitted order
+is therefore not the detector's order; fixing the detector/ledger
+metric contract is open work.
 
 | Kind | Category / type | Subject | Claim template | Interestingness |
 |---|---|---|---|---|
-| View | `associations` / `statistical` | view columns | "Columns {a, b, ...} form a dependence block under the greedy view partition (merge gain {g} nats over separate views; greedy point estimate, not a posterior probability)" | 0.60 |
-| Regime split | `changes` / `residual_level` | view columns | "Rows split into {k} clusters; cluster {i} covers rows {r1}–{r2} with {column} mean {m1} vs {m2} in cluster {j} (full-sample marginal gain {g} nats; greedy point estimate)" | 0.70 |
-| Degenerate cluster | `concentration` | the column | "{n} of {m} rows in cluster {i} (rows {r1}–{r2}) hold {column} at {v} ({share}% of the cluster; greedy point estimate)" | 0.60 |
-| Spike cells | `concentration` | the column | "{n} cells in {column} have log predictive density below {threshold} nats under their cluster (lowest {v} at rows {r...}; greedy point estimate)" | 0.50 |
+| View | `associations` / `statistical` | view columns | "Columns {a, b, ...} form a dependence block under the greedy view partition (merge gain {g} nats over separate views on the search sample; {honesty})" | 0.60 |
+| Regime split | `changes` / `residual_level` | view columns | "Rows split into {k} clusters; headline column {c} shifts by {s} between clusters ({honesty})" — the shift is in per-column median/IQR (standardized) units, and the headline compares continuous z-shifts against categorical total-variation distances on one scale, so a categorical column effectively never headlines a mixed view | 0.70 |
+| Degenerate cluster | `concentration` / `modal_share` | the column | "{n} of {m} rows in cluster {i} (rows {r1}–{r2}) hold {column} at {v} ({share}% of the cluster; {honesty})" — one statement per column, with all modal clusters listed when there are several | 0.60 |
+| Spike cells | `concentration` / `spike_cells` | the column | "{n} cells in {column} have log predictive density below {threshold} nats under their cluster (lowest {v} at row {r}; {honesty})" | 0.50 |
 
 Findings are emitted only when they exist: a view finding per
 multi-column view (singleton views emit nothing — a column alone in a
 view is the absence of detected dependence, not a statement); a regime
 finding per view with >= 2 clusters, describing the largest
-between-cluster shift; a degenerate finding per (cluster, column) with
-cluster size >= 30 rows and one exact value (continuous) or level
-(categorical) holding at least 90% of the cluster's non-null rows
+between-cluster shift; a degenerate finding per column, listing every
+cluster with at least 30 non-null observations of the column and one
+exact value (continuous) or level (categorical) holding at least 90%
+of the cluster's non-null rows (one statement per column listing all
+modal clusters, so modal findings for different clusters cannot
+collapse onto one selector key; spike cells are a separate finding
+type)
 (purity is deliberately not required: greedy search rarely isolates a
 constant block exactly — it usually lands as the dominant share of a
 slightly mixed cluster, and the 90% share is the honest statement of
 that structure); a spike finding per column with at least one cell
 below the section 3 threshold.
 
-Evidence metrics for every finding include: `gamma`, `n_sample`,
-`search_rows`, `max_columns`, `max_clusters`, per-column null counts
-in the relevant clusters, dropped-column names (view findings), and
-the full-sample partition score. Specification definitions record the
-cluster row ranges and, for regime findings, the reference model
-("single-component per column") and breakpoint row range, so the
+Evidence metrics for every finding include: `gamma`, `n`,
+`search_rows`, `max_columns`, `max_clusters`,
+`anomaly_threshold_nats`, `anomaly_cap`, whole-sample per-column null
+counts, dropped-column names, and the full-sample partition score
+(`view_score_nats`) plus merge gain (`merge_gain_nats`).
+Specification definitions record, for regime findings, the reference
+model ("single-component per column"), the headline column, and
+per-cluster row ranges, sizes, and headline-column means, so the
 statement is interpretable without the design note.
 
 ## 5. Worked example and validation plan
@@ -370,12 +390,16 @@ quartiles (type 7) 19.5 and 20.5, IQR 1.0, standardized values
 [-1, 0, 1]. Then n = 3, xbar = 0, S = 2.0, kappa_n = 4,
 alpha_n = 3.5, beta_n = 2.0, and
 
-    log p = lgamma(3.5) - lgamma(2) + 0 - 1.75 * log(2.0)
+    log p = lgamma(3.5) - lgamma(2) + 0 - 3.5 * log(2.0)
             + 0.5 * (log 1 - log 4) - 1.5 * log(2 * pi)
-          = 1.20097 - 1.21287 - 0.69315 - 2.75682
-          = -3.46200
+          = 1.200974 - 2.426015 - 0.693147 - 2.756816
+          = -4.67500
 
-checked by direct evaluation (script output: -3.46200).
+checked by direct evaluation (script output: -4.67500). Note: an
+earlier version of this note (and the code) halved the beta exponents
+(1.75 * log 2.0), giving -3.46200; that was inconsistent with the
+code's own predictive, which the marginal ratio must equal. Fixed
+2026-10-26; the predictive check values below are unchanged.
 
 Categorical, Dirichlet(1). Counts [3, 1] over K = 2 levels:
 
@@ -525,3 +549,32 @@ regime evidence.
 - The pass adds a model-fitting step to profiling; its worst-case cost
   (section 2.5) is seconds, not milliseconds, and must be measured on
   the scale case (1M rows) before any performance claim is made.
+- Leave-one-out assignment (2026-10-27): final assignment and
+  own-cluster spike scoring score each row under its own cluster's
+  statistics with itself removed. Self-inclusive scoring let outliers
+  partly explain themselves (measured gaps up to 1267 nats); the
+  background rule for small clusters is still needed, because
+  identical spikes in one small cluster look typical even under
+  leave-one-out.
+- Background-rule discontinuity: cells in clusters below 30 rows are
+  scored under the largest cluster, so one row crossing 30 flips a
+  constant block from spike findings to a degenerate finding. The
+  cliff is documented, not smoothed: a smooth rule needs a design
+  decision, and any candidate must not re-hide identical-spike
+  clusters.
+- Pooled tail disables spike detection (2026-10-27): rare levels pool
+  into one Dirichlet cell, so after roughly 500 tail rows an
+  unseen rare level scores about -0.06 nats — structurally invisible
+  as a spike. Tail-only structure (rare_a -> rare_b vs rare_c ->
+  rare_d) collapses to one cell and is hidden. A separate anomaly
+  path for rare levels is open work.
+- Search-subsample gap: split/merge decisions run on a stratified
+  2000-row subsample, so regimes confined to under ~10% of rows
+  (under ~200 search rows) may never split.
+- Merge guard (2026-10-27): merges into single-cluster views are
+  refused, blocking merges whose entire gain is refunded penalties
+  (two constant columns: exactly 2*gamma*ln(n)). The guard is
+  deliberately narrower than a marginals-only gate: genuine aligned
+  merges have zero marginal gain — their gain IS the penalty
+  savings — so a marginals-only gate would kill the real cases
+  along with the vacuous ones.
