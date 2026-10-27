@@ -18,3 +18,4 @@ __pycache__/
 
 # Local agent instructions
 /AGENTS.md
+/doc/WRITING_GUIDE.md

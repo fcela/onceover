@@ -1,7 +1,7 @@
 {
   "execution": {
-    "started_utc": "2026-10-27T15:47:16.660375+00:00",
-    "git_head": "3a4a263d2d48bfe05567fe746a563d9a95128b89",
+    "started_utc": "2026-10-27T21:06:41.024799+00:00",
+    "git_head": "34f84265f62ba1255487045d855e5e7eb189925b",
     "working_tree_modified": true,
     "runtime": {
       "python": "/private/tmp/onceover-docs-venv/bin/python",
@@ -14,16 +14,16 @@
         "source_sha256": "9b247f563e4c9ba65c75854d4831d68bfbecf9b22214e232b8ee484359f1c167",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.51,
+        "seconds": 0.514,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/appendix/glossary.ipynb",
-        "source_sha256": "d148e166003a24fbb17d6e4e70f0938f044bf2c502eeb4ad5639118d17b3ab6e",
+        "source_sha256": "71f9261c4886c09358b8e2c654033794dc00f8ebf37faa823352a39f2842e71b",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.534,
+        "seconds": 0.531,
         "failure": null,
         "errors": []
       },
@@ -32,16 +32,16 @@
         "source_sha256": "47496dfa7980dbd18348a0b2f6f3d1ceadbe5ee279fc5e8cf23a6649f2360080",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.502,
+        "seconds": 0.488,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/appendix/report_contract.ipynb",
-        "source_sha256": "cae4c69e8de539b20b2fc22ea45d89c90ed07a65113cd5219228340605421be2",
+        "source_sha256": "fccaf91b4cc05ac1affc4b16a663eef24a281b2ac701b87f2fce2be4accac3b0",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.582,
+        "seconds": 0.616,
         "failure": null,
         "errors": []
       },
@@ -50,7 +50,7 @@
         "source_sha256": "2e08882e8635aaee977e6defebf63d9ce873db04156630037e3e116dc770555d",
         "code_cells": 4,
         "executed_cells": 4,
-        "seconds": 0.54,
+        "seconds": 0.571,
         "failure": null,
         "errors": []
       },
@@ -59,7 +59,7 @@
         "source_sha256": "ad05a41a7011678eb836775a144a61d17fb3a2740081fb434cf8073c24b2fb26",
         "code_cells": 5,
         "executed_cells": 5,
-        "seconds": 0.633,
+        "seconds": 0.637,
         "failure": null,
         "errors": []
       },
@@ -68,16 +68,16 @@
         "source_sha256": "0df6daf4cc3d960cbdd0394aa7845787c470b0de3076f556f9e022a76ca9188a",
         "code_cells": 4,
         "executed_cells": 4,
-        "seconds": 0.608,
+        "seconds": 0.583,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/implementation/architecture.ipynb",
-        "source_sha256": "75e9643ec95c91157b047606aed2ad7bc050aa4b4c6346775cfa64a272aed5b3",
+        "source_sha256": "403c33e62e803fe294b7427f3b9cc3e6a11369392e597f266134f87411a3dc3a",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.484,
+        "seconds": 0.524,
         "failure": null,
         "errors": []
       },
@@ -86,7 +86,7 @@
         "source_sha256": "fc7d0d769a3dc3267114bfd332801ebf82b97f790a62bad32c64f148f9596e03",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.527,
+        "seconds": 0.534,
         "failure": null,
         "errors": []
       },
@@ -95,7 +95,7 @@
         "source_sha256": "7f535475aa9b06a8e9fc0298a2bda697cee27524c195d8be065c264bba0c855c",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.628,
+        "seconds": 0.6,
         "failure": null,
         "errors": []
       },
@@ -104,7 +104,7 @@
         "source_sha256": "1542fbceb72e844d7415b42deae500cd7b6b7215710742ee7ce96db4c7d2062f",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.47,
+        "seconds": 0.471,
         "failure": null,
         "errors": []
       },
@@ -113,16 +113,16 @@
         "source_sha256": "25c1fe8e226e9cab9c9afcf84f29bd1466455b2784106afc27c0a1545b2ebef7",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.532,
+        "seconds": 0.504,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/intro.ipynb",
-        "source_sha256": "72cfcbf070dbe84448ac3f74b0cdf4ea61ddfc601fa1863b5bf30dfd9e4479db",
+        "source_sha256": "934148d0fb4c6c393232655dcb0de2d048ba0c7548b8c26be920b7a966732469",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.568,
+        "seconds": 0.544,
         "failure": null,
         "errors": []
       },
@@ -131,7 +131,7 @@
         "source_sha256": "11218f4f7b525d8fdf6b3cc3ebada493a8ac23c12ebd698d4eae288af1998cbd",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.562,
+        "seconds": 0.533,
         "failure": null,
         "errors": []
       },
@@ -140,7 +140,7 @@
         "source_sha256": "d914ad8d775c4032966241ddd01bd386f205f8eec996a4ac73773840baeb6943",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.569,
+        "seconds": 0.538,
         "failure": null,
         "errors": []
       },
@@ -149,16 +149,16 @@
         "source_sha256": "196b28308dc89fc51d46be6321495600566ccbb3e32564cc9438a9cc22767b28",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.609,
+        "seconds": 0.628,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/methodology/evidence.ipynb",
-        "source_sha256": "2c56d779d9079fed10117a19ed9eac083b0bffd280fac9d02a3eaf85ebf328a4",
+        "source_sha256": "65a81afc6351f4936dcf4037261b7b16b00db2a6c1e85f89e3359a3a83a0f748",
         "code_cells": 2,
         "executed_cells": 2,
-        "seconds": 0.561,
+        "seconds": 0.578,
         "failure": null,
         "errors": []
       },
@@ -167,7 +167,7 @@
         "source_sha256": "cd9439ddd5c653b1495cbc4a45b50a6644179d273cf6328824ad55fca9cc5993",
         "code_cells": 2,
         "executed_cells": 2,
-        "seconds": 0.554,
+        "seconds": 0.528,
         "failure": null,
         "errors": []
       },
@@ -176,7 +176,7 @@
         "source_sha256": "e165b2bf8fb32e7604d21a3b4d4030add7a4110a898334d71d2c2f3cd9f2d308",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.59,
+        "seconds": 0.599,
         "failure": null,
         "errors": []
       },
@@ -185,7 +185,7 @@
         "source_sha256": "eebaba0e10bffe0c332943165a52d180423ad8951b59fc51038c0b496cf38023",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.617,
+        "seconds": 0.587,
         "failure": null,
         "errors": []
       },
@@ -194,7 +194,7 @@
         "source_sha256": "4493b15961d60ee2975d5606b3c2962db50ea63ff985f98f5955e5e71b69ac14",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.615,
+        "seconds": 0.604,
         "failure": null,
         "errors": []
       },
@@ -203,7 +203,7 @@
         "source_sha256": "c2ea5ad9340a4cacc4299ca4e38600e3e0c2387268a141ccf10e254c5f624af7",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.57,
+        "seconds": 0.54,
         "failure": null,
         "errors": []
       },
@@ -212,7 +212,7 @@
         "source_sha256": "83899afab5ba097176c18a5d149d6033f3ecc41802feff21ceec6f0a505c983e",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.728,
+        "seconds": 0.734,
         "failure": null,
         "errors": []
       },
@@ -221,7 +221,7 @@
         "source_sha256": "ff33011efeb2c2759c4a831a2a3b890abe6f96bab9875c52ea49352301f99609",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.551,
+        "seconds": 0.569,
         "failure": null,
         "errors": []
       },
@@ -230,7 +230,7 @@
         "source_sha256": "4a889a5e2a98910accddcfb2eeb82424f235037f3087167d9e63128ce7c0ad7c",
         "code_cells": 3,
         "executed_cells": 3,
-        "seconds": 0.578,
+        "seconds": 0.554,
         "failure": null,
         "errors": []
       },
@@ -239,34 +239,34 @@
         "source_sha256": "0703ef76ef6247dd7aeef9fe638eaddb50feca5409b136d171c85e7e098939e8",
         "code_cells": 0,
         "executed_cells": 0,
-        "seconds": 0.467,
+        "seconds": 0.513,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/usage/columns.ipynb",
-        "source_sha256": "a51055e0bd6090f6a29ebac4e3c1e3eaaf4189c153c6dd03bf1562cb2bb7f3c8",
+        "source_sha256": "3f6ba7624b9bde3d2654e6202ca804b90469fbfef23c47acb5ffed7e3324e313",
         "code_cells": 8,
         "executed_cells": 8,
-        "seconds": 1.166,
+        "seconds": 1.196,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/usage/coverage.ipynb",
-        "source_sha256": "ce0b7a5a8ec8a10fe5567b5158acdad3578dc1140e9e0a91ef961831b62b1192",
+        "source_sha256": "b8e6a655548d2aba300b352587495ab1a597a7f45c29c3963ec58efba85bf368",
         "code_cells": 4,
         "executed_cells": 4,
-        "seconds": 0.938,
+        "seconds": 0.93,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/usage/findings.ipynb",
-        "source_sha256": "a5c0c358307cc3158ed4e737bdea93f846d08927c61552af7503734e553b91dd",
+        "source_sha256": "8dad1bdd8760afe26c07c8a279339557e2b92213a2da430d4445af3b503a1f47",
         "code_cells": 8,
         "executed_cells": 8,
-        "seconds": 0.56,
+        "seconds": 0.549,
         "failure": null,
         "errors": []
       },
@@ -275,7 +275,7 @@
         "source_sha256": "d92d9530f99ae13bd3d60f08686345f28661474f5b075cee24c2b4ba9064c321",
         "code_cells": 1,
         "executed_cells": 1,
-        "seconds": 0.532,
+        "seconds": 0.515,
         "failure": null,
         "errors": []
       },
@@ -284,25 +284,25 @@
         "source_sha256": "ce66e0f05d99d6bf13f9b84721cb058045aa726d56390087a6e21a36eaf2cea5",
         "code_cells": 2,
         "executed_cells": 2,
-        "seconds": 1.018,
+        "seconds": 1.023,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/usage/quickstart.ipynb",
-        "source_sha256": "1ba15f7b51a9632a6c4638513edb350fc3b5f7181885f2a72fc1c077676e6478",
+        "source_sha256": "77b6c6555cb2213403e3608fa7ba125186288dff5bfa5037996faad97178532b",
         "code_cells": 10,
         "executed_cells": 10,
-        "seconds": 0.561,
+        "seconds": 0.59,
         "failure": null,
         "errors": []
       },
       {
         "path": "docs/book/usage/serialization.ipynb",
-        "source_sha256": "46d92d9773894e7c1c5ae3e14b48420829462c1373d9a3e98400940af95b0a88",
+        "source_sha256": "2b97eb4cfe1ea99ac10b7ea55bafea6deece131dc84d0d639952d25e43e3076d",
         "code_cells": 4,
         "executed_cells": 4,
-        "seconds": 0.557,
+        "seconds": 0.585,
         "failure": null,
         "errors": []
       },
@@ -311,12 +311,16 @@
         "source_sha256": "cf3c0f23d29072e083bfb6e3fadfe9e5de930b05c40da924380de534720136c3",
         "code_cells": 14,
         "executed_cells": 14,
-        "seconds": 1.792,
+        "seconds": 2.156,
         "failure": null,
         "errors": []
       }
     ],
-    "finished_utc": "2026-10-27T15:47:38.588809+00:00"
+    "finished_utc": "2026-10-27T21:07:49.899215+00:00",
+    "supplementary_execution": {
+      "command": "python scripts/validate_notebooks.py --output-dir /tmp/onceover-docs-writing-architecture docs/book/implementation/architecture.ipynb",
+      "reason": "Updated the description of the per-model predictor limit after the full run."
+    }
   },
   "runner_source_sha256": "309d714c43e38ced9d607139ba31ef0e804668bfbbb92ba7c3d76d2c5295fe5f",
   "tests": [
