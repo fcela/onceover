@@ -15,7 +15,9 @@ pub mod prism;
 pub mod regimes;
 mod screen;
 pub mod targets;
+pub mod views;
 pub use targets::TargetProfile;
+pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, AssociationConfig};
 pub use dates::{analyze_temporal, DatesOutcome};

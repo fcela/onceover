@@ -58,6 +58,7 @@ pub fn profile_with_detectors(
         tier.screen.max_model_rows = rows.max(1);
         tier.regimes.row_cap = rows.max(1);
     }
+    tier.views.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);
@@ -482,6 +483,25 @@ pub fn profile_with_detectors(
                     PassInfo::skipped("deadline reached"),
                 );
             }
+
+            // Greedy view/cluster pass (standard / deep only).
+            if check_deadline(&mut coverage, "views") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("views") {
+                let (vf, vout) = onceover_mines::views_pass(&table, &tier.views);
+                coverage.insert(
+                    "views".into(),
+                    if table.n > tier.views.row_cap {
+                        PassInfo::sampled(vout.coverage.clone())
+                    } else {
+                        PassInfo::ran(vout.coverage.clone())
+                    },
+                );
+                findings.extend(vf);
+            } else if deadline_hit {
+                coverage.insert("views".into(), PassInfo::skipped("deadline reached"));
+            }
             shared_encoding = Some(enc);
         } else {
             coverage.insert(
@@ -499,6 +519,7 @@ pub fn profile_with_detectors(
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",
+            "views",
         ] {
             coverage.insert(pass.into(), PassInfo::skipped("quick tier"));
         }
@@ -629,6 +650,7 @@ pub fn profile_with_detectors(
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
         ("identities", "arithmetic_identities"),
+        ("views", "views"),
     ] {
         if !enabled(id) {
             coverage.insert(pass.into(), PassInfo::skipped("detector not enabled"));
