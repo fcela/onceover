@@ -5,15 +5,15 @@
   "seed": 20241024,
   "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
   "python": "3.13.7",
-  "onceover": "0.1.0",
+  "onceover": "0.1.1",
   "polars": "2.0.0",
   "rayon_threads": 4,
   "system_memory_gib": 24.0,
-  "profile_seconds": 5.782125124940649,
+  "profile_seconds": 5.684179750038311,
   "memory_sample_interval_seconds": 0.02,
-  "rss_before_profile_gib": 3.0694427490234375,
-  "peak_profile_rss_gib": 3.2333984375,
-  "additional_peak_rss_gib": 0.1639556884765625,
+  "rss_before_profile_gib": 3.0693817138671875,
+  "peak_profile_rss_gib": 3.2182159423828125,
+  "additional_peak_rss_gib": 0.148834228515625,
   "checks": {
     "all_column_cards": true,
     "exact_unique_count": true,
@@ -84,6 +84,10 @@
     "sortedness": {
       "status": "ran_exact",
       "detail": "1 columns sorted by row order"
+    },
+    "views": {
+      "status": "skipped",
+      "detail": "detector not enabled"
     }
   },
   "schema_version": "0.2",

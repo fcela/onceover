@@ -48,6 +48,21 @@ Charts are Altair and tables are Great Tables, both rendered to static
 HTML assets. The deploy workflow in
 `.github/workflows/pages.yml` uses the same command.
 
+## Fresh execution
+
+MyST can reuse notebook execution results. To run every book notebook and the
+analysis notebook in new kernels, use the installed package's environment from
+the repository root:
+
+```bash
+python scripts/validate_notebooks.py --output-dir /tmp/onceover-notebooks
+```
+
+The command clears outputs in memory, executes all code cells, and writes
+executed copies and JSON logs to the output directory. It fails on execution
+errors or unexecuted cells. The summary records the interpreter, package version,
+source hashes, and cell counts. Source notebooks remain unchanged.
+
 ## Pre-publish validation
 
 The chapters use small fixtures on purpose. Before publishing a change that
@@ -63,3 +78,8 @@ python benchmarks/scale.py --rows 2000000 --columns 200 --threads 4 \
 The recorded run and its interpretation are in
 [`benchmarks/README.md`](../../benchmarks/README.md). A smaller regression
 subset (`tests/test_scale.py`) runs in CI on every push.
+
+Run `python benchmarks/views.py --output /tmp/views-sensor.json` to check the
+separate views sensor fixture. That benchmark records sampled spike recovery,
+extra flags, and cluster diagnostics; it does not establish views discovery
+beyond the detector's 64-column limit.

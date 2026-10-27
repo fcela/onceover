@@ -72,7 +72,7 @@ to supply resources; coverage identifies that work.
 - Primary, composite, and nearly unique keys; duplicated rows.
 - Exact and approximate functional dependencies, with violation counts.
 - Predictable columns, cross-validated decision tables, and PRISM rules.
-- Pearson, Spearman, and Chatterjee's ξ dependence; redundant column groups.
+- Pearson, Spearman, and Chatterjee's ξ dependence; connected finding groups.
 - Arithmetic identities, M5-style local linear regimes, and dated residual shifts.
 - Nominal associations with training and diagnostic holdout evidence.
 - Date gaps, irregular intervals, sortedness, constants, missing values,

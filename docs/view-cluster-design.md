@@ -102,12 +102,17 @@ statement consolidation. The reference chapter describes a remaining ranking
 mismatch: the shared selector reads correlation and concentration metrics that
 the views pass does not supply under the same names.
 
-## Evaluation needed
+## Evaluation
 
 Unit tests cover component formulas, predictive/marginal consistency,
 determinism, specific partition fixtures, pooling, leave-one-out component
 scoring, and statement separation. These checks do not establish general
 statistical or performance guarantees.
+
+The [sensor benchmark](../benchmarks/views.py) records recovery counts, extra
+flags, sample-dependent views, and a stationary-noise control. Its
+[recorded results](../benchmarks/results/views-sensor.json) use the installed
+package and a fixture generated in this repository.
 
 Further evaluation should measure:
 

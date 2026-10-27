@@ -22,7 +22,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
-| `changes` | Type `residual_level`; target, reference model and breakpoint | A change in model residual level |
+| `changes` | Type `residual_level`; reference model and compared groups | Dated residual shifts, or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, and `piecewise_linear`. A decision-table algorithm can
