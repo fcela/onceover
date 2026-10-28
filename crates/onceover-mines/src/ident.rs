@@ -2,7 +2,7 @@
 //! (the cheap ancestor of BACON/BHUNT-style law discovery).
 
 use onceover_report::{Method, Pattern};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use onceover_report::{EvidenceBasis, Finding};
 use serde_json::json;
@@ -553,6 +553,65 @@ fn build_multiterm_finding(hit: MultitermHit) -> Finding {
     )
 }
 
+/// Filter multi-term hits down to minimal predictor sets.
+///
+/// Two rules, both evaluated against the original, unfiltered hit list:
+///
+/// Rule A (unused predictor): for a fitted `linear_combination`, a predictor
+/// coefficient whose absolute value is <= 1e-9 * scale (scale = 1 + sum of the
+/// absolute predictor coefficients) means the identity does not actually use
+/// that predictor, so the hit is a non-minimal extension of a smaller identity —
+/// drop it.
+///
+/// Rule B (verified proper subset): if some other hit has the same target and a
+/// proper subset of this hit's predictors, a smaller verified identity already
+/// exists — drop the superset. A hit dropped by Rule A still counts as a verified
+/// subset witness for Rule B.
+///
+/// The input order of surviving hits is preserved.
+fn minimal_hits(hits: Vec<MultitermHit>) -> Vec<MultitermHit> {
+    // Predictor sets over the ORIGINAL list, so Rule B sees hits Rule A drops.
+    let orig_sets: Vec<(&str, BTreeSet<&str>)> = hits
+        .iter()
+        .map(|h| {
+            (
+                h.target.as_str(),
+                h.predictors.iter().map(|s| s.as_str()).collect(),
+            )
+        })
+        .collect();
+
+    let keep: Vec<bool> = hits
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            // Rule A: unused predictor in a fitted linear combination
+            // (index 0 is the intercept; skip when there are no predictor coeffs).
+            if h.form == "linear_combination" && h.coefficients.len() >= 2 {
+                let scale = 1.0 + h.coefficients[1..].iter().map(|c| c.abs()).sum::<f64>();
+                if h.coefficients[1..].iter().any(|c| c.abs() <= 1e-9 * scale) {
+                    return false;
+                }
+            }
+            // Rule B: a verified hit for the same target whose predictor set is a
+            // proper subset of this hit's predictor set.
+            let set = &orig_sets[i].1;
+            if orig_sets.iter().any(|(target, other)| {
+                *target == h.target.as_str() && other.len() < set.len() && other.is_subset(set)
+            }) {
+                return false;
+            }
+            true
+        })
+        .collect();
+
+    hits.into_iter()
+        .zip(keep)
+        .filter(|(_, k)| *k)
+        .map(|(hit, _)| hit)
+        .collect()
+}
+
 /// Screen and verify multi-term identities over the table's numeric columns.
 /// Returns (findings, coverage string). Runs sequentially in deterministic order so reruns are
 /// byte-identical.
@@ -595,7 +654,7 @@ pub fn multiterm_identities(
         })
         .collect();
 
-    let mut out: Vec<Finding> = Vec::new();
+    let mut hits: Vec<MultitermHit> = Vec::new();
     let mut screened: usize = 0;
 
     for &t in &numeric_cols {
@@ -616,7 +675,7 @@ pub fn multiterm_identities(
                     &sample_rows,
                     n_rows,
                 ) {
-                    out.push(build_multiterm_finding(MultitermHit {
+                    hits.push(MultitermHit {
                         form: "sum",
                         target: table.names[t].clone(),
                         predictors: vec![table.names[i].clone(), table.names[j].clone()],
@@ -624,7 +683,7 @@ pub fn multiterm_identities(
                         has_intercept: false,
                         n,
                         matched,
-                    }));
+                    });
                     continue;
                 }
                 if let Some((n, matched)) = scan_fixed_linear(
@@ -634,7 +693,7 @@ pub fn multiterm_identities(
                     &sample_rows,
                     n_rows,
                 ) {
-                    out.push(build_multiterm_finding(MultitermHit {
+                    hits.push(MultitermHit {
                         form: "difference",
                         target: table.names[t].clone(),
                         predictors: vec![table.names[i].clone(), table.names[j].clone()],
@@ -642,7 +701,7 @@ pub fn multiterm_identities(
                         has_intercept: false,
                         n,
                         matched,
-                    }));
+                    });
                     continue;
                 }
                 if let Some((n, matched)) = scan_product_ratio(
@@ -652,7 +711,7 @@ pub fn multiterm_identities(
                     &sample_rows,
                     n_rows,
                 ) {
-                    out.push(build_multiterm_finding(MultitermHit {
+                    hits.push(MultitermHit {
                         form: "product",
                         target: table.names[t].clone(),
                         predictors: vec![table.names[i].clone(), table.names[j].clone()],
@@ -660,7 +719,7 @@ pub fn multiterm_identities(
                         has_intercept: false,
                         n,
                         matched,
-                    }));
+                    });
                     continue;
                 }
                 if let Some((n, matched)) = scan_product_ratio(
@@ -670,7 +729,7 @@ pub fn multiterm_identities(
                     &sample_rows,
                     n_rows,
                 ) {
-                    out.push(build_multiterm_finding(MultitermHit {
+                    hits.push(MultitermHit {
                         form: "ratio",
                         target: table.names[t].clone(),
                         predictors: vec![table.names[i].clone(), table.names[j].clone()],
@@ -678,7 +737,7 @@ pub fn multiterm_identities(
                         has_intercept: false,
                         n,
                         matched,
-                    }));
+                    });
                     continue;
                 }
                 if let Some((coeffs, n, matched)) = scan_linear_combo(
@@ -687,7 +746,7 @@ pub fn multiterm_identities(
                     &sample_rows,
                     n_rows,
                 ) {
-                    out.push(build_multiterm_finding(MultitermHit {
+                    hits.push(MultitermHit {
                         form: "linear_combination",
                         target: table.names[t].clone(),
                         predictors: vec![table.names[i].clone(), table.names[j].clone()],
@@ -695,7 +754,7 @@ pub fn multiterm_identities(
                         has_intercept: true,
                         n,
                         matched,
-                    }));
+                    });
                     continue;
                 }
             }
@@ -728,7 +787,7 @@ pub fn multiterm_identities(
                         &sample_rows,
                         n_rows,
                     ) {
-                        out.push(build_multiterm_finding(MultitermHit {
+                        hits.push(MultitermHit {
                             form: "sum",
                             target: table.names[t].clone(),
                             predictors: preds.to_vec(),
@@ -736,7 +795,7 @@ pub fn multiterm_identities(
                             has_intercept: false,
                             n,
                             matched,
-                        }));
+                        });
                         continue;
                     }
                     let mut hit = false;
@@ -752,7 +811,7 @@ pub fn multiterm_identities(
                             &sample_rows,
                             n_rows,
                         ) {
-                            out.push(build_multiterm_finding(MultitermHit {
+                            hits.push(MultitermHit {
                                 form: "difference",
                                 target: table.names[t].clone(),
                                 predictors: preds.to_vec(),
@@ -760,7 +819,7 @@ pub fn multiterm_identities(
                                 has_intercept: false,
                                 n,
                                 matched,
-                            }));
+                            });
                             hit = true;
                             break;
                         }
@@ -774,7 +833,7 @@ pub fn multiterm_identities(
                         &sample_rows,
                         n_rows,
                     ) {
-                        out.push(build_multiterm_finding(MultitermHit {
+                        hits.push(MultitermHit {
                             form: "linear_combination",
                             target: table.names[t].clone(),
                             predictors: preds.to_vec(),
@@ -782,7 +841,7 @@ pub fn multiterm_identities(
                             has_intercept: true,
                             n,
                             matched,
-                        }));
+                        });
                         continue;
                     }
                 }
@@ -798,6 +857,9 @@ pub fn multiterm_identities(
             break;
         }
     }
+
+    let hits = minimal_hits(hits);
+    let out: Vec<Finding> = hits.into_iter().map(build_multiterm_finding).collect();
 
     let coverage = format!(
         "{} multi-term candidates screened, {} multi-term identities",
@@ -1204,5 +1266,169 @@ mod tests {
         assert!(findings
             .iter()
             .any(|f| f.subject.target == Some("c".into()) && f.claim.contains("1 violation")));
+    }
+
+    #[test]
+    fn pairwise_identity_supersets_not_reported() {
+        // y = 2x is a pairwise identity (found by the pairwise probe, not
+        // by this function). Every multi-term candidate for every target
+        // here is a zero-coefficient extension of a one-term identity or
+        // nothing, so the minimality filter must leave no findings.
+        let n = 200;
+        let x: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let junk1: Vec<f64> = (0..n).map(|i| ((i * i) % 13) as f64 + 1.0).collect();
+        let junk2: Vec<f64> = (0..n).map(|i| (i % 7) as f64 * 3.0 + 2.0).collect();
+        let y: Vec<f64> = x.iter().map(|v| 2.0 * v).collect();
+        let table = TypedTable {
+            n,
+            names: vec!["x".into(), "junk1".into(), "junk2".into(), "y".into()],
+            dtypes: vec!["float64".into(); 4],
+            cols: vec![
+                onceover_core::TypedCol::F64 {
+                    vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: junk1.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: junk2.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+            ],
+        };
+        let (findings, _) = multiterm_identities(&table, 2000);
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn two_term_sum_supersets_not_reported() {
+        // y = a + b. Before the minimality filter, the triple
+        // {a, b, junk} also verified as a linear combination with a zero
+        // junk coefficient and produced a second finding for y.
+        let n = 200;
+        let a: Vec<f64> = (0..n).map(|i| i as f64 * 0.5).collect();
+        let b: Vec<f64> = (0..n).map(|i| (i % 7) as f64).collect();
+        let junk: Vec<f64> = (0..n).map(|i| ((i * i) % 11) as f64 + 1.0).collect();
+        let y: Vec<f64> = a.iter().zip(b.iter()).map(|(u, v)| u + v).collect();
+        let table = TypedTable {
+            n,
+            names: vec!["a".into(), "b".into(), "junk".into(), "y".into()],
+            dtypes: vec!["float64".into(); 4],
+            cols: vec![
+                onceover_core::TypedCol::F64 {
+                    vals: a.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: junk.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+            ],
+        };
+        let (findings, _) = multiterm_identities(&table, 2000);
+        let y_findings: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.subject.target == Some("y".into()))
+            .collect();
+        assert_eq!(y_findings.len(), 1, "{findings:?}");
+        assert_eq!(y_findings[0].specification.form, Some("sum".into()));
+        assert_eq!(y_findings[0].metrics()["terms"], json!(["a", "b"]));
+    }
+
+    #[test]
+    fn redundant_total_triple_not_reported() {
+        // tot is a stored copy of a + b, and y is the same sum. The
+        // three-term readings ({a, b, tot} and friends) are supersets or
+        // zero-coefficient extensions; only the minimal sum survives.
+        let n = 200;
+        let a: Vec<f64> = (0..n).map(|i| i as f64 * 0.5).collect();
+        let b: Vec<f64> = (0..n).map(|i| (i % 7) as f64).collect();
+        let tot: Vec<f64> = a.iter().zip(b.iter()).map(|(u, v)| u + v).collect();
+        let y = tot.clone();
+        let table = TypedTable {
+            n,
+            names: vec!["a".into(), "b".into(), "tot".into(), "y".into()],
+            dtypes: vec!["float64".into(); 4],
+            cols: vec![
+                onceover_core::TypedCol::F64 {
+                    vals: a.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: tot.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+            ],
+        };
+        let (findings, _) = multiterm_identities(&table, 2000);
+        let y_findings: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.subject.target == Some("y".into()))
+            .collect();
+        assert_eq!(y_findings.len(), 1, "{findings:?}");
+        assert_eq!(y_findings[0].specification.form, Some("sum".into()));
+        assert_eq!(y_findings[0].metrics()["terms"], json!(["a", "b"]));
+    }
+
+    #[test]
+    fn minimal_hits_drops_nonminimal_hits() {
+        let hit = |form: &'static str,
+                   target: &str,
+                   predictors: &[&str],
+                   coefficients: &[f64],
+                   has_intercept: bool|
+         -> MultitermHit {
+            MultitermHit {
+                form,
+                target: target.into(),
+                predictors: predictors.iter().map(|s| s.to_string()).collect(),
+                coefficients: coefficients.to_vec(),
+                has_intercept,
+                n: 200,
+                matched: 200,
+            }
+        };
+        // H1: minimal; the zero is the intercept, not a predictor.
+        let h1 = hit(
+            "linear_combination",
+            "t",
+            &["a", "b"],
+            &[0.0, 1.0, 2.0],
+            true,
+        );
+        // H2: all coefficients nonzero (Rule A silent), but {a, b} is a
+        // verified proper subset for the same target (Rule B drops it).
+        let h2 = hit(
+            "linear_combination",
+            "t",
+            &["a", "b", "c"],
+            &[0.0, 0.5, 0.5, 0.5],
+            true,
+        );
+        // H3: zero predictor coefficient (Rule A drops it); no subset hit.
+        let h3 = hit(
+            "linear_combination",
+            "u",
+            &["x", "junk"],
+            &[0.0, 2.0, 0.0],
+            true,
+        );
+        // H4: a sum (Rule A does not apply), and {x, junk} is not a
+        // subset of {x, z} (Rule B silent). Kept.
+        let h4 = hit("sum", "u", &["x", "z"], &[1.0, 1.0], false);
+        let kept = minimal_hits(vec![h1, h2, h3, h4]);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].predictors, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(kept[1].predictors, vec!["x".to_string(), "z".to_string()]);
     }
 }
