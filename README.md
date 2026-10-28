@@ -71,6 +71,7 @@ to supply resources; coverage identifies that work.
 ## Findings
 
 - Primary, composite, and nearly unique keys; duplicated rows.
+- Long-format frames: the jointly unique (index, attribute, measure) triple and the pivot that widens them.
 - Exact and approximate functional dependencies, with violation counts.
 - Predictable columns, cross-validated decision tables, and PRISM rules.
 - Pearson, Spearman, and Chatterjee's ξ dependence; connected finding groups.

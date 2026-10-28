@@ -38,6 +38,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         ),
         make("row_duplicates", vec![Duplicates], &[]),
         make("keys", vec![Uniqueness], &[]),
+        make("pivot", vec![ColumnRoles], &[]),
         make("functional_dependencies", vec![Dependencies], &[]),
         make("sortedness", vec![Ordering], &[]),
         make("dates", vec![Gaps, Intervals], &[]),

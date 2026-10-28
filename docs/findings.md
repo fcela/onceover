@@ -12,6 +12,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows |
 | `concentration` | Distinct counts, dominant shares, concentration measures | Concentration of a value distribution, including constants |
 | `column_roles` | `specification.definition.role` | Suggested interpretation of a column, supported by observations |
+| `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level |
 | `uniqueness` | Compared columns and equality criterion | Single-column or composite uniqueness, with any recorded repetitions |
 | `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison |
 | `formats` | Format counts and examples | Inconsistent representations within a field |
@@ -26,7 +27,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, `piecewise_linear`, and `period_split`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, and `pivot`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.

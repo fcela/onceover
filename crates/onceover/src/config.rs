@@ -81,6 +81,8 @@ pub struct TierConfig {
     pub ident_pair_cap: usize,
     pub dtable_top_targets: usize,
     pub prism_top_targets: usize,
+    pub pivot_max_levels: usize,
+    pub pivot_max_findings: usize,
 }
 
 impl TierConfig {
@@ -104,6 +106,8 @@ impl TierConfig {
                 ident_pair_cap: 0,
                 dtable_top_targets: 0,
                 prism_top_targets: 0,
+                pivot_max_levels: 32,
+                pivot_max_findings: 3,
             },
             Budget::Standard => TierConfig {
                 fd: FdConfig {
@@ -133,6 +137,8 @@ impl TierConfig {
                 ident_pair_cap: 100,
                 dtable_top_targets: 6,
                 prism_top_targets: 6,
+                pivot_max_levels: 32,
+                pivot_max_findings: 3,
             },
             Budget::Deep => TierConfig {
                 fd: FdConfig {
@@ -185,6 +191,8 @@ impl TierConfig {
                 ident_pair_cap: 200,
                 dtable_top_targets: 10,
                 prism_top_targets: 10,
+                pivot_max_levels: 32,
+                pivot_max_findings: 3,
             },
         }
     }
