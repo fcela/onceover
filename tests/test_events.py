@@ -1,6 +1,7 @@
 """Transient events (issue #32): short excursions from a local
 baseline in time-ordered series, reported as changes findings whose
 evidence carries the event window."""
+import calendar
 import datetime
 
 import polars as pl
@@ -13,13 +14,20 @@ def events(report):
 
 
 def frame(values, start=datetime.datetime(2024, 1, 1), step_minutes=5):
-    # Build the timestamp column with datetime_range (native
-    # construction). A list of Python datetimes goes through polars'
-    # sequence constructor, which fails on polars 1.x under Python
-    # 3.15 ('NoneType' object has no attribute '_s' in
-    # polars._utils.construction.series) — the CI Polars-1.x leg.
-    end = start + datetime.timedelta(minutes=step_minutes * (len(values) - 1))
-    ts = pl.datetime_range(start, end, f"{step_minutes}m", eager=True)
+    # Build the timestamp column as epoch microseconds and cast.
+    # Every polars path that constructs a Datetime series from Python
+    # datetime objects — a list in the DataFrame constructor, and
+    # datetime_range's internal literal — goes through
+    # sequence_to_pyseries, whose constructor dispatch returns None
+    # for temporal dtypes on polars 1.x under Python 3.15
+    # ('NoneType' object has no attribute '_s',
+    # polars/_utils/construction/series.py) — the CI Polars-1.x leg.
+    # Integer construction and the cast stay in working code paths.
+    base_us = calendar.timegm(start.timetuple()) * 1_000_000 + start.microsecond
+    step_us = step_minutes * 60 * 1_000_000
+    ts = pl.Series(
+        "ts", [base_us + step_us * i for i in range(len(values))]
+    ).cast(pl.Datetime("us"))
     return pl.DataFrame({"ts": ts, "value": [float(v) for v in values]})
 
 

@@ -80,7 +80,8 @@ class ProfileReport:
 
     Access the full versioned JSON via `.data` (dict), the ranked findings
     via `.findings`, the same findings as a Polars DataFrame via
-    `.findings_frame()`, the one-glance summary via `.overview`,
+    `.findings_frame()`, a context-budgeted digest via `.to_digest(chars)`,
+    the one-glance summary via `.overview`,
     per-column cards via `.columns`, and pass coverage via `.coverage`.
     """
 
@@ -182,6 +183,104 @@ class ProfileReport:
 
     def to_markdown(self) -> str:
         return self._native.to_markdown()
+
+    def to_digest(self, budget_chars: int = 4000) -> str:
+        """A context-budgeted plain-text digest of this report.
+
+        Header (shape, schema, headline, coverage exceptions,
+        finding counts by category), then one line per rollup group
+        — findings sharing category, type, form, and target — with
+        the group's highest-interestingness claim. Groups are
+        ordered by that claim's interestingness. When the rolled
+        lines exceed `budget_chars`, the digest keeps as many as
+        fit and ends with a line stating how many groups were
+        omitted; it never exceeds the budget (budgets under ~200
+        characters return a truncated header). The full record
+        stays in `.data` / `to_json()`.
+        """
+        data = self.data
+        findings = data["findings"]
+        overview = data.get("overview", {})
+        lines = [
+            f"profile digest: {overview.get('n_rows', '?')} rows x "
+            f"{overview.get('n_columns', '?')} columns, "
+            f"{len(findings)} findings, schema "
+            f"{data.get('schema_version', '?')}"
+        ]
+        if overview.get("headline"):
+            lines.append("headline: " + overview["headline"])
+        cov = data.get("coverage", {})
+        skipped = [
+            f"{k}={v.get('status')}"
+            for k, v in cov.items()
+            if v.get("status") not in ("ran_exact", "ran_sampled")
+        ]
+        lines.append(
+            "coverage: " + (", ".join(skipped) if skipped else "all passes ran")
+        )
+        cats: dict[str, int] = {}
+        for f in findings:
+            cats[f["category"]] = cats.get(f["category"], 0) + 1
+        lines.append(
+            "findings by category: "
+            + ", ".join(
+                f"{c} {n}"
+                for c, n in sorted(cats.items(), key=lambda kv: -kv[1])
+            )
+        )
+        header = "\n".join(lines) + "\n"
+
+        groups: dict[tuple, list[dict]] = {}
+        for f in findings:
+            subj = f.get("subject") or {}
+            key = (
+                f.get("category"),
+                f.get("type"),
+                (f.get("specification") or {}).get("form"),
+                subj.get("target"),
+            )
+            groups.setdefault(key, []).append(f)
+        rolled = []
+        for (cat, typ, form, target), fs in groups.items():
+            fs_sorted = sorted(fs, key=lambda x: -(x.get("interestingness") or 0))
+            head = f"[{cat}] {typ or ''}{'/' + form if form else ''}"
+            if target:
+                head += f" -> {target}"
+            if len(fs_sorted) > 1:
+                head += f" (x{len(fs_sorted)})"
+            rolled.append((fs_sorted[0].get("interestingness") or 0,
+                           head + ": " + fs_sorted[0]["claim"]))
+        rolled.sort(key=lambda kv: -kv[0])
+        body_lines = [line for _, line in rolled]
+
+        def omission(dropped: int) -> str:
+            return (
+                f"... [{dropped} rolled-up finding groups omitted to fit "
+                f"{budget_chars} chars; {len(findings)} findings total]"
+            )
+
+        full = header + "\n" + "\n".join(body_lines) + "\n"
+        if len(full) <= budget_chars:
+            return full
+        kept: list[str] = []
+        used = len(header) + 1 + len(omission(len(body_lines))) + 1
+        for ln in body_lines:
+            if used + len(ln) + 1 > budget_chars:
+                break
+            kept.append(ln)
+            used += len(ln) + 1
+        dropped = len(body_lines) - len(kept)
+        result = header + "\n" + "\n".join(kept + [omission(dropped)]) + "\n"
+        if len(result) <= budget_chars:
+            return result
+        # Degrade the header itself: drop the category-count line,
+        # then the coverage line, keeping the profile line.
+        for keep in (2, 1):
+            short_header = "\n".join(lines[:keep]) + "\n"
+            result = short_header + omission(len(body_lines)) + "\n"
+            if len(result) <= budget_chars:
+                return result
+        return (lines[0] + "\n")[:budget_chars]
 
     def save(self, path: str, fmt: str = "json") -> str:
         """Write the report to `path` as json or markdown. Returns the path."""
