@@ -5,6 +5,7 @@
 //! BTreeMaps everywhere, no HashMap iteration order may leak into output.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 mod finding;
@@ -270,6 +271,9 @@ impl ProfileReport {
                     }
                 }
             }
+            for e in &f.evidence {
+                md.push_str(&render_evidence(f, e));
+            }
         }
         md.push('\n');
 
@@ -335,6 +339,142 @@ fn format_equation_number(x: f64) -> String {
     } else {
         let s = format!("{x:.6}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+/// One evidence record rendered under its finding's claim: which
+/// detector produced it, how it was validated, the rows it covers, its
+/// scalar metrics, and a result table for each metric that holds rows
+/// of values (per-period coefficients, group summaries, ...).
+fn render_evidence(f: &Finding, e: &Evidence) -> String {
+    let mut out = String::new();
+    let mut head = format!(
+        "  - evidence: {} ({}), {}",
+        e.method.detector, e.method.algorithm, e.validation.method
+    );
+    if let Some(n) = e.scope.rows_evaluated {
+        head.push_str(&format!(", {n} rows evaluated"));
+    }
+    match e.scope.sampling {
+        Sampling::Sample => match e.scope.population_rows {
+            Some(p) => head.push_str(&format!(", sampled from {p} rows")),
+            None => head.push_str(", sampled"),
+        },
+        Sampling::Full => head.push_str(", full data"),
+        Sampling::Unspecified => {}
+    }
+    out.push_str(&head);
+    out.push('\n');
+    let mut scalars: Vec<String> = Vec::new();
+    let mut tables: Vec<(&String, &Value)> = Vec::new();
+    for (k, v) in &e.metrics {
+        // Piecewise leaves already render as equations above the
+        // evidence block; do not render them a second time as a table.
+        if k == "leaves" && f.specification.form.as_deref() == Some("piecewise_linear") {
+            continue;
+        }
+        if is_flat_row_table(v) {
+            tables.push((k, v));
+        } else if v.is_object() || v.is_array() {
+            scalars.push(format!("{k}={}", compact_json(v)));
+        } else {
+            scalars.push(format!("{k}={}", render_scalar(v)));
+        }
+    }
+    const MAX_SCALARS: usize = 12;
+    if !scalars.is_empty() {
+        let shown = scalars.len().min(MAX_SCALARS);
+        let mut line = format!("    - metrics: {}", scalars[..shown].join(", "));
+        if scalars.len() > shown {
+            line.push_str(&format!(" (+{} more in JSON)", scalars.len() - shown));
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    for (k, v) in tables {
+        out.push_str(&format!("    - {k}:\n"));
+        out.push_str(&render_metric_table(v));
+    }
+    out
+}
+
+fn is_flat_row_table(v: &Value) -> bool {
+    let Some(rows) = v.as_array() else {
+        return false;
+    };
+    !rows.is_empty()
+        && rows.iter().all(|r| {
+            r.as_object()
+                .is_some_and(|o| o.values().all(|c| !c.is_object() && !c.is_array()))
+        })
+}
+
+fn render_metric_table(v: &Value) -> String {
+    let rows = v.as_array().expect("checked by is_flat_row_table");
+    let mut columns: Vec<&str> = Vec::new();
+    for r in rows {
+        for k in r.as_object().expect("checked").keys() {
+            if !columns.contains(&k.as_str()) {
+                columns.push(k.as_str());
+            }
+        }
+    }
+    columns.sort_unstable();
+    let mut out = String::new();
+    out.push_str(&format!(
+        "      | {} |\n      |{}|\n",
+        columns.join(" | "),
+        columns.iter().map(|_| "---").collect::<Vec<_>>().join("|")
+    ));
+    const MAX_ROWS: usize = 20;
+    for r in rows.iter().take(MAX_ROWS) {
+        let obj = r.as_object().expect("checked");
+        let cells: Vec<String> = columns
+            .iter()
+            .map(|c| {
+                obj.get(*c)
+                    .map(|cell| render_scalar(cell).replace('|', "\\|"))
+                    .unwrap_or_default()
+            })
+            .collect();
+        out.push_str(&format!("      | {} |\n", cells.join(" | ")));
+    }
+    if rows.len() > MAX_ROWS {
+        out.push_str(&format!(
+            "      ({} more rows in JSON)\n",
+            rows.len() - MAX_ROWS
+        ));
+    }
+    out
+}
+
+fn render_scalar(v: &Value) -> String {
+    match v {
+        Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                u.to_string()
+            } else if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(x) = n.as_f64() {
+                format_equation_number(x)
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Null => String::new(),
+        other => compact_json(other),
+    }
+}
+
+fn compact_json(v: &Value) -> String {
+    let s = serde_json::to_string(v).unwrap_or_default();
+    if s.chars().count() > 120 {
+        let cut: String = s.chars().take(117).collect();
+        format!("{cut}...")
+    } else {
+        s
     }
 }
 

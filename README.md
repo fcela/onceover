@@ -39,6 +39,7 @@ print(report.to_markdown())
 
 report.columns     # Per-column types, roles, counts, and statistics
 report.findings    # Selected statements with supporting evidence
+report.findings_frame()  # The findings as a Polars DataFrame, one row each
 report.coverage    # Pass status, samples, caps, and skipped work
 report.groups      # Connected findings, without a redundancy claim
 report.data        # Complete JSON-compatible report
