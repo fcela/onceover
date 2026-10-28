@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use onceover_deps::FdConfig;
 use onceover_mines::{
-    AssociationConfig, DtableConfig, EncodeConfig, PrismConfig, RegimesConfig, ScreenConfig,
-    ViewsConfig,
+    AssociationConfig, BreaksConfig, DtableConfig, EncodeConfig, PrismConfig, RegimesConfig,
+    ScreenConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +74,7 @@ pub struct TierConfig {
     pub dtable: DtableConfig,
     pub prism: PrismConfig,
     pub regimes: RegimesConfig,
+    pub breaks: BreaksConfig,
     pub association: AssociationConfig,
     pub views: ViewsConfig,
     pub dep_pair_cap: usize,
@@ -96,6 +97,7 @@ impl TierConfig {
                 dtable: DtableConfig::default(),
                 prism: PrismConfig::default(),
                 regimes: RegimesConfig::default(),
+                breaks: BreaksConfig::default(),
                 association: AssociationConfig::default(),
                 views: ViewsConfig::default(),
                 dep_pair_cap: 0,
@@ -121,6 +123,7 @@ impl TierConfig {
                 dtable: DtableConfig::default(),
                 prism: PrismConfig::default(),
                 regimes: RegimesConfig::default(),
+                breaks: BreaksConfig::default(),
                 association: AssociationConfig {
                     max_findings: 20,
                     ..Default::default()
@@ -153,6 +156,12 @@ impl TierConfig {
                 },
                 dtable: DtableConfig::default(),
                 prism: PrismConfig::default(),
+                breaks: BreaksConfig {
+                    row_cap: 50_000,
+                    series_cap: 32,
+                    max_breaks: 4,
+                    ..Default::default()
+                },
                 regimes: RegimesConfig {
                     row_cap: 10_000,
                     target_cap: 8,

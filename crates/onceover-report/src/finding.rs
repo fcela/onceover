@@ -64,6 +64,9 @@ pub enum Pattern {
     IntervalVariation,
     ColumnOrdering,
     ResidualShift,
+    LevelShift,
+    TrendChange,
+    VarianceChange,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -83,7 +86,9 @@ impl Pattern {
             Self::Gap => Category::Gaps,
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
-            Self::ResidualShift => Category::Changes,
+            Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
+                Category::Changes
+            }
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -94,6 +99,9 @@ impl Pattern {
             Self::StatisticalAssociation => Some("statistical"),
             Self::PeriodAssociation => Some("period_association"),
             Self::ResidualShift => Some("residual_level"),
+            Self::LevelShift => Some("level_shift"),
+            Self::TrendChange => Some("trend_change"),
+            Self::VarianceChange => Some("variance_change"),
             _ => None,
         }
     }
@@ -508,6 +516,11 @@ impl Finding {
                     spec.definition.insert("breakpoint".into(), v.clone());
                 }
             }
+            Pattern::LevelShift | Pattern::TrendChange | Pattern::VarianceChange => {
+                if let Some(v) = metrics.get("breakpoint") {
+                    spec.definition.insert("breakpoint".into(), v.clone());
+                }
+            }
             _ => {}
         }
         let basis = if matches!(pattern, Pattern::CategoricalRole | Pattern::IdentifierRole) {
@@ -637,8 +650,13 @@ impl Finding {
             {
                 return Err("association type must be statistical or period_association".into());
             }
-            Category::Changes if self.finding_type.as_deref() != Some("residual_level") => {
-                return Err("change type must be residual_level".into());
+            Category::Changes
+                if !matches!(
+                    self.finding_type.as_deref(),
+                    Some("residual_level" | "level_shift" | "trend_change" | "variance_change")
+                ) =>
+            {
+                return Err("change type must be residual_level, level_shift, trend_change, or variance_change".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()

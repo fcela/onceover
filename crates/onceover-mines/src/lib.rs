@@ -5,6 +5,7 @@
 //! and date/sequence intelligence.
 
 pub mod association;
+pub mod breaks;
 pub mod dates;
 pub mod dep;
 pub mod dtable;
@@ -21,6 +22,7 @@ pub use targets::TargetProfile;
 pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, AssociationConfig};
+pub use breaks::{profile_breaks, BreaksConfig};
 pub use dates::{analyze_temporal, DatesOutcome};
 pub use dep::{screen as screen_dependence, PairDep};
 pub use dtable::{decision_tables, DtableConfig};
