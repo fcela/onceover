@@ -267,6 +267,20 @@ fn fd_finding(
     let conf = EvidenceBasis::Measured;
     evidence.insert("sampled".into(), json!(sampled));
     evidence.insert("population_rows".into(), json!(table.n));
+    // Breadth of the determinant: distinct lhs tuples per verified row.
+    // An exact mapping verified over many distinct inputs has survived
+    // more chances to fail than one over a handful of repeated inputs,
+    // and the exact-FD score below scales with it instead of paying a
+    // flat 0.85 for exactness alone.
+    let lhs_distinct = count_distinct_tuples(table, lhs);
+    if lhs_distinct != usize::MAX {
+        evidence.insert("lhs_distinct".into(), json!(lhs_distinct));
+    }
+    let breadth = if lhs_distinct == usize::MAX || n_used == 0 {
+        1.0
+    } else {
+        (lhs_distinct as f64 / n_used as f64).min(1.0)
+    };
     evidence.insert(
         "method".to_string(),
         json!(if sampled { "sampled_exact" } else { "exact" }),
@@ -284,7 +298,7 @@ fn fd_finding(
                 n_used
             ),
             conf,
-            0.85,
+            0.5 + 0.35 * breadth,
             evidence,
             Some(format!(
                 "inspect the mapping and its scope before treating {rhs_name} as derived"

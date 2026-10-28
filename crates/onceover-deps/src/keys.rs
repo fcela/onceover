@@ -33,13 +33,22 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
                 info[best].name
             ),
             EvidenceBasis::Measured,
-            0.95,
+            // Rank by the plausibility the metrics already record: an
+            // integer `*_id` column keeps the top score, while an
+            // all-distinct float measurement (plausibility ≈ 0.48 from
+            // type affinity alone) lands near 0.61 instead of tying
+            // with real identifiers at a flat 0.95.
+            0.3 + 0.65 * score,
             BTreeMap::from([
                 ("distinct".into(), json!(info[best].distinct)),
                 ("n".into(), json!(info[best].n)),
                 ("plausibility_score".into(), json!(score)),
             ]),
-            Some("use as join key; exclude from numeric features".into()),
+            Some(if score < 0.6 {
+                "all values are distinct, but the column's type and name do not look like an identifier; treat this as a distinct-count check, not a join key".into()
+            } else {
+                "use as join key; exclude from numeric features".into()
+            }),
             Method::new(
                 "keys",
                 "uniqueness",
@@ -55,6 +64,8 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
         sa.total_cmp(&sb).then(a.cmp(b))
     }) {
         let names: Vec<&str> = best.iter().map(|&i| info[i].name.as_str()).collect();
+        let mean_plausibility =
+            best.iter().map(|&i| key_score(&info[i])).sum::<f64>() / best.len() as f64;
         out.findings.push(Finding::new(
             Pattern::Uniqueness,
             BTreeMap::from([("columns".into(), json!(names))]),
@@ -63,7 +74,9 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
                 names.join(", ")
             ),
             EvidenceBasis::Measured,
-            0.88,
+            // Same plausibility scaling as the primary-key candidate:
+            // an all-identifier composite keeps the historical 0.88.
+            0.3 + 0.58 * mean_plausibility,
             BTreeMap::from([
                 ("n_columns".into(), json!(best.len())),
                 ("n".into(), json!(info[best[0]].n)),

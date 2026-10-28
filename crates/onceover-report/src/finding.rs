@@ -309,6 +309,12 @@ pub struct Finding {
     pub claim: String,
     pub evidence: Vec<Evidence>,
     pub interestingness: f64,
+    /// The score the producing detector assigned, recorded by the ledger
+    /// before selection scoring. `interestingness` holds the selection
+    /// score; this field keeps the detector's own judgment on record so
+    /// the replacement is never silent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detector_interestingness: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpretation: Option<String>,
 }
@@ -521,6 +527,7 @@ impl Finding {
             claim,
             evidence: vec![evidence],
             interestingness: score.clamp(0.0, 1.0),
+            detector_interestingness: None,
             interpretation,
         }
     }

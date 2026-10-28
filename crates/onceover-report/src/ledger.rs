@@ -1,7 +1,18 @@
 //! Consolidate equivalent statements, rank their evidence, and select a report.
+//!
+//! Scoring contract: a finding arrives with the producing detector's
+//! own interestingness. Selection replaces `interestingness` with the
+//! selection score — the mean of the detector's score and the ledger's
+//! evidence score below — and records the detector's score in
+//! `detector_interestingness`, so the replacement is never silent.
+//! One demotion applies on top: a functional dependency whose inputs
+//! contain an exact unique key is implied by that key, so its score is
+//! multiplied by 0.6 and its evidence is tagged
+//! `triviality = "implied_by_unique_key"`. Nothing is dropped for
+//! triviality; demoted findings stay in the report, ranked lower.
 use crate::{Category, Evidence, EvidenceBasis, Finding, FindingGroup, Sampling};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -57,6 +68,10 @@ fn quality(e: &Evidence) -> f64 {
         },
     }
 }
+/// The ledger's evidence score: how well-supported and strong the
+/// statement is, from its evidence alone (quality of validation,
+/// effect strength, specificity, simplicity). It contributes half of
+/// the selection score; the detector's own score contributes the rest.
 fn score(f: &Finding) -> f64 {
     let mut best: f64 = 0.0;
     for e in &f.evidence {
@@ -130,12 +145,17 @@ pub fn finalize_ledger(findings: Vec<Finding>) -> Vec<Finding> {
 
 pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<Finding> {
     let mut statements = BTreeMap::<String, Finding>::new();
+    let mut detector_scores = BTreeMap::<String, f64>::new();
     for mut finding in findings {
         finding.subject.canonicalize();
         if finding.validate().is_err() {
             continue;
         }
         let key = finding.canonical_key();
+        // The detector's score for a statement is the strongest claim
+        // any merged candidate arrived with.
+        let entry = detector_scores.entry(key.clone()).or_insert(0.0);
+        *entry = entry.max(finding.interestingness);
         if let Some(existing) = statements.get_mut(&key) {
             // Keep a statement description from the best evaluated candidate;
             // the metrics remain separate and are never averaged or pooled.
@@ -163,11 +183,47 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
         }
     }
     let mut ranked: Vec<_> = statements.into_values().collect();
+    // Exact unique keys among the candidates (uniqueness statements
+    // whose evidence records no duplicated values; near-unique "dirty"
+    // keys do not imply anything). A functional dependency whose inputs
+    // contain such a key holds by construction.
+    let key_sets: Vec<BTreeSet<String>> = ranked
+        .iter()
+        .filter(|f| f.category == Category::Uniqueness)
+        .filter(|f| {
+            f.evidence
+                .iter()
+                .all(|e| metric(e, "duplicates").is_none_or(|d| d == 0.0))
+        })
+        .map(|f| f.subject.columns.iter().cloned().collect())
+        .collect();
     for f in &mut ranked {
         f.evidence
             .sort_by_key(|e| serde_json::to_string(e).unwrap());
         f.evidence.dedup();
-        f.interestingness = score(f);
+        let detector = detector_scores
+            .get(&f.canonical_key())
+            .copied()
+            .unwrap_or(f.interestingness);
+        f.detector_interestingness = Some(detector);
+        let mut combined = 0.5 * detector + 0.5 * score(f);
+        let key_implied = f.category == Category::Dependencies
+            && f.finding_type.as_deref() == Some("functional")
+            && !f.subject.inputs.is_empty()
+            && f.subject.target.as_deref().is_some_and(|t| {
+                key_sets
+                    .iter()
+                    .any(|ks| !ks.contains(t) && ks.iter().all(|c| f.subject.inputs.contains(c)))
+            });
+        if key_implied {
+            combined *= 0.6;
+            for e in &mut f.evidence {
+                e.metrics
+                    .insert("triviality".into(), json!("implied_by_unique_key"));
+                e.metrics.insert("triviality_factor".into(), json!(0.6));
+            }
+        }
+        f.interestingness = (combined * 10_000.0).round() / 10_000.0;
     }
     ranked.sort_by(|a, b| {
         b.interestingness

@@ -19,3 +19,6 @@ __pycache__/
 # Local agent instructions
 /AGENTS.md
 /doc/WRITING_GUIDE.md
+
+# built in-tree by maturin develop
+python/onceover/_native*.so
