@@ -110,7 +110,7 @@ roles remain inferences even when the supporting counts cover the full dataset.
 
 ## Report outputs
 
-The same ledger is available in three forms:
+The same ledger is available in four forms:
 
 - **JSON** (`report.data`, `report.to_json()`): the complete record —
   findings with every evidence record and metric, column cards, groups,
@@ -124,6 +124,15 @@ The same ledger is available in three forms:
   example — renders as a table under the finding, capped at 20 rows.
   Piecewise-linear leaves keep their equation rendering and are not
   repeated as a table. Column cards and coverage close the document.
+- **Digest** (`report.to_digest(chars)`): a context-budgeted
+  plain-text summary for a single pass of reading — header (shape,
+  headline, coverage exceptions, counts by category), then one line
+  per rollup group (findings sharing category, type, form, and
+  target) carrying the group's strongest claim, strongest first.
+  When the groups exceed the budget, the digest keeps as many as
+  fit and ends by stating how many were omitted; it never exceeds
+  the budget. Rollups are an index into the ledger, not a
+  replacement for it.
 - **DataFrame** (`report.findings_frame()`): one row per finding with
   `id`, `category`, `type`, `columns`, `inputs`, `target`,
   `interestingness`, `claim`, `n_evidence`, and the primary evidence
