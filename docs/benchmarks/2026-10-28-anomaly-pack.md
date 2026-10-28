@@ -36,6 +36,14 @@ for. Both expectations are registered with `min_covered: 0` as
 known-miss baselines: the day a detector starts covering these
 windows, the run record shows it and the baseline gets raised.
 
+**Update 2026-10-28:** that day came with the transient-excursion
+scan in the breaks pass (issue #32). Coverage is now 5/5 on
+nyc_taxi (10 excursion findings; the unlabeled ones are the
+July 4 and Labor Day collapses and a Dec 12 spike) and 3/3 on
+ec2_request_latency (exactly 3 findings). Both baselines are
+raised to the measured values. See
+2026-10-28-transient-events.md.
+
 This is the second measured instance of the corpus's recurring
 shape (the first was the GritBot pack): broad structure is found;
 localized events inside the structure are not.

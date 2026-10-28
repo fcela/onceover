@@ -62,7 +62,9 @@ independent packs — the ranking is not close:
    targets remain open. See 2026-10-28-surprise-detector.md.
 2. **Transient events** (family 2): both NAB streams score 0
    coverage, and the events are the labeled ground truth of the
-   anomaly pack.
+   anomaly pack. **Update 2026-10-28:** covered by the
+   transient-excursion scan in the breaks pass (issue #32) —
+   coverage 5/5 and 3/3. See 2026-10-28-transient-events.md.
 
 Near-identities (family 3) are third: one measured instance, and a
 plausible cheaper mechanism (a tolerance mode on an existing pass)
