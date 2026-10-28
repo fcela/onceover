@@ -186,6 +186,51 @@ fn sampling_estimation_and_validation_are_independent_fields() {
 }
 
 #[test]
+fn markdown_places_evidence_and_result_tables_beside_findings() {
+    let mut finding = rule(
+        "detector",
+        Predicate::equal("segment", json!("premium")),
+        Predicate::equal("shipping", json!("expedite")),
+    );
+    finding.evidence[0].metrics.insert(
+        "periods".into(),
+        json!([
+            {"label": "2020", "n": 200, "pearson": 1.0},
+            {"label": "2021", "n": 200, "pearson": -1.0},
+        ]),
+    );
+    let findings = finalize_ledger(vec![finding]);
+    let report = ProfileReport {
+        schema_version: SCHEMA_VERSION.into(),
+        overview: Overview {
+            n_rows: 100,
+            n_columns: 2,
+            headline: "test".into(),
+            dtype_counts: BTreeMap::new(),
+            role_counts: BTreeMap::new(),
+            top_findings: vec![],
+        },
+        columns: BTreeMap::new(),
+        groups: group_findings(&findings),
+        findings,
+        selection: Default::default(),
+        coverage: BTreeMap::new(),
+    };
+    let md = report.to_markdown();
+    let claim_at = md.find("conditional statement").unwrap();
+    let evidence_at = md
+        .find("- evidence: detector (test_method), direct_comparison, 100 rows evaluated")
+        .unwrap();
+    assert!(claim_at < evidence_at, "{md}");
+    assert!(
+        md.contains("metrics: baseline_rate=0.3, conditional_rate=0.95, joint_count=95, n=100"),
+        "{md}"
+    );
+    assert!(md.contains("| label | n | pearson |"), "{md}");
+    assert!(md.contains("| 2021 | 200 | -1 |"), "{md}");
+}
+
+#[test]
 fn report_schema_roundtrips_and_renders() {
     let finding = rule(
         "detector",

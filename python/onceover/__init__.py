@@ -67,8 +67,9 @@ class ProfileReport:
     """Profiling results and evidence.
 
     Access the full versioned JSON via `.data` (dict), the ranked findings
-    via `.findings`, the one-glance summary via `.overview`, per-column
-    cards via `.columns`, and pass coverage via `.coverage`.
+    via `.findings`, the same findings as a Polars DataFrame via
+    `.findings_frame()`, the one-glance summary via `.overview`,
+    per-column cards via `.columns`, and pass coverage via `.coverage`.
     """
 
     def __init__(self, native: _NativeProfileReport):
@@ -112,6 +113,57 @@ class ProfileReport:
         """Connected findings; group membership does not imply redundancy."""
         self._ensure()
         return self._data["groups"]
+
+    def findings_frame(self):
+        """The findings ledger as a Polars DataFrame, one row per finding.
+
+        Columns: id, category, type, columns, inputs, target,
+        interestingness, claim, n_evidence, basis — plus
+        detector_interestingness when the report carries it. Rows are in
+        report order (highest interestingness first). The full evidence
+        records stay in `.findings` / `.data`; this frame is the
+        sortable, filterable index into them.
+        """
+        import polars as pl
+
+        findings = self.findings
+        has_detector = any("detector_interestingness" in f for f in findings)
+        rows = []
+        for f in findings:
+            subject = f.get("subject") or {}
+            evidence = f.get("evidence") or []
+            row = {
+                "id": f.get("id"),
+                "category": f.get("category"),
+                "type": f.get("type"),
+                "columns": list(subject.get("columns") or []),
+                "inputs": list(subject.get("inputs") or []),
+                "target": subject.get("target"),
+                "interestingness": f.get("interestingness"),
+                "claim": f.get("claim"),
+                "n_evidence": len(evidence),
+                "basis": evidence[0].get("basis") if evidence else None,
+            }
+            if has_detector:
+                row["detector_interestingness"] = f.get("detector_interestingness")
+            rows.append(row)
+        if not rows:
+            schema = {
+                "id": pl.String,
+                "category": pl.String,
+                "type": pl.String,
+                "columns": pl.List(pl.String),
+                "inputs": pl.List(pl.String),
+                "target": pl.String,
+                "interestingness": pl.Float64,
+                "claim": pl.String,
+                "n_evidence": pl.UInt32,
+                "basis": pl.String,
+            }
+            if has_detector:
+                schema["detector_interestingness"] = pl.Float64
+            return pl.DataFrame(schema=schema)
+        return pl.DataFrame(rows)
 
     def to_json(self) -> str:
         return self._native.to_json()

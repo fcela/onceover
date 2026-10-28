@@ -65,6 +65,28 @@ results were used during selection. These dimensions replace `confidence`.
 An exact comparison on sampled rows is not a full-population guarantee. Inferred
 roles remain inferences even when the supporting counts cover the full dataset.
 
+## Report outputs
+
+The same ledger is available in three forms:
+
+- **JSON** (`report.data`, `report.to_json()`): the complete record —
+  findings with every evidence record and metric, column cards, groups,
+  selection counts, and coverage.
+- **Markdown** (`report.to_markdown()`): the headline and overview,
+  then each finding's claim followed directly by its evidence. An
+  evidence block names the detector and algorithm, the validation
+  method, and the rows evaluated, then lists the scalar metrics as
+  `key=value` pairs (first 12; the JSON carries the rest). A metric
+  whose value is a list of flat records — per-period coefficients, for
+  example — renders as a table under the finding, capped at 20 rows.
+  Piecewise-linear leaves keep their equation rendering and are not
+  repeated as a table. Column cards and coverage close the document.
+- **DataFrame** (`report.findings_frame()`): one row per finding with
+  `id`, `category`, `type`, `columns`, `inputs`, `target`,
+  `interestingness`, `claim`, `n_evidence`, and the primary evidence
+  record's `basis`, in report order. It is an index for sorting and
+  filtering; the measurements themselves stay in the JSON findings.
+
 ## Consolidation and selection
 
 1. Enabled detectors produce candidate statements and evidence.
