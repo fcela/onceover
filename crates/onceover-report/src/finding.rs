@@ -71,6 +71,7 @@ pub enum Pattern {
     TrendChange,
     VarianceChange,
     LongFormat,
+    ExtremeValue,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -96,6 +97,7 @@ impl Pattern {
                 Category::Changes
             }
             Self::LongFormat => Category::ColumnRoles,
+            Self::ExtremeValue => Category::Intervals,
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -112,6 +114,7 @@ impl Pattern {
             Self::TrendChange => Some("trend_change"),
             Self::VarianceChange => Some("variance_change"),
             Self::LongFormat => Some("long_format"),
+            Self::ExtremeValue => Some("extreme_value"),
             _ => None,
         }
     }
@@ -589,6 +592,14 @@ impl Finding {
                     "missing_values".into(),
                     json!("index and attribute columns complete; measure values may be missing"),
                 );
+            }
+            Pattern::ExtremeValue => {
+                spec.form = Some("isolation_gap".into());
+                for k in ["condition_column", "condition_value"] {
+                    if let Some(v) = raw.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
             }
             _ => {}
         }

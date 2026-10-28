@@ -10,7 +10,7 @@ use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
-    profile_breaks, profile_regimes, screen_predictability,
+    profile_breaks, profile_regimes, profile_surprises, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -505,6 +505,23 @@ pub fn profile_with_detectors(
                     .collect();
                 let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks);
                 coverage.insert("breaks".into(), PassInfo::sampled(cov));
+                findings.extend(f);
+            }
+            if check_deadline(&mut coverage, "surprises") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("surprises") {
+                let excluded: Vec<usize> = info
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        (matches!(c.role.as_str(), "constant" | "all_null")
+                            || c.role == "identifier")
+                            .then_some(i)
+                    })
+                    .collect();
+                let (f, cov) = profile_surprises(&table, &excluded, &tier.surprises);
+                coverage.insert("surprises".into(), PassInfo::ran(cov));
                 findings.extend(f);
             }
             if deadline_hit || check_deadline(&mut coverage, "association_rules") {

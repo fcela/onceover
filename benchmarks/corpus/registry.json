@@ -30,39 +30,41 @@
     {
      "kind": "finding",
      "category": "intervals",
+     "type": "extreme_value",
      "columns_any": [
       "age"
      ],
-     "expect": "missed",
-     "note": "Known-miss tripwire: no current finding isolates the extreme age value."
+     "expect": "found",
+     "note": "The surprises pass (issue #31) isolates the extreme age value (455, row 1364). Promoted from known-miss tripwire 2026-10-28."
     },
     {
      "kind": "finding",
-     "category": "conditional_rules",
+     "category": "intervals",
+     "type": "extreme_value",
      "columns_all": [
       "pregnant",
       "age"
      ],
-     "expect": "missed",
-     "note": "Known-miss tripwire: no rule conditions age on pregnant."
+     "expect": "found",
+     "note": "The surprises pass (issue #31) conditions age on pregnant = true and isolates ages 75 and 73 (rows 2223, 1609). Promoted from known-miss tripwire 2026-10-28."
     },
     {
      "kind": "documented_case",
      "ref": "GritBot data:1365 (record 861)",
-     "status": "missed",
-     "note": "age = 455 where 99.97% of patients are <= 94. No finding isolates it."
+     "status": "found",
+     "note": "age = 455 where 99.97% of patients are <= 94. The surprises pass (issue #31) isolates it: row 1364 of the bundled file, gap ratio 7.2."
     },
     {
      "kind": "documented_case",
      "ref": "GritBot data:2224 (record 1088)",
-     "status": "missed",
-     "note": "Pregnant patient aged 75; other pregnant patients are <= 42 apart from data:1610. Not isolated by any finding."
+     "status": "found",
+     "note": "Pregnant patient aged 75; other pregnant patients are <= 42 apart from data:1610. Isolated by the surprises pass within pregnant = true (row 2223, with data:1610 in the same finding)."
     },
     {
      "kind": "documented_case",
      "ref": "GritBot data:1610 (record 4531)",
-     "status": "missed",
-     "note": "Pregnant patient aged 73. Not isolated by any finding."
+     "status": "found",
+     "note": "Pregnant patient aged 73. Isolated by the surprises pass within pregnant = true (row 1609, same finding as data:2224)."
     },
     {
      "kind": "documented_case",

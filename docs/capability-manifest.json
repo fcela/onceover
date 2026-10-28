@@ -107,6 +107,13 @@
    "requires": []
   },
   {
+   "id": "surprises",
+   "categories": [
+    "intervals"
+   ],
+   "requires": []
+  },
+  {
    "id": "association_rules",
    "categories": [
     "conditional_rules"
