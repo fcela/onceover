@@ -23,11 +23,12 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
 | `intervals` | Observed interval statistics | Irregular spacing |
+| `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
 | `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, and `pivot`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, and `isolation_gap`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -258,6 +259,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `redundant_group` | Derived `report.groups` view |
 | `date_gap` | `gaps`, with a temporal domain and reference |
 | `irregular_interval` | `intervals` |
+| `extreme_value` | `intervals/extreme_value` |
 | `sorted_by_index` | `ordering` |
 | `residual_shift` | `changes/residual_level` |
 | `level_shift` | `changes/level_shift` |
