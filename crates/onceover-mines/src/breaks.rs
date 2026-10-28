@@ -29,6 +29,14 @@ pub struct BreaksConfig {
     pub max_group_levels: usize,
     /// Minimum rows required per group to be analyzed.
     pub min_group_rows: usize,
+    /// Robust-z threshold for transient excursion points.
+    pub excursion_z: f64,
+    /// Rolling-median window (points) for the local baseline.
+    pub excursion_window: usize,
+    /// Unflagged points bridged when grouping excursion runs.
+    pub excursion_merge_gap: usize,
+    /// Maximum events reported per series.
+    pub excursion_max_events: usize,
 }
 
 impl Default for BreaksConfig {
@@ -43,6 +51,10 @@ impl Default for BreaksConfig {
             max_groups: 2,
             max_group_levels: 8,
             min_group_rows: 60,
+            excursion_z: 8.0,
+            excursion_window: 97,
+            excursion_merge_gap: 12,
+            excursion_max_events: 10,
         }
     }
 }
@@ -732,6 +744,13 @@ pub fn profile_breaks(
             skipped += 1;
             continue;
         }
+        findings.extend(excursion_findings(
+            name,
+            time_name,
+            is_datetime,
+            &points,
+            cfg,
+        ));
         let train: Vec<(i64, f64)> = points
             .iter()
             .filter(|&&(_, r, _)| !is_holdout(r))
@@ -992,5 +1011,337 @@ mod tests {
         assert!(level_breaks(&[1.0, 2.0, 3.0], &cfg).is_empty());
         assert!(variance_break(&[1.0, 2.0], &cfg).is_none());
         assert!(trend_break(&[1.0, 2.0], &[0.0], &cfg).is_none());
+    }
+}
+
+// ---------------------------------------------------------------------
+// Transient excursions (issue #32): short deviations from a local
+// baseline, grouped into events. The level/trend machinery above
+// targets sustained shifts; the labeled events in the corpus's
+// anomaly pack are excursions of a few points to a few days that the
+// sustained-shift scans do not report.
+
+fn median_of(vals: &[f64]) -> f64 {
+    if vals.is_empty() {
+        return 0.0;
+    }
+    let mut v: Vec<f64> = vals.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = v.len() / 2;
+    if v.len() % 2 == 1 {
+        v[mid]
+    } else {
+        0.5 * (v[mid - 1] + v[mid])
+    }
+}
+
+/// Points per week implied by the median interval between
+/// consecutive timestamps, when the cadence divides a week evenly.
+fn weekly_period(points: &[(i64, u32, f64)], is_datetime: bool) -> Option<usize> {
+    if points.len() < 3 {
+        return None;
+    }
+    let mut diffs: Vec<f64> = points
+        .windows(2)
+        .filter_map(|w| {
+            let d = w[1].0 - w[0].0;
+            (d > 0).then_some(d as f64)
+        })
+        .collect();
+    if diffs.is_empty() {
+        return None;
+    }
+    diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let step = diffs[diffs.len() / 2];
+    let week = if is_datetime {
+        7.0 * 86_400.0 * 1_000_000.0
+    } else {
+        7.0
+    };
+    let period = week / step;
+    let rounded = period.round();
+    if rounded >= 48.0 && (period - rounded).abs() < 0.01 {
+        Some(rounded as usize)
+    } else {
+        None
+    }
+}
+
+struct Excursion {
+    start: usize,
+    end: usize,
+    peak: usize,
+    peak_z: f64,
+}
+
+fn excursion_scan(
+    points: &[(i64, u32, f64)],
+    is_datetime: bool,
+    cfg: &BreaksConfig,
+) -> Vec<Excursion> {
+    let n = points.len();
+    if n < 50 {
+        return Vec::new();
+    }
+    let ys: Vec<f64> = points.iter().map(|p| p.2).collect();
+    // Baseline: seasonal (same time of week in neighbouring weeks)
+    // when the cadence supports it and the series spans at least 2.5
+    // periods; otherwise a centered rolling median. Seasonal
+    // neighbours are matched by timestamp, not by index: the series
+    // may be a stride sample of the full grid or have gaps, and an
+    // index offset drifts out of phase as soon as a row is missing.
+    let period = weekly_period(points, is_datetime).filter(|&p| (n as f64) >= 2.5 * p as f64);
+    let residuals: Vec<f64> = match period {
+        Some(p) => {
+            let times: Vec<i64> = points.iter().map(|pt| pt.0).collect();
+            let week: i64 = if is_datetime {
+                7 * 86_400 * 1_000_000
+            } else {
+                7
+            };
+            let step = week / p as i64;
+            (0..n)
+                .map(|i| {
+                    let mut neigh: Vec<f64> = Vec::new();
+                    for k in 1..=3i64 {
+                        for sgn in [1i64, -1] {
+                            let target = times[i] + sgn * k * week;
+                            let idx = times.partition_point(|&t| t < target);
+                            for cand in [idx.saturating_sub(1), idx.min(n - 1)] {
+                                if (times[cand] - target).abs() <= step / 2 && cand != i {
+                                    neigh.push(ys[cand]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if neigh.len() >= 2 {
+                        ys[i] - median_of(&neigh)
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
+        }
+        None => {
+            let half = cfg.excursion_window / 2;
+            (0..n)
+                .map(|i| {
+                    let lo = i.saturating_sub(half);
+                    let hi = (i + half + 1).min(n);
+                    ys[i] - median_of(&ys[lo..hi])
+                })
+                .collect()
+        }
+    };
+    let abs_res: Vec<f64> = residuals.iter().map(|r| r.abs()).collect();
+    let mad = median_of(&abs_res);
+    let mut scale = 1.4826 * mad;
+    if scale <= 0.0 {
+        // Degenerate scale: at least half the series sits exactly on
+        // its baseline (quantized or constant stretches). Fall back
+        // to 1% of the series' central range so a genuine excursion
+        // in such a series still registers; a constant series has
+        // range 0 and is skipped below.
+        let mut sorted = ys.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p = |q: f64| sorted[((q * (n - 1) as f64) as usize).min(n - 1)];
+        scale = 0.01 * (p(0.99) - p(0.01));
+    }
+    if scale <= 0.0 {
+        return Vec::new();
+    }
+    let flagged: Vec<bool> = residuals
+        .iter()
+        .map(|r| r.abs() / scale >= cfg.excursion_z)
+        .collect();
+    let max_span = match period {
+        Some(p) => p,
+        None => cfg.excursion_window / 2,
+    };
+    let mut events: Vec<Excursion> = Vec::new();
+    let mut i = 0usize;
+    while i < n {
+        if !flagged[i] {
+            i += 1;
+            continue;
+        }
+        let mut last = i;
+        let mut j = i;
+        while j < n {
+            if flagged[j] {
+                last = j;
+            } else if j - last > cfg.excursion_merge_gap {
+                break;
+            }
+            j += 1;
+        }
+        if last - i < max_span {
+            let peak = (i..=last)
+                .max_by(|&a, &b| {
+                    residuals[a]
+                        .abs()
+                        .partial_cmp(&residuals[b].abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(i);
+            events.push(Excursion {
+                start: i,
+                end: last,
+                peak,
+                peak_z: residuals[peak] / scale,
+            });
+        }
+        i = last + 1;
+    }
+    events.sort_by(|a, b| {
+        b.peak_z
+            .abs()
+            .partial_cmp(&a.peak_z.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    events.truncate(cfg.excursion_max_events);
+    events
+}
+
+fn excursion_findings(
+    column: &str,
+    time_column: &str,
+    is_datetime: bool,
+    points: &[(i64, u32, f64)],
+    cfg: &BreaksConfig,
+) -> Vec<Finding> {
+    excursion_scan(points, is_datetime, cfg)
+        .iter()
+        .map(|ev| {
+            let start = display_time(is_datetime, points[ev.start].0);
+            let end = display_time(is_datetime, points[ev.end].0);
+            let peak_t = display_time(is_datetime, points[ev.peak].0);
+            let peak_v = points[ev.peak].2;
+            let direction = if ev.peak_z >= 0.0 { "spike" } else { "dip" };
+            let claim = format!(
+                "{} {} between {} and {}: peak value {} at {}, {:.1} robust z from the local baseline",
+                column,
+                if direction == "spike" { "spikes" } else { "dips" },
+                start,
+                end,
+                crate::fmt_float(peak_v),
+                peak_t,
+                ev.peak_z.abs(),
+            );
+            let mut metrics: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+            metrics.insert("event_start".into(), json!(start));
+            metrics.insert("event_end".into(), json!(end));
+            metrics.insert("peak_time".into(), json!(peak_t));
+            metrics.insert("peak_value".into(), json!(peak_v));
+            metrics.insert("peak_z".into(), json!(ev.peak_z));
+            metrics.insert("direction".into(), json!(direction));
+            metrics.insert(
+                "duration_points".into(),
+                json!((ev.end - ev.start + 1) as u64),
+            );
+            metrics.insert("n".into(), json!(points.len() as u64));
+            Finding::new(
+                Pattern::TransientExcursion,
+                BTreeMap::from([
+                    ("column".into(), json!(column)),
+                    ("time_column".into(), json!(time_column)),
+                ]),
+                claim,
+                EvidenceBasis::Estimated,
+                (0.55 + 0.02 * ev.peak_z.abs()).min(0.9),
+                metrics,
+                Some(
+                    "check for incidents, holidays, outages, or collection changes in this window"
+                        .into(),
+                ),
+                Method::new(
+                    "breaks",
+                    "transient excursion vs local baseline",
+                    "onceover transient events v1 (issue #32)",
+                ),
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod excursion_tests {
+    use super::*;
+
+    fn cfg() -> BreaksConfig {
+        BreaksConfig::default()
+    }
+
+    fn series(ys: &[f64]) -> Vec<(i64, u32, f64)> {
+        ys.iter()
+            .enumerate()
+            .map(|(i, &v)| (i as i64 * 300_000_000, i as u32, v))
+            .collect()
+    }
+
+    #[test]
+    fn planted_dip_is_an_event() {
+        let mut ys = vec![100.0; 600];
+        for (k, v) in ys.iter_mut().enumerate().skip(300).take(6) {
+            let _ = k;
+            *v = 40.0;
+        }
+        let ev = excursion_scan(&series(&ys), true, &cfg());
+        assert_eq!(ev.len(), 1);
+        assert!(ev[0].peak_z < 0.0);
+        assert!((300..306).contains(&ev[0].peak));
+    }
+
+    #[test]
+    fn level_shift_is_not_an_excursion() {
+        let mut ys = vec![100.0; 600];
+        for v in ys.iter_mut().skip(300) {
+            *v = 160.0;
+        }
+        let ev = excursion_scan(&series(&ys), true, &cfg());
+        assert!(
+            ev.is_empty(),
+            "sustained shift must not flag: {} events",
+            ev.len()
+        );
+    }
+
+    #[test]
+    fn constant_series_has_no_events() {
+        let ys = vec![7.0; 600];
+        assert!(excursion_scan(&series(&ys), true, &cfg()).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod excursion_debug_tests {
+    use super::*;
+
+    #[test]
+    fn seasonal_series_with_dip() {
+        // Weekly-seasonal series at 30-min cadence (336 pts/week),
+        // 30 weeks, with a 1-day demand collapse in week 20.
+        let mut ys: Vec<f64> = Vec::new();
+        for i in 0..(336 * 30) {
+            let tod = (i % 48) as f64;
+            let dow = ((i / 48) % 7) as f64;
+            let daily = 1000.0 + 400.0 * ((tod / 48.0) * std::f64::consts::TAU).sin().abs();
+            let weekly = if dow >= 5.0 { 0.6 } else { 1.0 };
+            ys.push(daily * weekly + (i % 13) as f64);
+        }
+        for v in ys.iter_mut().skip(336 * 20 + 100).take(48) {
+            *v *= 0.3;
+        }
+        let pts: Vec<(i64, u32, f64)> = ys
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| (i as i64 * 1_800_000_000, i as u32, v))
+            .collect();
+        let ev = excursion_scan(&pts, true, &BreaksConfig::default());
+        assert!(!ev.is_empty(), "expected the planted collapse to be found");
+        assert!(ev
+            .iter()
+            .any(|e| (336 * 20 + 90..336 * 20 + 160).contains(&e.peak)));
     }
 }
