@@ -318,7 +318,15 @@ pub fn profile_with_detectors(
         deadline_hit = true;
     }
     if !deadline_hit && enabled("dates") {
-        let d = analyze_temporal(&table);
+        // Columns with a declared gap check are skipped here: the
+        // expectations pass reports their gaps against the declared
+        // reference instead of the inferred one.
+        let declared_skip = cfg
+            .hints
+            .as_ref()
+            .map(|h| onceover_mines::expectations::declared_temporal_columns(&table, h))
+            .unwrap_or_default();
+        let d = analyze_temporal(&table, &declared_skip);
         coverage.insert("dates".into(), PassInfo::ran(d.coverage.clone()));
         // Backfill modal intervals into cards.
         for (name, modal) in d.modal_intervals {
@@ -329,6 +337,26 @@ pub fn profile_with_detectors(
             }
         }
         findings.extend(d.findings);
+    }
+
+    // ---------- declared expectations ----------
+    if check_deadline(&mut coverage, "expectations") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("expectations") {
+        match cfg.hints.as_ref() {
+            Some(hints) if !hints.is_empty() => {
+                let e = onceover_mines::expectations::analyze_expectations(&table, hints);
+                coverage.insert("expectations".into(), PassInfo::ran(e.coverage.clone()));
+                findings.extend(e.findings);
+            }
+            _ => {
+                coverage.insert(
+                    "expectations".into(),
+                    PassInfo::skipped("no hints provided".to_string()),
+                );
+            }
+        }
     }
 
     // ---------- model-based passes (standard / deep) ----------

@@ -17,7 +17,8 @@ _SCHEMA_VERSION = "0.2"
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
             sample_rows: int | None = None, max_predictors: int | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
-            max_findings: int = 100, max_rules: int = 20):
+            max_findings: int = 100, max_rules: int = 20,
+            hints: dict | None = None):
     """Give a Polars DataFrame a once-over.
 
     Parameters
@@ -46,6 +47,16 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         without contributing their own findings.
     max_findings, max_rules : int
         Report-wide selection limits, applied across all contributing methods.
+    hints : dict, optional
+        Declared structure the profiler cannot infer, checked exactly by
+        the "expectations" pass (evidence tagged
+        ``reference_source="declared"``). Keys: ``time`` (axis column),
+        ``order_by`` (columns rows are ordered by), ``no_gaps`` (columns
+        expected to form a complete sequence), ``cadence`` (per-column:
+        "daily", "business_day", "weekly", "monthly", or a day/step
+        count), ``dimensions`` and ``measures`` (panel structure).
+        Unknown columns or unusable types are reported in the pass
+        coverage, not raised.
 
     Returns
     -------
@@ -54,7 +65,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     """
     return ProfileReport(_profile_native(df, budget, deadline_seconds, sample_rows=sample_rows,
                                          max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
-                                         max_findings=max_findings, max_rules=max_rules))
+                                         max_findings=max_findings, max_rules=max_rules,
+                                         hints=_json.dumps(hints) if hints is not None else None))
 
 
 def available_detectors():

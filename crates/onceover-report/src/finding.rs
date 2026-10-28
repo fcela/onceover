@@ -62,6 +62,8 @@ pub enum Pattern {
     StatisticalAssociation,
     PeriodAssociation,
     Gap,
+    SequenceGap,
+    MissingCombinations,
     IntervalVariation,
     ColumnOrdering,
     ResidualShift,
@@ -87,6 +89,7 @@ impl Pattern {
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
+            Self::SequenceGap | Self::MissingCombinations => Category::Gaps,
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
             Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
@@ -506,6 +509,34 @@ impl Finding {
                     if let Some(v) = raw.get(k).or_else(|| metrics.get(k)) {
                         spec.definition.insert(k.into(), v.clone());
                     }
+                }
+            }
+            Pattern::SequenceGap => {
+                subject.unit = Some("values".into());
+                spec.definition.insert("domain".into(), json!("sequence"));
+                spec.definition.insert(
+                    "reference".into(),
+                    json!({"step": metrics.get("step"), "source": "declared"}),
+                );
+                if let Some(v) = metrics.get("absent_values") {
+                    spec.definition.insert("absent_values".into(), v.clone());
+                }
+                for k in ["from", "to"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::MissingCombinations => {
+                subject.unit = Some("cells".into());
+                spec.definition
+                    .insert("domain".into(), json!("combinations"));
+                spec.definition.insert(
+                    "reference".into(),
+                    json!({"axis": metrics.get("axis"), "cadence": metrics.get("cadence"), "source": "declared"}),
+                );
+                if let Some(v) = metrics.get("absent_values") {
+                    spec.definition.insert("absent_values".into(), v.clone());
                 }
             }
             Pattern::ColumnOrdering => {

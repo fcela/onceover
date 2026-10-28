@@ -165,6 +165,48 @@ attributions are separate explanatory metadata.
 asserts neither interchangeability nor redundancy. `report.selection` records
 candidate, verified-candidate, distinct-statement and selected counts.
 
+## Declared expectations
+
+Callers can declare structure the profiler cannot infer, through the
+`hints` argument (Rust: `ProfileConfig.hints`):
+
+- `time`: the time/ordering axis column;
+- `order_by`: columns the rows are claimed to be ordered by;
+- `no_gaps`: columns expected to form a complete sequence;
+- `cadence`: per-column cadence — `daily`, `business_day`, `weekly`,
+  `monthly`, or a fixed day/step count;
+- `dimensions`, `measures`: the panel's declared dimension and measure
+  columns.
+
+The `expectations` pass checks the declarations exactly and tags its
+evidence `reference_source: "declared"`, against the dates pass's
+`"inferred"`. Four checks run:
+
+- **Declared-cadence gaps** on temporal columns, against the declared
+  cadence (monthly included) with no minimum-series floor. A declared
+  column is skipped by the inferred dates analysis, so a gap is
+  reported once. A temporal `no_gaps` column without a declared
+  cadence is enumerated at its modal interval.
+- **Sequence completeness** on integer `no_gaps` columns, at the
+  declared step or the modal step; the evidence lists the first 20
+  absent values. Ranges wider than 1,000,000 expected values are
+  skipped and noted in coverage.
+- **Ordering**, in both directions: inversions against `order_by` are
+  counted and the first offending rows located; a satisfied
+  declaration yields the positive ordering statement.
+- **Panel completeness**: the strict grid of declared dimension
+  combinations × axis periods (declared-cadence enumeration, else the
+  union of observed periods). Missing cells are counted with the
+  worst groups and up to 10 absent cells in the evidence; when
+  measures are declared, present cells null on every measure are
+  counted separately as `measure_null_cells`.
+
+Hints naming columns that are missing, or columns of an unusable type
+for the check, are ignored with the reason recorded in the
+`expectations` coverage entry; malformed hint values raise an error
+at the API boundary. Declarations drive the expectations pass only —
+column cards keep their inferred roles.
+
 ## Detectors and extensions
 
 ```python

@@ -60,6 +60,30 @@ wall-clock deadline can change which passes finish; coverage records skipped wor
 Use `detectors=[...]` to select passes explicitly. The experimental `views`
 pass is disabled by default and can be selected at the standard or deep budget:
 
+## Declared hints
+
+What the profiler cannot infer, the caller can declare. `hints` states the
+table's intended structure, and an `expectations` pass checks the statements
+exactly, tagging its evidence `reference_source="declared"`:
+
+```python
+report = onceover.profile(df, hints={
+    "time": "month",                          # the time axis
+    "order_by": ["month"],                    # rows are ordered by it
+    "no_gaps": ["month", "order_id"],         # complete sequences expected
+    "cadence": {"month": "monthly"},          # or "daily" | "business_day" | "weekly" | a step
+    "dimensions": ["region", "product"],      # panel structure
+    "measures": ["revenue"],
+})
+```
+
+Declared cadences replace inference for their column (monthly gaps and
+short series become checkable), declared ordering reports violations
+rather than only confirming sortedness, integer `no_gaps` columns get a
+sequence-completeness check, and declared dimensions × the time axis get
+a panel-completeness check. Hints naming missing or unusable columns are
+reported in the `expectations` coverage entry, not raised.
+
 ```python
 onceover.available_detectors()
 report = onceover.profile(df, detectors=["keys", "numeric_dependence", "views"])

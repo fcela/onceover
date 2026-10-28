@@ -9,8 +9,10 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 mod finding;
+mod hints;
 mod ledger;
 pub use finding::*;
+pub use hints::{Cadence, ProfileHints};
 pub use ledger::{
     finalize_ledger, group_findings, select_findings, SelectionPolicy, SelectionSummary,
 };

@@ -168,12 +168,18 @@ Method::new("dates", "interval_variation", "exact interval scan (onceover v0.1)"
 }
 
 /// Drive date analysis over all temporal columns.
-pub fn analyze_temporal(table: &onceover_core::TypedTable) -> DatesOutcome {
+pub fn analyze_temporal(
+    table: &onceover_core::TypedTable,
+    skip: &std::collections::BTreeSet<String>,
+) -> DatesOutcome {
     let mut findings = Vec::new();
     let mut modal_intervals = BTreeMap::new();
     let mut n_cols = 0;
     for (i, col) in table.cols.iter().enumerate() {
         let name = &table.names[i];
+        if skip.contains(name) {
+            continue;
+        }
         match col {
             TypedCol::Date { vals } => {
                 n_cols += 1;

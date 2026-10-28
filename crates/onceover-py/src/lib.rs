@@ -46,7 +46,7 @@ impl ProfileReportPy {
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(name = "profile")]
-#[pyo3(signature = (df, budget=None, deadline_seconds=None, *, sample_rows=None, max_predictors=None, max_pairs=None, detectors=None, max_findings=100, max_rules=20))]
+#[pyo3(signature = (df, budget=None, deadline_seconds=None, *, sample_rows=None, max_predictors=None, max_pairs=None, detectors=None, max_findings=100, max_rules=20, hints=None))]
 fn profile_py(
     py: Python<'_>,
     df: PyDataFrame,
@@ -58,6 +58,7 @@ fn profile_py(
     detectors: Option<Vec<String>>,
     max_findings: usize,
     max_rules: usize,
+    hints: Option<String>,
 ) -> PyResult<ProfileReportPy> {
     for (name, value) in [
         ("sample_rows", sample_rows),
@@ -93,6 +94,13 @@ fn profile_py(
         Some(s) => Some(Duration::from_secs_f64(s)),
         None => None,
     };
+    let hints = match hints {
+        Some(text) => Some(
+            serde_json::from_str::<onceover_report::ProfileHints>(&text)
+                .map_err(|e| PyValueError::new_err(format!("invalid hints: {e}")))?,
+        ),
+        None => None,
+    };
     let cfg = ProfileConfig {
         budget: b,
         detectors: detectors.map(|ids| ids.into_iter().collect()),
@@ -105,6 +113,7 @@ fn profile_py(
         sample_rows,
         max_predictors,
         max_pairs,
+        hints,
     };
     // Zero-copy extraction happens first (cheap), then the GIL is released
     // for the heavy, all-Rust compute.
