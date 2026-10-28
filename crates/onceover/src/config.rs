@@ -50,6 +50,9 @@ pub struct ProfileConfig {
     pub max_predictors: Option<usize>,
     /// Maximum detailed numeric pairs, after screening every numeric pair.
     pub max_pairs: Option<usize>,
+    /// User-declared structure (time axis, ordering, gap-free columns,
+    /// cadences, dimensions, measures), checked by the expectations pass.
+    pub hints: Option<onceover_report::ProfileHints>,
 }
 
 impl Default for ProfileConfig {
@@ -62,6 +65,7 @@ impl Default for ProfileConfig {
             sample_rows: None,
             max_predictors: None,
             max_pairs: None,
+            hints: None,
         }
     }
 }

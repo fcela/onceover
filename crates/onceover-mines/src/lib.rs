@@ -10,6 +10,7 @@ pub mod dates;
 pub mod dep;
 pub mod dtable;
 pub mod encode;
+pub mod expectations;
 pub mod gbm;
 pub mod ident;
 pub mod periods;
