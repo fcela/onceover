@@ -55,6 +55,7 @@ pub enum Pattern {
     FormatVariation,
     FunctionalDependency,
     AffineDependency,
+    ArithmeticIdentity,
     PredictiveDependency,
     PiecewiseDependency,
     ConditionalRule,
@@ -79,6 +80,7 @@ impl Pattern {
             Self::FormatVariation => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency
+            | Self::ArithmeticIdentity
             | Self::PredictiveDependency
             | Self::PiecewiseDependency => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
@@ -93,7 +95,9 @@ impl Pattern {
     }
     pub fn subtype(self) -> Option<&'static str> {
         match self {
-            Self::FunctionalDependency | Self::AffineDependency => Some("functional"),
+            Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
+                Some("functional")
+            }
             Self::PredictiveDependency | Self::PiecewiseDependency => Some("predictive"),
             Self::ConditionalRule => Some("if_then"),
             Self::StatisticalAssociation => Some("statistical"),
@@ -423,6 +427,25 @@ impl Finding {
                 for k in [
                     "a",
                     "b",
+                    "tolerance",
+                    "absolute_tolerance",
+                    "relative_tolerance",
+                ] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::ArithmeticIdentity => {
+                if let Some(v) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(v.to_owned());
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude incomplete inputs and target"),
+                );
+                for k in [
+                    "coefficients",
                     "tolerance",
                     "absolute_tolerance",
                     "relative_tolerance",

@@ -501,7 +501,6 @@ pub fn profile_with_detectors(
                     coverage.insert("arithmetic_identities".into(), PassInfo::ran(id_cov));
                     findings.extend(id_f);
                 }
-
                 if enabled("period_associations") {
                     let out = onceover_mines::period_associations(
                         &table,
@@ -515,6 +514,13 @@ pub fn profile_with_detectors(
                     };
                     coverage.insert("period_associations".into(), info);
                     findings.extend(out.findings);
+                }
+
+                if tier.ident_multiterm_cap > 0 && enabled("identities") {
+                    let (mt_f, mt_cov) =
+                        onceover_mines::multiterm_identities(&table, tier.ident_multiterm_cap);
+                    coverage.insert("multiterm_identities".into(), PassInfo::ran(mt_cov));
+                    findings.extend(mt_f);
                 }
             } else if deadline_hit {
                 coverage.insert(

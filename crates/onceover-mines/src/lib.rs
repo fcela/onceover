@@ -29,6 +29,7 @@ pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
 pub use gbm::{screen as screen_predictability, ScreenConfig, ScreenOutcome, TargetResult};
 pub use ident::identities;
+pub use ident::multiterm_identities;
 pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};
 pub use prism::{prism_rules, PrismConfig};
 pub use regimes::{profile_regimes, RegimesConfig};
