@@ -117,7 +117,7 @@ pub fn verify_fd(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) ->
 
 /// Exact distinct-count of complete-row tuples over the given columns;
 /// returns usize::MAX when any null is present (not a strict key).
-fn count_distinct_tuples(table: &TypedTable, cols: &[usize]) -> usize {
+pub(crate) fn count_distinct_tuples(table: &TypedTable, cols: &[usize]) -> usize {
     let n = table.n;
     let mut set: FxHashSet<Vec<u8>> = FxHashSet::default();
     for r in 0..n {

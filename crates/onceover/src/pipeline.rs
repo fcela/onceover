@@ -269,6 +269,37 @@ pub fn profile_with_detectors(
         );
     }
 
+    // ---------- pivot (long format) ----------
+    if enabled("pivot") {
+        let p = onceover_deps::analyze_pivot(
+            &table,
+            &info,
+            &onceover_deps::PivotConfig {
+                max_levels: tier.pivot_max_levels,
+                max_findings: tier.pivot_max_findings,
+                ..Default::default()
+            },
+        );
+        if p.checked == 0 {
+            coverage.insert(
+                "pivot".into(),
+                PassInfo::na(
+                    "needs exactly one continuous measure column and a categorical attribute candidate"
+                        .to_string(),
+                ),
+            );
+        } else {
+            coverage.insert(
+                "pivot".into(),
+                PassInfo::ran(format!(
+                    "{} attribute candidates checked, {} verified jointly unique",
+                    p.checked, p.verified
+                )),
+            );
+        }
+        findings.extend(p.findings);
+    }
+
     // ---------- sortedness ----------
     if check_deadline(&mut coverage, "sortedness") {
         deadline_hit = true;

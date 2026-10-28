@@ -67,6 +67,7 @@ pub enum Pattern {
     LevelShift,
     TrendChange,
     VarianceChange,
+    LongFormat,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -89,6 +90,7 @@ impl Pattern {
             Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
                 Category::Changes
             }
+            Self::LongFormat => Category::ColumnRoles,
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -102,6 +104,7 @@ impl Pattern {
             Self::LevelShift => Some("level_shift"),
             Self::TrendChange => Some("trend_change"),
             Self::VarianceChange => Some("variance_change"),
+            Self::LongFormat => Some("long_format"),
             _ => None,
         }
     }
@@ -520,6 +523,18 @@ impl Finding {
                 if let Some(v) = metrics.get("breakpoint") {
                     spec.definition.insert("breakpoint".into(), v.clone());
                 }
+            }
+            Pattern::LongFormat => {
+                spec.form = Some("pivot".into());
+                for k in ["index", "attribute", "measure"] {
+                    if let Some(v) = raw.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("index and attribute columns complete; measure values may be missing"),
+                );
             }
             _ => {}
         }

@@ -5,10 +5,12 @@
 pub mod fd;
 pub mod hashutil;
 pub mod keys;
+pub mod pivot;
 pub mod sorted;
 
 pub use fd::{discover, DepsOutcome, FdConfig};
 pub use keys::{analyze_keys, KeyOutcome};
+pub use pivot::{analyze_pivot, PivotConfig, PivotOutcome};
 pub use sorted::sortedness;
 
 /// Compact per-column info the dependency passes need (built by the
