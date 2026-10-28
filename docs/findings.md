@@ -19,13 +19,14 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `dependencies` | Type `predictive` | Specified inputs support prediction of a target under recorded validation |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
+| `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
 | `changes` | Type `residual_level`; reference model and compared groups | Dated residual shifts, or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, and `piecewise_linear`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, and `period_split`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -148,6 +149,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `piecewise_relationship` | `dependencies/predictive`, form `piecewise_linear` |
 | `prism_rule`, `association_rule` | `conditional_rules/if_then` |
 | `dependence` | `associations/statistical` |
+| `period_associations` | `associations/period_association` |
 | `redundant_group` | Derived `report.groups` view |
 | `date_gap` | `gaps`, with a temporal domain and reference |
 | `irregular_interval` | `intervals` |

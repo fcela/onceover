@@ -59,6 +59,7 @@ pub enum Pattern {
     PiecewiseDependency,
     ConditionalRule,
     StatisticalAssociation,
+    PeriodAssociation,
     Gap,
     IntervalVariation,
     ColumnOrdering,
@@ -78,7 +79,7 @@ impl Pattern {
             | Self::PredictiveDependency
             | Self::PiecewiseDependency => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
-            Self::StatisticalAssociation => Category::Associations,
+            Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
@@ -91,6 +92,7 @@ impl Pattern {
             Self::PredictiveDependency | Self::PiecewiseDependency => Some("predictive"),
             Self::ConditionalRule => Some("if_then"),
             Self::StatisticalAssociation => Some("statistical"),
+            Self::PeriodAssociation => Some("period_association"),
             Self::ResidualShift => Some("residual_level"),
             _ => None,
         }
@@ -472,6 +474,24 @@ impl Finding {
                 spec.definition
                     .insert("missing_values".into(), json!("ignored"));
             }
+            Pattern::PeriodAssociation => {
+                spec.form = Some("period_split".into());
+                if let Some(pc) = string("period_column") {
+                    if !subject.columns.contains(&pc) {
+                        subject.columns.push(pc.clone());
+                        subject.canonicalize();
+                    }
+                    spec.definition.insert("period_column".into(), json!(pc));
+                }
+                if let Some(v) = raw.get("periods") {
+                    spec.definition.insert("periods".into(), v.clone());
+                }
+                spec.definition.insert("statistic".into(), json!("pearson"));
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows without a period, or with a missing value in either column, are excluded"),
+                );
+            }
             Pattern::ResidualShift => {
                 subject.target = string("target");
                 if let Some(model) = metrics.get("reference_model") {
@@ -602,8 +622,13 @@ impl Finding {
                     }
                 }
             }
-            Category::Associations if self.finding_type.as_deref() != Some("statistical") => {
-                return Err("association type must be statistical".into());
+            Category::Associations
+                if !matches!(
+                    self.finding_type.as_deref(),
+                    Some("statistical" | "period_association")
+                ) =>
+            {
+                return Err("association type must be statistical or period_association".into());
             }
             Category::Changes if self.finding_type.as_deref() != Some("residual_level") => {
                 return Err("change type must be residual_level".into());
