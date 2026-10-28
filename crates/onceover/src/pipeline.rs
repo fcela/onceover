@@ -477,6 +477,21 @@ pub fn profile_with_detectors(
                     coverage.insert("arithmetic_identities".into(), PassInfo::ran(id_cov));
                     findings.extend(id_f);
                 }
+
+                if enabled("period_associations") {
+                    let out = onceover_mines::period_associations(
+                        &table,
+                        &deps_pair,
+                        tier.encode.row_cap,
+                    );
+                    let info = match out.status {
+                        onceover_mines::PeriodsStatus::NotApplicable(d) => PassInfo::na(d),
+                        onceover_mines::PeriodsStatus::Ran(d) => PassInfo::ran(d),
+                        onceover_mines::PeriodsStatus::Capped(d) => PassInfo::capped(d),
+                    };
+                    coverage.insert("period_associations".into(), info);
+                    findings.extend(out.findings);
+                }
             } else if deadline_hit {
                 coverage.insert(
                     "dependence_screen".into(),
@@ -535,6 +550,7 @@ pub fn profile_with_detectors(
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",
+            "period_associations",
             "views",
         ] {
             coverage.insert(pass.into(), PassInfo::skipped("quick tier"));

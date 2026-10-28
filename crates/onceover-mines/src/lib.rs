@@ -11,6 +11,7 @@ pub mod dtable;
 pub mod encode;
 pub mod gbm;
 pub mod ident;
+pub mod periods;
 pub mod prism;
 pub mod regimes;
 mod screen;
@@ -26,6 +27,7 @@ pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
 pub use gbm::{screen as screen_predictability, ScreenConfig, ScreenOutcome, TargetResult};
 pub use ident::identities;
+pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};
 pub use prism::{prism_rules, PrismConfig};
 pub use regimes::{profile_regimes, RegimesConfig};
 

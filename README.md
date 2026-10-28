@@ -74,6 +74,8 @@ to supply resources; coverage identifies that work.
 - Exact and approximate functional dependencies, with violation counts.
 - Predictable columns, cross-validated decision tables, and PRISM rules.
 - Pearson, Spearman, and Chatterjee's ξ dependence; connected finding groups.
+- Period-split associations: a pair's correlation recomputed within the
+  periods of a date or `year` column, reported when it changes materially.
 - Arithmetic identities, M5-style local linear regimes, and dated residual shifts.
 - Nominal associations with training and diagnostic holdout evidence.
 - Date gaps, irregular intervals, sortedness, constants, missing values,
