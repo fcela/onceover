@@ -1,0 +1,151 @@
+{
+ "library": "onceover",
+ "version": "0.1.2",
+ "generated_by": "scripts/capability_manifest.py",
+ "detectors": [
+  {
+   "id": "column_profile",
+   "categories": [
+    "missingness",
+    "concentration",
+    "column_roles",
+    "formats"
+   ],
+   "requires": []
+  },
+  {
+   "id": "row_duplicates",
+   "categories": [
+    "duplicates"
+   ],
+   "requires": []
+  },
+  {
+   "id": "keys",
+   "categories": [
+    "uniqueness"
+   ],
+   "requires": []
+  },
+  {
+   "id": "pivot",
+   "categories": [
+    "column_roles"
+   ],
+   "requires": []
+  },
+  {
+   "id": "functional_dependencies",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": []
+  },
+  {
+   "id": "sortedness",
+   "categories": [
+    "ordering"
+   ],
+   "requires": []
+  },
+  {
+   "id": "dates",
+   "categories": [
+    "gaps",
+    "intervals"
+   ],
+   "requires": []
+  },
+  {
+   "id": "expectations",
+   "categories": [
+    "gaps",
+    "ordering"
+   ],
+   "requires": []
+  },
+  {
+   "id": "gbm",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": []
+  },
+  {
+   "id": "decision_tables",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [
+    "gbm"
+   ]
+  },
+  {
+   "id": "prism",
+   "categories": [
+    "conditional_rules"
+   ],
+   "requires": [
+    "gbm"
+   ]
+  },
+  {
+   "id": "regimes",
+   "categories": [
+    "dependencies",
+    "changes"
+   ],
+   "requires": [
+    "gbm"
+   ]
+  },
+  {
+   "id": "breaks",
+   "categories": [
+    "changes"
+   ],
+   "requires": []
+  },
+  {
+   "id": "association_rules",
+   "categories": [
+    "conditional_rules"
+   ],
+   "requires": []
+  },
+  {
+   "id": "numeric_dependence",
+   "categories": [
+    "associations"
+   ],
+   "requires": []
+  },
+  {
+   "id": "identities",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [
+    "numeric_dependence"
+   ]
+  },
+  {
+   "id": "period_associations",
+   "categories": [
+    "associations"
+   ],
+   "requires": [
+    "numeric_dependence"
+   ]
+  },
+  {
+   "id": "views",
+   "categories": [
+    "associations",
+    "changes",
+    "concentration"
+   ],
+   "requires": []
+  }
+ ]
+}

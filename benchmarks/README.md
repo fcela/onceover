@@ -1,88 +1,60 @@
-# Large-table validation
+# Benchmarks
 
-Run the benchmark in a fresh process from the repository root:
+A corpus of real tables with documented behavior, profiled on every run
+so that detector changes are measured against known answers rather than
+impressions. Issues #20 (harness), #21 (business pack), #23 (GritBot pack).
 
-```bash
-python -m pip install '.[benchmark]'
-python benchmarks/scale.py --rows 2000000 --columns 200 --threads 4 \
-  --output /tmp/onceover-scale.json
-```
+## Layout
 
-The fixed seed generates independent numeric noise, an integer primary key,
-a key with one repeated value, and relationships in the final columns:
-an affine identity, a nonlinear response, and a category-to-label dependency.
-The script exits unsuccessfully if any recovery or cardinality check fails.
+- `registry.json` — every dataset: pack, mode, license, source, shape,
+  content hash (bundled), expectations, notes.
+- `data/<pack>/<dataset>/` — `data.csv` (bundled datasets only),
+  `ATTRIBUTION.md` (source, license, citation, preprocessing log),
+  `prepare.py` (regenerates `data.csv` from the raw source).
+- `run_benchmarks.py` — the runner (below).
+- Results are written up in `docs/benchmarks/` (project convention:
+  a benchmark that is not in the docs does not exist).
 
-The [recorded run](results/2m-200-standard.json) uses 2,000,000 rows and 200
-columns on macOS arm64 with 24 GiB system memory and four Rayon threads.
-It records the package versions, sample sizes, pass coverage, wall time, and
-process resident memory observed every 20 ms. Peak RSS includes the input
-DataFrame and the Python process; the change from pre-profile RSS also includes
-pages becoming resident and should not be interpreted as allocated profiler
-scratch space. Compare complete configurations when comparing results.
+## License gate
 
-| Recorded measurement | Value |
-|---|---:|
-| Profiling time | 5.68 s |
-| Peak process RSS during profiling | 3.22 GiB |
-| Increase from pre-profile RSS | 0.15 GiB |
+The package is MIT. A dataset is bundled only when its terms are
+compatible with redistribution inside an MIT-licensed package (public
+domain, CC BY 4.0). Non-commercial, share-alike, no-derivatives, or
+unclear terms make a dataset **test-only**: its `prepare.py` fetches
+and prepares it locally, the registry records attribution and
+expectations, and its CSV is never committed.
 
-All eight checks passed, including recovery of the late-column relationships.
-No independent noise target was flagged as predictable in this fixture.
-These are reproducible synthetic checks, not guarantees for every data
-distribution. Exact column statistics still grow with input size; rare patterns
-and interactions without strong individual predictors can escape sampled
-screening and follow-up shortlists.
+## Preprocessing standard
 
-Use `--budget quick` to measure full-column summaries and integrity checks,
-or `--budget deep` to exercise the larger relationship budgets. Regular CI
-includes the smaller regression cases in `tests/test_scale.py`; this larger
-memory test is run separately before publishing.
+Decode and rename only: coded categoricals become the labels in the
+dataset's own documentation, cryptic columns get plain names, dates
+become ISO. No rows dropped, no values imputed, no outliers touched.
+Every transformation is listed in the dataset's `ATTRIBUTION.md`, and
+`prepare.py` implements exactly that list.
 
-## Views sensor benchmark
+## Running
 
-The opt-in views pass has a separate, self-contained sensor fixture:
+    python benchmarks/run_benchmarks.py [--pack gritbot|business]
+                                        [--only <dataset-id>]
 
-```bash
-python benchmarks/views.py --output /tmp/views-sensor.json \
-  --report-dir /tmp/views-sensor-reports
-```
+Bundled datasets are hash-verified against the registry before
+profiling. Test-only datasets run when their `data.csv` exists locally
+and are otherwise reported as skipped with the registry's reason.
+Each run writes a JSON record under `runs/` (gitignored) and exits
+nonzero if any "found" expectation misses, any known-miss tripwire
+matches, or any coverage entry errors.
 
-The default `sensor-v1` fixture uses seed 20261027 and 50,000 rows. It contains
-a temperature shift at row 25,000, 600 repeated temperature readings, 15
-planted extremes, a device change, pressure measurements, and independent
-humidity noise. It runs views with a 20,000-row fitting sample and with all
-50,000 rows, repeating both runs to check report equality. It also profiles
-2,000 independent Gaussian values as a control.
+Expectations come in three kinds: `finding` predicates over the
+report (category / type / form / target / columns), `documented_case`
+records (published anomalies with a found / partial / missed
+disposition, reviewed by hand each run), and `max_findings` guards.
+A `finding` expectation with `"expect": "missed"` is a known-miss
+tripwire: it passes while nothing matches, and fails loudly when a
+future detector starts matching — the signal to promote the case.
 
-The [recorded result](results/views-sensor.json) includes the generator hash,
-input hash, package versions, thread count, complete coverage, flagged row
-indices, and per-cluster summaries. In that release-build run on macOS arm64:
+## Benchmark corpus (known-answer datasets)
 
-| Views-only measurement | Standard sample | Full sample |
-|---|---:|---:|
-| Evaluated rows | 20,000 | 50,000 |
-| Planted extremes in evaluated rows | 8 | 15 |
-| Planted extremes reported | 8 | 15 |
-| Other reported temperature cells | 1 | 0 |
-| Profile time | 0.060 s | 0.121 s |
-| Repeated report JSON identical | Yes | Yes |
-
-The fitted grouping changes with the sample: the standard run joins `device_id`
-and `temperature`, while the full-sample run has no shared views. The independent
-Gaussian control forms eight clusters. Both observations matter when
-interpreting a partition as meaningful structure.
-
-To check the earlier boundary claim, the script also calculates a diagnostic
-from the reported temperature clusters: sort their means, split at the largest
-adjacent mean gap, and take the largest row index among the lower groups. This
-gives 49,997 for the standard sample and 24,999 for the full sample, against a
-shift planted at 25,000. The standard result fails to locate the shift. This
-calculation is not part of the profiler; unordered cluster ranges do not supply
-a temporal change-point estimate.
-
-The script's pass/fail checks cover repeatability, default exclusion, and sample
-accounting. Its recovery counts and cluster diagnostics describe this fixture;
-they do not establish general detection accuracy. Views models only its first
-64 eligible columns, so the profiler-wide late-column benchmark above does not
-validate wide-table discovery by this pass.
+`benchmarks/corpus/` holds the registry-driven corpus of real tables
+with documented behavior (GritBot and business packs): bundled CSVs
+with attribution where the license allows, per-dataset expectations,
+and run write-ups in `docs/benchmarks/`. See `benchmarks/corpus/README.md`.
