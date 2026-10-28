@@ -10,7 +10,7 @@ use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
-    profile_regimes, screen_predictability,
+    profile_breaks, profile_regimes, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -424,6 +424,30 @@ pub fn profile_with_detectors(
                 coverage.insert("regimes".into(), PassInfo::sampled(cov));
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "breaks") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("breaks") {
+                let excluded: Vec<usize> = info
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        let name = c.name.to_ascii_lowercase();
+                        let id_name =
+                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
+                        // Cardinality alone labels unique real-valued measurements
+                        // as identifiers in v0.1 cards. Keep those eligible here.
+                        (matches!(c.role.as_str(), "constant" | "all_null")
+                            || (c.role == "identifier"
+                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
+                                    || id_name)))
+                            .then_some(i)
+                    })
+                    .collect();
+                let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks);
+                coverage.insert("breaks".into(), PassInfo::sampled(cov));
+                findings.extend(f);
+            }
             if deadline_hit || check_deadline(&mut coverage, "association_rules") {
                 deadline_hit = true;
                 coverage.insert(
@@ -532,6 +556,7 @@ pub fn profile_with_detectors(
             "decision_tables",
             "prism_rules",
             "regimes",
+            "breaks",
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",
@@ -611,6 +636,7 @@ pub fn profile_with_detectors(
                 "row_duplicates"=>"missing values compare equal; opaque fields excluded",
                 "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
                 "gbm"|"decision_tables"|"regimes"=>"missing targets excluded; predictor handling follows the recorded model",
+                "breaks"=>"rows with a missing date or value are excluded from each series",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
             }.to_string();
@@ -663,6 +689,7 @@ pub fn profile_with_detectors(
         ("decision_tables", "decision_tables"),
         ("prism", "prism_rules"),
         ("regimes", "regimes"),
+        ("breaks", "breaks"),
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
         ("identities", "arithmetic_identities"),

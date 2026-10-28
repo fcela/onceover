@@ -22,7 +22,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
-| `changes` | Type `residual_level`; reference model and compared groups | Dated residual shifts, or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, and `piecewise_linear`. A decision-table algorithm can
@@ -153,6 +153,9 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `irregular_interval` | `intervals` |
 | `sorted_by_index` | `ordering` |
 | `residual_shift` | `changes/residual_level` |
+| `level_shift` | `changes/level_shift` |
+| `trend_change` | `changes/trend_change` |
+| `variance_change` | `changes/variance_change` |
 
 The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.2; CI
 executes it against the installed wheel.
