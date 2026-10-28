@@ -664,8 +664,8 @@
       "2015-01-27 00:00:00"
      ],
      "tolerance_hours": 24,
-     "min_covered": 0,
-     "note": "Baseline measured 2026-10-28: 0 of 5 labeled points are covered by any changes/gaps/intervals finding (the breaks pass scanned the series and reported nothing). min_covered is 0 -- this is a known-miss baseline; raise it when a detector starts covering windows."
+     "min_covered": 5,
+     "note": "Transient events (issue #32): the breaks pass now reports excursions vs a seasonal (same time of week) baseline. Measured 2026-10-28: 5 of 5 labeled points covered by 10 excursion findings; the unlabeled findings are the July 4 and Labor Day demand collapses and a Dec 12 spike."
     }
    ],
    "notes": [
@@ -696,8 +696,8 @@
       "2014-03-21 03:01:00"
      ],
      "tolerance_hours": 24,
-     "min_covered": 0,
-     "note": "Baseline to be measured on the first run; recorded in the docs entry."
+     "min_covered": 3,
+     "note": "Transient events (issue #32): excursions vs a rolling-median baseline. Measured 2026-10-28: 3 of 3 labeled points covered, exactly 3 excursion findings (peak z +31.1, -12.8, -8.0)."
     }
    ],
    "notes": [

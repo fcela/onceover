@@ -25,10 +25,10 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
-| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, and `isolation_gap`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, and `excursion`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -265,6 +265,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `level_shift` | `changes/level_shift` |
 | `trend_change` | `changes/trend_change` |
 | `variance_change` | `changes/variance_change` |
+| `transient_excursion` | `changes/transient_excursion` |
 
 The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.2; CI
 executes it against the installed wheel.
