@@ -1,0 +1,403 @@
+{
+ "version": 1,
+ "license_gate": "Bundle only data whose terms are compatible with the package's MIT license; everything else is test-only (fetched and prepared locally, never committed).",
+ "datasets": [
+  {
+   "id": "thyroid",
+   "pack": "gritbot",
+   "title": "Thyroid screening (allhypo)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Thyroid Disease (id 102), allhypo.data + allhypo.test",
+   "dir": "data/gritbot/thyroid",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "tsh_measured",
+     "note": "Each assay's value column determines its measured flag (missingness structure)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "columns_any": [
+      "pregnant"
+     ],
+     "note": "pregnant is 98.6% false; the concentration itself is expected."
+    },
+    {
+     "kind": "finding",
+     "category": "intervals",
+     "columns_any": [
+      "age"
+     ],
+     "expect": "missed",
+     "note": "Known-miss tripwire: no current finding isolates the extreme age value."
+    },
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "columns_all": [
+      "pregnant",
+      "age"
+     ],
+     "expect": "missed",
+     "note": "Known-miss tripwire: no rule conditions age on pregnant."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:1365 (record 861)",
+     "status": "missed",
+     "note": "age = 455 where 99.97% of patients are <= 94. No finding isolates it."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:2224 (record 1088)",
+     "status": "missed",
+     "note": "Pregnant patient aged 75; other pregnant patients are <= 42 apart from data:1610. Not isolated by any finding."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:1610 (record 4531)",
+     "status": "missed",
+     "note": "Pregnant patient aged 73. Not isolated by any finding."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:2215 / test:373",
+     "status": "missed",
+     "note": "Assay-combination cases (TSH 8.5 in a treated subset; T3 7.6 in a low-TSH subset). GritBot itself marked these as needing expert judgement."
+    }
+   ],
+   "notes": [
+    "GritBot showcase table #1. case_ref preserves GritBot's data/test numbering."
+   ],
+   "sha256": "8338b53e0c72a4f2634350b03bcacdfc63ce14140f83c0a583f7bd494eb2291b",
+   "rows": 3772
+  },
+  {
+   "id": "abalone",
+   "pack": "gritbot",
+   "title": "Abalone physical measurements",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Abalone (id 1)",
+   "dir": "data/gritbot/abalone",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "whole_weight",
+     "note": "The weight/length measurement web is strongly predictive."
+    },
+    {
+     "kind": "finding",
+     "form": "sum",
+     "columns_any": [
+      "whole_weight"
+     ],
+     "expect": "missed",
+     "note": "Known-miss tripwire: no sum identity over the weight parts (whole vs shucked+viscera+shell) is reported, exact or with violations."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot abalone (23 cases)",
+     "status": "partial",
+     "note": "RuleQuest: most of the 23 violate physical constraints (part weight > whole weight; length < diameter). The profiler finds the measurement web as predictive dependencies but isolates none of the violating rows."
+    }
+   ],
+   "notes": [
+    "GritBot showcase table #4."
+   ],
+   "sha256": "ac48f1f6cacf79c5f25c2874b79c6af0edc95056f4b69ae1f46854bcccd03e38",
+   "rows": 4177
+  },
+  {
+   "id": "soybean",
+   "pack": "gritbot",
+   "title": "Soybean disease (683 cases, text labels)",
+   "mode": "bundled",
+   "license": "Public (OpenML record)",
+   "source": "OpenML dataset 42 (Michalski & Chilausky); same data as UCI Soybean (Large) id 90",
+   "dir": "data/gritbot/soybean",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "leafspots_halo",
+      "leafspot_size"
+     ],
+     "expect": "found",
+     "note": "On the bundled 683-row text-label file the profiler reports class + leafspots_halo -> leafspot_size with exactly 1 violation -- the structure GritBot's case 78 breaks."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 78",
+     "status": "found",
+     "note": "Row 78 of the bundled file: leafspots_halo = absent with leafspot_size = gt-1/8 -- the combination GritBot flagged (large spots almost always come with halos)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 558",
+     "status": "missed",
+     "note": "leaves = normal with leaf_mild = present (upper leaf mildew accompanies abnormal leaves in its subset). Case-level isolation is not a current finding type."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 614",
+     "status": "missed",
+     "note": "stem = normal with canker_lesion = below_soil in an all-abnormal-stem subset. Same limitation as case 558."
+    }
+   ],
+   "notes": [
+    "GritBot showcase table #6. UCI's current 307-row integer-coded file is an alternate source, not bundled."
+   ],
+   "sha256": "eb918af9d372ab5bc6269870df0863ae0d99e2e54a66cd289bea5c85672936bb",
+   "rows": 683
+  },
+  {
+   "id": "splice",
+   "pack": "gritbot",
+   "title": "Splice-junction gene sequences",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Molecular Biology (Splice-junction) (id 69)",
+   "dir": "data/gritbot/splice",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "columns_any": [
+      "base_30"
+     ],
+     "note": "Near-universal positional rules at the junction (e.g. base_30 = G in 100% of intron_exon diagnostic rows)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot cases 550, 839",
+     "status": "partial",
+     "note": "RuleQuest flags single cases breaking ~99.8% positional patterns. The profiler reports the patterns as conditional rules but does not isolate the breaking cases. Position numbering: GritBot's A30/A34 vs this file's base_30/base_34 assumes the same window origin."
+    }
+   ],
+   "notes": [
+    "GritBot showcase table #5."
+   ],
+   "sha256": "e87580f81d79ba33f3a06089d56df8533de613b5a87903237cb3542e975aeded",
+   "rows": 3190
+  },
+  {
+   "id": "churn",
+   "pack": "gritbot",
+   "title": "Telecommunications churn (MLC++)",
+   "mode": "test-only",
+   "license": "unverified",
+   "source": "Formerly MLC++ (SGI); circulates via R package C50",
+   "dir": "data/gritbot/churn",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "documented_case",
+     "ref": "GritBot churn data:2813 / test:1005",
+     "status": "missed",
+     "note": "Two flagged cases incl. a voice-mail plan holder with 0 messages. Expectations await a redistributable source."
+    }
+   ],
+   "notes": [
+    "No data bundled: redistribution terms of surviving copies unverified."
+   ],
+   "skip_reason": "no redistributable source verified (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "crystallography",
+   "pack": "gritbot",
+   "title": "Crystallography properties",
+   "mode": "test-only",
+   "license": "unverified",
+   "source": "Provided to RuleQuest by J. Rodgers, NRC Canada",
+   "dir": "data/gritbot/crystallography",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "documented_case",
+     "ref": "GritBot crystallography case",
+     "status": "missed",
+     "note": "One non-magnetic substance in a 352-case 99.4%-magnetic subset. Expectation awaits data."
+    }
+   ],
+   "notes": [
+    "No public canonical source located."
+   ],
+   "skip_reason": "no public canonical source located (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "online-retail-ii",
+   "pack": "business",
+   "title": "Online Retail II transactions",
+   "mode": "test-only",
+   "license": "CC BY 4.0",
+   "source": "UCI Online Retail II (id 502)",
+   "dir": "data/business/online-retail-ii",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "country",
+     "note": "customer_id determines country on 99.95% of identified rows (80 violations -- customers recorded under multiple countries)."
+    },
+    {
+     "kind": "finding",
+     "category": "duplicates",
+     "note": "Tens of thousands of exact duplicate line items (34,335 rows in the first run)."
+    },
+    {
+     "kind": "finding",
+     "category": "formats",
+     "columns_any": [
+      "stock_code"
+     ],
+     "note": "stock_code mixes plain numeric codes with letter-suffixed variants and non-product codes."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Cancellations (19,494 C-invoices, 22,950 negative-quantity rows)",
+     "status": "missed",
+     "note": "No finding separates cancellation invoices or negative quantities from ordinary lines. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Missing customer_id (243,007 rows)",
+     "status": "missed",
+     "note": "22.8% of rows have no customer id; no missingness finding reports the rate. Count verified on the prepared file."
+    }
+   ],
+   "notes": [
+    "Test-only for size: the prepared CSV is ~93 MB, beyond this repo's publishing path; prepare.py regenerates it locally. Bundling is a Git LFS decision. Expectations are set from the first local run (see docs/benchmarks)."
+   ]
+  },
+  {
+   "id": "bank-marketing",
+   "pack": "business",
+   "title": "Bank Marketing (bank-full)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Bank Marketing (id 222)",
+   "dir": "data/business/bank-marketing",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "columns_all": [
+      "pdays",
+      "poutcome"
+     ],
+     "note": "Never-contacted structure: pdays = -1 determines missing poutcome."
+    },
+    {
+     "kind": "finding",
+     "category": "formats",
+     "min": 1,
+     "note": "Format findings fire on this file (e.g. poutcome's value-length mix)."
+    }
+   ],
+   "notes": [
+    "Known-answer end of the business pack: heavily studied table, findings should be the documented structures."
+   ],
+   "sha256": "87c043238d3860e1d6989618092a87db25cbc2694373dc5b4d4a08410da24c99",
+   "rows": 45211
+  },
+  {
+   "id": "olist",
+   "pack": "business",
+   "title": "Olist Brazilian e-commerce (9 files)",
+   "mode": "test-only",
+   "license": "CC BY-NC-SA 4.0",
+   "source": "Kaggle olistbr/brazilian-ecommerce",
+   "dir": "data/business/olist",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "License gate: NC-SA conflicts with the package's MIT license -- test-only, never bundled."
+   ],
+   "skip_reason": "license gate (CC BY-NC-SA 4.0) and Kaggle credentials required"
+  },
+  {
+   "id": "credit-card-fraud",
+   "pack": "business",
+   "title": "Credit card fraud (ULB)",
+   "mode": "test-only",
+   "license": "Kaggle distribution",
+   "source": "Kaggle mlg-ulb/creditcardfraud (also OpenML 1597, ADBench 'fraud')",
+   "dir": "data/business/credit-card-fraud",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Test-only: Kaggle-account distribution."
+   ],
+   "skip_reason": "Kaggle credentials required"
+  },
+  {
+   "id": "sec-edgar-company-facts",
+   "pack": "business",
+   "title": "SEC EDGAR company facts (12 filers, 6 concepts)",
+   "mode": "bundled",
+   "license": "Public domain (US government)",
+   "source": "SEC EDGAR company facts API",
+   "dir": "data/business/sec-edgar-company-facts",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "columns_all": [
+      "form",
+      "fiscal_period"
+     ],
+     "note": "10-K <-> FY and 10-Q <-> quarterly period correspondence."
+    },
+    {
+     "kind": "finding",
+     "category": "duplicates",
+     "expect": "missed",
+     "note": "Known-miss tripwire: restatements repeat (company, concept, period_end) with different filed dates/values; no finding isolates them because rows differ in filed/form/value."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Restatements (EDGAR-wide behavior)",
+     "status": "missed",
+     "note": "Amended filings restate values for the same period; the bundled table keeps them all (11,543 rows) and no current finding groups them."
+    }
+   ],
+   "notes": [
+    "Panel-completeness candidate: pairs with user-declared hints (dimensions company x concept, time period_end)."
+   ],
+   "sha256": "80b5af8c1daf76ef8e6a1d758c98cb7b96c4c0b836a4ec965fddf3fa5fdf351f",
+   "rows": 11543
+  },
+  {
+   "id": "fred-md",
+   "pack": "business",
+   "title": "FRED-MD monthly macro panel (2026-09 vintage)",
+   "mode": "test-only",
+   "license": "Public (Federal Reserve Bank of St. Louis); cite McCracken & Ng (2016)",
+   "source": "files.stlouisfed.org fred-md monthly 2026-09.csv",
+   "dir": "data/business/fred-md",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Access blocker, not license: files.stlouisfed.org returned HTTP 403 from the build environment on 2026-10-28 for current.csv and the pinned vintage. prepare.py produces the bundle from any environment that can reach the host."
+   ],
+   "skip_reason": "source host returned HTTP 403 from the build environment (see ATTRIBUTION.md)"
+  }
+ ]
+}
