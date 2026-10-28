@@ -65,7 +65,8 @@ def match_finding(f: dict, pred: dict) -> bool:
     return True
 
 
-def check_expectations(findings: list[dict], expectations: list[dict]) -> list[dict]:
+def check_expectations(findings: list[dict], expectations: list[dict],
+                       coverage: dict | None = None) -> list[dict]:
     results = []
     for exp in expectations:
         kind = exp.get("kind", "finding")
@@ -81,7 +82,20 @@ def check_expectations(findings: list[dict], expectations: list[dict]) -> list[d
                             "note": exp.get("note")})
             continue
         if kind == "coverage_ok":
-            results.append({"kind": kind, "ok": True, "note": exp.get("note")})
+            bad = {k: v for k, v in (coverage or {}).items()
+                   if v.get("status") == "error"}
+            results.append({"kind": kind, "ok": not bad,
+                            "matched": len(bad), "note": exp.get("note")})
+            continue
+        if kind == "coverage_status":
+            cov = (coverage or {}).get(exp["detector"], {})
+            ok = cov.get("status") == exp["status"]
+            if ok and "detail_contains" in exp:
+                ok = exp["detail_contains"] in cov.get("detail", "")
+            results.append({"kind": kind, "detector": exp["detector"],
+                            "expected_status": exp["status"],
+                            "actual_status": cov.get("status"), "ok": ok,
+                            "note": exp.get("note")})
             continue
         hits = [f for f in findings if match_finding(f, exp)]
         expect = exp.get("expect", "found")
@@ -142,7 +156,8 @@ def main() -> int:
             df = pl.read_csv(csv, infer_schema_length=None)
             budget = args.budget or entry.get("budget", "standard")
             t = time.time()
-            report = onceover.profile(df, budget=budget)
+            report = onceover.profile(df, budget=budget,
+                                      detectors=entry.get("detectors"))
             rec["seconds"] = round(time.time() - t, 2)
             rec["rows"], rec["cols"] = df.height, df.width
             findings = report.data["findings"]
@@ -152,7 +167,9 @@ def main() -> int:
             cov_bad = {k: v for k, v in report.data["coverage"].items()
                        if v.get("status") == "error"}
             rec["coverage_errors"] = cov_bad
-            rec["expectations"] = check_expectations(findings, entry.get("expectations", []))
+            rec["expectations"] = check_expectations(
+                findings, entry.get("expectations", []),
+                coverage=report.data["coverage"])
             bad = [e for e in rec["expectations"] if not e["ok"]]
             rec["status"] = "ok" if not bad and not cov_bad else "expectations_failed"
             if bad or cov_bad:

@@ -398,6 +398,249 @@
     "Access blocker, not license: files.stlouisfed.org returned HTTP 403 from the build environment on 2026-10-28 for current.csv and the pinned vintage. prepare.py produces the bundle from any environment that can reach the host."
    ],
    "skip_reason": "source host returned HTTP 403 from the build environment (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "congressional-voting",
+   "pack": "crosscat",
+   "title": "Congressional voting records (1984)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Congressional Voting Records (id 105)",
+   "dir": "data/crosscat/congressional-voting",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "target": "party",
+     "note": "Vote patterns determine party for most members (physician_fee_freeze is the classic near-perfect single vote)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "note": "Views runs on the full table (17 columns)."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "residual_level",
+     "note": "Views row clusters: the greedy partition splits members into clusters with different vote levels (party blocs)."
+    }
+   ],
+   "notes": [
+    "CrossCat paper evaluation table (voting records). Profiled with the default detectors plus views."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "11e798b454651e10d203d014032d5af0854cf777bf5b570ffaaa3793728c43fa",
+   "rows": 435
+  },
+  {
+   "id": "hospital-dha",
+   "pack": "crosscat",
+   "title": "Hospital Medicare measures (DHA table)",
+   "mode": "bundled",
+   "license": "Apache-2.0 (distributing repo); underlying Medicare data public",
+   "source": "probcomp/crosscat www/data/dha.csv",
+   "dir": "data/crosscat/hospital-dha",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "min": 5,
+     "note": "The measure web is densely predictive (64 dependency findings in the default-only run)."
+    },
+    {
+     "kind": "finding",
+     "form": "sum",
+     "target": "TTL_MDCR_SPND",
+     "expect": "missed",
+     "note": "Known-miss tripwire: TTL_MDCR_SPND vs the sum of its 8 published parts differs by at most 2 currency units over 307 rows (measured) -- consistent with rounding in the source's per-decedent averages, below the identity detector's exactness bar."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "note": "64 columns: exactly at the views cap."
+    }
+   ],
+   "notes": [
+    "The hospital table from the CrossCat evaluation, as distributed by the project."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "e4a06c113f68a4b5411740110fa16181773191aa406be07130dd236a64b59e3d",
+   "rows": 307
+  },
+  {
+   "id": "state-unemployment",
+   "pack": "crosscat",
+   "title": "State unemployment rates panel (BLS via FRED)",
+   "mode": "bundled",
+   "license": "Public (BLS / FRED)",
+   "source": "FRED fredgraph downloads of BLS LAUS state series",
+   "dir": "data/crosscat/state-unemployment",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "associations",
+     "min": 1,
+     "note": "State series move together over national cycles."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "note": "Views partitions the 51 state columns."
+    }
+   ],
+   "notes": [
+    "CrossCat paper evaluation family (state unemployment). Wide panel: 609 months x 51 series."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "162a9fcab6db0d44a9d7bd00b29fe4d7be0cd56f72a5f027c2c994ebc7e3f475",
+   "rows": 609
+  },
+  {
+   "id": "gse15258-expression",
+   "pack": "crosscat",
+   "title": "GSE15258 gene expression (86 arrays x 5,000 probes)",
+   "mode": "bundled",
+   "license": "Public (NCBI GEO)",
+   "source": "NCBI GEO series GSE15258 series matrix",
+   "dir": "data/crosscat/gse15258-expression",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "detail_contains": "64-column cap",
+     "note": "Views runs but only on the first 64 columns: coverage reports 4,942 columns dropped past the cap (measured on this table)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "min": 1,
+     "note": "Probe-probe associations exist in the default run (20 reported)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Views column cap on wide tables",
+     "status": "partial",
+     "note": "4,942 of 5,006 columns never reach the views pass. The cap is reported in coverage with the dropped columns named -- a 63 KB coverage detail string, itself relevant to issue #27 (context-budgeted reporting)."
+    }
+   ],
+   "notes": [
+    "CrossCat paper gene-expression table at the paper's 5,000-column subset scale (deterministic first-5,000 rule; the paper drew random subsets)."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "7a3139c26f763576cee935012b544609c549482f9fa01cbc37b6216793736d09",
+   "rows": 86
+  },
+  {
+   "id": "lace-animals",
+   "pack": "crosscat",
+   "title": "Lace examples: Animals",
+   "mode": "test-only",
+   "license": "unverified",
+   "source": "lace.examples (Lace project)",
+   "dir": "data/crosscat/lace-animals",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Head-to-head baseline for the views pass (issue #22). Not bundled: the Lace distribution point was not located from the build environment."
+   ],
+   "skip_reason": "Lace examples data not located (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "lace-satellites",
+   "pack": "crosscat",
+   "title": "Lace examples: Satellites",
+   "mode": "test-only",
+   "license": "unverified",
+   "source": "lace.examples (Lace project)",
+   "dir": "data/crosscat/lace-satellites",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Head-to-head baseline for the views pass (issue #22). Not bundled: the Lace distribution point was not located from the build environment."
+   ],
+   "skip_reason": "Lace examples data not located (see ATTRIBUTION.md)"
   }
  ]
 }
