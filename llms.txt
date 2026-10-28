@@ -1,0 +1,19 @@
+# onceover
+
+> A profiler for Polars DataFrames (Rust core, Python bindings). `onceover.profile(df)` returns a ranked, evidence-backed report of what is structurally interesting in a table: dependencies, identities, conditional rules, gaps, panel completeness, column views, and more. MIT license.
+
+## Using the library
+
+- [Python API](python/onceover/__init__.py): `profile(df, budget=..., detectors=..., hints=...)`; the report offers `.data` (dict), `.to_json()`, `.to_markdown()`, `.findings_frame()`, `.save(path)`.
+- [Report schema](docs/report-schema.md): the JSON report's fields, by schema version.
+- [Reading a report](docs/reading-a-report.md): a worked walkthrough on a real table.
+- [Capability manifest](docs/capability-manifest.json): detectors, the categories each produces, and what each requires — generated from the library itself by `scripts/capability_manifest.py`.
+
+## Benchmarks
+
+- [Benchmark corpus](benchmarks/corpus/README.md): registry-driven corpus of real tables with documented behavior (GritBot, business, CrossCat, anomaly packs), bundled with attribution where the license allows; expectations are checked on every run.
+- [Benchmark write-ups](docs/benchmarks/): protocol, results, and case dispositions for every recorded run. Project convention: a benchmark that is not in the docs does not exist.
+
+## For agents working in this repo
+
+- [Agent guide](docs/agents.md): build/test commands, conventions (executed notebooks, benchmark docs entries, the data license gate), and where things live.
