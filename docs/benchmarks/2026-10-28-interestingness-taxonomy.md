@@ -56,7 +56,10 @@ independent packs — the ranking is not close:
 
 1. **Subset-conditional surprise** (family 1): the entire GritBot
    pack's case list, across four unrelated domains, misses on this
-   one capability.
+   one capability. **Update 2026-10-28:** the `surprises` pass
+   (issue #31) now covers the numeric, single-condition form — 3 of
+   the 5 thyroid cases isolated; the residual form and categorical
+   targets remain open. See 2026-10-28-surprise-detector.md.
 2. **Transient events** (family 2): both NAB streams score 0
    coverage, and the events are the labeled ground truth of the
    anomaly pack.
