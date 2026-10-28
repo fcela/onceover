@@ -641,6 +641,117 @@
     "Head-to-head baseline for the views pass (issue #22). Not bundled: the Lace distribution point was not located from the build environment."
    ],
    "skip_reason": "Lace examples data not located (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "nab-nyc-taxi",
+   "pack": "anomaly",
+   "title": "NAB realKnownCause: NYC taxi demand",
+   "mode": "bundled",
+   "license": "MIT (NAB repository)",
+   "source": "numenta/NAB data/realKnownCause/nyc_taxi.csv + combined_labels.json",
+   "dir": "data/anomaly/nab-nyc-taxi",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "windows": [
+      "2014-11-01 19:00:00",
+      "2014-11-27 15:30:00",
+      "2014-12-25 15:00:00",
+      "2015-01-01 01:00:00",
+      "2015-01-27 00:00:00"
+     ],
+     "tolerance_hours": 24,
+     "min_covered": 0,
+     "note": "Baseline measured 2026-10-28: 0 of 5 labeled points are covered by any changes/gaps/intervals finding (the breaks pass scanned the series and reported nothing). min_covered is 0 -- this is a known-miss baseline; raise it when a detector starts covering windows."
+    }
+   ],
+   "notes": [
+    "Anomaly pack seed (issue #24). Labels are points; coverage tolerance +/-24h, findings searched in changes/gaps/intervals evidence."
+   ],
+   "parse_dates": true,
+   "hints": {
+    "time": "timestamp"
+   },
+   "sha256": "d8fa6f7f0734bf5c8be12c52a94e20a82664c397d9dec4449156bd453d32856d",
+   "rows": 10320
+  },
+  {
+   "id": "nab-ec2-latency",
+   "pack": "anomaly",
+   "title": "NAB realKnownCause: EC2 request latency (system failure)",
+   "mode": "bundled",
+   "license": "MIT (NAB repository)",
+   "source": "numenta/NAB data/realKnownCause/ec2_request_latency_system_failure.csv + combined_labels.json",
+   "dir": "data/anomaly/nab-ec2-latency",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "windows": [
+      "2014-03-14 09:06:00",
+      "2014-03-18 22:41:00",
+      "2014-03-21 03:01:00"
+     ],
+     "tolerance_hours": 24,
+     "min_covered": 0,
+     "note": "Baseline to be measured on the first run; recorded in the docs entry."
+    }
+   ],
+   "notes": [
+    "Anomaly pack seed (issue #24)."
+   ],
+   "parse_dates": true,
+   "hints": {
+    "time": "timestamp"
+   },
+   "sha256": "98378580aa80157e057c61d59d81daddccc6c65a2c0c800e3f01f603b8215c3f",
+   "rows": 4032
+  },
+  {
+   "id": "adbench",
+   "pack": "anomaly",
+   "title": "ADBench suite (57 datasets)",
+   "mode": "test-only",
+   "license": "per-dataset (see ATTRIBUTION.md)",
+   "source": "Minqi824/ADBench",
+   "dir": "data/anomaly/adbench",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+   ],
+   "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "odds",
+   "pack": "anomaly",
+   "title": "ODDS suite (31 datasets)",
+   "mode": "test-only",
+   "license": "per-dataset (see ATTRIBUTION.md)",
+   "source": "Rayana & Akoglu ODDS library",
+   "dir": "data/anomaly/odds",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+   ],
+   "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "macrodata",
+   "pack": "anomaly",
+   "title": "macrOData: OddBench/OvRBench/SynBench",
+   "mode": "test-only",
+   "license": "per-dataset (see ATTRIBUTION.md)",
+   "source": "arXiv:2602.09329",
+   "dir": "data/anomaly/macrodata",
+   "budget": "standard",
+   "expectations": [],
+   "notes": [
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+   ],
+   "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
   }
  ]
 }

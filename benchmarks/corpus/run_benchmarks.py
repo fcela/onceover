@@ -70,6 +70,32 @@ def check_expectations(findings: list[dict], expectations: list[dict],
     results = []
     for exp in expectations:
         kind = exp.get("kind", "finding")
+        if kind == "anomaly_coverage":
+            import re as _re
+            from datetime import datetime as _dt, timedelta as _td
+            windows = exp["windows"]
+            tol = _td(hours=exp.get("tolerance_hours", 24))
+            stamps = []
+            for f in findings:
+                if f.get("category") not in ("changes", "gaps", "intervals"):
+                    continue
+                blob = json.dumps(f)
+                for m in _re.finditer(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", blob):
+                    try:
+                        stamps.append(_dt.fromisoformat(m.group(0)))
+                    except ValueError:
+                        pass
+            covered = 0
+            for w in windows:
+                wt = _dt.fromisoformat(w)
+                if any(abs((s2 - wt)) <= tol for s2 in stamps):
+                    covered += 1
+            ok = covered >= exp.get("min_covered", 1)
+            results.append({"kind": kind, "ok": ok, "covered": covered,
+                            "windows": len(windows),
+                            "min_covered": exp.get("min_covered", 1),
+                            "note": exp.get("note")})
+            continue
         if kind == "documented_case":
             results.append({"kind": kind, "ref": exp.get("ref"),
                             "status": exp.get("status"), "ok": True,
@@ -153,11 +179,13 @@ def main() -> int:
                 continue
             rec["sha256_verified"] = True
         try:
-            df = pl.read_csv(csv, infer_schema_length=None)
+            df = pl.read_csv(csv, infer_schema_length=None,
+                             try_parse_dates=bool(entry.get("parse_dates")))
             budget = args.budget or entry.get("budget", "standard")
             t = time.time()
             report = onceover.profile(df, budget=budget,
-                                      detectors=entry.get("detectors"))
+                                      detectors=entry.get("detectors"),
+                                      hints=entry.get("hints"))
             rec["seconds"] = round(time.time() - t, 2)
             rec["rows"], rec["cols"] = df.height, df.width
             findings = report.data["findings"]
