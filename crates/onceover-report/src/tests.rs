@@ -27,6 +27,96 @@ fn rule(id: &str, condition: Predicate, outcome: Predicate) -> Finding {
     .with_rule(vec![condition], outcome)
 }
 
+fn fd_finding(detector_score: f64) -> Finding {
+    Finding::new(
+        Pattern::FunctionalDependency,
+        BTreeMap::from([
+            ("lhs".into(), json!(["order_id"])),
+            ("rhs".into(), json!("region")),
+        ]),
+        "order_id → region".into(),
+        EvidenceBasis::Measured,
+        detector_score,
+        BTreeMap::from([
+            ("violations".into(), json!(0)),
+            ("n_used".into(), json!(100)),
+        ]),
+        None,
+        Method::new("functional_dependencies", "value_mapping", "test"),
+    )
+}
+
+fn key_finding(duplicates: Option<u64>) -> Finding {
+    let mut metrics = BTreeMap::from([("distinct".into(), json!(100)), ("n".into(), json!(100))]);
+    if let Some(d) = duplicates {
+        metrics.insert("duplicates".into(), json!(d));
+    }
+    Finding::new(
+        Pattern::Uniqueness,
+        BTreeMap::from([("column".into(), json!("order_id"))]),
+        "order_id uniquely identifies rows".into(),
+        EvidenceBasis::Measured,
+        0.95,
+        metrics,
+        None,
+        Method::new("keys", "uniqueness", "test"),
+    )
+}
+
+#[test]
+fn detector_score_is_preserved_and_blended() {
+    let selected = finalize_ledger(vec![fd_finding(0.85)]);
+    assert_eq!(selected.len(), 1);
+    let f = &selected[0];
+    assert_eq!(f.detector_interestingness, Some(0.85));
+    // Ledger evidence score for this finding is 0.9214; the selection
+    // score is the mean of the detector's 0.85 and that value.
+    assert!(
+        (f.interestingness - 0.8857).abs() < 0.001,
+        "{}",
+        f.interestingness
+    );
+    assert!(!f.metrics().contains_key("triviality"));
+}
+
+#[test]
+fn fd_implied_by_exact_key_is_demoted_and_tagged() {
+    let selected = finalize_ledger(vec![key_finding(None), fd_finding(0.85)]);
+    let fd = selected
+        .iter()
+        .find(|f| f.category == Category::Dependencies)
+        .unwrap();
+    assert_eq!(fd.detector_interestingness, Some(0.85));
+    // Same blend as the untriggered case, multiplied by 0.6.
+    assert!(
+        (fd.interestingness - 0.5314).abs() < 0.001,
+        "{}",
+        fd.interestingness
+    );
+    assert_eq!(fd.metrics()["triviality"], json!("implied_by_unique_key"));
+    assert_eq!(fd.metrics()["triviality_factor"], json!(0.6));
+    let key = selected
+        .iter()
+        .find(|f| f.category == Category::Uniqueness)
+        .unwrap();
+    assert!(!key.metrics().contains_key("triviality"));
+}
+
+#[test]
+fn dirty_key_does_not_imply_fd() {
+    let selected = finalize_ledger(vec![key_finding(Some(3)), fd_finding(0.85)]);
+    let fd = selected
+        .iter()
+        .find(|f| f.category == Category::Dependencies)
+        .unwrap();
+    assert!(
+        (fd.interestingness - 0.8857).abs() < 0.001,
+        "{}",
+        fd.interestingness
+    );
+    assert!(!fd.metrics().contains_key("triviality"));
+}
+
 #[test]
 fn equivalent_rules_merge_evidence_without_pooling_counts() {
     let a = rule(

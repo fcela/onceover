@@ -36,6 +36,45 @@ How that reference was obtained belongs in evidence. Duplicate statements specif
 whether rows, values, tuples, or columns were compared and which matching rule
 was used. Missing values comparing equal is an explicit policy.
 
+## Selection and ranking
+
+Detectors assign each finding an `interestingness` score on their own
+scale. Selection does not silently replace it. The report's
+`interestingness` is the selection score — the mean of the detector's
+score and a ledger evidence score computed from validation quality,
+effect strength, specificity, and simplicity — and the detector's
+original score is preserved in `detector_interestingness`. Findings
+are ordered by the selection score, and the same order decides which
+findings survive the `max_findings` cap.
+
+Three adjustments keep exact-but-expected statements from outranking
+substantive ones:
+
+- A functional dependency whose inputs contain an exact unique key
+  holds by construction. Its selection score is multiplied by 0.6,
+  and its evidence carries `triviality: "implied_by_unique_key"` with
+  `triviality_factor: 0.6`. Near-unique (dirty) keys imply nothing and
+  do not trigger the demotion. The FD lattice also screens
+  near-unique determinants out during discovery, so plain FDs rarely
+  reach this rule; it binds the producers that do not screen, such as
+  arithmetic identities over a key column.
+- An exact functional dependency's detector score is
+  `0.5 + 0.35 × breadth`, where breadth is the number of distinct
+  determinant tuples (`lhs_distinct` in the evidence) divided by the
+  verified rows. A mapping verified over 40 repeated inputs scores
+  lower than the same mapping verified over 600 distinct inputs.
+- Key candidates are scored from the `plausibility_score` their
+  evidence already records (type affinity, name tokens,
+  completeness): the primary-key candidate's detector score is
+  `0.3 + 0.65 × plausibility`. An integer column named like an
+  identifier scores 0.95; an all-distinct float measurement scores
+  about 0.61, and its interpretation says to treat it as a
+  distinct-count check rather than a join key.
+
+Demotion is the only triviality action: findings are never dropped
+for being trivial, only ranked lower, with the reason recorded in
+their evidence.
+
 ## Public structure
 
 Each finding contains:
@@ -47,7 +86,8 @@ Each finding contains:
   interpret a reference or comparison;
 - `claim`: a readable description qualified by its measurements;
 - `evidence`: separate records from contributing detectors and verifiers;
-- `interestingness`: a deterministic selection priority, not a probability;
+- `interestingness`: the selection score described above, not a probability;
+- `detector_interestingness`: the score the producing detector assigned;
 - optional `interpretation`.
 
 Predicates carry a column, an operator (`eq`, `ne`, `lt`, `le`, `gt`, `ge`), and a
