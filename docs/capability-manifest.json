@@ -42,6 +42,13 @@
    "requires": []
   },
   {
+   "id": "duplicate_encodings",
+   "categories": [
+    "column_roles"
+   ],
+   "requires": []
+  },
+  {
    "id": "sortedness",
    "categories": [
     "ordering"

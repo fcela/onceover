@@ -2,12 +2,14 @@
 //! combinations, exact/approximate functional dependencies, key ranking,
 //! and sortedness checks.
 
+pub mod dupe;
 pub mod fd;
 pub mod hashutil;
 pub mod keys;
 pub mod pivot;
 pub mod sorted;
 
+pub use dupe::{profile_duplicate_encodings, DupeConfig};
 pub use fd::{discover, DepsOutcome, FdConfig};
 pub use keys::{analyze_keys, KeyOutcome};
 pub use pivot::{analyze_pivot, PivotConfig, PivotOutcome};

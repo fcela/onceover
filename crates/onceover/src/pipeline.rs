@@ -270,6 +270,16 @@ pub fn profile_with_detectors(
         );
     }
 
+    // ---------- duplicate encodings ----------
+    if check_deadline(&mut coverage, "duplicate_encodings") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("duplicate_encodings") {
+        let (f, cov) = onceover_deps::profile_duplicate_encodings(&table, &info, &tier.dupe);
+        coverage.insert("duplicate_encodings".into(), PassInfo::ran(cov));
+        findings.extend(f);
+    }
+
     // ---------- pivot (long format) ----------
     if enabled("pivot") {
         let p = onceover_deps::analyze_pivot(

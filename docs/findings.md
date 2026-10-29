@@ -255,6 +255,24 @@ least 1.5x the axis step's. Evidence carries `kind`
 standardized for diagonal, with `direction_deg`), `jump`, `se`, `z`,
 `t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`.
 
+The `duplicate_encodings` detector (standard and deep budgets) reads pairs of
+label-like columns — text categories and whole-number codes, excluding
+identifiers and columns with fewer than 3 or more than n/2 levels — and states
+the reading the functional-dependency findings underneath do not: the two
+columns record the same grouping, or one rolls up to the other. A pair is a
+candidate when its distinct value pairs number at most 1.02 times the larger
+column's level count, counted on rows where both columns are present (at most
+100,000 rows at standard, 250,000 at deep); candidates are verified on exact
+canonical encodings before a finding is emitted. When the smaller level count
+is at least 0.9 of the larger, the form is `duplicate_encoding` and the
+evidence field `exact` says whether the pairing is one-to-one on every row;
+below that share the form is `rollup`, the subject lists the finer column
+first, and `exceptions` counts the rows breaking the finer-to-coarser mapping
+(for a duplicate encoding, the rows breaking the majority pairing in either
+direction). The advisory's scores (0.62 exact, 0.56 partial, 0.5 rollup) sit
+below an exact functional dependency's, so when both describe one pair the
+dependency finding ranks first.
+
 The experimental `views` detector is excluded from the default selection.
 Request it explicitly at the standard or deep budget. It uses
 `concentration/modal_share` for concentrated modeled values within fitted clusters and
