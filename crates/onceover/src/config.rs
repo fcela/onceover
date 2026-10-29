@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use onceover_deps::FdConfig;
+use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
     AssociationConfig, BreaksConfig, DiscConfig, DtableConfig, EncodeConfig, PrismConfig,
     RegimesConfig, ScreenConfig, SurpriseConfig, ViewsConfig,
@@ -73,6 +73,7 @@ impl Default for ProfileConfig {
 /// Per-tier pass configurations.
 pub struct TierConfig {
     pub fd: FdConfig,
+    pub dupe: DupeConfig,
     pub encode: EncodeConfig,
     pub screen: ScreenConfig,
     pub dtable: DtableConfig,
@@ -97,6 +98,7 @@ impl TierConfig {
         match b {
             Budget::Quick => TierConfig {
                 fd: FdConfig::default(),
+                dupe: DupeConfig::disabled(),
                 encode: EncodeConfig {
                     row_cap: 10_000,
                     feature_cap: 32,
@@ -128,6 +130,7 @@ impl TierConfig {
                     afd_g1_max: 0.01,
                     key_pair_cap: 16,
                 },
+                dupe: DupeConfig::default(),
                 encode: EncodeConfig {
                     row_cap: 20_000,
                     feature_cap: 48,
@@ -161,6 +164,10 @@ impl TierConfig {
                     max_lhs_size: 3,
                     afd_g1_max: 0.01,
                     key_pair_cap: 24,
+                },
+                dupe: DupeConfig {
+                    row_cap: 250_000,
+                    ..DupeConfig::default()
                 },
                 encode: EncodeConfig {
                     row_cap: 50_000,

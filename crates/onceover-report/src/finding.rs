@@ -74,6 +74,7 @@ pub enum Pattern {
     ExtremeValue,
     TransientExcursion,
     StepDiscontinuity,
+    DuplicateEncoding,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -102,6 +103,7 @@ impl Pattern {
             Self::ExtremeValue => Category::Intervals,
             Self::TransientExcursion => Category::Changes,
             Self::StepDiscontinuity => Category::Changes,
+            Self::DuplicateEncoding => Category::ColumnRoles,
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -121,6 +123,7 @@ impl Pattern {
             Self::ExtremeValue => Some("extreme_value"),
             Self::TransientExcursion => Some("transient_excursion"),
             Self::StepDiscontinuity => Some("step_discontinuity"),
+            Self::DuplicateEncoding => Some("duplicate_encoding"),
             _ => None,
         }
     }
@@ -624,6 +627,26 @@ impl Finding {
                     "missing_values".into(),
                     json!("exclude rows incomplete on target or axis columns"),
                 );
+            }
+            Pattern::DuplicateEncoding => {
+                spec.form = Some(
+                    metrics
+                        .get("form")
+                        .and_then(Value::as_str)
+                        .unwrap_or("duplicate_encoding")
+                        .to_string(),
+                );
+                spec.definition
+                    .insert("comparison".into(), json!("canonical_equality"));
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude rows missing either column"),
+                );
+                for k in ["finer", "coarser"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
             }
             Pattern::ExtremeValue => {
                 spec.form = Some("isolation_gap".into());
