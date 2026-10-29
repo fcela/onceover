@@ -28,10 +28,28 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, and `excursion`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
+
+A predictive statement with form `interaction_h` names two input columns and
+one target. It states that the pair's joint effect on the target, under the
+predictability screen's GBM surrogate, contains an interaction component:
+the part of the joint partial dependence that the sum of the two single
+partial dependences does not explain. The evidence metrics are `h2` (the
+interaction share of the joint partial-dependence variance),
+`interaction_variance` (the interaction component's variance, in target
+units squared), `interaction_se` and `interaction_z` (its standard error and
+separation from zero), `joint_variance`, `first_variance` and
+`second_variance` (the partial-dependence variances), `target_variance`,
+`interaction_share_of_target`, and `holdout_r2` next to
+`additive_holdout_r2` — the holdout R² of a depth-1 refit of the same
+target. A pair is reported only when the surrogate's holdout R² clears
+0.10, exceeds the additive refit's by at least 0.02, and the pair clears
+`h2` ≥ 0.05, `interaction_z` ≥ 4, and `interaction_variance` ≥ 1% of
+`target_variance`. Numeric targets only; categorical targets are not
+evaluated by this pass.
 
 Gaps require a reference. A temporal gap states its assumed cadence or calendar;
 an integer-sequence detector can use the same category with a declared increment.
@@ -304,6 +322,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `arithmetic_identity` | `dependencies/functional`, form `affine` |
 | `predictable_from`, `decision_table` | `dependencies/predictive` |
 | `piecewise_relationship` | `dependencies/predictive`, form `piecewise_linear` |
+| `interaction_h` | `dependencies/predictive`, form `interaction_h` |
 | `prism_rule`, `association_rule` | `conditional_rules/if_then` |
 | `dependence` | `associations/statistical` |
 | `period_associations` | `associations/period_association` |

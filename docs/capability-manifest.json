@@ -107,6 +107,15 @@
    ]
   },
   {
+   "id": "interactions",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [
+    "gbm"
+   ]
+  },
+  {
    "id": "breaks",
    "categories": [
     "changes"

@@ -648,6 +648,19 @@ impl Finding {
                     }
                 }
             }
+            Pattern::PredictiveDependency => {
+                if metrics.get("form").and_then(Value::as_str) == Some("interaction_h") {
+                    spec.form = Some("interaction_h".into());
+                    spec.definition.insert(
+                        "statistic".into(),
+                        json!("Friedman-Popescu H on the surrogate's partial dependences, gated on the surrogate beating an additive refit out of sample"),
+                    );
+                    spec.definition.insert(
+                        "missing_values".into(),
+                        json!("rows missing the target excluded; predictor handling follows the recorded model"),
+                    );
+                }
+            }
             Pattern::ExtremeValue => {
                 spec.form = Some("isolation_gap".into());
                 for k in ["condition_column", "condition_value"] {
