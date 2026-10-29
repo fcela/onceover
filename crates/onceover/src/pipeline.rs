@@ -540,8 +540,15 @@ pub fn profile_with_detectors(
                     .iter()
                     .enumerate()
                     .filter_map(|(i, c)| {
+                        let name = c.name.to_ascii_lowercase();
+                        let id_name =
+                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
+                        // Cardinality alone labels unique real-valued measurements
+                        // as identifiers in v0.1 cards. Keep those eligible here.
                         (matches!(c.role.as_str(), "constant" | "all_null")
-                            || c.role == "identifier")
+                            || (c.role == "identifier"
+                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
+                                    || id_name)))
                             .then_some(i)
                     })
                     .collect();
