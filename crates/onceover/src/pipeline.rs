@@ -10,7 +10,7 @@ use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
-    profile_breaks, profile_discontinuities, profile_interactions, profile_regimes,
+    profile_breaks, profile_discontinuities, profile_drift, profile_interactions, profile_regimes,
     profile_surprises, profile_target_shapes, screen_predictability,
 };
 use onceover_report::{
@@ -576,6 +576,41 @@ pub fn profile_with_detectors(
                 coverage.insert("discontinuities".into(), PassInfo::ran(cov));
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "drift") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("drift") {
+                // Same carve-out as the discontinuities pass: cardinality
+                // alone labels unique real-valued measurements as
+                // identifiers, and those are exactly the numeric targets
+                // this pass exists to score. Exclude identifier-role
+                // columns only when integer-typed or id-named.
+                let excluded: Vec<usize> = info
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        let name = table.names[i].as_str();
+                        let id_name =
+                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
+                        (matches!(c.role.as_str(), "constant" | "all_null")
+                            || (c.role == "identifier"
+                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
+                                    || id_name)))
+                            .then_some(i)
+                    })
+                    .collect();
+                let time_column = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
+                let (f, cov) = profile_drift(
+                    &table,
+                    &enc,
+                    time_column,
+                    &excluded,
+                    &tier.screen,
+                    &tier.drift,
+                );
+                coverage.insert("drift".into(), PassInfo::ran(cov));
+                findings.extend(f);
+            }
             if deadline_hit || check_deadline(&mut coverage, "association_rules") {
                 deadline_hit = true;
                 coverage.insert(
@@ -711,6 +746,7 @@ pub fn profile_with_detectors(
             "arithmetic_identities",
             "period_associations",
             "views",
+            "drift",
         ] {
             coverage.insert(pass.into(), PassInfo::skipped("quick tier"));
         }
@@ -806,6 +842,7 @@ pub fn profile_with_detectors(
                 "row_duplicates"=>"missing values compare equal; opaque fields excluded",
                 "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
+                "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
@@ -867,6 +904,7 @@ pub fn profile_with_detectors(
         ("identities", "arithmetic_identities"),
         ("views", "views"),
         ("target_shapes", "target_shapes"),
+        ("drift", "drift"),
     ] {
         if !enabled(id) {
             coverage.insert(pass.into(), PassInfo::skipped("detector not enabled"));

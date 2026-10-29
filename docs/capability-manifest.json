@@ -144,6 +144,15 @@
    "requires": []
   },
   {
+   "id": "drift",
+   "categories": [
+    "changes"
+   ],
+   "requires": [
+    "gbm"
+   ]
+  },
+  {
    "id": "association_rules",
    "categories": [
     "conditional_rules"

@@ -25,7 +25,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
-| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
@@ -289,6 +289,44 @@ least 1.5x the axis step's. Evidence carries `kind`
 (`axis` or `diagonal`), `threshold` (original units for axis findings,
 standardized for diagonal, with `direction_deg`), `jump`, `se`, `z`,
 `t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`.
+
+The `drift` detector (standard and deep budgets) compares periods of a
+declared time axis. It engages only when the caller passes
+`hints={"time": "<column>"}`; without a declared axis it records coverage
+and emits nothing. The time column's rows are cut into contiguous periods
+of roughly equal row counts (at most 8 at standard, 12 at deep; a period
+needs at least 100 rows). For each numeric target column other than the
+time column itself, the screen's gradient-boosting model is fitted on the
+earliest period's rows, with the time column withheld from the predictor
+set — a model that splits on the time axis routes every later period to
+one side by construction, which would read as maximal drift on stable
+data. The reference model must reach a holdout R² of at least 0.2 for its
+splits to be used. Each later period is then scored by routing its rows
+and an equal number of reference-period rows through the fitted trees:
+at every split, the two periods' left/right routing counts form a 2×2
+table whose chi-square is computed, and the drift score is the mean
+chi-square across splits, weighted by each split feature's share of the
+reference model's total gain — splits on features the model barely uses
+contribute almost nothing, however noisy their routing counts are.
+Under no drift the score averages near 1; it grows with the size of the
+shift and with the compared row count, which is why both sides are
+compared at the smaller period's row count. A second score,
+`concept_drift`, restricts the mean to splits with a leaf child. A
+finding of type `distribution_shift` is emitted when a period's drift
+score reaches 5.0 and the maximum over periods also beats a permutation
+null: the reference rows and every period's compared rows are pooled,
+reassigned to a pseudo-reference group and pseudo-period groups of the
+original sizes, every period is rescored against the shared
+pseudo-reference, and the maximum is retaken, over 16 replicates.
+Evidence carries `time_column`,
+`reference_period` (the first period's value range), `reference_rows`,
+`reference_r2`, `periods` (one entry per later period with its value
+range, row counts, `drift` and `concept_drift`; periods under 100
+compared rows record null scores), `max_score`, `max_period` and
+`null_max` (the largest replicate maximum). The
+score sees only the variables the reference model splits on: drift in an
+unused variable, or drift in the target's own distribution with its
+predictors unchanged, does not register.
 
 The `duplicate_encodings` detector (standard and deep budgets) reads pairs of
 label-like columns — text categories and whole-number codes, excluding
