@@ -29,6 +29,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, and `curved_shape`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -50,6 +51,22 @@ target. A pair is reported only when the surrogate's holdout R² clears
 `h2` ≥ 0.05, `interaction_z` ≥ 4, and `interaction_variance` ≥ 1% of
 `target_variance`. Numeric targets only; categorical targets are not
 evaluated by this pass.
+A predictive statement with form `step_shape` or `curved_shape` comes from
+the opt-in target-aware mode: it exists only in a profile where the caller
+designated a target column (`profile(df, target="y")`). It names one input
+column and the designated target, and states the shape of the input's
+relationship to the target. The evidence metrics are `linear_r2`,
+`curve_r2` (binned means in up to 20 equal-count bins, adjusted for the
+bins' degrees of freedom), `step_r2` (the best single split of the sorted
+input), `step_share` (what the step explains beyond the line, relative to
+what the curve adds), `curvature` (`curve_r2` − `linear_r2`), `pearson`,
+`spearman`, and `n_used` (complete cases: rows missing the input or the
+target are excluded). A `step_shape` statement adds `step_at`, the located
+cut. A predictor is reported only when a shape is decisive: for a step,
+`step_r2` ≥ 0.05, `step_r2` − `linear_r2` ≥ 0.05, and `step_share` ≥ 0.8;
+for a curve, `curve_r2` ≥ 0.10 and `curvature` ≥ 0.05. The shares are of
+the target's total variance, so a weak curved term under a dominant
+second effect is not reported. At most 10 shape statements per target.
 
 Gaps require a reference. A temporal gap states its assumed cadence or calendar;
 an integer-sequence detector can use the same category with a declared increment.
@@ -323,6 +340,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `predictable_from`, `decision_table` | `dependencies/predictive` |
 | `piecewise_relationship` | `dependencies/predictive`, form `piecewise_linear` |
 | `interaction_h` | `dependencies/predictive`, form `interaction_h` |
+| `step_shape`, `curved_shape` | `dependencies/predictive`, forms `step_shape` / `curved_shape` (target-aware mode only) |
 | `prism_rule`, `association_rule` | `conditional_rules/if_then` |
 | `dependence` | `associations/statistical` |
 | `period_associations` | `associations/period_association` |

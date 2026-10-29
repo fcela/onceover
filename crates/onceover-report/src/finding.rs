@@ -659,6 +659,18 @@ impl Finding {
                         "missing_values".into(),
                         json!("rows missing the target excluded; predictor handling follows the recorded model"),
                     );
+                } else if let Some(form @ ("step_shape" | "curved_shape")) =
+                    metrics.get("form").and_then(Value::as_str)
+                {
+                    spec.form = Some(form.into());
+                    spec.definition.insert(
+                        "statistic".into(),
+                        json!("shape decomposition against the designated target: linear, binned-curve (df-adjusted) and best single-step R² shares"),
+                    );
+                    spec.definition.insert(
+                        "missing_values".into(),
+                        json!("complete cases per predictor: rows missing the predictor or the target excluded"),
+                    );
                 }
             }
             Pattern::ExtremeValue => {

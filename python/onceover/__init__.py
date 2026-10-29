@@ -18,7 +18,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             sample_rows: int | None = None, max_predictors: int | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
             max_findings: int = 100, max_rules: int = 20,
-            hints: dict | None = None):
+            hints: dict | None = None, target: str | None = None):
     """Give a Polars DataFrame a once-over.
 
     Parameters
@@ -57,6 +57,15 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         count), ``dimensions`` and ``measures`` (panel structure).
         Unknown columns or unusable types are reported in the pass
         coverage, not raised.
+    target : str, optional
+        Designate a response column for the opt-in target-aware mode.
+        Adds the ``target_shapes`` pass, which reports the shape of
+        each numeric predictor's relationship to the target (linear /
+        binned-curve / single-step R² shares) where a shape is
+        decisive. Every other detector behaves exactly as without it.
+        When ``detectors`` is given explicitly, ``target_shapes``
+        runs only if listed. An unknown or non-numeric target is
+        reported in the pass coverage, not raised.
 
     Returns
     -------
@@ -66,7 +75,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     return ProfileReport(_profile_native(df, budget, deadline_seconds, sample_rows=sample_rows,
                                          max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
                                          max_findings=max_findings, max_rules=max_rules,
-                                         hints=_json.dumps(hints) if hints is not None else None))
+                                         hints=_json.dumps(hints) if hints is not None else None,
+                                         target=target))
 
 
 def available_detectors():

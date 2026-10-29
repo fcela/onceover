@@ -116,6 +116,13 @@
    ]
   },
   {
+   "id": "target_shapes",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": []
+  },
+  {
    "id": "breaks",
    "categories": [
     "changes"
