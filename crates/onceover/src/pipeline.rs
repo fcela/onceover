@@ -10,8 +10,8 @@ use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
-    profile_breaks, profile_discontinuities, profile_regimes, profile_surprises,
-    screen_predictability,
+    profile_breaks, profile_discontinuities, profile_interactions, profile_regimes,
+    profile_surprises, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -494,6 +494,15 @@ pub fn profile_with_detectors(
                 coverage.insert("regimes".into(), PassInfo::sampled(cov));
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "interactions") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("interactions") {
+                let (f, cov) =
+                    profile_interactions(&table, &enc, &screen.results, &tier.screen, &tier.hstat);
+                coverage.insert("interactions".into(), PassInfo::sampled(cov));
+                findings.extend(f);
+            }
             if check_deadline(&mut coverage, "breaks") {
                 deadline_hit = true;
             }
@@ -771,7 +780,7 @@ pub fn profile_with_detectors(
                 "column_profile"|"keys"=>"non-missing values counted; missingness reported separately",
                 "row_duplicates"=>"missing values compare equal; opaque fields excluded",
                 "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
-                "gbm"|"decision_tables"|"regimes"=>"missing targets excluded; predictor handling follows the recorded model",
+                "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
@@ -825,6 +834,7 @@ pub fn profile_with_detectors(
         ("decision_tables", "decision_tables"),
         ("prism", "prism_rules"),
         ("regimes", "regimes"),
+        ("interactions", "interactions"),
         ("breaks", "breaks"),
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),

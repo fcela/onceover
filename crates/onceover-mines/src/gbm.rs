@@ -608,66 +608,10 @@ pub fn screen_target(
 
     match &target {
         TargetKind::Numeric(ys) => {
-            let y = ys.clone();
-            let base: f32 = train.iter().map(|&p| y[p as usize]).sum::<f32>() / train.len() as f32;
-            let mut pred = vec![base; enc.n];
-            let mut cum_gains = vec![0.0f64; n_feats];
-            let mut best_gains = cum_gains.clone();
-            let mut best_metric = f64::MIN;
-            let mut best_rounds = 0;
-            let mut stale = 0;
-            for round in 1..=cfg.max_rounds {
-                let mut g = vec![0.0f32; enc.n];
-                let h = vec![1.0f32; enc.n];
-                for &p in train {
-                    g[p as usize] = pred[p as usize] - y[p as usize];
-                }
-                let (root, nodes, gains) = grow_tree(
-                    &packed,
-                    n_feats,
-                    train,
-                    &g,
-                    &h,
-                    own_feat,
-                    cfg.lambda,
-                    min_leaf,
-                    cfg.max_depth,
-                );
-                for f in 0..gains.len() {
-                    cum_gains[f] += gains[f];
-                }
-                for &p in train.iter().chain(holdout.iter()) {
-                    pred[p as usize] += cfg.learning_rate
-                        * tree_predict(&nodes, root, &packed, n_feats, p as usize);
-                }
-                let sse: f64 = holdout
-                    .iter()
-                    .map(|&p| {
-                        let d = (pred[p as usize] - y[p as usize]) as f64;
-                        d * d
-                    })
-                    .sum();
-                let sst: f64 = holdout
-                    .iter()
-                    .map(|&p| (y[p as usize] as f64 - base as f64).powi(2))
-                    .sum();
-                let r2 = if sst > 0.0 { 1.0 - sse / sst } else { 0.0 };
-                if r2 > best_metric + 1e-4 {
-                    best_metric = r2;
-                    best_rounds = round;
-                    best_gains = cum_gains.clone();
-                    stale = 0;
-                } else {
-                    stale += 1;
-                    if stale >= cfg.patience {
-                        break;
-                    }
-                }
-            }
-            if best_metric <= 0.0 {
-                return None;
-            }
-            finish(best_metric, 0.0, best_rounds, &best_gains)
+            let (metric, rounds, gains, _trees, _base) = boost_numeric(
+                enc.n, cfg, ys, train, holdout, &packed, n_feats, own_feat, min_leaf,
+            )?;
+            finish(metric, 0.0, rounds, &gains)
         }
         TargetKind::Categorical(ids, labels) => {
             let k = labels.len();
@@ -760,6 +704,219 @@ pub fn screen_target(
             finish(best_metric, baseline, best_rounds, &best_gains)
         }
     }
+}
+
+/// The numeric boosting loop, shared by `screen_target` (which
+/// reports its metric and gains) and `fit_gbm_model` (which also
+/// keeps the ensemble). Runs the same rounds with the same early
+/// stopping; snapshots the trees whenever the holdout R² improves,
+/// so the returned ensemble is the one that produced the returned
+/// metric. Returns (holdout R², rounds at best, cumulative gains at
+/// best, trees at best, base prediction), or None when the best
+/// holdout R² is not positive.
+/// (best holdout metric, best round count, gains at best, trees at
+/// best, base prediction) from a numeric boosting run.
+type BoostNumeric = (f64, usize, Vec<f64>, Vec<Vec<Node>>, f32);
+
+#[allow(clippy::too_many_arguments)]
+fn boost_numeric(
+    n_rows: usize,
+    cfg: &ScreenConfig,
+    y: &[f32],
+    train: &[u32],
+    holdout: &[u32],
+    packed: &[u8],
+    n_feats: usize,
+    own_feat: Option<usize>,
+    min_leaf: usize,
+) -> Option<BoostNumeric> {
+    let base: f32 = train.iter().map(|&p| y[p as usize]).sum::<f32>() / train.len() as f32;
+    let mut pred = vec![base; n_rows];
+    let mut cum_gains = vec![0.0f64; n_feats];
+    let mut best_gains = cum_gains.clone();
+    let mut best_metric = f64::MIN;
+    let mut best_rounds = 0;
+    let mut trees: Vec<Vec<Node>> = Vec::new();
+    let mut best_trees: Vec<Vec<Node>> = Vec::new();
+    let mut stale = 0;
+    for round in 1..=cfg.max_rounds {
+        let mut g = vec![0.0f32; n_rows];
+        let h = vec![1.0f32; n_rows];
+        for &p in train {
+            g[p as usize] = pred[p as usize] - y[p as usize];
+        }
+        let (root, nodes, gains) = grow_tree(
+            packed,
+            n_feats,
+            train,
+            &g,
+            &h,
+            own_feat,
+            cfg.lambda,
+            min_leaf,
+            cfg.max_depth,
+        );
+        for f in 0..gains.len() {
+            cum_gains[f] += gains[f];
+        }
+        for &p in train.iter().chain(holdout.iter()) {
+            pred[p as usize] +=
+                cfg.learning_rate * tree_predict(&nodes, root, packed, n_feats, p as usize);
+        }
+        trees.push(nodes);
+        let sse: f64 = holdout
+            .iter()
+            .map(|&p| {
+                let d = (pred[p as usize] - y[p as usize]) as f64;
+                d * d
+            })
+            .sum();
+        let sst: f64 = holdout
+            .iter()
+            .map(|&p| (y[p as usize] as f64 - base as f64).powi(2))
+            .sum();
+        let r2 = if sst > 0.0 { 1.0 - sse / sst } else { 0.0 };
+        if r2 > best_metric + 1e-4 {
+            best_metric = r2;
+            best_rounds = round;
+            best_gains = cum_gains.clone();
+            best_trees = trees.clone();
+            stale = 0;
+        } else {
+            stale += 1;
+            if stale >= cfg.patience {
+                break;
+            }
+        }
+    }
+    if best_metric <= 0.0 {
+        return None;
+    }
+    Some((best_metric, best_rounds, best_gains, best_trees, base))
+}
+
+fn tree_predict_row(nodes: &[Node], row: &[u8]) -> f32 {
+    let mut idx = 0usize;
+    while nodes[idx].feat != u32::MAX {
+        let n = &nodes[idx];
+        idx = if row[n.feat as usize] <= n.thr {
+            n.left as usize
+        } else {
+            n.right as usize
+        };
+    }
+    nodes[idx].leaf
+}
+
+/// A fitted numeric screen model, retained for partial-dependence
+/// work (the H-statistic pass). Produced by the same procedure the
+/// predictability screen uses — same target preparation, seeded
+/// split, predictor pre-screen and boosting loop — so a target's
+/// model here is the model its screen result describes.
+pub struct FittedGbm {
+    /// Feature indices into `EncodedMatrix::bins`, in packed order.
+    pub selected: Vec<usize>,
+    /// Split gains per selected feature, at the best round.
+    pub best_gains: Vec<f64>,
+    pub holdout_r2: f64,
+    pub n_holdout: usize,
+    pub rounds: usize,
+    /// Encoded-space rows where the target is present, and the
+    /// target's values in encoded space (NaN where absent) — the
+    /// coordinate system `EncodedMatrix::bins` uses, which is a
+    /// row sample of the table at larger sizes.
+    pub present: Vec<u32>,
+    pub y: Vec<f32>,
+    base: f32,
+    learning_rate: f32,
+    trees: Vec<Vec<Node>>,
+}
+
+impl FittedGbm {
+    /// Predict one packed row (bin values in `selected` order).
+    pub fn predict_row(&self, row: &[u8]) -> f64 {
+        let mut pred = self.base as f64;
+        for tree in &self.trees {
+            pred += self.learning_rate as f64 * tree_predict_row(tree, row) as f64;
+        }
+        pred
+    }
+}
+
+/// Fit the screen's numeric model for one target column and retain
+/// the ensemble. Returns None for categorical targets, ineligible
+/// targets, and targets whose best holdout R² is not positive —
+/// the same conditions under which `screen_target` returns None
+/// for a numeric target.
+pub fn fit_gbm_model(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    ci: usize,
+    cfg: &ScreenConfig,
+) -> Option<FittedGbm> {
+    let target = prepare_target(table, enc, ci, cfg)?;
+    let TargetKind::Numeric(ys) = target else {
+        return None;
+    };
+    let present: Vec<u32> = (0..enc.n)
+        .filter(|&j| !ys[j].is_nan())
+        .map(|j| j as u32)
+        .collect();
+    if present.len() < cfg.min_target_rows {
+        return None;
+    }
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B));
+    let mut order = present.clone();
+    for i in (1..order.len()).rev() {
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        order.swap(i, j);
+    }
+    order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
+    let n_hold = order.len() / 4;
+    let (train, holdout) = order.split_at(order.len() - n_hold);
+    let min_leaf = (train.len() / 200).clamp(10, 1_000);
+    let own = enc.feat_cols.iter().position(|&c| c == ci)?;
+    let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
+    let mut selected: Vec<usize> = (0..enc.bins.len()).filter(|&f| f != own).collect();
+    if selected.len() > cfg.max_predictors {
+        let scores: Vec<f64> = selected
+            .iter()
+            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .collect();
+        selected.sort_by(|&a, &b| {
+            let ai = if a < own { a } else { a - 1 };
+            let bi = if b < own { b } else { b - 1 };
+            scores[bi]
+                .total_cmp(&scores[ai])
+                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        });
+        selected.truncate(cfg.max_predictors);
+    }
+    if selected.is_empty() {
+        return None;
+    }
+    let n_feats = selected.len();
+    let mut packed = vec![MISSING; enc.n * n_feats];
+    for (f, &original) in selected.iter().enumerate() {
+        for r in 0..enc.n {
+            packed[r * n_feats + f] = enc.bins[original][r];
+        }
+    }
+    let (metric, rounds, gains, trees, base) = boost_numeric(
+        enc.n, cfg, &ys, train, holdout, &packed, n_feats, None, min_leaf,
+    )?;
+    Some(FittedGbm {
+        selected,
+        best_gains: gains,
+        holdout_r2: metric,
+        n_holdout: holdout.len(),
+        rounds,
+        present,
+        y: ys,
+        base,
+        learning_rate: cfg.learning_rate,
+        trees,
+    })
 }
 
 #[cfg(test)]

@@ -48,6 +48,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("decision_tables", vec![Dependencies], &["gbm"]),
         make("prism", vec![ConditionalRules], &["gbm"]),
         make("regimes", vec![Dependencies, Changes], &["gbm"]),
+        make("interactions", vec![Dependencies], &["gbm"]),
         make("breaks", vec![Changes], &[]),
         make("surprises", vec![Intervals], &[]),
         make("discontinuities", vec![Changes], &[]),
