@@ -73,6 +73,7 @@ pub enum Pattern {
     LongFormat,
     ExtremeValue,
     TransientExcursion,
+    StepDiscontinuity,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -100,6 +101,7 @@ impl Pattern {
             Self::LongFormat => Category::ColumnRoles,
             Self::ExtremeValue => Category::Intervals,
             Self::TransientExcursion => Category::Changes,
+            Self::StepDiscontinuity => Category::Changes,
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -118,6 +120,7 @@ impl Pattern {
             Self::LongFormat => Some("long_format"),
             Self::ExtremeValue => Some("extreme_value"),
             Self::TransientExcursion => Some("transient_excursion"),
+            Self::StepDiscontinuity => Some("step_discontinuity"),
             _ => None,
         }
     }
@@ -604,6 +607,24 @@ impl Finding {
                     }
                 }
             }
+            Pattern::StepDiscontinuity => {
+                spec.form = Some("step".into());
+                for k in [
+                    "kind",
+                    "threshold",
+                    "direction_deg",
+                    "boundary_slope",
+                    "boundary_intercept",
+                ] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude rows incomplete on target or axis columns"),
+                );
+            }
             Pattern::ExtremeValue => {
                 spec.form = Some("isolation_gap".into());
                 for k in ["condition_column", "condition_value"] {
@@ -749,11 +770,12 @@ impl Finding {
                             | "level_shift"
                             | "trend_change"
                             | "variance_change"
-                            | "transient_excursion",
+                            | "transient_excursion"
+                            | "step_discontinuity",
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, or transient_excursion".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, or step_discontinuity".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()

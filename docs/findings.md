@@ -25,7 +25,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence |
-| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; dated level, trend, and variance breaks in a series itself from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, and `excursion`. A decision-table algorithm can
@@ -230,6 +230,30 @@ Each registry entry lists its ID, produced categories, and resource dependencies
 Required detectors may execute to supply shared target descriptions without
 contributing their own findings. An empty selection still returns column
 summaries and coverage but no detector findings.
+
+The `discontinuities` detector (standard and deep budgets) scans for
+cross-sectional step jumps: for each numeric target column, step
+indicators along every other numeric column's axis and across diagonal
+boundaries in column pairs, each fitted against a smooth background by
+OLS. Rows are split into a fit half that ranks candidates and an
+evaluation half that estimates the jump, so the reported `z` is not
+inflated by the search. A flagged candidate is reported only when its
+local level gap is scale-invariant (the gap between the nearest 60
+evaluation points per side vs the nearest 15 stays near 1, with the
+small-scale gap significant); a steep smooth transition, whose gap
+grows with scale, is not reported as a jump. Because the screen runs
+for every numeric target, reporting applies stricter bars than
+flagging: |z| >= 4 on the evaluation half and a held-out gain of at
+least 0.5% of the target's evaluation-half variance. Diagonal
+directions within one direction step of an axis are not scanned (the
+axis scan covers them); at most one finding is reported per target
+and axis set; and when an axis step and a near-parallel diagonal step
+(within 25 degrees of the axis) type as the same jump at comparable
+strength, the axis step is reported unless the diagonal's |z| is at
+least 1.5x the axis step's. Evidence carries `kind`
+(`axis` or `diagonal`), `threshold` (original units for axis findings,
+standardized for diagonal, with `direction_deg`), `jump`, `se`, `z`,
+`t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`.
 
 The experimental `views` detector is excluded from the default selection.
 Request it explicitly at the standard or deep budget. It uses
