@@ -49,6 +49,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("prism", vec![ConditionalRules], &["gbm"]),
         make("regimes", vec![Dependencies, Changes], &["gbm"]),
         make("interactions", vec![Dependencies], &["gbm"]),
+        make("target_shapes", vec![Dependencies], &[]),
         make("breaks", vec![Changes], &[]),
         make("surprises", vec![Intervals], &[]),
         make("discontinuities", vec![Changes], &[]),
@@ -70,11 +71,14 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // The greedy views pass is opt-in until its criterion review
         // closes: it is experimental, and running it by default would
         // change every standard/deep report. Request it explicitly via
-        // detectors=["views"].
+        // detectors=["views"]. The target_shapes pass is likewise
+        // excluded: it runs only when a target is designated (the
+        // pipeline adds it then) or when explicitly requested
+        // together with a target.
         specs
             .iter()
             .map(|d| d.id.clone())
-            .filter(|id| id != "views")
+            .filter(|id| id != "views" && id != "target_shapes")
             .collect()
     });
     loop {

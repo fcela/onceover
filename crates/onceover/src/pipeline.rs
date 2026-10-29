@@ -11,7 +11,7 @@ use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
     profile_breaks, profile_discontinuities, profile_interactions, profile_regimes,
-    profile_surprises, screen_predictability,
+    profile_surprises, profile_target_shapes, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -47,7 +47,12 @@ pub fn profile_with_detectors(
             }
         }
     }
-    let active = crate::detectors::active_detectors(requested.as_ref());
+    let mut active = crate::detectors::active_detectors(requested.as_ref());
+    // Designating a target activates the target-aware pass when the
+    // caller did not explicitly restrict the detector set.
+    if cfg.target.is_some() && cfg.detectors.is_none() {
+        active.insert("target_shapes".into());
+    }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
     let mut shared_encoding = None;
@@ -772,6 +777,26 @@ pub fn profile_with_detectors(
             }
         }
     }
+    // ---------- target-aware shapes (opt-in via a designated target) ----------
+    if check_deadline(&mut coverage, "target_shapes") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("target_shapes") {
+        match &cfg.target {
+            Some(target) => {
+                let (f, cov) = profile_target_shapes(&table, target, &tier.shapes);
+                coverage.insert("target_shapes".into(), PassInfo::ran(cov));
+                findings.extend(f);
+            }
+            None => {
+                coverage.insert(
+                    "target_shapes".into(),
+                    PassInfo::skipped("no target designated".to_string()),
+                );
+            }
+        }
+    }
+
     findings.retain(|f| f.evidence.iter().any(|e| selected(&e.method.detector)));
     for f in &mut findings {
         for evidence in &mut f.evidence {
@@ -781,6 +806,7 @@ pub fn profile_with_detectors(
                 "row_duplicates"=>"missing values compare equal; opaque fields excluded",
                 "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
+                "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
@@ -840,6 +866,7 @@ pub fn profile_with_detectors(
         ("numeric_dependence", "dependence_screen"),
         ("identities", "arithmetic_identities"),
         ("views", "views"),
+        ("target_shapes", "target_shapes"),
     ] {
         if !enabled(id) {
             coverage.insert(pass.into(), PassInfo::skipped("detector not enabled"));

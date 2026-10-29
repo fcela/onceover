@@ -19,6 +19,7 @@ pub mod periods;
 pub mod prism;
 pub mod regimes;
 mod screen;
+pub mod shapes;
 pub mod surprises;
 pub mod targets;
 pub mod views;
@@ -39,6 +40,7 @@ pub use ident::multiterm_identities;
 pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};
 pub use prism::{prism_rules, PrismConfig};
 pub use regimes::{profile_regimes, RegimesConfig};
+pub use shapes::{profile_target_shapes, shape_diagnostics, ShapeDiagnostics, ShapesConfig};
 pub use surprises::{profile_surprises, SurpriseConfig};
 
 /// Deterministic stratified subsample (one hashed offset per row interval) of row indices (0..n down to cap).

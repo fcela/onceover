@@ -5,7 +5,7 @@ use std::time::Duration;
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
     AssociationConfig, BreaksConfig, DiscConfig, DtableConfig, EncodeConfig, HConfig, PrismConfig,
-    RegimesConfig, ScreenConfig, SurpriseConfig, ViewsConfig,
+    RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +53,12 @@ pub struct ProfileConfig {
     /// User-declared structure (time axis, ordering, gap-free columns,
     /// cadences, dimensions, measures), checked by the expectations pass.
     pub hints: Option<onceover_report::ProfileHints>,
+    /// Designated response column for the opt-in target-aware mode.
+    /// When set (and the detector set is not explicitly restricted),
+    /// the `target_shapes` pass runs; every other detector behaves
+    /// exactly as without it. An unknown or non-numeric target is
+    /// reported in the pass coverage, not raised.
+    pub target: Option<String>,
 }
 
 impl Default for ProfileConfig {
@@ -66,6 +72,7 @@ impl Default for ProfileConfig {
             max_predictors: None,
             max_pairs: None,
             hints: None,
+            target: None,
         }
     }
 }
@@ -75,6 +82,7 @@ pub struct TierConfig {
     pub fd: FdConfig,
     pub dupe: DupeConfig,
     pub hstat: HConfig,
+    pub shapes: ShapesConfig,
     pub encode: EncodeConfig,
     pub screen: ScreenConfig,
     pub dtable: DtableConfig,
@@ -101,6 +109,7 @@ impl TierConfig {
                 fd: FdConfig::default(),
                 dupe: DupeConfig::disabled(),
                 hstat: HConfig::disabled(),
+                shapes: ShapesConfig::default(),
                 encode: EncodeConfig {
                     row_cap: 10_000,
                     feature_cap: 32,
@@ -124,6 +133,7 @@ impl TierConfig {
                 pivot_max_findings: 3,
             },
             Budget::Standard => TierConfig {
+                shapes: ShapesConfig::default(),
                 fd: FdConfig {
                     lhs_cap: 16,
                     lhs3_cap: 12,
@@ -160,6 +170,7 @@ impl TierConfig {
                 pivot_max_findings: 3,
             },
             Budget::Deep => TierConfig {
+                shapes: ShapesConfig::default(),
                 fd: FdConfig {
                     lhs_cap: 32,
                     lhs3_cap: 12,

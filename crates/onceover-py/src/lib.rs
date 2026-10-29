@@ -46,7 +46,7 @@ impl ProfileReportPy {
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(name = "profile")]
-#[pyo3(signature = (df, budget=None, deadline_seconds=None, *, sample_rows=None, max_predictors=None, max_pairs=None, detectors=None, max_findings=100, max_rules=20, hints=None))]
+#[pyo3(signature = (df, budget=None, deadline_seconds=None, *, sample_rows=None, max_predictors=None, max_pairs=None, detectors=None, max_findings=100, max_rules=20, hints=None, target=None))]
 fn profile_py(
     py: Python<'_>,
     df: PyDataFrame,
@@ -59,6 +59,7 @@ fn profile_py(
     max_findings: usize,
     max_rules: usize,
     hints: Option<String>,
+    target: Option<String>,
 ) -> PyResult<ProfileReportPy> {
     for (name, value) in [
         ("sample_rows", sample_rows),
@@ -114,6 +115,7 @@ fn profile_py(
         max_predictors,
         max_pairs,
         hints,
+        target,
     };
     // Zero-copy extraction happens first (cheap), then the GIL is released
     // for the heavy, all-Rust compute.
