@@ -114,6 +114,13 @@
    "requires": []
   },
   {
+   "id": "discontinuities",
+   "categories": [
+    "changes"
+   ],
+   "requires": []
+  },
+  {
    "id": "association_rules",
    "categories": [
     "conditional_rules"
