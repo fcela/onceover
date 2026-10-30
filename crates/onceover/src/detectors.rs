@@ -43,6 +43,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("duplicate_encodings", vec![ColumnRoles], &[]),
         make("sortedness", vec![Ordering], &[]),
         make("granularity", vec![Formats], &[]),
+        make("sentinels", vec![Missingness], &[]),
         make("dates", vec![Gaps, Intervals], &[]),
         make("expectations", vec![Gaps, Ordering], &[]),
         make("gbm", vec![Dependencies], &[]),

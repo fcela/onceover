@@ -8,6 +8,7 @@ pub mod granularity;
 pub mod hashutil;
 pub mod keys;
 pub mod pivot;
+pub mod sentinels;
 pub mod sorted;
 
 pub use dupe::{profile_duplicate_encodings, DupeConfig};
@@ -15,6 +16,7 @@ pub use fd::{discover, DepsOutcome, FdConfig};
 pub use granularity::granularity_changes;
 pub use keys::{analyze_keys, KeyOutcome};
 pub use pivot::{analyze_pivot, PivotConfig, PivotOutcome, PivotSpec};
+pub use sentinels::sentinel_values;
 pub use sorted::sortedness;
 
 /// Compact per-column info the dependency passes need (built by the
