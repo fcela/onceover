@@ -181,6 +181,13 @@
    "requires": []
   },
   {
+   "id": "hotspots",
+   "categories": [
+    "concentration"
+   ],
+   "requires": []
+  },
+  {
    "id": "numeric_dependence",
    "categories": [
     "associations"
