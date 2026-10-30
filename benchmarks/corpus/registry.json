@@ -756,31 +756,100 @@
    "id": "lace-animals",
    "pack": "crosscat",
    "title": "Lace examples: Animals",
-   "mode": "test-only",
-   "license": "unverified",
-   "source": "lace.examples (Lace project)",
+   "mode": "bundled",
+   "license": "MIT",
+   "source": "Lace project (promised-ai/lace), cli/resources/datasets/animals/data.csv; table from Kemp & Tenenbaum, features from Osherson et al.",
    "dir": "data/crosscat/lace-animals",
    "budget": "standard",
-   "expectations": [],
-   "notes": [
-    "Head-to-head baseline for the views pass (issue #22). Not bundled: the Lace distribution point was not located from the build environment."
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "water",
+     "note": "swims -> water and water -> swims hold exactly on all 50 rows in the first run - the aquatic feature pair is recovered by the FD pass."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "detail_contains": "64-column cap",
+     "note": "The views pass runs on the first 64 of 86 columns; 22 columns past the cap are dropped and named in the coverage detail. The cap interaction is the recorded behavior for this table (see the head-to-head note)."
+    }
    ],
-   "skip_reason": "Lace examples data not located (see ATTRIBUTION.md)"
+   "notes": [
+    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "09e32808c5163dc3aa34c735bf5f3f5a59d20cd688b18a28ecf19fe8c9eee4c3",
+   "rows": 50
   },
   {
    "id": "lace-satellites",
    "pack": "crosscat",
    "title": "Lace examples: Satellites",
-   "mode": "test-only",
-   "license": "unverified",
-   "source": "lace.examples (Lace project)",
+   "mode": "bundled",
+   "license": "MIT",
+   "source": "Lace project (promised-ai/lace), cli/resources/datasets/satellites/data.csv",
    "dir": "data/crosscat/lace-satellites",
    "budget": "standard",
-   "expectations": [],
-   "notes": [
-    "Head-to-head baseline for the views pass (issue #22). Not bundled: the Lace distribution point was not located from the build environment."
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "Class_of_Orbit",
+     "note": "Apogee_km -> Class_of_Orbit holds exactly (0 violations in 1,163 rows) in the first run - orbit class is a function of the apogee band."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "views",
+     "status": "ran_exact",
+     "note": "The views pass runs on all 21 columns: 18 views, 2 multi-column ({Class_of_Orbit, Perigee_km, Period_minutes} and {Inclination_radians, longitude_radians_of_geo}) in the first run. The partition itself is compared against Lace in the head-to-head note, not pinned here - it is a greedy point estimate and may move as the pass improves."
+    }
    ],
-   "skip_reason": "Lace examples data not located (see ATTRIBUTION.md)"
+   "notes": [
+    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md."
+   ],
+   "detectors": [
+    "column_profile",
+    "row_duplicates",
+    "keys",
+    "pivot",
+    "functional_dependencies",
+    "sortedness",
+    "dates",
+    "gbm",
+    "decision_tables",
+    "prism",
+    "regimes",
+    "breaks",
+    "association_rules",
+    "numeric_dependence",
+    "identities",
+    "period_associations",
+    "views"
+   ],
+   "sha256": "239eb10a605df2e83101b2732ebee1459c56d96d498b0327be95b5ccc73c6d17",
+   "rows": 1164
   },
   {
    "id": "nab-nyc-taxi",
