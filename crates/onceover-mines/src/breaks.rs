@@ -443,6 +443,27 @@ fn level_findings_grouped(
         return Vec::new();
     }
 
+    // Bespoke evidence payload for level-shift findings: the full
+    // training segmentation the per-breakpoint findings are drawn
+    // from, one row per segment.
+    let segments_json: Vec<serde_json::Value> = (0..n_segments)
+        .map(|j| {
+            let start = if j == 0 { 0 } else { breaks[j - 1].index };
+            let end = if j < breaks.len() {
+                breaks[j].index
+            } else {
+                train.len()
+            };
+            json!({
+                "segment": j + 1,
+                "from": display_time(axis, train[start].0),
+                "to": display_time(axis, train[end - 1].0),
+                "rows": end - start,
+                "mean": seg_means[j],
+            })
+        })
+        .collect();
+
     let provenance = if group.is_some() {
         "binary segmentation over one-break L2 scans within a subgroup; holdout validation (onceover)"
     } else {
@@ -490,6 +511,7 @@ fn level_findings_grouped(
                 json!("breakpoints and segment means learned on training rows; fixed segmentation evaluated on holdout; no p-value")
             ),
         ]);
+        metrics.insert("segments".into(), json!(segments_json.clone()));
         if let Some((gcol, gval)) = group {
             metrics.insert("group_column".into(), json!(gcol));
             metrics.insert("group_value".into(), json!(gval));
@@ -576,7 +598,7 @@ fn trend_finding(
         100.0 * gain
     );
 
-    let metrics = BTreeMap::from([
+    let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
         ("breakpoint_raw".into(), json!(boundary)),
         ("slope_before".into(), json!(slope_l)),
@@ -590,6 +612,26 @@ fn trend_finding(
             json!("breakpoint and slopes learned on training rows; fixed two-line model evaluated on holdout; no p-value"),
         ),
     ]);
+    // Bespoke evidence payload: the two fitted segments.
+    metrics.insert(
+        "segments".into(),
+        json!([
+            {
+                "segment": 1,
+                "from": display_time(axis, train[0].0),
+                "to": display_time(axis, train[tb.index - 1].0),
+                "rows": tb.index,
+                "slope": slope_l,
+            },
+            {
+                "segment": 2,
+                "from": display,
+                "to": display_time(axis, train[train.len() - 1].0),
+                "rows": train.len() - tb.index,
+                "slope": slope_r,
+            },
+        ]),
+    );
 
     Some(make_finding(
         Pattern::TrendChange,
@@ -678,7 +720,7 @@ fn variance_finding(
         100.0 * gain
     );
 
-    let metrics = BTreeMap::from([
+    let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
         ("breakpoint_raw".into(), json!(boundary)),
         ("variance_before".into(), json!(v_l)),
@@ -692,6 +734,28 @@ fn variance_finding(
             json!("breakpoint, segment means and variances learned on training rows; fixed split evaluated on holdout; no p-value"),
         ),
     ]);
+    // Bespoke evidence payload: the two segments of the split.
+    metrics.insert(
+        "segments".into(),
+        json!([
+            {
+                "segment": 1,
+                "from": display_time(axis, train[0].0),
+                "to": display_time(axis, train[vb.index - 1].0),
+                "rows": vb.index,
+                "mean": m_l,
+                "variance": v_l,
+            },
+            {
+                "segment": 2,
+                "from": display,
+                "to": display_time(axis, train[train.len() - 1].0),
+                "rows": train.len() - vb.index,
+                "mean": m_r,
+                "variance": v_r,
+            },
+        ]),
+    );
 
     Some(make_finding(
         Pattern::VarianceChange,

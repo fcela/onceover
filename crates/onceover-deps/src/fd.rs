@@ -115,6 +115,94 @@ pub fn verify_fd(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) ->
     (n_used, violations)
 }
 
+/// Per-value (count, first row) tallies for one determinant key.
+type ValueCounts = FxHashMap<Vec<u8>, (u32, u32)>;
+/// Determinant key encoding -> per-value tallies.
+type MappingGroups = FxHashMap<Vec<u8>, ValueCounts>;
+
+/// Bespoke evidence payload for an FD finding: the mapping itself,
+/// sampled. For a near-FD, the keys that map to more than one value
+/// (the ambiguity the claim is about), worst first; for an exact FD,
+/// the largest keys. Rows are {key, value, rows} with the key's
+/// columns joined with " | ". Caps: 8 keys, 3 values per key, and no
+/// collection when the determinant has more than 100,000 distinct
+/// keys (the counts stay in the scalar metrics there). Returns
+/// (mapping, ambiguous_keys, total_keys).
+fn collect_mapping(
+    table: &TypedTable,
+    rows: &[u32],
+    lhs: &[usize],
+    rhs: usize,
+) -> Option<(serde_json::Value, usize, usize)> {
+    // key encoding -> value encoding -> (count, first row)
+    let mut groups: MappingGroups = FxHashMap::default();
+    for &rr in rows {
+        let r = rr as usize;
+        if lhs.iter().any(|&c| value_is_null(&table.cols[c], r)) {
+            continue;
+        }
+        if value_is_null(&table.cols[rhs], r) {
+            continue;
+        }
+        let mut key = Vec::with_capacity(16 * lhs.len());
+        for &c in lhs {
+            encode_value(&table.cols[c], r, &mut key);
+        }
+        if groups.len() > 100_000 && !groups.contains_key(&key) {
+            return None;
+        }
+        let mut rv = Vec::with_capacity(16);
+        encode_value(&table.cols[rhs], r, &mut rv);
+        let e = groups.entry(key).or_default().entry(rv).or_insert((0, rr));
+        e.0 += 1;
+    }
+    let total_keys = groups.len();
+    let mut ambiguous: Vec<(&Vec<u8>, &ValueCounts)> =
+        groups.iter().filter(|(_, m)| m.len() > 1).collect();
+    let ambiguous_keys = ambiguous.len();
+    let render_key = |first_row: u32| -> String {
+        lhs.iter()
+            .map(|&c| table.cols[c].render_cell(first_row as usize))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    if ambiguous_keys > 0 {
+        // Worst ambiguity first: most rows outside the majority value.
+        ambiguous.sort_by_key(|(_, m)| {
+            let total: u32 = m.values().map(|(c, _)| *c).sum();
+            let mx = m.values().map(|(c, _)| *c).max().unwrap_or(0);
+            std::cmp::Reverse((total - mx, total))
+        });
+        for (_, m) in ambiguous.iter().take(8) {
+            let mut vals: Vec<&(u32, u32)> = m.values().collect();
+            vals.sort_by_key(|(c, _)| std::cmp::Reverse(*c));
+            for (count, first_row) in vals.iter().take(3) {
+                out.push(json!({
+                    "key": render_key(*first_row),
+                    "value": table.cols[rhs].render_cell(*first_row as usize),
+                    "rows": count,
+                }));
+            }
+        }
+    } else {
+        let mut by_size: Vec<(&Vec<u8>, &ValueCounts)> =
+            groups.iter().collect();
+        by_size.sort_by_key(|(_, m)| {
+            std::cmp::Reverse(m.values().map(|(c, _)| *c).sum::<u32>())
+        });
+        for (_, m) in by_size.iter().take(8) {
+            let (count, first_row) = m.values().next().unwrap();
+            out.push(json!({
+                "key": render_key(*first_row),
+                "value": table.cols[rhs].render_cell(*first_row as usize),
+                "rows": count,
+            }));
+        }
+    }
+    Some((serde_json::Value::Array(out), ambiguous_keys, total_keys))
+}
+
 /// Exact distinct-count of complete-row tuples over the given columns;
 /// returns usize::MAX when any null is present (not a strict key).
 pub(crate) fn count_distinct_tuples(table: &TypedTable, cols: &[usize]) -> usize {
@@ -255,6 +343,7 @@ fn fd_finding(
     violations: usize,
     n_used: usize,
     sampled: bool,
+    rows: &[u32],
 ) -> Finding {
     let lhs_names: Vec<&str> = lhs.iter().map(|&i| table.names[i].as_str()).collect();
     let rhs_name = &table.names[rhs];
@@ -285,6 +374,19 @@ fn fd_finding(
         "method".to_string(),
         json!(if sampled { "sampled_exact" } else { "exact" }),
     );
+    // The mapping itself, sampled (see collect_mapping for the caps).
+    match collect_mapping(table, rows, lhs, rhs) {
+        Some((mapping, ambiguous_keys, total_keys)) => {
+            evidence.insert("mapping".into(), mapping);
+            evidence.insert("mapping_keys".into(), json!(total_keys));
+            if ambiguous_keys > 0 {
+                evidence.insert("mapping_ambiguous_keys".into(), json!(ambiguous_keys));
+            }
+        }
+        None => {
+            evidence.insert("mapping_omitted".into(), json!("more than 100000 distinct keys"));
+        }
+    }
     if violations == 0 {
         Finding::new(
             Pattern::FunctionalDependency,
@@ -469,7 +571,7 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
         let rhs_orig = cand.rhs;
         if violations == 0 {
             out.findings
-                .push(fd_finding(table, &lhs_orig, rhs_orig, 0, n_used, sampled));
+                .push(fd_finding(table, &lhs_orig, rhs_orig, 0, n_used, sampled, &rows));
             exact_fds.push((lhs_orig, rhs_orig));
         } else {
             let g1 = violations as f64 / n_used as f64;
@@ -505,7 +607,7 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
             continue;
         }
         out.findings.push(fd_finding(
-            table, &lhs_orig, rhs_orig, violations, n_used, sampled,
+            table, &lhs_orig, rhs_orig, violations, n_used, sampled, &rows,
         ));
         out.n_afd += 1;
     }

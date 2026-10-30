@@ -11,8 +11,9 @@ pub struct DupInfo {
     pub n_redundant: usize,
     pub n_groups: usize,
     pub max_group_size: usize,
-    /// Up to 3 example groups (row indices, first 6 each).
-    pub examples: Vec<Vec<u32>>,
+    /// Up to 10 example groups, largest first: (row indices, first 6
+    /// each, full group size).
+    pub examples: Vec<(Vec<u32>, usize)>,
 }
 
 fn fnv64(bytes: &[u8]) -> u64 {
@@ -136,10 +137,10 @@ pub fn find_duplicate_rows(t: &TypedTable) -> Option<DupInfo> {
 
     let n_redundant: usize = confirmed.iter().map(|g| g.len() - 1).sum();
     let max_group_size = confirmed[0].len();
-    let examples: Vec<Vec<u32>> = confirmed
+    let examples: Vec<(Vec<u32>, usize)> = confirmed
         .iter()
-        .take(3)
-        .map(|g| g.iter().take(6).copied().collect())
+        .take(10)
+        .map(|g| (g.iter().take(6).copied().collect(), g.len()))
         .collect();
     let n_groups = confirmed.len();
 

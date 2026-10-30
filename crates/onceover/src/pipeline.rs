@@ -175,7 +175,47 @@ pub fn profile_with_detectors(
                 ev.insert("n_redundant".to_string(), json!(dup.n_redundant));
                 ev.insert("n_groups".to_string(), json!(dup.n_groups));
                 ev.insert("max_group_size".to_string(), json!(dup.max_group_size));
-                ev.insert("examples".to_string(), json!(dup.examples));
+                ev.insert(
+                    "examples".to_string(),
+                    json!(dup
+                        .examples
+                        .iter()
+                        .map(|(idx, _)| idx)
+                        .collect::<Vec<_>>()),
+                );
+                // Bespoke evidence payload for this finding type: the
+                // largest duplicate groups with their values rendered,
+                // so the claim can be inspected without a follow-up
+                // query. Values are the comparable columns (the same
+                // set the subject lists), first 8, joined with " | ".
+                let comparable: Vec<usize> = table
+                    .cols
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, col)| {
+                        !matches!(col, onceover_core::TypedCol::Other { .. })
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                let mut groups_json = Vec::new();
+                for (idx, size) in &dup.examples {
+                    let Some(&first) = idx.first() else { continue };
+                    let values: Vec<String> = comparable
+                        .iter()
+                        .take(8)
+                        .map(|&c| table.cols[c].render_cell(first as usize))
+                        .collect();
+                    let mut joined = values.join(" | ");
+                    if comparable.len() > 8 {
+                        joined.push_str(" | …");
+                    }
+                    groups_json.push(json!({
+                        "values": joined,
+                        "rows": size,
+                        "first_row": first,
+                    }));
+                }
+                ev.insert("duplicate_groups".to_string(), json!(groups_json));
                 findings.push(Finding::new(
                     Pattern::Duplicates,
                     BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
