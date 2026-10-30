@@ -163,8 +163,37 @@ pub fn disc_scan(
     cuts: &[f64],
     min_side: usize,
 ) -> Vec<DiscCandidate> {
+    let order = sort_order(u);
+    disc_scan_ordered(u, &order, background, target, fit, cuts, min_side)
+}
+
+/// The sort order of `u` (ties by row index) — the scan's only
+/// superlinear step. Callers scanning the same projection for
+/// several targets compute it once and share it; the arithmetic
+/// of the scan itself is unchanged.
+pub fn sort_order(u: &[f64]) -> Vec<u32> {
+    let mut order: Vec<u32> = (0..u.len() as u32).collect();
+    order.sort_by(|&a, &b| {
+        u[a as usize]
+            .total_cmp(&u[b as usize])
+            .then_with(|| a.cmp(&b))
+    });
+    order
+}
+
+/// `disc_scan` with a caller-supplied sort order of `u` (from
+/// `sort_order`); identical results to `disc_scan`.
+pub fn disc_scan_ordered(
+    u: &[f64],
+    order: &[u32],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    cuts: &[f64],
+    min_side: usize,
+) -> Vec<DiscCandidate> {
     let n = u.len();
-    if n == 0 {
+    if n == 0 || order.len() != n {
         return Vec::new();
     }
     let q = background.len() / n;
@@ -173,9 +202,7 @@ pub fn disc_scan(
     }
     let streams = q + 3; // count, target, target^2, background columns
 
-    let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a, &b| u[a].total_cmp(&u[b]).then_with(|| a.cmp(&b)));
-    let us: Vec<f64> = order.iter().map(|&i| u[i]).collect();
+    let us: Vec<f64> = order.iter().map(|&i| u[i as usize]).collect();
 
     // Stream totals per half (one pass), and the base-model Gram and
     // rhs per half, in original row order.
@@ -242,10 +269,14 @@ pub fn disc_scan(
     by_cut.resize_with(cuts.len(), || None);
 
     let dim = q + 1;
+    let mut gram = vec![0.0f64; dim * dim];
+    let mut rhs = vec![0.0f64; dim];
+    let mut gram_e = vec![0.0f64; dim * dim];
+    let mut rhs_e = vec![0.0f64; dim];
     for &ci in &cut_order {
         let cut = cuts[ci];
         while ptr < n && us[ptr] <= cut {
-            let row = order[ptr];
+            let row = order[ptr] as usize;
             let t = target[row];
             let cum = if fit[row] != 0 {
                 &mut cum_fit
@@ -276,8 +307,8 @@ pub fn disc_scan(
             continue;
         }
         // Fit half: Gram of [background, step] and rhs.
-        let mut gram = vec![0.0f64; dim * dim];
-        let mut rhs = vec![0.0f64; dim];
+        gram.fill(0.0);
+        rhs.fill(0.0);
         for a in 0..q {
             rhs[a] = rhs_fit[a];
             for b in 0..q {
@@ -311,8 +342,8 @@ pub fn disc_scan(
         let t_fit = jump_fit / var_fit.sqrt();
 
         // Evaluation half: the honest estimate and its standard error.
-        let mut gram_e = vec![0.0f64; dim * dim];
-        let mut rhs_e = vec![0.0f64; dim];
+        gram_e.fill(0.0);
+        rhs_e.fill(0.0);
         for a in 0..q {
             rhs_e[a] = rhs_eval[a];
             for b in 0..q {
@@ -611,17 +642,35 @@ fn scan_unit(
     fit: &[u8],
     cfg: &DiscConfig,
 ) -> Option<DiscCandidate> {
-    let fit_u: Vec<f64> = u
+    let order = sort_order(u);
+    scan_unit_ordered(u, &order, background, target, fit, cfg)
+}
+
+/// `scan_unit` with the projection's sort order supplied by the
+/// caller (computed once, shared across targets scanning the
+/// same projection). The fit-half values in sorted order are the
+/// subsequence of the full order, so the quantile grid needs no
+/// second sort; both scans run through `disc_scan_ordered`.
+/// Arithmetic is identical to the unshared path.
+fn scan_unit_ordered(
+    u: &[f64],
+    order: &[u32],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    cfg: &DiscConfig,
+) -> Option<DiscCandidate> {
+    let fit_sorted: Vec<f64> = order
         .iter()
-        .zip(fit)
-        .filter(|(_, f)| **f != 0)
-        .map(|(v, _)| *v)
+        .filter(|&&i| fit[i as usize] != 0)
+        .map(|&i| u[i as usize])
         .collect();
-    let cuts = quantile_cuts(&fit_u, cfg.cells);
+    let fit_u: &Vec<f64> = &fit_sorted;
+    let cuts = quantile_cuts_sorted(&fit_sorted, cfg.cells);
     if cuts.is_empty() {
         return None;
     }
-    let cands = disc_scan(u, background, target, fit, &cuts, cfg.min_side);
+    let cands = disc_scan_ordered(u, order, background, target, fit, &cuts, cfg.min_side);
     let best = cands
         .iter()
         .max_by(|a, b| {
@@ -655,7 +704,7 @@ fn scan_unit(
     let fine: Vec<f64> = (1..=20)
         .map(|k| lo + (hi - lo) * (k as f64) / 21.0)
         .collect();
-    let refined = disc_scan(u, background, target, fit, &fine, cfg.min_side);
+    let refined = disc_scan_ordered(u, order, background, target, fit, &fine, cfg.min_side);
     let best_fine = refined.iter().max_by(|a, b| {
         a.t_fit
             .abs()
@@ -676,8 +725,16 @@ fn quantile_cuts(values: &[f64], cells: usize) -> Vec<f64> {
     }
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.total_cmp(b));
+    quantile_cuts_sorted(&sorted, cells)
+}
+
+/// Cutpoints from values already in ascending order.
+fn quantile_cuts_sorted(sorted: &[f64], cells: usize) -> Vec<f64> {
+    if sorted.is_empty() || cells < 2 {
+        return Vec::new();
+    }
     let mut cuts: Vec<f64> = (1..cells)
-        .map(|k| quantile_sorted(&sorted, k as f64 / cells as f64))
+        .map(|k| quantile_sorted(sorted, k as f64 / cells as f64))
         .collect();
     cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
     cuts
@@ -712,7 +769,7 @@ fn column_f64(table: &TypedTable, idx: usize) -> Vec<f64> {
 /// One unit's working data: the target values, the standardized axis
 /// columns, the fit/eval parity flags, and each axis column's
 /// (mean, standard deviation).
-type UnitData = (Vec<f64>, Vec<Vec<f64>>, Vec<u8>, Vec<(f64, f64)>);
+type UnitData = (Vec<f64>, Vec<Vec<f64>>, Vec<u8>, Vec<(f64, f64)>, Vec<u32>);
 
 /// Rows where the target and all given axis columns are finite,
 /// stride-sampled to the cap; deterministic parity half split.
@@ -741,7 +798,8 @@ fn unit_data(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Option<Uni
         z.push(vals.iter().map(|v| (v - mean) / sd).collect());
     }
     let fit: Vec<u8> = (0..n).map(|i| if i % 2 == 0 { 1 } else { 0 }).collect();
-    Some((target, z, fit, stats))
+    let rows32: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
+    Some((target, z, fit, stats, rows32))
 }
 
 fn flat_background(cols: &[&[f64]]) -> Vec<f64> {
@@ -776,11 +834,402 @@ fn flagged(cand: &DiscCandidate) -> bool {
     cand.z.abs() >= 2.0 && cand.gain > 0.0
 }
 
+struct TargetOutcome {
+    findings: Vec<Finding>,
+    screened: bool,
+    n_axis: usize,
+    n_diag: usize,
+    n_flagged: usize,
+    n_untyped: usize,
+}
+
+impl TargetOutcome {
+    fn new() -> Self {
+        Self {
+            findings: Vec::new(),
+            screened: false,
+            n_axis: 0,
+            n_diag: 0,
+            n_flagged: 0,
+            n_untyped: 0,
+        }
+    }
+}
+
+/// Shared, target-independent scan data: standardized axis
+/// pairs (with their flat background) and diagonal projection
+/// sort orders, all validated by the kept-row vector they were
+/// built from. Everything cached is a pure function of the kept
+/// rows and the axis columns, so sharing changes no arithmetic.
+struct PairData {
+    rows: Vec<u32>,
+    z: Vec<Vec<f64>>,
+    fit: Vec<u8>,
+    stats: Vec<(f64, f64)>,
+    bg: Vec<f64>,
+}
+
+struct DiscCaches {
+    pairs: std::sync::Mutex<
+        std::collections::HashMap<(usize, usize), Option<std::sync::Arc<PairData>>>,
+    >,
+    orders: std::sync::Mutex<
+        std::collections::HashMap<(usize, usize, usize), (Vec<u32>, std::sync::Arc<Vec<u32>>)>,
+    >,
+    order_elems: std::sync::Mutex<usize>,
+}
+
+/// Total cached order elements (rows + order per entry) bound.
+const ORDER_CACHE_BUDGET: usize = 8_000_000;
+
+impl DiscCaches {
+    fn new() -> Self {
+        Self {
+            pairs: std::sync::Mutex::new(std::collections::HashMap::new()),
+            orders: std::sync::Mutex::new(std::collections::HashMap::new()),
+            order_elems: std::sync::Mutex::new(0),
+        }
+    }
+
+    /// The pair's shared data for these kept rows, building and
+    /// caching it on first use; `None` when an axis is constant
+    /// over the kept rows. A cached entry is used only when its
+    /// kept rows match exactly; a negative entry carries no
+    /// rows, so it is never trusted for a different row set.
+    fn pair(
+        &self,
+        a1: usize,
+        a2: usize,
+        rows: &[usize],
+        axis_cols: &[&[f64]],
+    ) -> Option<std::sync::Arc<PairData>> {
+        let rows32: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
+        if let Some(Some(data)) = self.pairs.lock().unwrap().get(&(a1, a2)) {
+            if data.rows == rows32 {
+                return Some(data.clone());
+            }
+        }
+        let built = standardize(rows, axis_cols).map(|(z, stats)| {
+            let n = rows.len();
+            let ones = vec![1.0f64; n];
+            let bg = flat_background(&[&ones, &z[0], &z[1]]);
+            std::sync::Arc::new(PairData {
+                rows: rows32,
+                fit: (0..n).map(|i| if i % 2 == 0 { 1 } else { 0 }).collect(),
+                z,
+                stats,
+                bg,
+            })
+        });
+        self.pairs.lock().unwrap().insert((a1, a2), built.clone());
+        built
+    }
+
+    /// The sort order of a diagonal projection, shared across
+    /// targets scanning the same projection over the same rows.
+    fn order(
+        &self,
+        key: (usize, usize, usize),
+        rows: &[u32],
+        u: &[f64],
+    ) -> std::sync::Arc<Vec<u32>> {
+        if let Some((rows0, ord)) = self.orders.lock().unwrap().get(&key) {
+            if rows0 == rows {
+                return ord.clone();
+            }
+        }
+        let ord = std::sync::Arc::new(sort_order(u));
+        let elems = rows.len() + ord.len();
+        let mut total = self.order_elems.lock().unwrap();
+        if *total + elems > ORDER_CACHE_BUDGET {
+            self.orders.lock().unwrap().clear();
+            *total = 0;
+        }
+        *total += elems;
+        self.orders
+            .lock()
+            .unwrap()
+            .insert(key, (rows.to_vec(), ord.clone()));
+        ord
+    }
+}
+
+/// Rows where the target and all axis columns are finite,
+/// stride-sampled to the cap.
+fn kept_rows(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Vec<usize> {
+    let n_all = target_col.len();
+    let mut rows: Vec<usize> = (0..n_all)
+        .filter(|&i| target_col[i].is_finite() && axis_cols.iter().all(|c| c[i].is_finite()))
+        .collect();
+    if rows.len() > cap {
+        let keep = crate::stride_rows(rows.len(), cap);
+        rows = keep.iter().map(|&k| rows[k as usize]).collect();
+    }
+    rows
+}
+
+/// Standardize the axis columns over the kept rows; `None` when
+/// an axis is constant there.
+fn standardize(
+    rows: &[usize],
+    axis_cols: &[&[f64]],
+) -> Option<(Vec<Vec<f64>>, Vec<(f64, f64)>)> {
+    let n = rows.len();
+    let mut z: Vec<Vec<f64>> = Vec::with_capacity(axis_cols.len());
+    let mut stats: Vec<(f64, f64)> = Vec::with_capacity(axis_cols.len());
+    for col in axis_cols {
+        let vals: Vec<f64> = rows.iter().map(|&i| col[i]).collect();
+        let mean = vals.iter().sum::<f64>() / n as f64;
+        let var = vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n as f64;
+        let sd = var.sqrt();
+        if sd.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return None;
+        }
+        stats.push((mean, sd));
+        z.push(vals.iter().map(|v| (v - mean) / sd).collect());
+    }
+    Some((z, stats))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn screen_target(
+    table: &TypedTable,
+    tcol: usize,
+    numeric: &[usize],
+    values: &[Vec<f64>],
+    pos_map: &[usize],
+    cfg: &DiscConfig,
+    caches: &DiscCaches,
+) -> TargetOutcome {
+    let mut out = TargetOutcome::new();
+    let tvals = &values[pos_map[tcol]];
+    let finite_t = tvals.iter().filter(|v| v.is_finite()).count();
+    if finite_t < cfg.min_rows {
+        return out;
+    }
+    out.screened = true;
+    let axes: Vec<usize> = numeric.iter().copied().filter(|&c| c != tcol).collect();
+    let mut flagged_units: Vec<Flagged> = Vec::new();
+    let mut axis_strength: Vec<(usize, f64)> = Vec::new();
+
+    // Axis units.
+    for &acol in &axes {
+        let ap = pos_map[acol];
+        let Some((target, z, fit, stats, _rows)) = unit_data(tvals, &[&values[ap]], cfg.row_cap)
+        else {
+            continue;
+        };
+        let n = target.len();
+        if n < cfg.min_rows {
+            continue;
+        }
+        out.n_axis += 1;
+        let u = z[0].clone();
+        let ones = vec![1.0f64; n];
+        let u2: Vec<f64> = u.iter().map(|v| v * v).collect();
+        let bg = flat_background(&[&ones, &u, &u2]);
+        let best = scan_unit(&u, &bg, &target, &fit, cfg);
+        if let Some(best) = &best {
+            axis_strength.push((acol, best.t_fit.abs()));
+            if flagged(best) {
+                flagged_units.push(Flagged {
+                    kind: "axis",
+                    target: tcol,
+                    axes: vec![acol],
+                    direction_deg: None,
+                    cand: best.clone(),
+                    u: u.clone(),
+                    target_vals: target.clone(),
+                    fit: fit.clone(),
+                    axis_z: z.clone(),
+                    axis_stats: stats.clone(),
+                });
+            }
+        }
+    }
+
+    // Diagonal units.
+    let pair_axes: Vec<usize> = if axes.len() > cfg.all_pairs_max_cols {
+        let mut ranked = axis_strength.clone();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        ranked
+            .iter()
+            .take(cfg.fallback_top_axes)
+            .map(|(c, _)| *c)
+            .collect()
+    } else {
+        axes.clone()
+    };
+    for ai in 0..pair_axes.len() {
+        for bi in (ai + 1)..pair_axes.len() {
+            let (a1, a2) = (pair_axes[ai], pair_axes[bi]);
+            let (p1, p2) = (pos_map[a1], pos_map[a2]);
+            // Pair data (kept rows, standardized axes, fit mask,
+            // background) depends on the kept rows only, not on the
+            // target: shared across targets via the pair cache,
+            // validated by the kept-row vector.
+            let rows = kept_rows(tvals, &[&values[p1], &values[p2]], cfg.row_cap);
+            if rows.len() < cfg.min_rows {
+                continue;
+            }
+            let Some(pair) = caches.pair(a1, a2, &rows, &[&values[p1], &values[p2]]) else {
+                continue;
+            };
+            let target: Vec<f64> = rows.iter().map(|&i| tvals[i]).collect();
+            let z: &Vec<Vec<f64>> = &pair.z;
+            let fit: &Vec<u8> = &pair.fit;
+            let stats: &Vec<(f64, f64)> = &pair.stats;
+            let rows32: &Vec<u32> = &pair.rows;
+            let n = target.len();
+            let bg: &[f64] = &pair.bg;
+            let axis_tol = (std::f64::consts::PI / cfg.directions as f64).sin();
+            for d in 0..cfg.directions {
+                let theta = std::f64::consts::PI * (d as f64) / (cfg.directions as f64);
+                let (c, s) = (theta.cos(), theta.sin());
+                if c.abs().min(s.abs()) < axis_tol - 1e-12 {
+                    // Near-axis directions duplicate the axis scan
+                    // of one of the pair's columns.
+                    continue;
+                }
+                let u: Vec<f64> = (0..n).map(|i| c * z[0][i] + s * z[1][i]).collect();
+                out.n_diag += 1;
+                // The projection and its sort order depend on
+                // the axis pair and the kept rows only, not on
+                // the target: share the order across targets
+                // (validated by the kept-row vector).
+                let order = caches.order((a1, a2, d), rows32, &u);
+                let best = scan_unit_ordered(&u, &order, bg, &target, fit, cfg);
+                if let Some(best) = &best {
+                    if flagged(best) {
+                        flagged_units.push(Flagged {
+                            kind: "diagonal",
+                            target: tcol,
+                            axes: vec![a1, a2],
+                            direction_deg: Some(theta * 180.0 / std::f64::consts::PI),
+                            cand: best.clone(),
+                            u,
+                            target_vals: target.clone(),
+                            fit: fit.clone(),
+                            axis_z: z.clone(),
+                            axis_stats: stats.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    out.n_flagged += flagged_units.len();
+    // Rank on fit-half statistics only; type the leaders.
+    flagged_units.sort_by(|a, b| {
+        b.cand
+            .t_fit
+            .abs()
+            .partial_cmp(&a.cand.t_fit.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut typed: Vec<&Flagged> = Vec::new();
+    for f in flagged_units
+        .iter()
+        .take(cfg.type_top.max(cfg.max_per_target))
+    {
+        let (_tz, gap) = typing_numbers(f);
+        match gap {
+            Some((ratio, gap_t)) if gap_t > TYPE_GAP_T_CRIT && ratio < TYPE_RATIO_CRIT => {
+                typed.push(f);
+            }
+            _ => {
+                out.n_untyped += 1;
+            }
+        }
+    }
+    // Reporting bars: strict z and material gain (share of the
+    // target's evaluation-half variance).
+    let typed: Vec<&Flagged> = typed
+        .into_iter()
+        .filter(|f| {
+            if f.cand.z.abs() < cfg.z_report {
+                return false;
+            }
+            let eval_t: Vec<f64> = f
+                .target_vals
+                .iter()
+                .zip(&f.fit)
+                .filter(|(_, fl)| **fl == 0)
+                .map(|(v, _)| *v)
+                .collect();
+            let m = eval_t.iter().sum::<f64>() / eval_t.len() as f64;
+            let var =
+                eval_t.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / eval_t.len() as f64;
+            var > 0.0 && f.cand.gain >= cfg.rel_gain_min * var
+        })
+        .collect();
+    // One finding per (target, axis set): adjacent diagonal
+    // directions can type the same boundary twice; keep the
+    // strongest |z| per axis set.
+    let mut by_set: Vec<&Flagged> = Vec::new();
+    for f in typed.iter() {
+        if let Some(slot) = by_set
+            .iter_mut()
+            .find(|k| k.kind == f.kind && k.axes == f.axes)
+        {
+            if f.cand.z.abs() > slot.cand.z.abs() {
+                *slot = f;
+            }
+        } else {
+            by_set.push(f);
+        }
+    }
+    let typed = by_set;
+    // Parsimony: an axis step and a near-parallel diagonal step at
+    // comparable strength are the same jump; report the axis step
+    // unless the diagonal is much stronger (>= 1.5x |z|), in which
+    // case the axis reading is its shadow.
+    let mut kept: Vec<&Flagged> = Vec::new();
+    for f in typed.iter().filter(|f| f.kind == "axis") {
+        kept.push(f);
+    }
+    for f in typed.iter().filter(|f| f.kind == "diagonal") {
+        let deg = f.direction_deg.unwrap_or(0.0);
+        let a1 = deg % 90.0;
+        let angle = a1.min(90.0 - a1);
+        let mut suppressed = false;
+        if angle < 25.0 {
+            for (i, k) in kept.iter().enumerate() {
+                if k.kind == "axis" && f.axes.contains(&k.axes[0]) {
+                    if f.cand.z.abs() >= 1.5 * k.cand.z.abs() {
+                        kept.remove(i);
+                    } else {
+                        suppressed = true;
+                    }
+                    break;
+                }
+            }
+        }
+        if !suppressed {
+            kept.push(f);
+        }
+    }
+    let mut target_findings: Vec<Finding> = Vec::new();
+    for f in kept.iter() {
+        target_findings.push(make_finding(table, f, cfg));
+    }
+    target_findings.sort_by(|a, b| {
+        b.interestingness
+            .partial_cmp(&a.interestingness)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    target_findings.truncate(cfg.max_per_target);
+    out.findings = target_findings;
+    out
+}
+
 pub fn profile_discontinuities(
     table: &TypedTable,
     excluded: &[usize],
     cfg: &DiscConfig,
 ) -> (Vec<Finding>, String) {
+    use rayon::prelude::*;
     if !cfg.is_enabled() {
         return (Vec::new(), "disabled at this budget".into());
     }
@@ -788,223 +1237,30 @@ pub fn profile_discontinuities(
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
     let values: Vec<Vec<f64>> = numeric.iter().map(|&i| column_f64(table, i)).collect();
-    let pos_of = |col: usize| numeric.iter().position(|&c| c == col);
+    let mut pos_map = vec![usize::MAX; table.cols.len()];
+    for (pos, &c) in numeric.iter().enumerate() {
+        pos_map[c] = pos;
+    }
+    let caches = DiscCaches::new();
 
+    // Targets are independent; screen them in parallel and merge
+    // in target order, so the report is unchanged.
+    let outcomes: Vec<TargetOutcome> = numeric
+        .par_iter()
+        .map(|&tcol| screen_target(table, tcol, &numeric, &values, &pos_map, cfg, &caches))
+        .collect();
     let mut findings: Vec<Finding> = Vec::new();
-    let mut n_targets = 0usize;
-    let mut n_axis_units = 0usize;
-    let mut n_diag_units = 0usize;
-    let mut n_flagged = 0usize;
-    let mut n_untyped = 0usize;
-
-    for &tcol in numeric.iter() {
-        let tvals = &values[pos_of(tcol).unwrap()];
-        let finite_t = tvals.iter().filter(|v| v.is_finite()).count();
-        if finite_t < cfg.min_rows {
-            continue;
+    let (mut n_targets, mut n_axis_units, mut n_diag_units, mut n_flagged, mut n_untyped) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    for o in outcomes {
+        if o.screened {
+            n_targets += 1;
         }
-        n_targets += 1;
-        let axes: Vec<usize> = numeric.iter().copied().filter(|&c| c != tcol).collect();
-        let mut flagged_units: Vec<Flagged> = Vec::new();
-        let mut axis_strength: Vec<(usize, f64)> = Vec::new();
-
-        // Axis units.
-        for &acol in &axes {
-            let ap = pos_of(acol).unwrap();
-            let Some((target, z, fit, stats)) = unit_data(tvals, &[&values[ap]], cfg.row_cap)
-            else {
-                continue;
-            };
-            let n = target.len();
-            if n < cfg.min_rows {
-                continue;
-            }
-            n_axis_units += 1;
-            let u = z[0].clone();
-            let ones = vec![1.0f64; n];
-            let u2: Vec<f64> = u.iter().map(|v| v * v).collect();
-            let bg = flat_background(&[&ones, &u, &u2]);
-            let best = scan_unit(&u, &bg, &target, &fit, cfg);
-            if let Some(best) = &best {
-                axis_strength.push((acol, best.t_fit.abs()));
-                if flagged(best) {
-                    flagged_units.push(Flagged {
-                        kind: "axis",
-                        target: tcol,
-                        axes: vec![acol],
-                        direction_deg: None,
-                        cand: best.clone(),
-                        u: u.clone(),
-                        target_vals: target.clone(),
-                        fit: fit.clone(),
-                        axis_z: z.clone(),
-                        axis_stats: stats.clone(),
-                    });
-                }
-            }
-        }
-
-        // Diagonal units.
-        let pair_axes: Vec<usize> = if axes.len() > cfg.all_pairs_max_cols {
-            let mut ranked = axis_strength.clone();
-            ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            ranked
-                .iter()
-                .take(cfg.fallback_top_axes)
-                .map(|(c, _)| *c)
-                .collect()
-        } else {
-            axes.clone()
-        };
-        for ai in 0..pair_axes.len() {
-            for bi in (ai + 1)..pair_axes.len() {
-                let (a1, a2) = (pair_axes[ai], pair_axes[bi]);
-                let (p1, p2) = (pos_of(a1).unwrap(), pos_of(a2).unwrap());
-                let Some((target, z, fit, stats)) =
-                    unit_data(tvals, &[&values[p1], &values[p2]], cfg.row_cap)
-                else {
-                    continue;
-                };
-                let n = target.len();
-                if n < cfg.min_rows {
-                    continue;
-                }
-                let ones = vec![1.0f64; n];
-                let bg = flat_background(&[&ones, &z[0], &z[1]]);
-                let axis_tol = (std::f64::consts::PI / cfg.directions as f64).sin();
-                for d in 0..cfg.directions {
-                    let theta = std::f64::consts::PI * (d as f64) / (cfg.directions as f64);
-                    let (c, s) = (theta.cos(), theta.sin());
-                    if c.abs().min(s.abs()) < axis_tol - 1e-12 {
-                        // Near-axis directions duplicate the axis scan
-                        // of one of the pair's columns.
-                        continue;
-                    }
-                    let u: Vec<f64> = (0..n).map(|i| c * z[0][i] + s * z[1][i]).collect();
-                    n_diag_units += 1;
-                    let best = scan_unit(&u, &bg, &target, &fit, cfg);
-                    if let Some(best) = &best {
-                        if flagged(best) {
-                            flagged_units.push(Flagged {
-                                kind: "diagonal",
-                                target: tcol,
-                                axes: vec![a1, a2],
-                                direction_deg: Some(theta * 180.0 / std::f64::consts::PI),
-                                cand: best.clone(),
-                                u,
-                                target_vals: target.clone(),
-                                fit: fit.clone(),
-                                axis_z: z.clone(),
-                                axis_stats: stats.clone(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        n_flagged += flagged_units.len();
-        // Rank on fit-half statistics only; type the leaders.
-        flagged_units.sort_by(|a, b| {
-            b.cand
-                .t_fit
-                .abs()
-                .partial_cmp(&a.cand.t_fit.abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let mut typed: Vec<&Flagged> = Vec::new();
-        for f in flagged_units
-            .iter()
-            .take(cfg.type_top.max(cfg.max_per_target))
-        {
-            let (_tz, gap) = typing_numbers(f);
-            match gap {
-                Some((ratio, gap_t)) if gap_t > TYPE_GAP_T_CRIT && ratio < TYPE_RATIO_CRIT => {
-                    typed.push(f);
-                }
-                _ => {
-                    n_untyped += 1;
-                }
-            }
-        }
-        // Reporting bars: strict z and material gain (share of the
-        // target's evaluation-half variance).
-        let typed: Vec<&Flagged> = typed
-            .into_iter()
-            .filter(|f| {
-                if f.cand.z.abs() < cfg.z_report {
-                    return false;
-                }
-                let eval_t: Vec<f64> = f
-                    .target_vals
-                    .iter()
-                    .zip(&f.fit)
-                    .filter(|(_, fl)| **fl == 0)
-                    .map(|(v, _)| *v)
-                    .collect();
-                let m = eval_t.iter().sum::<f64>() / eval_t.len() as f64;
-                let var =
-                    eval_t.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / eval_t.len() as f64;
-                var > 0.0 && f.cand.gain >= cfg.rel_gain_min * var
-            })
-            .collect();
-        // One finding per (target, axis set): adjacent diagonal
-        // directions can type the same boundary twice; keep the
-        // strongest |z| per axis set.
-        let mut by_set: Vec<&Flagged> = Vec::new();
-        for f in typed.iter() {
-            if let Some(slot) = by_set
-                .iter_mut()
-                .find(|k| k.kind == f.kind && k.axes == f.axes)
-            {
-                if f.cand.z.abs() > slot.cand.z.abs() {
-                    *slot = f;
-                }
-            } else {
-                by_set.push(f);
-            }
-        }
-        let typed = by_set;
-        // Parsimony: an axis step and a near-parallel diagonal step at
-        // comparable strength are the same jump; report the axis step
-        // unless the diagonal is much stronger (>= 1.5x |z|), in which
-        // case the axis reading is its shadow.
-        let mut kept: Vec<&Flagged> = Vec::new();
-        for f in typed.iter().filter(|f| f.kind == "axis") {
-            kept.push(f);
-        }
-        for f in typed.iter().filter(|f| f.kind == "diagonal") {
-            let deg = f.direction_deg.unwrap_or(0.0);
-            let a1 = deg % 90.0;
-            let angle = a1.min(90.0 - a1);
-            let mut suppressed = false;
-            if angle < 25.0 {
-                for (i, k) in kept.iter().enumerate() {
-                    if k.kind == "axis" && f.axes.contains(&k.axes[0]) {
-                        if f.cand.z.abs() >= 1.5 * k.cand.z.abs() {
-                            kept.remove(i);
-                        } else {
-                            suppressed = true;
-                        }
-                        break;
-                    }
-                }
-            }
-            if !suppressed {
-                kept.push(f);
-            }
-        }
-        let mut target_findings: Vec<Finding> = Vec::new();
-        for f in kept.iter() {
-            target_findings.push(make_finding(table, f, cfg));
-        }
-        target_findings.sort_by(|a, b| {
-            b.interestingness
-                .partial_cmp(&a.interestingness)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        target_findings.truncate(cfg.max_per_target);
-        findings.extend(target_findings);
+        n_axis_units += o.n_axis;
+        n_diag_units += o.n_diag;
+        n_flagged += o.n_flagged;
+        n_untyped += o.n_untyped;
+        findings.extend(o.findings);
     }
 
     let coverage = format!(
@@ -1105,6 +1361,36 @@ fn make_finding(table: &TypedTable, f: &Flagged, _cfg: &DiscConfig) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordered_scan_matches_plain_scan() {
+        // The shared-order path must be bit-identical: same
+        // candidates, same statistics.
+        let mut seed = 42u64;
+        let n = 600;
+        let u: Vec<f64> = (0..n).map(|_| lcg(&mut seed) * 10.0).collect();
+        let target: Vec<f64> = (0..n)
+            .map(|i| lcg(&mut seed) + if u[i] > 5.0 { 2.0 } else { 0.0 })
+            .collect();
+        let ones = vec![1.0f64; n];
+        let u2: Vec<f64> = u.iter().map(|v| v * v).collect();
+        let bg = flat_background(&[&ones, &u, &u2]);
+        let fit: Vec<u8> = (0..n).map(|i| if i % 2 == 0 { 1 } else { 0 }).collect();
+        let cuts = quantile_cuts(&u, 20);
+        let plain = disc_scan(&u, &bg, &target, &fit, &cuts, 10);
+        let order = sort_order(&u);
+        let shared = disc_scan_ordered(&u, &order, &bg, &target, &fit, &cuts, 10);
+        assert_eq!(plain.len(), shared.len());
+        for (a, b) in plain.iter().zip(&shared) {
+            assert_eq!(a.threshold, b.threshold);
+            assert_eq!(a.jump, b.jump);
+            assert_eq!(a.z, b.z);
+            assert_eq!(a.t_fit, b.t_fit);
+            assert_eq!(a.gain, b.gain);
+        }
+        assert!(plain.iter().any(|c| c.z.abs() >= 2.0));
+    }
+
 
     fn lcg(seed: &mut u64) -> f64 {
         *seed = seed
