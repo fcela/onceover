@@ -28,6 +28,7 @@ project:
         - file: methodology/evidence.ipynb
         - file: methodology/sampling.ipynb
         - file: methodology/column_cards.ipynb
+        - file: methodology/sentinel_values.ipynb
         - file: methodology/keys_duplicates.ipynb
         - file: methodology/functional_dependencies.ipynb
         - file: methodology/predictability_screen.ipynb
@@ -36,9 +37,11 @@ project:
         - file: methodology/dependence_measures.ipynb
         - file: methodology/view_clusters.ipynb
         - file: methodology/view_clusters_reference.ipynb
+        - file: methodology/hotspots.ipynb
         - file: methodology/local_linear_regimes.ipynb
         - file: methodology/temporal_analysis.ipynb
         - file: methodology/extreme_values.ipynb
+        - file: methodology/digit_fingerprints.ipynb
         - file: methodology/step_discontinuities.ipynb
         - file: methodology/drift.ipynb
     - title: Part IV — Implementation
