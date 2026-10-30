@@ -324,13 +324,9 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                 // case. Cosmetic — it does not block parsing the way
                 // a shape or separator change does — so it declares
                 // the demotion the ledger applies.
-                if top.0 != second.0
-                    && top.0.replace('A', "a") == second.0.replace('A', "a")
-                {
-                    format_metrics.insert(
-                        "triviality".into(),
-                        json!("capitalization_only_format_mix"),
-                    );
+                if top.0 != second.0 && top.0.replace('A', "a") == second.0.replace('A', "a") {
+                    format_metrics
+                        .insert("triviality".into(), json!("capitalization_only_format_mix"));
                     format_metrics.insert("triviality_factor".into(), json!(0.6));
                 }
                 findings.push(finding(

@@ -41,9 +41,9 @@ fn melted_panel() -> DataFrame {
 }
 
 fn tagged(f: &onceover::Finding) -> bool {
-    f.evidence.iter().any(|e| {
-        e.metrics.get("source_form").and_then(|v| v.as_str()) == Some("pivoted wide form")
-    })
+    f.evidence
+        .iter()
+        .any(|e| e.metrics.get("source_form").and_then(|v| v.as_str()) == Some("pivoted wide form"))
 }
 
 #[test]
@@ -75,8 +75,7 @@ fn encoding_artifacts_carry_the_layout_demotion() {
     let report = profile(&melted_panel(), &ProfileConfig::default());
     let demoted = |f: &onceover::Finding| {
         f.evidence.iter().any(|e| {
-            e.metrics.get("triviality").and_then(|v| v.as_str())
-                == Some("long_format_encoding")
+            e.metrics.get("triviality").and_then(|v| v.as_str()) == Some("long_format_encoding")
         })
     };
     // The disjoint-range FD is demoted.
@@ -94,8 +93,7 @@ fn encoding_artifacts_carry_the_layout_demotion() {
             let restates = (t == Some("indicator")
                 && f.subject.inputs.len() == 1
                 && f.subject.inputs[0] == "value")
-                || (t == Some("value")
-                    && f.subject.inputs.iter().any(|i| i == "indicator"));
+                || (t == Some("value") && f.subject.inputs.iter().any(|i| i == "indicator"));
             assert!(
                 !restates || demoted(f),
                 "predictive restatement not demoted: {}",

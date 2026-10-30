@@ -9,9 +9,9 @@ use std::time::Instant;
 use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
-    analyze_temporal, association_rules, decision_tables, encode, hotspots, identities, prism_rules,
-    profile_breaks, profile_discontinuities, profile_drift, profile_interactions, profile_regimes,
-    profile_surprises, profile_target_shapes, screen_predictability,
+    analyze_temporal, association_rules, decision_tables, encode, hotspots, identities,
+    prism_rules, profile_breaks, profile_discontinuities, profile_drift, profile_interactions,
+    profile_regimes, profile_surprises, profile_target_shapes, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -103,7 +103,10 @@ fn profile_inner(
         .iter()
         .filter(|d| d.as_str() == "other")
         .count();
-    stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+    stamp_insert(
+        &mut coverage,
+        &mut last_mark,
+        timing_on,
         "extraction".into(),
         PassInfo::ran(format!(
             "{} rows × {} columns{}",
@@ -125,7 +128,10 @@ fn profile_inner(
         .enumerate()
         .map(|(i, col)| onceover_core::column_card(&table.names[i], &table.dtypes[i], col))
         .collect();
-    stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+    stamp_insert(
+        &mut coverage,
+        &mut last_mark,
+        timing_on,
         "column_cards".into(),
         PassInfo::ran(format!("{} cards (exact)", cards.len())),
     );
@@ -174,7 +180,10 @@ fn profile_inner(
             find_duplicate_rows(&table)
         } {
             Some(dup) => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "row_duplicates".into(),
                     PassInfo::ran(format!(
                         "{} groups, {} redundant rows (exact)",
@@ -188,11 +197,7 @@ fn profile_inner(
                 ev.insert("max_group_size".to_string(), json!(dup.max_group_size));
                 ev.insert(
                     "examples".to_string(),
-                    json!(dup
-                        .examples
-                        .iter()
-                        .map(|(idx, _)| idx)
-                        .collect::<Vec<_>>()),
+                    json!(dup.examples.iter().map(|(idx, _)| idx).collect::<Vec<_>>()),
                 );
                 // Bespoke evidence payload for this finding type: the
                 // largest duplicate groups with their values rendered,
@@ -203,9 +208,7 @@ fn profile_inner(
                     .cols
                     .iter()
                     .enumerate()
-                    .filter(|(_, col)| {
-                        !matches!(col, onceover_core::TypedCol::Other { .. })
-                    })
+                    .filter(|(_, col)| !matches!(col, onceover_core::TypedCol::Other { .. }))
                     .map(|(i, _)| i)
                     .collect();
                 let mut groups_json = Vec::new();
@@ -246,7 +249,10 @@ fn profile_inner(
                 ));
             }
             None => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "row_duplicates".into(),
                     PassInfo::ran("no exact duplicate rows (exact)"),
                 );
@@ -260,7 +266,10 @@ fn profile_inner(
             .iter()
             .all(|c| matches!(c, onceover_core::TypedCol::Other { .. }))
     {
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "row_duplicates".into(),
             PassInfo::na("no comparable columns"),
         );
@@ -276,7 +285,10 @@ fn profile_inner(
             } else {
                 DepsOutcome::default()
             };
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
                 "functional_dependencies".into(),
                 PassInfo::skipped("quick tier"),
             );
@@ -290,7 +302,10 @@ fn profile_inner(
                 (DepsOutcome::default(), Vec::new())
             } else {
                 let d = discover(&table, &info, &tier.fd);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "functional_dependencies".into(),
                     PassInfo::capped(d.coverage.clone()),
                 );
@@ -306,7 +321,10 @@ fn profile_inner(
         Vec::new()
     };
     if !key_findings.is_empty() {
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "keys".into(),
             PassInfo::ran(format!(
                 "{} single-column unique, {} composite",
@@ -316,7 +334,10 @@ fn profile_inner(
         );
         findings.extend(key_findings);
     } else {
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "keys".into(),
             PassInfo::na(format!(
                 "{} single-column unique, {} composite",
@@ -332,7 +353,13 @@ fn profile_inner(
     }
     if !deadline_hit && enabled("duplicate_encodings") {
         let (f, cov) = onceover_deps::profile_duplicate_encodings(&table, &info, &tier.dupe);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, "duplicate_encodings".into(), PassInfo::ran(cov));
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "duplicate_encodings".into(),
+            PassInfo::ran(cov),
+        );
         findings.extend(f);
     }
 
@@ -349,7 +376,7 @@ fn profile_inner(
             },
         );
         if p.checked == 0 {
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(&mut coverage, &mut last_mark, timing_on,
                 "pivot".into(),
                 PassInfo::na(
                     "needs exactly one continuous measure column and a categorical attribute candidate"
@@ -357,7 +384,10 @@ fn profile_inner(
                 ),
             );
         } else {
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
                 "pivot".into(),
                 PassInfo::ran(format!(
                     "{} attribute candidates checked, {} verified jointly unique",
@@ -421,7 +451,10 @@ fn profile_inner(
         match &pivot_spec {
             None => {}
             Some(spec) if cfg.budget == Budget::Quick => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "pivot_profile".into(),
                     PassInfo::na("quick budget: the pivoted wide form is not profiled".to_string()),
                 );
@@ -429,7 +462,7 @@ fn profile_inner(
             Some(spec) => {
                 let wide_cols = spec.index.len() + spec.levels.len();
                 if wide_cols > 64 || spec.n_index < 8 {
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                    stamp_insert(&mut coverage, &mut last_mark, timing_on,
                         "pivot_profile".into(),
                         PassInfo::na(format!(
                             "pivoted form would be {} rows x {} columns; outside the wide-profile limits (at least 8 index tuples, at most 64 columns)",
@@ -440,7 +473,7 @@ fn profile_inner(
                     .deadline
                     .is_some_and(|d| start.elapsed() > d.mul_f64(0.6))
                 {
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                    stamp_insert(&mut coverage, &mut last_mark, timing_on,
                         "pivot_profile".into(),
                         PassInfo::skipped(
                             "most of the deadline was spent on the long form; the wide form was not profiled"
@@ -461,7 +494,7 @@ fn profile_inner(
                                 }
                                 findings.push(f);
                             }
-                            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                            stamp_insert(&mut coverage, &mut last_mark, timing_on,
                                 "pivot_profile".into(),
                                 PassInfo::ran(format!(
                                     "profiled the pivoted wide form ({} index columns, {} levels of {} -> {} rows x {} columns); {} findings included, tagged source_form in their evidence",
@@ -475,7 +508,7 @@ fn profile_inner(
                             );
                         }
                         None => {
-                            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                            stamp_insert(&mut coverage, &mut last_mark, timing_on,
                                 "pivot_profile".into(),
                                 PassInfo::na(
                                     "the pivoted wide form could not be materialized (a level name collides with an index column, or the measure is not numeric)"
@@ -495,7 +528,10 @@ fn profile_inner(
     }
     if !deadline_hit && enabled("sortedness") {
         let sorted = sortedness(&table);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "sortedness".into(),
             PassInfo::ran(format!("{} columns sorted by row order", sorted.len())),
         );
@@ -508,7 +544,10 @@ fn profile_inner(
     }
     if !deadline_hit && enabled("granularity") {
         let gran = onceover_deps::granularity_changes(&table);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "granularity".into(),
             PassInfo::ran(format!(
                 "{} float columns scanned for granularity changes",
@@ -528,14 +567,20 @@ fn profile_inner(
     }
     if !deadline_hit && enabled("sentinels") {
         let sent = onceover_deps::sentinel_values(&table);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "sentinels".into(),
             PassInfo::ran(format!(
                 "{} numeric columns scanned for sentinel values",
                 table
                     .cols
                     .iter()
-                    .filter(|c| matches!(c, onceover_core::TypedCol::F64 { .. } | onceover_core::TypedCol::I64 { .. }))
+                    .filter(|c| matches!(
+                        c,
+                        onceover_core::TypedCol::F64 { .. } | onceover_core::TypedCol::I64 { .. }
+                    ))
                     .count()
             )),
         );
@@ -548,7 +593,10 @@ fn profile_inner(
     }
     if !deadline_hit && enabled("digits") {
         let (dig, cov) = onceover_deps::digit_fingerprints(&table);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "digits".into(),
             PassInfo::ran(cov),
         );
@@ -569,7 +617,13 @@ fn profile_inner(
             .map(|h| onceover_mines::expectations::declared_temporal_columns(&table, h))
             .unwrap_or_default();
         let d = analyze_temporal(&table, &declared_skip);
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, "dates".into(), PassInfo::ran(d.coverage.clone()));
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "dates".into(),
+            PassInfo::ran(d.coverage.clone()),
+        );
         // Backfill modal intervals into cards.
         for (name, modal) in d.modal_intervals {
             if let Some(card) = columns.get_mut(&name) {
@@ -589,11 +643,20 @@ fn profile_inner(
         match cfg.hints.as_ref() {
             Some(hints) if !hints.is_empty() => {
                 let e = onceover_mines::expectations::analyze_expectations(&table, hints);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "expectations".into(), PassInfo::ran(e.coverage.clone()));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "expectations".into(),
+                    PassInfo::ran(e.coverage.clone()),
+                );
                 findings.extend(e.findings);
             }
             _ => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "expectations".into(),
                     PassInfo::skipped("no hints provided".to_string()),
                 );
@@ -608,7 +671,13 @@ fn profile_inner(
         }
         if !deadline_hit {
             let (enc, enc_cov) = encode(&table, &tier.encode);
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, "encoding".into(), PassInfo::sampled(enc_cov));
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "encoding".into(),
+                PassInfo::sampled(enc_cov),
+            );
 
             let screen = if enabled("gbm") {
                 screen_predictability(&table, &enc, &tier.screen)
@@ -619,7 +688,10 @@ fn profile_inner(
                     coverage: "not selected".into(),
                 }
             };
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
                 "predictability_screen".into(),
                 PassInfo::sampled(screen.coverage.clone()),
             );
@@ -648,7 +720,10 @@ fn profile_inner(
                     cat_targets.len(),
                     tier.dtable_top_targets
                 );
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "decision_tables".into(),
                     if cat_targets.len() < dtable_eligible {
                         PassInfo::capped(detail)
@@ -658,7 +733,10 @@ fn profile_inner(
                 );
                 findings.extend(f);
             } else {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "decision_tables".into(),
                     PassInfo::na("no categorical targets with predictive signal above baseline"),
                 );
@@ -690,7 +768,10 @@ fn profile_inner(
                 prism_targets.len(),
                 tier.prism_top_targets
             );
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
                 "prism_rules".into(),
                 if prism_targets.len() < prism_eligible {
                     PassInfo::capped(detail)
@@ -722,7 +803,13 @@ fn profile_inner(
                     .collect();
                 let (f, cov) =
                     profile_regimes(&table, &enc, &screen.results, &excluded, &tier.regimes);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "regimes".into(), PassInfo::sampled(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "regimes".into(),
+                    PassInfo::sampled(cov),
+                );
                 findings.extend(f);
             }
             if check_deadline(&mut coverage, "interactions") {
@@ -731,7 +818,13 @@ fn profile_inner(
             if !deadline_hit && enabled("interactions") {
                 let (f, cov) =
                     profile_interactions(&table, &enc, &screen.results, &tier.screen, &tier.hstat);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "interactions".into(), PassInfo::sampled(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "interactions".into(),
+                    PassInfo::sampled(cov),
+                );
                 findings.extend(f);
             }
             if check_deadline(&mut coverage, "breaks") {
@@ -756,7 +849,13 @@ fn profile_inner(
                     .collect();
                 let time_hint = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
                 let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks, time_hint);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "breaks".into(), PassInfo::sampled(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "breaks".into(),
+                    PassInfo::sampled(cov),
+                );
                 findings.extend(f);
             }
             if check_deadline(&mut coverage, "surprises") {
@@ -780,7 +879,13 @@ fn profile_inner(
                     })
                     .collect();
                 let (f, cov) = profile_surprises(&table, &excluded, &tier.surprises);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "surprises".into(), PassInfo::ran(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "surprises".into(),
+                    PassInfo::ran(cov),
+                );
                 findings.extend(f);
             }
             if check_deadline(&mut coverage, "discontinuities") {
@@ -807,7 +912,13 @@ fn profile_inner(
                     })
                     .collect();
                 let (f, cov) = profile_discontinuities(&table, &excluded, &tier.disc);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "discontinuities".into(), PassInfo::ran(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "discontinuities".into(),
+                    PassInfo::ran(cov),
+                );
                 findings.extend(f);
             }
             if check_deadline(&mut coverage, "drift") {
@@ -842,30 +953,54 @@ fn profile_inner(
                     &tier.screen,
                     &tier.drift,
                 );
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "drift".into(), PassInfo::ran(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "drift".into(),
+                    PassInfo::ran(cov),
+                );
                 findings.extend(f);
             }
             if deadline_hit || check_deadline(&mut coverage, "association_rules") {
                 deadline_hit = true;
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "association_rules".into(),
                     PassInfo::skipped("deadline reached"),
                 );
             } else if enabled("association_rules") {
                 let (f, cov) = association_rules(&enc, &tier.association);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "association_rules".into(), PassInfo::sampled(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "association_rules".into(),
+                    PassInfo::sampled(cov),
+                );
                 findings.extend(f);
             }
 
             if deadline_hit || check_deadline(&mut coverage, "hotspots") {
                 deadline_hit = true;
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "hotspots".into(),
                     PassInfo::skipped("deadline reached"),
                 );
             } else if enabled("hotspots") {
                 let (f, cov) = hotspots(&enc, &tier.hotspots);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "hotspots".into(), PassInfo::sampled(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "hotspots".into(),
+                    PassInfo::sampled(cov),
+                );
                 findings.extend(f);
             }
 
@@ -891,7 +1026,10 @@ fn profile_inner(
                     })
                     .count();
                 let possible_pairs = numeric * numeric.saturating_sub(1) / 2;
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "dependence_screen".into(),
                     if deps_pair.len() < possible_pairs {
                         PassInfo::capped(dep_cov)
@@ -907,7 +1045,13 @@ fn profile_inner(
 
                 if tier.ident_pair_cap > 0 && enabled("identities") {
                     let (id_f, id_cov) = identities(&table, &deps_pair, tier.ident_pair_cap);
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, "arithmetic_identities".into(), PassInfo::ran(id_cov));
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "arithmetic_identities".into(),
+                        PassInfo::ran(id_cov),
+                    );
                     findings.extend(id_f);
                 }
                 if enabled("period_associations") {
@@ -921,18 +1065,33 @@ fn profile_inner(
                         onceover_mines::PeriodsStatus::Ran(d) => PassInfo::ran(d),
                         onceover_mines::PeriodsStatus::Capped(d) => PassInfo::capped(d),
                     };
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, "period_associations".into(), info);
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "period_associations".into(),
+                        info,
+                    );
                     findings.extend(out.findings);
                 }
 
                 if tier.ident_multiterm_cap > 0 && enabled("identities") {
                     let (mt_f, mt_cov) =
                         onceover_mines::multiterm_identities(&table, tier.ident_multiterm_cap);
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, "multiterm_identities".into(), PassInfo::ran(mt_cov));
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "multiterm_identities".into(),
+                        PassInfo::ran(mt_cov),
+                    );
                     findings.extend(mt_f);
                 }
             } else if deadline_hit {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "dependence_screen".into(),
                     PassInfo::skipped("deadline reached"),
                 );
@@ -958,7 +1117,10 @@ fn profile_inner(
                         vout.dropped_columns.join(", ")
                     ));
                 }
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "views".into(),
                     if vout.budget_hit {
                         PassInfo::capped(detail)
@@ -970,11 +1132,20 @@ fn profile_inner(
                 );
                 findings.extend(vf);
             } else if deadline_hit {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "views".into(), PassInfo::skipped("deadline reached"));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "views".into(),
+                    PassInfo::skipped("deadline reached"),
+                );
             }
             shared_encoding = Some(enc);
         } else {
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
                 "predictability_screen".into(),
                 PassInfo::skipped("deadline reached"),
             );
@@ -994,7 +1165,13 @@ fn profile_inner(
             "views",
             "drift",
         ] {
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, pass.into(), PassInfo::skipped("quick tier"));
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                pass.into(),
+                PassInfo::skipped("quick tier"),
+            );
         }
     }
 
@@ -1034,7 +1211,10 @@ fn profile_inner(
                     f.validate().err()
                 });
                 if let Some(reason) = invalid {
-                    stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
                         descriptor.id.clone(),
                         PassInfo::skipped(format!("invalid detector output: {reason}")),
                     );
@@ -1045,14 +1225,20 @@ fn profile_inner(
                         e.method.detector = descriptor.id.clone();
                     }
                 }
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     descriptor.id.clone(),
                     PassInfo::ran(format!("{} candidate statements", candidates.len())),
                 );
                 findings.extend(candidates);
             }
             Err(message) => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     descriptor.id.clone(),
                     PassInfo::skipped(format!("detector failed: {message}")),
                 );
@@ -1067,11 +1253,20 @@ fn profile_inner(
         match &cfg.target {
             Some(target) => {
                 let (f, cov) = profile_target_shapes(&table, target, &tier.shapes);
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, "target_shapes".into(), PassInfo::ran(cov));
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "target_shapes".into(),
+                    PassInfo::ran(cov),
+                );
                 findings.extend(f);
             }
             None => {
-                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
                     "target_shapes".into(),
                     PassInfo::skipped("no target designated".to_string()),
                 );
@@ -1153,7 +1348,13 @@ fn profile_inner(
         ("drift", "drift"),
     ] {
         if !enabled(id) {
-            stamp_insert(&mut coverage, &mut last_mark, timing_on, pass.into(), PassInfo::skipped("detector not enabled"));
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                pass.into(),
+                PassInfo::skipped("detector not enabled"),
+            );
         } else if !selected(id) {
             if let Some(info) = coverage.get_mut(pass) {
                 info.detail
@@ -1171,7 +1372,10 @@ fn profile_inner(
     };
     let overview = build_overview(&table, &columns, &findings, cfg);
     if deadline_hit {
-        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
             "deadline".into(),
             PassInfo::skipped(format!(
                 "wall-clock deadline {:.1}s reached; later passes skipped",

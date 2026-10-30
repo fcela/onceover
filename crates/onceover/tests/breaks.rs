@@ -198,7 +198,9 @@ fn missing_date_column_skips_the_pass() {
     let cfg = breaks_only();
     let report = profile(&df, &cfg);
     let cov = report.coverage.get("breaks").expect("breaks coverage");
-    assert!(cov.detail.contains("no date, datetime, or year-like integer column"));
+    assert!(cov
+        .detail
+        .contains("no date, datetime, or year-like integer column"));
     assert!(report
         .findings
         .iter()

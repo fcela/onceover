@@ -46,10 +46,7 @@ pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
             TypedCol::F64 { vals } => vals
                 .iter()
                 .enumerate()
-                .filter_map(|(r, v)| {
-                    v.filter(|x| x.is_finite())
-                        .map(|x| (r, x.to_bits(), *x))
-                })
+                .filter_map(|(r, v)| v.filter(|x| x.is_finite()).map(|x| (r, x.to_bits(), *x)))
                 .collect(),
             TypedCol::I64 { vals } => vals
                 .iter()
@@ -140,7 +137,11 @@ pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
                         n += 1;
                     }
                 }
-                if n > 0 { s / n as f64 } else { f64::NAN }
+                if n > 0 {
+                    s / n as f64
+                } else {
+                    f64::NAN
+                }
             };
             let mean_with = all_values.iter().sum::<f64>() / all_values.len() as f64;
             let win_start = pos[best_lo];
