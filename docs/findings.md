@@ -85,7 +85,7 @@ original score is preserved in `detector_interestingness`. Findings
 are ordered by the selection score, and the same order decides which
 findings survive the `max_findings` cap.
 
-Three adjustments keep exact-but-expected statements from outranking
+Four adjustments keep exact-but-expected statements from outranking
 substantive ones:
 
 - A functional dependency whose inputs contain an exact unique key
@@ -108,6 +108,23 @@ substantive ones:
   identifier scores 0.95; an all-distinct float measurement scores
   about 0.61, and its interpretation says to treat it as a
   distinct-count check rather than a join key.
+- Producers may declare a demotion the ledger applies: when a
+  producer knows its finding restates the file's own structure, it
+  records `triviality` (a reason) and `triviality_factor` in its
+  evidence metrics. The ledger multiplies every applicable factor —
+  declared ones and its own key-implied rule — into the selection
+  score and writes the consolidated reasons and factor back to
+  every evidence record of the finding. Declared bars today, each
+  with factor 0.6: `continuous_measure_key_candidate` (uniqueness
+  and identifier-role findings on float columns — a measurement
+  that happens to be all-distinct is not a join key),
+  `capitalization_only_format_mix` (a format finding whose two
+  dominant patterns differ only in letter case; shape or separator
+  changes that block parsing are not demoted), and
+  `long_format_encoding` (a functional dependency from a verified
+  long-format frame's measure column to its attribute column,
+  which holds because the levels occupy disjoint value ranges).
+
 Demotion is the only triviality action: findings are never dropped
 for being trivial, only ranked lower, with the reason recorded in
 their evidence.

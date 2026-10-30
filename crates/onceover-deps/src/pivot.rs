@@ -43,6 +43,10 @@ pub struct PivotOutcome {
     pub checked: usize,
     /// Pairs whose (index, attribute) tuples verified jointly unique.
     pub verified: usize,
+    /// (attribute, measure) name pairs for the candidates that
+    /// produced findings, so callers can cross-reference other
+    /// findings against the verified long-format structure.
+    pub reported: Vec<(String, String)>,
 }
 
 struct Candidate {
@@ -187,6 +191,8 @@ pub fn analyze_pivot(table: &TypedTable, info: &[ColInfo], cfg: &PivotConfig) ->
     });
     candidates.truncate(cfg.max_findings);
     for c in &candidates {
+        out.reported
+            .push((info[c.attr].name.clone(), info[c.measure].name.clone()));
         out.findings.push(pivot_finding(info, c, n));
     }
     out

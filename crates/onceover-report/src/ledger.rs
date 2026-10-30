@@ -5,11 +5,16 @@
 //! selection score — the mean of the detector's score and the ledger's
 //! evidence score below — and records the detector's score in
 //! `detector_interestingness`, so the replacement is never silent.
-//! One demotion applies on top: a functional dependency whose inputs
-//! contain an exact unique key is implied by that key, so its score is
-//! multiplied by 0.6 and its evidence is tagged
-//! `triviality = "implied_by_unique_key"`. Nothing is dropped for
-//! triviality; demoted findings stay in the report, ranked lower.
+//! Triviality demotions apply on top. A producer that knows a
+//! finding restates the file's own structure may declare it in the
+//! evidence metrics (`triviality` = reason, `triviality_factor`);
+//! the ledger adds its own structural rule — a functional dependency
+//! whose inputs contain an exact unique key is implied by that key
+//! (`implied_by_unique_key`, 0.6). All applicable factors multiply,
+//! and the consolidated reasons and factor are written back to every
+//! evidence record. Nothing is dropped for triviality; demoted
+//! findings stay in the report, ranked lower, with the reasons on
+//! record.
 use crate::{Category, Evidence, EvidenceBasis, Finding, FindingGroup, Sampling};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -215,12 +220,34 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
                     .iter()
                     .any(|ks| !ks.contains(t) && ks.iter().all(|c| f.subject.inputs.contains(c)))
             });
+        // Triviality demotions: producer-declared (reason -> factor,
+        // first declaration of a reason wins) plus the ledger's own
+        // key-implied rule. Factors multiply; the consolidated record
+        // is written to every evidence record of the finding.
+        let mut demotions: BTreeMap<String, f64> = BTreeMap::new();
+        for e in &f.evidence {
+            if let (Some(r), Some(x)) = (
+                e.metrics.get("triviality").and_then(Value::as_str),
+                e.metrics.get("triviality_factor").and_then(Value::as_f64),
+            ) {
+                demotions.entry(r.to_string()).or_insert(x);
+            }
+        }
         if key_implied {
-            combined *= 0.6;
+            demotions.insert("implied_by_unique_key".into(), 0.6);
+        }
+        if !demotions.is_empty() {
+            let factor: f64 = demotions.values().product();
+            combined *= factor;
+            let reasons = demotions
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("+");
+            let rounded = (factor * 10_000.0).round() / 10_000.0;
             for e in &mut f.evidence {
-                e.metrics
-                    .insert("triviality".into(), json!("implied_by_unique_key"));
-                e.metrics.insert("triviality_factor".into(), json!(0.6));
+                e.metrics.insert("triviality".into(), json!(reasons));
+                e.metrics.insert("triviality_factor".into(), json!(rounded));
             }
         }
         f.interestingness = (combined * 10_000.0).round() / 10_000.0;
