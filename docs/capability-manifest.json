@@ -63,13 +63,6 @@
    "requires": []
   },
   {
-   "id": "sentinels",
-   "categories": [
-    "missingness"
-   ],
-   "requires": []
-  },
-  {
    "id": "dates",
    "categories": [
     "gaps",
@@ -170,6 +163,13 @@
    "id": "association_rules",
    "categories": [
     "conditional_rules"
+   ],
+   "requires": []
+  },
+  {
+   "id": "hotspots",
+   "categories": [
+    "concentration"
    ],
    "requires": []
   },

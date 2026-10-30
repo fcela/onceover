@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
-    AssociationConfig, BreaksConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
+    AssociationConfig, BreaksConfig, HotspotConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
     PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
 };
 
@@ -100,6 +100,7 @@ pub struct TierConfig {
     pub disc: DiscConfig,
     pub drift: DriftConfig,
     pub association: AssociationConfig,
+    pub hotspots: HotspotConfig,
     pub views: ViewsConfig,
     pub dep_pair_cap: usize,
     pub ident_pair_cap: usize,
@@ -132,6 +133,10 @@ impl TierConfig {
                 disc: DiscConfig::disabled(),
                 drift: DriftConfig::disabled(),
                 association: AssociationConfig::default(),
+                hotspots: HotspotConfig {
+                    max_findings: 10,
+                    ..Default::default()
+                },
                 views: ViewsConfig::default(),
                 dep_pair_cap: 0,
                 ident_pair_cap: 0,
@@ -168,6 +173,7 @@ impl TierConfig {
                     max_findings: 20,
                     ..Default::default()
                 },
+                hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
                 disc: DiscConfig::default(),
                 drift: DriftConfig::default(),
@@ -240,6 +246,11 @@ impl TierConfig {
                 },
                 association: AssociationConfig {
                     max_findings: 40,
+                    ..Default::default()
+                },
+                hotspots: HotspotConfig {
+                    triples: true,
+                    max_findings: 20,
                     ..Default::default()
                 },
                 views: ViewsConfig {

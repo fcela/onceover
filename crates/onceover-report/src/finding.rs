@@ -49,6 +49,7 @@ pub enum Pattern {
     MissingValues,
     SentinelValues,
     ValueConcentration,
+    Hotspot,
     CategoricalRole,
     IdentifierRole,
     Uniqueness,
@@ -82,7 +83,7 @@ impl Pattern {
     pub fn category(self) -> Category {
         match self {
             Self::MissingValues | Self::SentinelValues => Category::Missingness,
-            Self::ValueConcentration => Category::Concentration,
+            Self::ValueConcentration | Self::Hotspot => Category::Concentration,
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
             Self::Duplicates => Category::Duplicates,
@@ -118,6 +119,7 @@ impl Pattern {
             Self::MissingValues => "missing_values",
             Self::SentinelValues => "sentinel_values",
             Self::ValueConcentration => "value_concentration",
+            Self::Hotspot => "hotspot",
             Self::CategoricalRole => "categorical_role",
             Self::IdentifierRole => "identifier_role",
             Self::Uniqueness => "uniqueness",

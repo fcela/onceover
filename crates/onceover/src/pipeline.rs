@@ -9,7 +9,7 @@ use std::time::Instant;
 use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
-    analyze_temporal, association_rules, decision_tables, encode, identities, prism_rules,
+    analyze_temporal, association_rules, decision_tables, encode, hotspots, identities, prism_rules,
     profile_breaks, profile_discontinuities, profile_drift, profile_interactions, profile_regimes,
     profile_surprises, profile_target_shapes, screen_predictability,
 };
@@ -841,6 +841,18 @@ fn profile_inner(
             } else if enabled("association_rules") {
                 let (f, cov) = association_rules(&enc, &tier.association);
                 stamp_insert(&mut coverage, &mut last_mark, timing_on, "association_rules".into(), PassInfo::sampled(cov));
+                findings.extend(f);
+            }
+
+            if deadline_hit || check_deadline(&mut coverage, "hotspots") {
+                deadline_hit = true;
+                stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+                    "hotspots".into(),
+                    PassInfo::skipped("deadline reached"),
+                );
+            } else if enabled("hotspots") {
+                let (f, cov) = hotspots(&enc, &tier.hotspots);
+                stamp_insert(&mut coverage, &mut last_mark, timing_on, "hotspots".into(), PassInfo::sampled(cov));
                 findings.extend(f);
             }
 
