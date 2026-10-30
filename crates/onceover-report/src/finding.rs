@@ -108,26 +108,41 @@ impl Pattern {
             Self::DistributionShift => Category::Changes,
         }
     }
-    pub fn subtype(self) -> Option<&'static str> {
+    /// The finding `type`: every pattern carries one, so consumers
+    /// can key on (category, type) without special-casing absent
+    /// types. The type is part of the finding id; the strings are a
+    /// compatibility surface.
+    pub fn subtype(self) -> &'static str {
         match self {
+            Self::MissingValues => "missing_values",
+            Self::ValueConcentration => "value_concentration",
+            Self::CategoricalRole => "categorical_role",
+            Self::IdentifierRole => "identifier_role",
+            Self::Uniqueness => "uniqueness",
+            Self::Duplicates => "duplicate_rows",
+            Self::FormatVariation => "format_variation",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
-                Some("functional")
+                "functional"
             }
-            Self::PredictiveDependency | Self::PiecewiseDependency => Some("predictive"),
-            Self::ConditionalRule => Some("if_then"),
-            Self::StatisticalAssociation => Some("statistical"),
-            Self::PeriodAssociation => Some("period_association"),
-            Self::ResidualShift => Some("residual_level"),
-            Self::LevelShift => Some("level_shift"),
-            Self::TrendChange => Some("trend_change"),
-            Self::VarianceChange => Some("variance_change"),
-            Self::LongFormat => Some("long_format"),
-            Self::ExtremeValue => Some("extreme_value"),
-            Self::TransientExcursion => Some("transient_excursion"),
-            Self::StepDiscontinuity => Some("step_discontinuity"),
-            Self::DistributionShift => Some("distribution_shift"),
-            Self::DuplicateEncoding => Some("duplicate_encoding"),
-            _ => None,
+            Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
+            Self::ConditionalRule => "if_then",
+            Self::StatisticalAssociation => "statistical",
+            Self::PeriodAssociation => "period_association",
+            Self::Gap => "gap",
+            Self::SequenceGap => "sequence_gap",
+            Self::MissingCombinations => "missing_combinations",
+            Self::IntervalVariation => "interval_variation",
+            Self::ColumnOrdering => "column_ordering",
+            Self::ResidualShift => "residual_level",
+            Self::LevelShift => "level_shift",
+            Self::TrendChange => "trend_change",
+            Self::VarianceChange => "variance_change",
+            Self::LongFormat => "long_format",
+            Self::ExtremeValue => "extreme_value",
+            Self::TransientExcursion => "transient_excursion",
+            Self::StepDiscontinuity => "step_discontinuity",
+            Self::DistributionShift => "distribution_shift",
+            Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
 }
@@ -710,7 +725,7 @@ impl Finding {
         let evidence = Evidence::new(method, basis, metrics);
         Self::from_statement(
             pattern.category(),
-            pattern.subtype().map(str::to_owned),
+            Some(pattern.subtype().to_owned()),
             subject,
             spec,
             claim,
@@ -775,6 +790,9 @@ impl Finding {
         }
         if self.subject.columns.iter().any(|c| c.is_empty()) {
             return Err("empty column name".into());
+        }
+        if self.finding_type.is_none() {
+            return Err("a finding must carry a type".into());
         }
         match self.category {
             Category::Dependencies => {

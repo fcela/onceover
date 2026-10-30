@@ -4,8 +4,10 @@
 
 ## Using the library
 
-- [Python API](python/onceover/__init__.py): `profile(df, budget=..., detectors=..., hints=...)`; the report offers `.data` (dict), `.to_json()`, `.to_markdown()`, `.findings_frame()`, `.save(path)`.
+- [Agent brief](AGENTS.md): what the tool does, the quickstart, budget semantics, how to read a report, the hints API, and what empty or partial results mean.
+- [Python API](python/onceover/__init__.py): `profile(df, budget=..., detectors=..., hints=...)`; the report offers `.data` (dict), `.to_json()` (optionally `max_chars=` budgeted), `.to_markdown()`, `.to_digest(chars)`, `.findings_frame()`, `.finding(id)`, `.select(category=, type=, column=, target=)`, `.save(path)`.
 - [Report schema](docs/report-schema.md): the JSON report's fields, by schema version.
+- [Report JSON Schema](docs/report-schema.json): the machine-readable contract for report `schema_version` 0.2, validated against live reports in the test suite.
 - [Reading a report](docs/reading-a-report.md): a worked walkthrough on a real table.
 - [Capability manifest](docs/capability-manifest.json): detectors, the categories each produces, and what each requires — generated from the library itself by `scripts/capability_manifest.py`.
 

@@ -309,7 +309,7 @@ fn extension_detector_uses_existing_category_and_shared_context() {
             );
             Ok(vec![Finding::from_statement(
                 Category::Gaps,
-                None,
+                Some("sequence_gap".into()),
                 Subject::columns(["sequence".into()]),
                 spec,
                 "Sequence value 2 is absent".into(),

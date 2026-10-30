@@ -1,0 +1,752 @@
+{
+  "$defs": {
+    "boolStats": {
+      "additionalProperties": false,
+      "properties": {
+        "falses": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trues": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "trues",
+        "falses"
+      ],
+      "type": "object"
+    },
+    "columnCard": {
+      "additionalProperties": false,
+      "properties": {
+        "action_hints": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bool_stats": {
+          "$ref": "#/$defs/boolStats"
+        },
+        "concentration": {
+          "$ref": "#/$defs/concentration"
+        },
+        "distinct": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distinct_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "dtype": {
+          "type": "string"
+        },
+        "format_patterns": {
+          "items": {
+            "$ref": "#/$defs/patternCount"
+          },
+          "type": "array"
+        },
+        "n": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "null_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "null_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "numeric_stats": {
+          "$ref": "#/$defs/numericStats"
+        },
+        "role": {
+          "enum": [
+            "all_null",
+            "constant",
+            "boolean",
+            "categorical",
+            "continuous",
+            "identifier",
+            "free_text",
+            "date",
+            "datetime",
+            "other"
+          ],
+          "type": "string"
+        },
+        "string_stats": {
+          "$ref": "#/$defs/stringStats"
+        },
+        "temporal_stats": {
+          "$ref": "#/$defs/temporalStats"
+        },
+        "top_values": {
+          "items": {
+            "$ref": "#/$defs/valueCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "dtype",
+        "role",
+        "n",
+        "null_count",
+        "null_fraction",
+        "distinct",
+        "distinct_ratio"
+      ],
+      "type": "object"
+    },
+    "concentration": {
+      "additionalProperties": false,
+      "properties": {
+        "effective_cardinality": {
+          "type": "number"
+        },
+        "entropy_nats": {
+          "type": "number"
+        },
+        "hhi": {
+          "type": "number"
+        },
+        "top1_share": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top3_share": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "hhi",
+        "entropy_nats",
+        "effective_cardinality"
+      ],
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "measured",
+            "estimated",
+            "inferred"
+          ],
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "metrics": {
+          "description": "Open map: the measurements behind the claim, plus the finding type's bespoke evidence payload where one is defined (docs/findings.md, 'Public structure').",
+          "type": "object"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "validation": {
+          "$ref": "#/$defs/validation"
+        }
+      },
+      "required": [
+        "method",
+        "basis",
+        "scope",
+        "validation",
+        "metrics"
+      ],
+      "type": "object"
+    },
+    "finding": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "missingness",
+            "concentration",
+            "column_roles",
+            "uniqueness",
+            "duplicates",
+            "formats",
+            "dependencies",
+            "conditional_rules",
+            "associations",
+            "gaps",
+            "intervals",
+            "ordering",
+            "changes"
+          ],
+          "type": "string"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "detector_interestingness": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "interestingness": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "interpretation": {
+          "type": "string"
+        },
+        "specification": {
+          "$ref": "#/$defs/specification"
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "type": {
+          "description": "Subtype within the category; always present. Values by category: missingness: missing_values; concentration: value_concentration (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows; formats: format_variation; dependencies: functional | predictive; conditional_rules: if_then; associations: statistical | period_association; gaps: gap | sequence_gap | missing_combinations; intervals: interval_variation | extreme_value; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "type",
+        "subject",
+        "specification",
+        "claim",
+        "evidence",
+        "interestingness"
+      ],
+      "type": "object"
+    },
+    "findingGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "columns",
+        "finding_ids",
+        "description"
+      ],
+      "type": "object"
+    },
+    "method": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "type": "string"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "detector",
+        "algorithm",
+        "provenance"
+      ],
+      "type": "object"
+    },
+    "numericStats": {
+      "additionalProperties": false,
+      "properties": {
+        "integral": {
+          "type": "boolean"
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mean": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "negatives": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "q25": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "q50": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "q75": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "std": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "zeros": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "zeros",
+        "negatives",
+        "integral"
+      ],
+      "type": "object"
+    },
+    "overview": {
+      "additionalProperties": false,
+      "properties": {
+        "dtype_counts": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "headline": {
+          "type": "string"
+        },
+        "n_columns": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "role_counts": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "top_findings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "n_rows",
+        "n_columns",
+        "headline",
+        "dtype_counts",
+        "role_counts",
+        "top_findings"
+      ],
+      "type": "object"
+    },
+    "passInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ran_exact",
+            "ran_sampled",
+            "capped",
+            "skipped",
+            "not_applicable",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "patternCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "example": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "share": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "pattern",
+        "count",
+        "share"
+      ],
+      "type": "object"
+    },
+    "predicate": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            "eq",
+            "ne",
+            "lt",
+            "le",
+            "gt",
+            "ge"
+          ],
+          "type": "string"
+        },
+        "transform": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "column",
+        "operator",
+        "value"
+      ],
+      "type": "object"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "missing_values": {
+          "type": "string"
+        },
+        "population_rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows_evaluated": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sampling": {
+          "enum": [
+            "full",
+            "sample",
+            "unspecified"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "sampling",
+        "missing_values"
+      ],
+      "type": "object"
+    },
+    "selection": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "distinct_statements": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verified_candidates": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidates",
+        "verified_candidates",
+        "distinct_statements",
+        "selected"
+      ],
+      "type": "object"
+    },
+    "specification": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/predicate"
+          },
+          "type": "array"
+        },
+        "definition": {
+          "description": "Open map: the definitions needed to interpret the statement (comparison mode, reference, missing-value handling). Keys are defined per pattern in docs/findings.md.",
+          "type": "object"
+        },
+        "form": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/predicate"
+        }
+      },
+      "type": "object"
+    },
+    "stringStats": {
+      "additionalProperties": false,
+      "properties": {
+        "max_len": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mean_len": {
+          "type": "number"
+        },
+        "min_len": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_empty": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "min_len",
+        "max_len",
+        "mean_len",
+        "n_empty"
+      ],
+      "type": "object"
+    },
+    "subject": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "columns"
+      ],
+      "type": "object"
+    },
+    "temporalStats": {
+      "additionalProperties": false,
+      "properties": {
+        "max": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modal_interval_days": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "span_days": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "validation": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluation_rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "folds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "training_rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used_for_selection": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method",
+        "used_for_selection"
+      ],
+      "type": "object"
+    },
+    "valueCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "share": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "count",
+        "share"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "docs/report-schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
+  "properties": {
+    "columns": {
+      "additionalProperties": {
+        "$ref": "#/$defs/columnCard"
+      },
+      "type": "object"
+    },
+    "coverage": {
+      "additionalProperties": {
+        "$ref": "#/$defs/passInfo"
+      },
+      "type": "object"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/finding"
+      },
+      "type": "array"
+    },
+    "groups": {
+      "items": {
+        "$ref": "#/$defs/findingGroup"
+      },
+      "type": "array"
+    },
+    "overview": {
+      "$ref": "#/$defs/overview"
+    },
+    "schema_version": {
+      "const": "0.2"
+    },
+    "selection": {
+      "$ref": "#/$defs/selection"
+    }
+  },
+  "required": [
+    "schema_version",
+    "overview",
+    "columns",
+    "findings",
+    "groups",
+    "selection",
+    "coverage"
+  ],
+  "title": "onceover profile report (schema_version 0.2)",
+  "type": "object"
+}
