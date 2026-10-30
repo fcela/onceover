@@ -8,13 +8,24 @@
   Dataset page: https://archive.ics.uci.edu/dataset/502/online+retail+ii
 - **Retrieved**: 2026-10-28.
 
-## Bundling status: test-only in this repository (size)
+## Storage: reference, not bundled (decided 2026-10-30)
 
-The prepared CSV is 1,067,371 rows and ~93 MB. That exceeds what this
-project's publishing path (GitHub Git Data API blobs) can carry, so the
-CSV is not committed; `prepare.py` regenerates it locally in about
-20 seconds and the registry entry is marked test-only with this reason.
-Bundling it properly is a Git LFS decision, recorded in the registry.
+The prepared CSV is 1,067,371 rows and ~93 MB, and it is not committed.
+Git LFS was considered and declined; the dataset ships as a pinned
+reference instead:
+
+- The source is the UCI zip above; its sha256,
+  `572e36277c2390fbfde10664750731e0a86f55e33470d91919085f0408e67bfb`,
+  is pinned in `prepare.py`, which verifies the download against it on
+  every run (a fresh download on 2026-10-30 matched, and the prepared
+  CSV came out byte-identical to the 2026-10-28 preparation).
+- The registry entry pins the prepared CSV's sha256
+  (`f58108fb637bfae3e14a8adcd5535808478d0f03bfdd9927659044dd29718c19`)
+  and row count; the corpus runner hash-verifies the prepared file
+  whenever it is present locally, the same check bundled datasets get.
+- `prepare.py` regenerates `data.csv` locally in about 20 seconds
+  (requires polars and fastexcel). Without a local copy the runner
+  reports the dataset as skipped, as for any test-only entry.
 
 ## Preprocessing log (rename/format only; no rows dropped)
 

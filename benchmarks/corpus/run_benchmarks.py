@@ -8,11 +8,12 @@ Usage:
 Design (issue #20):
 - The registry (registry.json) is the single source: per dataset it records
   pack, mode (bundled | test-only), license, source, shape, content hash
-  for bundled data, expectations, and notes.
-- Bundled datasets are hash-verified before profiling. Test-only datasets
-  are profiled only when their data.csv exists locally (produced by the
-  dataset's prepare.py); otherwise they are reported as skipped with the
-  reason from the registry.
+  for bundled data and for reference datasets, expectations, and notes.
+- A dataset whose entry pins a sha256 is hash-verified before profiling:
+  bundled datasets always, reference datasets (test-only with a pin) when
+  their data.csv exists locally. Test-only datasets are profiled only when
+  their data.csv exists locally (produced by the dataset's prepare.py);
+  otherwise they are reported as skipped with the reason from the registry.
 - Expectations are predicates over the report's findings. An expectation
   with "expect": "missed" asserts the predicate currently matches nothing:
   it is a known-miss tripwire, so a future detector that starts matching
@@ -168,7 +169,7 @@ def main() -> int:
             run["datasets"].append(rec)
             print(f"{entry['id']:<28} SKIPPED  {rec['reason'][:80]}")
             continue
-        if entry["mode"] == "bundled":
+        if "sha256" in entry:
             digest = sha256(csv)
             if digest != entry["sha256"]:
                 rec["status"] = "error"
