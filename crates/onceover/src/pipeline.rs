@@ -502,6 +502,26 @@ fn profile_inner(
         findings.extend(sorted);
     }
 
+    // ---------- granularity ----------
+    if check_deadline(&mut coverage, "granularity") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("granularity") {
+        let gran = onceover_deps::granularity_changes(&table);
+        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            "granularity".into(),
+            PassInfo::ran(format!(
+                "{} float columns scanned for granularity changes",
+                table
+                    .cols
+                    .iter()
+                    .filter(|c| matches!(c, onceover_core::TypedCol::F64 { .. }))
+                    .count()
+            )),
+        );
+        findings.extend(gran);
+    }
+
     // ---------- dates ----------
     if check_deadline(&mut coverage, "dates") {
         deadline_hit = true;
