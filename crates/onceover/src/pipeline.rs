@@ -542,6 +542,19 @@ fn profile_inner(
         findings.extend(sent);
     }
 
+    // ---------- digits ----------
+    if check_deadline(&mut coverage, "digits") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("digits") {
+        let (dig, cov) = onceover_deps::digit_fingerprints(&table);
+        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            "digits".into(),
+            PassInfo::ran(cov),
+        );
+        findings.extend(dig);
+    }
+
     // ---------- dates ----------
     if check_deadline(&mut coverage, "dates") {
         deadline_hit = true;

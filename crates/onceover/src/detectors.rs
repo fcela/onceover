@@ -44,6 +44,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("sortedness", vec![Ordering], &[]),
         make("granularity", vec![Formats], &[]),
         make("sentinels", vec![Missingness], &[]),
+        make("digits", vec![Formats], &[]),
         make("dates", vec![Gaps, Intervals], &[]),
         make("expectations", vec![Gaps, Ordering], &[]),
         make("gbm", vec![Dependencies], &[]),
