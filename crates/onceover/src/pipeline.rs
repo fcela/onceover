@@ -522,6 +522,26 @@ fn profile_inner(
         findings.extend(gran);
     }
 
+    // ---------- sentinels ----------
+    if check_deadline(&mut coverage, "sentinels") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("sentinels") {
+        let sent = onceover_deps::sentinel_values(&table);
+        stamp_insert(&mut coverage, &mut last_mark, timing_on, 
+            "sentinels".into(),
+            PassInfo::ran(format!(
+                "{} numeric columns scanned for sentinel values",
+                table
+                    .cols
+                    .iter()
+                    .filter(|c| matches!(c, onceover_core::TypedCol::F64 { .. } | onceover_core::TypedCol::I64 { .. }))
+                    .count()
+            )),
+        );
+        findings.extend(sent);
+    }
+
     // ---------- dates ----------
     if check_deadline(&mut coverage, "dates") {
         deadline_hit = true;

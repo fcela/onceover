@@ -47,6 +47,7 @@ impl Category {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pattern {
     MissingValues,
+    SentinelValues,
     ValueConcentration,
     CategoricalRole,
     IdentifierRole,
@@ -80,7 +81,7 @@ pub enum Pattern {
 impl Pattern {
     pub fn category(self) -> Category {
         match self {
-            Self::MissingValues => Category::Missingness,
+            Self::MissingValues | Self::SentinelValues => Category::Missingness,
             Self::ValueConcentration => Category::Concentration,
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
@@ -115,6 +116,7 @@ impl Pattern {
     pub fn subtype(self) -> &'static str {
         match self {
             Self::MissingValues => "missing_values",
+            Self::SentinelValues => "sentinel_values",
             Self::ValueConcentration => "value_concentration",
             Self::CategoricalRole => "categorical_role",
             Self::IdentifierRole => "identifier_role",

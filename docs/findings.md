@@ -9,7 +9,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 
 | Category | Type or required definition | Meaning |
 |---|---|---|
-| `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows |
+| `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows; also sentinel values standing in for missing data — one implausible value repeated in a narrow row window (the `sentinels` detector; value, count, window, and the column mean with and without it in the evidence) |
 | `concentration` | Distinct counts, dominant shares, concentration measures | Concentration of a value distribution, including constants |
 | `column_roles` | `specification.definition.role` | Suggested interpretation of a column, supported by observations |
 | `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level. At standard and deep budgets the wide form is profiled too and its findings are merged into the same report, tagged `source_form` in their evidence (coverage entry `pivot_profile`) |
