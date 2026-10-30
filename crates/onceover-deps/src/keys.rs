@@ -25,6 +25,23 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
     if let Some(&best) = deps.single_unique.first() {
         let score = key_score(&info[best]);
         out.pk = Some(info[best].name.clone());
+        let mut pk_metrics = BTreeMap::from([
+            ("distinct".into(), json!(info[best].distinct)),
+            ("n".into(), json!(info[best].n)),
+            ("plausibility_score".into(), json!(score)),
+        ]);
+        if matches!(info[best].dtype.as_str(), "float32" | "float64") {
+            // An all-distinct float column is a measurement that
+            // happens to be unique, not a key anyone joins on. The
+            // plausibility score already prices this in the detector
+            // score; the declared demotion is the per-type bar the
+            // ledger applies on top (see the selection contract).
+            pk_metrics.insert(
+                "triviality".into(),
+                json!("continuous_measure_key_candidate"),
+            );
+            pk_metrics.insert("triviality_factor".into(), json!(0.6));
+        }
         out.findings.push(Finding::new(
             Pattern::Uniqueness,
             BTreeMap::from([("column".into(), json!(info[best].name))]),
@@ -39,11 +56,7 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
             // type affinity alone) lands near 0.61 instead of tying
             // with real identifiers at a flat 0.95.
             0.3 + 0.65 * score,
-            BTreeMap::from([
-                ("distinct".into(), json!(info[best].distinct)),
-                ("n".into(), json!(info[best].n)),
-                ("plausibility_score".into(), json!(score)),
-            ]),
+            pk_metrics,
             Some(if score < 0.6 {
                 "all values are distinct, but the column's type and name do not look like an identifier; treat this as a distinct-count check, not a join key".into()
             } else {
@@ -77,10 +90,23 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
             // Same plausibility scaling as the primary-key candidate:
             // an all-identifier composite keeps the historical 0.88.
             0.3 + 0.58 * mean_plausibility,
-            BTreeMap::from([
-                ("n_columns".into(), json!(best.len())),
-                ("n".into(), json!(info[best[0]].n)),
-            ]),
+            {
+                let mut m = BTreeMap::from([
+                    ("n_columns".into(), json!(best.len())),
+                    ("n".into(), json!(info[best[0]].n)),
+                ]);
+                if best
+                    .iter()
+                    .all(|&i| matches!(info[i].dtype.as_str(), "float32" | "float64"))
+                {
+                    m.insert(
+                        "triviality".into(),
+                        json!("continuous_measure_key_candidate"),
+                    );
+                    m.insert("triviality_factor".into(), json!(0.6));
+                }
+                m
+            },
             Some("use the pair as join key".into()),
             Method::new(
                 "keys",

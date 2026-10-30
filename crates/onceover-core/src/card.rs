@@ -315,6 +315,24 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             let top_share = top.1 as f64 / n_str as f64;
             let second_share = second.1 as f64 / n_str as f64;
             if top_share < 0.9 && second_share >= 0.05 {
+                let mut format_metrics = BTreeMap::from([
+                    ("n_values".into(), json!(n_str)),
+                    ("n_patterns".into(), json!(list.len())),
+                ]);
+                // Capitalization-only variation: the two dominant
+                // patterns are the same shape at different letter
+                // case. Cosmetic — it does not block parsing the way
+                // a shape or separator change does — so it declares
+                // the demotion the ledger applies.
+                if top.0 != second.0
+                    && top.0.replace('A', "a") == second.0.replace('A', "a")
+                {
+                    format_metrics.insert(
+                        "triviality".into(),
+                        json!("capitalization_only_format_mix"),
+                    );
+                    format_metrics.insert("triviality_factor".into(), json!(0.6));
+                }
                 findings.push(finding(
                     Pattern::FormatVariation,
                     &[name],
@@ -328,10 +346,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                         second.0
                     ),
                     0.42,
-                    BTreeMap::from([
-                        ("n_values".into(), json!(n_str)),
-                        ("n_patterns".into(), json!(list.len())),
-                    ]),
+                    format_metrics,
                     Some("normalize before parsing/casting"),
                 ));
             }
@@ -451,6 +466,19 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
 
     // identifier-like
     if distinct_ratio >= 0.98 && n_nonnull >= 100 && !counts.capped {
+        let mut role_metrics = BTreeMap::from([
+            ("distinct".into(), json!(distinct)),
+            ("n".into(), json!(n_nonnull)),
+        ]);
+        if matches!(dtype, "float32" | "float64") {
+            // A float column at ~100% distinct is a measurement, not
+            // an identifier; declare the demotion the ledger applies.
+            role_metrics.insert(
+                "triviality".into(),
+                json!("continuous_measure_key_candidate"),
+            );
+            role_metrics.insert("triviality_factor".into(), json!(0.6));
+        }
         findings.push(finding(
             Pattern::IdentifierRole,
             &[name],
@@ -459,10 +487,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                 name, distinct, n_nonnull
             ),
             0.60,
-            BTreeMap::from([
-                ("distinct".into(), json!(distinct)),
-                ("n".into(), json!(n_nonnull)),
-            ]),
+            role_metrics,
             Some("candidate join key; exclude from numeric features"),
         ));
     }

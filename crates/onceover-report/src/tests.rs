@@ -103,6 +103,54 @@ fn fd_implied_by_exact_key_is_demoted_and_tagged() {
 }
 
 #[test]
+fn producer_declared_demotion_is_applied_and_consolidated() {
+    let mut fd = fd_finding(0.85);
+    fd.evidence[0]
+        .metrics
+        .insert("triviality".into(), json!("declared_reason"));
+    fd.evidence[0]
+        .metrics
+        .insert("triviality_factor".into(), json!(0.6));
+    let selected = finalize_ledger(vec![fd]);
+    let f = &selected[0];
+    // Same blend as the untriggered case, multiplied by the declared 0.6.
+    assert!(
+        (f.interestingness - 0.5314).abs() < 0.001,
+        "{}",
+        f.interestingness
+    );
+    assert_eq!(f.metrics()["triviality"], json!("declared_reason"));
+    assert_eq!(f.metrics()["triviality_factor"], json!(0.6));
+}
+
+#[test]
+fn declared_and_key_implied_demotions_multiply() {
+    let mut fd = fd_finding(0.85);
+    fd.evidence[0]
+        .metrics
+        .insert("triviality".into(), json!("declared_reason"));
+    fd.evidence[0]
+        .metrics
+        .insert("triviality_factor".into(), json!(0.6));
+    let selected = finalize_ledger(vec![key_finding(None), fd]);
+    let fd = selected
+        .iter()
+        .find(|f| f.category == Category::Dependencies)
+        .unwrap();
+    // 0.8857 blend x 0.6 declared x 0.6 key-implied.
+    assert!(
+        (fd.interestingness - 0.3189).abs() < 0.001,
+        "{}",
+        fd.interestingness
+    );
+    assert_eq!(
+        fd.metrics()["triviality"],
+        json!("declared_reason+implied_by_unique_key")
+    );
+    assert_eq!(fd.metrics()["triviality_factor"], json!(0.36));
+}
+
+#[test]
 fn dirty_key_does_not_imply_fd() {
     let selected = finalize_ledger(vec![key_finding(Some(3)), fd_finding(0.85)]);
     let fd = selected

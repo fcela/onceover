@@ -354,6 +354,34 @@ pub fn profile_with_detectors(
             );
         }
         findings.extend(p.findings);
+        // A functional dependency from a verified long-format
+        // frame's measure to its attribute (value -> indicator)
+        // holds only because the levels occupy disjoint value
+        // ranges; it restates the layout rather than discovering a
+        // constraint. Declare its demotion here, where the pivot
+        // verification is in scope; the ledger applies it.
+        if !p.reported.is_empty() {
+            for f in &mut findings {
+                let is_encoding_fd = f.category == Category::Dependencies
+                    && f.finding_type.as_deref() == Some("functional")
+                    && f.subject.target.as_deref().is_some_and(|t| {
+                        p.reported.iter().any(|(attr, measure)| {
+                            attr.as_str() == t
+                                && f.subject.inputs.len() == 1
+                                && f.subject.inputs[0] == *measure
+                        })
+                    });
+                if is_encoding_fd {
+                    for e in &mut f.evidence {
+                        e.metrics.insert(
+                            "triviality".into(),
+                            json!("long_format_encoding"),
+                        );
+                        e.metrics.insert("triviality_factor".into(), json!(0.6));
+                    }
+                }
+            }
+        }
     }
 
     // ---------- sortedness ----------
