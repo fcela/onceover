@@ -223,7 +223,10 @@ mod tests {
     }
 
     fn seq(vals: &[i64]) -> Vec<(usize, i128)> {
-        vals.iter().enumerate().map(|(r, v)| (r, *v as i128)).collect()
+        vals.iter()
+            .enumerate()
+            .map(|(r, v)| (r, *v as i128))
+            .collect()
     }
 
     #[test]

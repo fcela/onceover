@@ -719,6 +719,7 @@ fn scan_unit_ordered(
 
 /// Interior equal-count cutpoints (the k/K quantiles, k = 1..K-1),
 /// deduplicated.
+#[cfg(test)]
 fn quantile_cuts(values: &[f64], cells: usize) -> Vec<f64> {
     if values.is_empty() || cells < 2 {
         return Vec::new();
@@ -869,13 +870,15 @@ struct PairData {
     bg: Vec<f64>,
 }
 
+/// Pair projections cached by (target, predictor) column indices.
+type PairCache = std::collections::HashMap<(usize, usize), Option<std::sync::Arc<PairData>>>;
+/// Sorted-order caches keyed by (target, predictor, axis) indices.
+type OrderCache =
+    std::collections::HashMap<(usize, usize, usize), (Vec<u32>, std::sync::Arc<Vec<u32>>)>;
+
 struct DiscCaches {
-    pairs: std::sync::Mutex<
-        std::collections::HashMap<(usize, usize), Option<std::sync::Arc<PairData>>>,
-    >,
-    orders: std::sync::Mutex<
-        std::collections::HashMap<(usize, usize, usize), (Vec<u32>, std::sync::Arc<Vec<u32>>)>,
-    >,
+    pairs: std::sync::Mutex<PairCache>,
+    orders: std::sync::Mutex<OrderCache>,
     order_elems: std::sync::Mutex<usize>,
 }
 
@@ -970,10 +973,10 @@ fn kept_rows(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Vec<usize>
 
 /// Standardize the axis columns over the kept rows; `None` when
 /// an axis is constant there.
-fn standardize(
-    rows: &[usize],
-    axis_cols: &[&[f64]],
-) -> Option<(Vec<Vec<f64>>, Vec<(f64, f64)>)> {
+/// Standardized columns with each column's (mean, sd) alongside.
+type Standardized = (Vec<Vec<f64>>, Vec<(f64, f64)>);
+
+fn standardize(rows: &[usize], axis_cols: &[&[f64]]) -> Option<Standardized> {
     let n = rows.len();
     let mut z: Vec<Vec<f64>> = Vec::with_capacity(axis_cols.len());
     let mut stats: Vec<(f64, f64)> = Vec::with_capacity(axis_cols.len());
@@ -1159,8 +1162,7 @@ fn screen_target(
                 .map(|(v, _)| *v)
                 .collect();
             let m = eval_t.iter().sum::<f64>() / eval_t.len() as f64;
-            let var =
-                eval_t.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / eval_t.len() as f64;
+            let var = eval_t.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / eval_t.len() as f64;
             var > 0.0 && f.cand.gain >= cfg.rel_gain_min * var
         })
         .collect();
@@ -1390,7 +1392,6 @@ mod tests {
         }
         assert!(plain.iter().any(|c| c.z.abs() >= 2.0));
     }
-
 
     fn lcg(seed: &mut u64) -> f64 {
         *seed = seed

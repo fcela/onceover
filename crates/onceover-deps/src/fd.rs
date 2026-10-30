@@ -186,11 +186,8 @@ fn collect_mapping(
             }
         }
     } else {
-        let mut by_size: Vec<(&Vec<u8>, &ValueCounts)> =
-            groups.iter().collect();
-        by_size.sort_by_key(|(_, m)| {
-            std::cmp::Reverse(m.values().map(|(c, _)| *c).sum::<u32>())
-        });
+        let mut by_size: Vec<(&Vec<u8>, &ValueCounts)> = groups.iter().collect();
+        by_size.sort_by_key(|(_, m)| std::cmp::Reverse(m.values().map(|(c, _)| *c).sum::<u32>()));
         for (_, m) in by_size.iter().take(8) {
             let (count, first_row) = m.values().next().unwrap();
             out.push(json!({
@@ -384,7 +381,10 @@ fn fd_finding(
             }
         }
         None => {
-            evidence.insert("mapping_omitted".into(), json!("more than 100000 distinct keys"));
+            evidence.insert(
+                "mapping_omitted".into(),
+                json!("more than 100000 distinct keys"),
+            );
         }
     }
     if violations == 0 {
@@ -570,8 +570,9 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
         let lhs_orig: Vec<usize> = cand.lhs.clone();
         let rhs_orig = cand.rhs;
         if violations == 0 {
-            out.findings
-                .push(fd_finding(table, &lhs_orig, rhs_orig, 0, n_used, sampled, &rows));
+            out.findings.push(fd_finding(
+                table, &lhs_orig, rhs_orig, 0, n_used, sampled, &rows,
+            ));
             exact_fds.push((lhs_orig, rhs_orig));
         } else {
             let g1 = violations as f64 / n_used as f64;

@@ -246,13 +246,12 @@ fn cell_label(enc: &EncodedMatrix, f: usize, code: u8) -> String {
     }
 }
 
-fn render(
-    enc: &EncodedMatrix,
-    hit: &CellHit,
-    cells_examined: usize,
-    z_bar: f64,
-) -> Finding {
-    let names: Vec<String> = hit.feats.iter().map(|&f| enc.feat_names[f].clone()).collect();
+fn render(enc: &EncodedMatrix, hit: &CellHit, cells_examined: usize, z_bar: f64) -> Finding {
+    let names: Vec<String> = hit
+        .feats
+        .iter()
+        .map(|&f| enc.feat_names[f].clone())
+        .collect();
     let cell_desc: Vec<String> = hit
         .feats
         .iter()
@@ -322,7 +321,7 @@ fn inv_normal_cdf(p: f64) -> f64 {
         -3.969683028665376e+01,
         2.209460984245205e+02,
         -2.759285104469687e+02,
-        1.383577518672690e+02,
+        1.38357751867269e+02,
         -3.066479806614716e+01,
         2.506628277459239e+00,
     ];

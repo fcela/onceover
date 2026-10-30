@@ -217,7 +217,10 @@ fn permuted_max(
         return f64::INFINITY;
     }
     let r = reference.len();
-    let total = r + period_sets.iter().map(|(_, rows)| rows.len()).sum::<usize>();
+    let total = r + period_sets
+        .iter()
+        .map(|(_, rows)| rows.len())
+        .sum::<usize>();
     let mut pool: Vec<&Vec<u8>> = Vec::with_capacity(total);
     pool.extend(reference.iter());
     for (_, rows) in period_sets {

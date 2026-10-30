@@ -189,9 +189,7 @@ impl<'a> TypedCol<'a> {
                 .map(|v| format!("{v}"))
                 .unwrap_or_else(|| "null".into()),
             TypedCol::Str { vals } => vals[i].unwrap_or("null").to_string(),
-            TypedCol::StrOwned { vals } => {
-                vals[i].as_deref().unwrap_or("null").to_string()
-            }
+            TypedCol::StrOwned { vals } => vals[i].as_deref().unwrap_or("null").to_string(),
             TypedCol::Bool { vals } => vals[i]
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "null".into()),
