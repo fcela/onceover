@@ -55,6 +55,9 @@ pub enum Pattern {
     Uniqueness,
     Duplicates,
     FormatVariation,
+    Heaping,
+    DigitPreference,
+    BenfordDeviation,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
@@ -87,7 +90,8 @@ impl Pattern {
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
             Self::Duplicates => Category::Duplicates,
-            Self::FormatVariation => Category::Formats,
+            Self::FormatVariation | Self::Heaping | Self::DigitPreference
+            | Self::BenfordDeviation => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency
             | Self::ArithmeticIdentity
@@ -125,6 +129,9 @@ impl Pattern {
             Self::Uniqueness => "uniqueness",
             Self::Duplicates => "duplicate_rows",
             Self::FormatVariation => "format_variation",
+            Self::Heaping => "heaping",
+            Self::DigitPreference => "digit_preference",
+            Self::BenfordDeviation => "benford_deviation",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
