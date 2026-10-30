@@ -211,16 +211,35 @@ pub fn screen_sampled(
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| matches!(table.cols[i], TypedCol::I64 { .. } | TypedCol::F64 { .. }))
         .collect();
+    // Width gate: past 25M pairs even the cheap stage's constant
+    // is too large (7,071+ numeric columns); skip pair screening
+    // and say so in coverage rather than truncating silently.
+    // Checked arithmetically, before the pair list is built.
+    const PAIR_GATE: usize = 25_000_000;
+    let total_pairs = numeric.len() * numeric.len().saturating_sub(1) / 2;
+    if total_pairs > PAIR_GATE {
+        return (
+            Vec::new(),
+            Vec::new(),
+            format!(
+                "0 of {} numeric pairs (width-gated); pair screening skipped: {} pairs exceeds the {}-pair gate for the all-pairs stage",
+                total_pairs, total_pairs, PAIR_GATE
+            ),
+        );
+    }
     let mut pair_list: Vec<(usize, usize)> = Vec::new();
     for (i, &a) in numeric.iter().enumerate() {
         for &b in numeric.iter().skip(i + 1) {
             pair_list.push((a, b));
         }
     }
-    let total_pairs = pair_list.len();
     let capped = total_pairs > pair_cap;
-    // Cheap screening covers the entire pair universe. Detailed rank-based
-    // statistics use a bounded row sample for the strongest candidates.
+    // Cheap screening covers the entire pair universe in two
+    // stages: stage 1 scores every pair on a bounded row
+    // subsample (256 encoded rows; exact when the encoded sample
+    // is smaller), stage 2 rescores the survivors on all encoded
+    // rows and takes the cap. Detailed rank-based statistics use
+    // a bounded row sample for the strongest candidates.
     if capped {
         let (encoded, _) = crate::encode::encode(
             table,
@@ -230,30 +249,85 @@ pub fn screen_sampled(
                 nominal_max_levels: 32,
             },
         );
-        let slots: std::collections::BTreeMap<usize, usize> = encoded
-            .feat_cols
-            .iter()
-            .enumerate()
-            .map(|(f, &c)| (c, f))
-            .collect();
+        // Direct-index slot lookup (column index -> encoded slot).
+        let mut inv = vec![-1i32; table.cols.len()];
+        for (f, &c) in encoded.feat_cols.iter().enumerate() {
+            inv[c] = f as i32;
+        }
         let positions: Vec<u32> = (0..encoded.n as u32).collect();
-        let mut ranked: Vec<_> = pair_list
-            .into_par_iter()
-            .map(|(a, b)| {
-                let score = match (slots.get(&a), slots.get(&b)) {
-                    (Some(&x), Some(&y)) => {
-                        crate::screen::information(&encoded.bins[x], &encoded.bins[y], &positions)
-                    }
-                    _ => 0.0,
-                };
-                ((a, b), score)
-            })
+        // Stage 1: all pairs on a bounded row subsample.
+        let stage1_rows = crate::stride_rows(encoded.n, 256);
+        // Marginal entropies over the stage-1 rows, per encoded
+        // slot; Some only where the column has no missing value
+        // there, which makes the entropy pair-independent.
+        let ents: Vec<Option<f64>> = encoded
+            .bins
+            .iter()
+            .map(|bins| crate::screen::marginal_entropy(bins, &stage1_rows))
             .collect();
-        ranked.sort_by(|a, b| {
-            b.1.total_cmp(&a.1)
-                .then(table.names[a.0 .0].cmp(&table.names[b.0 .0]))
-                .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
-        });
+        let score_pairs = |rows: &[u32],
+                           pairs: Vec<(usize, usize)>,
+                           fast: bool|
+         -> Vec<((usize, usize), f64)> {
+            pairs
+                .into_par_iter()
+                .map(|(a, b)| {
+                    let (x, y) = (inv[a], inv[b]);
+                    let score = if x >= 0 && y >= 0 {
+                        let (x, y) = (x as usize, y as usize);
+                        if fast {
+                            crate::screen::information_fast(
+                                &encoded.bins[x],
+                                &encoded.bins[y],
+                                rows,
+                                (ents[x], ents[y]),
+                            )
+                        } else {
+                            crate::screen::information(&encoded.bins[x], &encoded.bins[y], rows)
+                        }
+                    } else {
+                        0.0
+                    };
+                    ((a, b), score)
+                })
+                .collect()
+        };
+        let by_score = |ranked: &mut Vec<((usize, usize), f64)>| {
+            ranked.sort_by(|a, b| {
+                b.1.total_cmp(&a.1)
+                    .then(table.names[a.0 .0].cmp(&table.names[b.0 .0]))
+                    .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
+            });
+        };
+        let mut ranked = score_pairs(&stage1_rows, pair_list, true);
+        // Keep the survivor set without sorting the whole pair
+        // universe: partition at the survivor boundary score,
+        // then fill boundary ties by column name — the result is
+        // exactly the full sort's top `want` entries.
+        let want = (pair_cap * 4).max(1024).min(ranked.len());
+        if ranked.len() > want {
+            let (_, pivot, _) =
+                ranked.select_nth_unstable_by(want - 1, |a, b| b.1.total_cmp(&a.1));
+            let boundary = pivot.1;
+            let mut top: Vec<((usize, usize), f64)> =
+                ranked.iter().filter(|r| r.1 > boundary).cloned().collect();
+            let need = want - top.len();
+            let mut tied: Vec<((usize, usize), f64)> =
+                ranked.iter().filter(|r| r.1 == boundary).cloned().collect();
+            tied.sort_by(|a, b| {
+                table.names[a.0 .0]
+                    .cmp(&table.names[b.0 .0])
+                    .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
+            });
+            top.extend(tied.into_iter().take(need));
+            ranked = top;
+        }
+        by_score(&mut ranked);
+        let survivors: Vec<(usize, usize)> =
+            ranked.into_iter().map(|(pair, _)| pair).collect();
+        // Stage 2: survivors rescored on all encoded rows.
+        let mut ranked = score_pairs(&positions, survivors, false);
+        by_score(&mut ranked);
         pair_list = ranked
             .into_iter()
             .take(pair_cap)
