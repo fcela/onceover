@@ -57,6 +57,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("discontinuities", vec![Changes], &[]),
         make("drift", vec![Changes], &["gbm"]),
         make("association_rules", vec![ConditionalRules], &[]),
+        make("hotspots", vec![Concentration], &[]),
         make("numeric_dependence", vec![Associations], &[]),
         make("identities", vec![Dependencies], &["numeric_dependence"]),
         make(

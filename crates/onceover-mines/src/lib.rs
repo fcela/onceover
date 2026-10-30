@@ -14,6 +14,7 @@ pub mod dtable;
 pub mod encode;
 pub mod expectations;
 pub mod gbm;
+pub mod hotspots;
 pub mod hstat;
 pub mod ident;
 pub mod periods;
@@ -28,6 +29,7 @@ pub use targets::TargetProfile;
 pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, AssociationConfig};
+pub use hotspots::{hotspots, HotspotConfig};
 pub use breaks::{profile_breaks, BreaksConfig};
 pub use dates::{analyze_temporal, DatesOutcome};
 pub use dep::{screen as screen_dependence, PairDep};
