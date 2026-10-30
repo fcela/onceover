@@ -118,6 +118,53 @@ fn region_conditional_shift_is_reported() {
 }
 
 #[test]
+fn region_conditional_shift_on_integer_year_axis_is_reported() {
+    // The issue #6 panel shape with the year kept as plain integers:
+    // the break scan must engage on the year-like integer axis
+    // without a date cast and without a declared hint.
+    let regions = ["North", "South", "East", "West"];
+    let mut rng = Lcg(17);
+    let (mut entity, mut region, mut year, mut life) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for e in 0..40usize {
+        for yi in 0..15usize {
+            entity.push(format!("E{:02}", e));
+            region.push(regions[e / 10].to_string());
+            year.push(2000i64 + yi as i64);
+            let shift = if regions[e / 10] == "South" && yi >= 8 {
+                4.0
+            } else {
+                0.0
+            };
+            life.push(70.0 + rng.noise(4.0) + shift);
+        }
+    }
+    let df = DataFrame::new_infer_height(vec![
+        Series::new("entity".into(), entity).into_column(),
+        Series::new("region".into(), region).into_column(),
+        Series::new("year".into(), year).into_column(),
+        Series::new("life".into(), life).into_column(),
+    ])
+    .unwrap();
+    let report = profile(&df, &breaks_only());
+    assert!(
+        report.findings.iter().any(|f| {
+            f.finding_type.as_deref() == Some("level_shift")
+                && f.evidence.iter().any(|e| {
+                    e.metrics.get("group_column").and_then(|v| v.as_str()) == Some("region")
+                        && e.metrics.get("group_value").and_then(|v| v.as_str()) == Some("South")
+                        && e.metrics
+                            .get("breakpoint")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| s == "2008")
+                })
+        }),
+        "no South level-shift finding on the integer year axis in {:?}",
+        report.coverage
+    );
+}
+
+#[test]
 fn noise_series_yields_no_break_findings() {
     let mut rng = Lcg(11);
     let n = 400;
@@ -151,7 +198,7 @@ fn missing_date_column_skips_the_pass() {
     let cfg = breaks_only();
     let report = profile(&df, &cfg);
     let cov = report.coverage.get("breaks").expect("breaks coverage");
-    assert!(cov.detail.contains("no date or datetime column"));
+    assert!(cov.detail.contains("no date, datetime, or year-like integer column"));
     assert!(report
         .findings
         .iter()

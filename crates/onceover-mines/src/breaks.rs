@@ -269,6 +269,7 @@ fn time_at(col: &TypedCol, row: usize) -> Option<i64> {
     match col {
         TypedCol::Date { vals } => vals[row].map(i64::from),
         TypedCol::Datetime { vals } => vals[row],
+        TypedCol::I64 { vals } => vals.get(row).flatten(),
         _ => None,
     }
 }
@@ -325,11 +326,22 @@ fn line_sse(ts: &[f64], ys: &[f64], slope: f64, intercept: f64) -> f64 {
         .sum()
 }
 
-fn display_time(is_datetime: bool, t: i64) -> String {
-    if is_datetime {
-        onceover_core::dateutil::iso_datetime(t)
-    } else {
-        onceover_core::dateutil::iso_date(t)
+/// The time axis a series is scanned along. Date keys are days,
+/// datetime keys are microseconds; an integer axis (a declared
+/// `hints.time` column, or a year-like integer column when no date
+/// column exists) uses its raw values as keys and labels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Axis {
+    Date,
+    Datetime,
+    Integer,
+}
+
+fn display_time(axis: Axis, t: i64) -> String {
+    match axis {
+        Axis::Datetime => onceover_core::dateutil::iso_datetime(t),
+        Axis::Date => onceover_core::dateutil::iso_date(t),
+        Axis::Integer => t.to_string(),
     }
 }
 
@@ -365,18 +377,18 @@ fn make_finding(
 fn level_findings(
     column: &str,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     train: &[(i64, f64)],
     holdout: &[(i64, f64)],
     cfg: &BreaksConfig,
 ) -> Vec<Finding> {
-    level_findings_grouped(column, time_column, is_datetime, train, holdout, cfg, None)
+    level_findings_grouped(column, time_column, axis, train, holdout, cfg, None)
 }
 
 fn level_findings_grouped(
     column: &str,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     train: &[(i64, f64)],
     holdout: &[(i64, f64)],
     cfg: &BreaksConfig,
@@ -439,7 +451,7 @@ fn level_findings_grouped(
 
     let mut findings = Vec::with_capacity(breaks.len());
     for j in 0..breaks.len() {
-        let display = display_time(is_datetime, boundaries[j]);
+        let display = display_time(axis, boundaries[j]);
         let claim = if let Some((gcol, gval)) = group {
             format!(
                 "{} level shifts after {} along {} within {} = {}: mean {} before, {} after; the training-selected segmentation reduces holdout squared error by {:.1}%",
@@ -499,7 +511,7 @@ fn level_findings_grouped(
 fn trend_finding(
     column: &str,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     train: &[(i64, f64)],
     holdout: &[(i64, f64)],
     cfg: &BreaksConfig,
@@ -553,7 +565,7 @@ fn trend_finding(
         return None;
     }
 
-    let display = display_time(is_datetime, boundary);
+    let display = display_time(axis, boundary);
     let claim = format!(
         "{} trend changes after {} along {}: slope {} before, {} after; the training-selected two-line model reduces holdout squared error by {:.1}%",
         column,
@@ -594,7 +606,7 @@ fn trend_finding(
 fn variance_finding(
     column: &str,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     train: &[(i64, f64)],
     holdout: &[(i64, f64)],
     cfg: &BreaksConfig,
@@ -655,7 +667,7 @@ fn variance_finding(
         return None;
     }
 
-    let display = display_time(is_datetime, boundary);
+    let display = display_time(axis, boundary);
     let claim = format!(
         "{} variance changes after {} along {}: variance {} before, {} after; the training-selected split reduces holdout squared-deviation error by {:.1}%",
         column,
@@ -697,22 +709,52 @@ pub fn profile_breaks(
     table: &TypedTable,
     excluded: &[usize],
     cfg: &BreaksConfig,
+    time_hint: Option<&str>,
 ) -> (Vec<Finding>, String) {
-    let time_col = table
-        .cols
-        .iter()
-        .position(|c| matches!(c, TypedCol::Date { .. } | TypedCol::Datetime { .. }));
-    let time_col = match time_col {
-        Some(c) => c,
+    // Axis selection, in order: a declared `hints.time` column of a
+    // date, datetime, or integer type; the first date/datetime
+    // column; a year-like integer column (every present value in
+    // 1900..=2100, at least 8 distinct). Panels keyed by integer
+    // years are the common case the third rule exists for.
+    fn axis_of(col: &TypedCol) -> Option<Axis> {
+        match col {
+            TypedCol::Date { .. } => Some(Axis::Date),
+            TypedCol::Datetime { .. } => Some(Axis::Datetime),
+            TypedCol::I64 { .. } => Some(Axis::Integer),
+            _ => None,
+        }
+    }
+    let hinted = time_hint
+        .and_then(|name| table.names.iter().position(|n| n == name))
+        .and_then(|i| axis_of(&table.cols[i]).map(|a| (i, a)));
+    let auto_date = table.cols.iter().enumerate().find_map(|(i, c)| match c {
+        TypedCol::Date { .. } => Some((i, Axis::Date)),
+        TypedCol::Datetime { .. } => Some((i, Axis::Datetime)),
+        _ => None,
+    });
+    let year_like = table.cols.iter().enumerate().find_map(|(i, c)| match c {
+        TypedCol::I64 { vals } => {
+            let present: Vec<i64> = vals.iter().flatten().copied().collect();
+            let mut distinct = present.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            let year_like = !present.is_empty()
+                && distinct.len() >= 8
+                && present.iter().all(|&v| (1900..=2100).contains(&v));
+            year_like.then_some((i, Axis::Integer))
+        }
+        _ => None,
+    });
+    let (time_col, axis) = match hinted.or(auto_date).or(year_like) {
+        Some(pair) => pair,
         None => {
             return (
                 Vec::new(),
-                "no date or datetime column; break scan skipped".to_string(),
+                "no date, datetime, or year-like integer column; break scan skipped"
+                    .to_string(),
             )
         }
     };
-
-    let is_datetime = matches!(table.cols[time_col], TypedCol::Datetime { .. });
     let time_name = table.names[time_col].as_str();
 
     let mut timed: Vec<(i64, u32)> = (0..table.n)
@@ -747,7 +789,7 @@ pub fn profile_breaks(
         findings.extend(excursion_findings(
             name,
             time_name,
-            is_datetime,
+            axis,
             &points,
             cfg,
         ));
@@ -765,19 +807,19 @@ pub fn profile_breaks(
             skipped += 1;
             continue;
         }
-        let level_fs = level_findings(name, time_name, is_datetime, &train, &holdout, cfg);
+        let level_fs = level_findings(name, time_name, axis, &train, &holdout, cfg);
         let had_global_level = !level_fs.is_empty();
         findings.extend(level_fs);
-        if let Some(f) = trend_finding(name, time_name, is_datetime, &train, &holdout, cfg) {
+        if let Some(f) = trend_finding(name, time_name, axis, &train, &holdout, cfg) {
             findings.push(f);
         }
-        if let Some(f) = variance_finding(name, time_name, is_datetime, &train, &holdout, cfg) {
+        if let Some(f) = variance_finding(name, time_name, axis, &train, &holdout, cfg) {
             findings.push(f);
         }
         findings.extend(subgroup_findings(
             table,
             time_name,
-            is_datetime,
+            axis,
             name,
             &points,
             had_global_level,
@@ -809,7 +851,7 @@ fn group_key(col: &TypedCol, row: usize) -> Option<String> {
 fn subgroup_findings(
     table: &TypedTable,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     series_name: &str,
     points: &[(i64, u32, f64)],
     had_global_level: bool,
@@ -860,7 +902,7 @@ fn subgroup_findings(
             findings.extend(level_findings_grouped(
                 series_name,
                 time_column,
-                is_datetime,
+                axis,
                 &gtrain,
                 &ghost,
                 cfg,
@@ -1037,8 +1079,9 @@ fn median_of(vals: &[f64]) -> f64 {
 
 /// Points per week implied by the median interval between
 /// consecutive timestamps, when the cadence divides a week evenly.
-fn weekly_period(points: &[(i64, u32, f64)], is_datetime: bool) -> Option<usize> {
-    if points.len() < 3 {
+fn weekly_period(points: &[(i64, u32, f64)], axis: Axis) -> Option<usize> {
+    if points.len() < 3 || axis == Axis::Integer {
+        // No calendar week exists on an abstract integer axis.
         return None;
     }
     let mut diffs: Vec<f64> = points
@@ -1053,7 +1096,7 @@ fn weekly_period(points: &[(i64, u32, f64)], is_datetime: bool) -> Option<usize>
     }
     diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let step = diffs[diffs.len() / 2];
-    let week = if is_datetime {
+    let week = if axis == Axis::Datetime {
         7.0 * 86_400.0 * 1_000_000.0
     } else {
         7.0
@@ -1076,7 +1119,7 @@ struct Excursion {
 
 fn excursion_scan(
     points: &[(i64, u32, f64)],
-    is_datetime: bool,
+    axis: Axis,
     cfg: &BreaksConfig,
 ) -> Vec<Excursion> {
     let n = points.len();
@@ -1090,11 +1133,11 @@ fn excursion_scan(
     // neighbours are matched by timestamp, not by index: the series
     // may be a stride sample of the full grid or have gaps, and an
     // index offset drifts out of phase as soon as a row is missing.
-    let period = weekly_period(points, is_datetime).filter(|&p| (n as f64) >= 2.5 * p as f64);
+    let period = weekly_period(points, axis).filter(|&p| (n as f64) >= 2.5 * p as f64);
     let residuals: Vec<f64> = match period {
         Some(p) => {
             let times: Vec<i64> = points.iter().map(|pt| pt.0).collect();
-            let week: i64 = if is_datetime {
+            let week: i64 = if axis == Axis::Datetime {
                 7 * 86_400 * 1_000_000
             } else {
                 7
@@ -1207,16 +1250,16 @@ fn excursion_scan(
 fn excursion_findings(
     column: &str,
     time_column: &str,
-    is_datetime: bool,
+    axis: Axis,
     points: &[(i64, u32, f64)],
     cfg: &BreaksConfig,
 ) -> Vec<Finding> {
-    excursion_scan(points, is_datetime, cfg)
+    excursion_scan(points, axis, cfg)
         .iter()
         .map(|ev| {
-            let start = display_time(is_datetime, points[ev.start].0);
-            let end = display_time(is_datetime, points[ev.end].0);
-            let peak_t = display_time(is_datetime, points[ev.peak].0);
+            let start = display_time(axis, points[ev.start].0);
+            let end = display_time(axis, points[ev.end].0);
+            let peak_t = display_time(axis, points[ev.peak].0);
             let peak_v = points[ev.peak].2;
             let direction = if ev.peak_z >= 0.0 { "spike" } else { "dip" };
             let claim = format!(
@@ -1287,7 +1330,7 @@ mod excursion_tests {
             let _ = k;
             *v = 40.0;
         }
-        let ev = excursion_scan(&series(&ys), true, &cfg());
+        let ev = excursion_scan(&series(&ys), Axis::Date, &cfg());
         assert_eq!(ev.len(), 1);
         assert!(ev[0].peak_z < 0.0);
         assert!((300..306).contains(&ev[0].peak));
@@ -1299,7 +1342,7 @@ mod excursion_tests {
         for v in ys.iter_mut().skip(300) {
             *v = 160.0;
         }
-        let ev = excursion_scan(&series(&ys), true, &cfg());
+        let ev = excursion_scan(&series(&ys), Axis::Date, &cfg());
         assert!(
             ev.is_empty(),
             "sustained shift must not flag: {} events",
@@ -1310,7 +1353,7 @@ mod excursion_tests {
     #[test]
     fn constant_series_has_no_events() {
         let ys = vec![7.0; 600];
-        assert!(excursion_scan(&series(&ys), true, &cfg()).is_empty());
+        assert!(excursion_scan(&series(&ys), Axis::Date, &cfg()).is_empty());
     }
 }
 
@@ -1338,7 +1381,7 @@ mod excursion_debug_tests {
             .enumerate()
             .map(|(i, &v)| (i as i64 * 1_800_000_000, i as u32, v))
             .collect();
-        let ev = excursion_scan(&pts, true, &BreaksConfig::default());
+        let ev = excursion_scan(&pts, Axis::Datetime, &BreaksConfig::default());
         assert!(!ev.is_empty(), "expected the planted collapse to be found");
         assert!(ev
             .iter()
