@@ -152,8 +152,7 @@ class ProfileReport:
     def select(self, category=None, type=None, column=None, target=None) -> list:
         """Findings matching every given filter, in report order.
 
-        `category` and `type` match the finding's fields exactly
-        (note `type` is absent for single-kind categories);
+        `category` and `type` match the finding's fields exactly;
         `column` matches membership in the finding's subject columns;
         `target` matches the subject target. With no filters, returns
         all findings. The dicts are the live report entries."""
@@ -170,6 +169,66 @@ class ProfileReport:
                 continue
             out.append(f)
         return out
+
+    def diff(self, other) -> dict:
+        """Compare this report (the base) against `other`.
+
+        Findings are matched by their stable `id`, so the result
+        states what a re-profile of the same table gained, lost, or
+        changed: `added` (in `other`, not in base), `removed` (in
+        base, not in `other`), and `changed` (same id, but the
+        claim text or interestingness moved). Entries carry the
+        finding's id, category, type, subject columns, claim, and
+        interestingness, so the diff is readable without fetching
+        either report; fetch the full finding with `.finding(id)`
+        on the report that holds it. Coverage status changes are
+        reported per pass. Evidence internals are not diffed: a
+        finding whose evidence changed but whose claim and score
+        held counts as unchanged.
+        """
+        def brief(f):
+            subject = f.get("subject") or {}
+            return {
+                "id": f.get("id"),
+                "category": f.get("category"),
+                "type": f.get("type"),
+                "columns": list(subject.get("columns") or []),
+                "claim": f.get("claim"),
+                "interestingness": f.get("interestingness"),
+            }
+
+        base = {f["id"]: f for f in self.findings}
+        new = {f["id"]: f for f in other.findings}
+        changed = []
+        for fid in base.keys() & new.keys():
+            a, b = base[fid], new[fid]
+            sa, sb = a.get("interestingness") or 0.0, b.get("interestingness") or 0.0
+            if a.get("claim") != b.get("claim") or abs(sa - sb) > 1e-9:
+                changed.append(
+                    {
+                        "id": fid,
+                        "category": b.get("category"),
+                        "type": b.get("type"),
+                        "columns": list((b.get("subject") or {}).get("columns") or []),
+                        "claim": [a.get("claim"), b.get("claim")],
+                        "interestingness": [sa, sb],
+                    }
+                )
+        cov_a = (self.data or {}).get("coverage") or {}
+        cov_b = (other.data or {}).get("coverage") or {}
+        coverage_changes = {}
+        for name in sorted(set(cov_a) | set(cov_b)):
+            sa = (cov_a.get(name) or {}).get("status")
+            sb = (cov_b.get(name) or {}).get("status")
+            if sa != sb:
+                coverage_changes[name] = [sa, sb]
+        return {
+            "added": [brief(new[fid]) for fid in new.keys() - base.keys()],
+            "removed": [brief(base[fid]) for fid in base.keys() - new.keys()],
+            "changed": sorted(changed, key=lambda c: -abs(c["interestingness"][1] - c["interestingness"][0])),
+            "unchanged": len(base.keys() & new.keys()) - len(changed),
+            "coverage_changes": coverage_changes,
+        }
 
     def findings_frame(self):
         """The findings ledger as a Polars DataFrame, one row per finding.
@@ -314,7 +373,9 @@ class ProfileReport:
         Header (shape, schema, headline, coverage exceptions,
         finding counts by category), then one line per rollup group
         — findings sharing category, type, form, and target — with
-        the group's highest-interestingness claim. Groups are
+        the group's highest-interestingness claim; groups with more
+        than one member also list up to three exemplar finding ids,
+        expandable with `.finding(id)`. Groups are
         ordered by that claim's interestingness. When the rolled
         lines exceed `budget_chars`, the digest keeps as many as
         fit and ends with a line stating how many groups were
@@ -372,8 +433,11 @@ class ProfileReport:
                 head += f" -> {target}"
             if len(fs_sorted) > 1:
                 head += f" (x{len(fs_sorted)})"
-            rolled.append((fs_sorted[0].get("interestingness") or 0,
-                           head + ": " + fs_sorted[0]["claim"]))
+            line = head + ": " + fs_sorted[0]["claim"]
+            if len(fs_sorted) > 1:
+                exemplars = ", ".join(f["id"] for f in fs_sorted[:3])
+                line += f" [exemplars: {exemplars}]"
+            rolled.append((fs_sorted[0].get("interestingness") or 0, line))
         rolled.sort(key=lambda kv: -kv[0])
         body_lines = [line for _, line in rolled]
 

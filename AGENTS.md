@@ -70,6 +70,9 @@ report.to_json(max_chars=12_000)             # budgeted view; a
         # `budget` record in the output states what was cut
 report.findings_frame()                      # Polars DataFrame
                                              # index of findings
+report.diff(other)                           # findings added /
+        # removed / changed between two profiles of a table,
+        # matched by stable id, plus coverage status changes
 ```
 
 `findings_frame()` is an index (one row per finding), not the
