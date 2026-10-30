@@ -171,6 +171,43 @@ fn deterministic_report_and_statement_ids() {
 }
 
 #[test]
+fn timing_is_opt_in_and_attributes_passes() {
+    let df = planted_table(1000);
+    let plain = profile(&df, &ProfileConfig::default());
+    assert!(plain.coverage.values().all(|c| c.elapsed_ms.is_none()));
+    let timed = profile(
+        &df,
+        &ProfileConfig {
+            timing: true,
+            ..Default::default()
+        },
+    );
+    // Attribution present on the passes that ran, all non-negative,
+    // and the findings are the same as the untimed run's.
+    let ran: Vec<_> = timed
+        .coverage
+        .values()
+        .filter(|c| c.status.starts_with("ran"))
+        .collect();
+    assert!(!ran.is_empty());
+    assert!(ran
+        .iter()
+        .all(|c| c.elapsed_ms.map(|ms| ms >= 0.0) == Some(true)));
+    assert_eq!(
+        plain
+            .findings
+            .iter()
+            .map(|f| f.id.clone())
+            .collect::<Vec<_>>(),
+        timed
+            .findings
+            .iter()
+            .map(|f| f.id.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn quick_tier_and_rendering_preserve_the_contract() {
     let report = profile(
         &planted_table(800),
