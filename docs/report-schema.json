@@ -421,6 +421,10 @@
             "error"
           ],
           "type": "string"
+        },
+        "elapsed_ms": {
+          "type": "number",
+          "minimum": 0
         }
       },
       "required": [

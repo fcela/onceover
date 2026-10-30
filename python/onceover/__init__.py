@@ -18,7 +18,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             sample_rows: int | None = None, max_predictors: int | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
             max_findings: int = 100, max_rules: int = 20,
-            hints: dict | None = None, target: str | None = None):
+            hints: dict | None = None, target: str | None = None,
+            timing: bool = False):
     """Give a Polars DataFrame a once-over.
 
     Parameters
@@ -66,6 +67,13 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         When ``detectors`` is given explicitly, ``target_shapes``
         runs only if listed. An unknown or non-numeric target is
         reported in the pass coverage, not raised.
+    timing : bool, optional
+        Record per-pass wall time as ``elapsed_ms`` in each coverage
+        entry: the interval between the previous entry being recorded
+        and this one (passes run sequentially; the first entry also
+        carries extraction and the column cards). Opt-in because
+        timing makes the coverage section nondeterministic; findings
+        are identical either way.
 
     Returns
     -------
@@ -76,7 +84,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
                                          max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
                                          max_findings=max_findings, max_rules=max_rules,
                                          hints=_json.dumps(hints) if hints is not None else None,
-                                         target=target))
+                                         target=target, timing=timing))
 
 
 def available_detectors():

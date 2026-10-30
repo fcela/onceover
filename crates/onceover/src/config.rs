@@ -36,7 +36,8 @@ impl Budget {
 }
 
 /// Full profiling configuration. Deterministic by default: the wall-clock
-/// deadline is the single opt-in source of nondeterminism (P5, P8).
+/// deadline and per-pass timing are the opt-in sources of
+/// nondeterminism (P5, P8).
 #[derive(Clone, Debug)]
 pub struct ProfileConfig {
     pub budget: Budget,
@@ -59,6 +60,11 @@ pub struct ProfileConfig {
     /// exactly as without it. An unknown or non-numeric target is
     /// reported in the pass coverage, not raised.
     pub target: Option<String>,
+    /// Record per-pass wall time in the coverage entries
+    /// (`elapsed_ms`). Opt-in: timing makes the coverage section
+    /// nondeterministic, so default reports stay byte-reproducible.
+    /// Findings are identical either way.
+    pub timing: bool,
 }
 
 impl Default for ProfileConfig {
@@ -73,6 +79,7 @@ impl Default for ProfileConfig {
             max_pairs: None,
             hints: None,
             target: None,
+            timing: false,
         }
     }
 }

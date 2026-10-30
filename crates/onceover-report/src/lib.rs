@@ -138,6 +138,16 @@ pub struct PassInfo {
     /// ran_exact | ran_sampled | capped | skipped | not_applicable
     pub status: String,
     pub detail: String,
+    /// Wall time attributed to this pass, in milliseconds: the
+    /// interval between the previous coverage entry being recorded
+    /// and this one (the pipeline runs passes sequentially and
+    /// records each pass's entry when it finishes). The first
+    /// recorded entry also carries table extraction and the column
+    /// cards. Recorded only on timing-enabled runs (the pipeline's
+    /// opt-in `timing` config); absent otherwise, and on deadline
+    /// skips recorded by the deadline check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<f64>,
 }
 
 impl PassInfo {
@@ -145,30 +155,35 @@ impl PassInfo {
         PassInfo {
             status: "ran_exact".into(),
             detail: detail.into(),
+            elapsed_ms: None,
         }
     }
     pub fn sampled(detail: impl Into<String>) -> Self {
         PassInfo {
             status: "ran_sampled".into(),
             detail: detail.into(),
+            elapsed_ms: None,
         }
     }
     pub fn capped(detail: impl Into<String>) -> Self {
         PassInfo {
             status: "capped".into(),
             detail: detail.into(),
+            elapsed_ms: None,
         }
     }
     pub fn skipped(detail: impl Into<String>) -> Self {
         PassInfo {
             status: "skipped".into(),
             detail: detail.into(),
+            elapsed_ms: None,
         }
     }
     pub fn na(detail: impl Into<String>) -> Self {
         PassInfo {
             status: "not_applicable".into(),
             detail: detail.into(),
+            elapsed_ms: None,
         }
     }
 }
