@@ -32,6 +32,15 @@ pub fn profile_with_detectors(
     cfg: &ProfileConfig,
     extensions: &[&dyn crate::Detector],
 ) -> ProfileReport {
+    profile_inner(df, cfg, extensions, 0)
+}
+
+fn profile_inner(
+    df: &DataFrame,
+    cfg: &ProfileConfig,
+    extensions: &[&dyn crate::Detector],
+    depth: u8,
+) -> ProfileReport {
     let mut requested = cfg.detectors.clone();
     if let Some(ids) = &mut requested {
         loop {
@@ -326,6 +335,7 @@ pub fn profile_with_detectors(
     }
 
     // ---------- pivot (long format) ----------
+    let mut pivot_spec: Option<onceover_deps::PivotSpec> = None;
     if enabled("pivot") {
         let p = onceover_deps::analyze_pivot(
             &table,
@@ -353,6 +363,7 @@ pub fn profile_with_detectors(
                 )),
             );
         }
+        pivot_spec = p.specs.first().cloned();
         findings.extend(p.findings);
         // A functional dependency from a verified long-format
         // frame's measure to its attribute (value -> indicator)
@@ -362,22 +373,114 @@ pub fn profile_with_detectors(
         // verification is in scope; the ledger applies it.
         if !p.reported.is_empty() {
             for f in &mut findings {
+                // Three statements restate the layout rather than the
+                // data: the measure -> attribute functional dependency
+                // (disjoint level ranges), the attribute predicted
+                // from the pooled measure, and the pooled measure
+                // predicted with the attribute among its inputs (one
+                // model across unrelated quantities).
                 let is_encoding_fd = f.category == Category::Dependencies
-                    && f.finding_type.as_deref() == Some("functional")
                     && f.subject.target.as_deref().is_some_and(|t| {
                         p.reported.iter().any(|(attr, measure)| {
-                            attr.as_str() == t
-                                && f.subject.inputs.len() == 1
-                                && f.subject.inputs[0] == *measure
+                            let inputs = &f.subject.inputs;
+                            match f.finding_type.as_deref() {
+                                Some("functional") => {
+                                    attr.as_str() == t && inputs.len() == 1 && inputs[0] == *measure
+                                }
+                                Some("predictive") => {
+                                    (attr.as_str() == t
+                                        && inputs.len() == 1
+                                        && inputs[0] == *measure)
+                                        || (measure.as_str() == t
+                                            && inputs.iter().any(|i| i == attr))
+                                }
+                                _ => false,
+                            }
                         })
                     });
                 if is_encoding_fd {
                     for e in &mut f.evidence {
-                        e.metrics.insert(
-                            "triviality".into(),
-                            json!("long_format_encoding"),
-                        );
+                        e.metrics
+                            .insert("triviality".into(), json!("long_format_encoding"));
                         e.metrics.insert("triviality_factor".into(), json!(0.6));
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------- wide-form profile of a verified long frame ----------
+    // The pivot finding says the frame is long; the relationships
+    // between the attribute's levels only exist in the wide form, so
+    // profile that too and merge its findings (tagged `source_form`
+    // in their evidence). One level of recursion: the wide form is
+    // never itself re-pivoted.
+    if depth == 0 {
+        match &pivot_spec {
+            None => {}
+            Some(spec) if cfg.budget == Budget::Quick => {
+                coverage.insert(
+                    "pivot_profile".into(),
+                    PassInfo::na("quick budget: the pivoted wide form is not profiled".to_string()),
+                );
+            }
+            Some(spec) => {
+                let wide_cols = spec.index.len() + spec.levels.len();
+                if wide_cols > 64 || spec.n_index < 8 {
+                    coverage.insert(
+                        "pivot_profile".into(),
+                        PassInfo::na(format!(
+                            "pivoted form would be {} rows x {} columns; outside the wide-profile limits (at least 8 index tuples, at most 64 columns)",
+                            spec.n_index, wide_cols
+                        )),
+                    );
+                } else if cfg
+                    .deadline
+                    .is_some_and(|d| start.elapsed() > d.mul_f64(0.6))
+                {
+                    coverage.insert(
+                        "pivot_profile".into(),
+                        PassInfo::skipped(
+                            "most of the deadline was spent on the long form; the wide form was not profiled"
+                                .to_string(),
+                        ),
+                    );
+                } else {
+                    match build_wide_frame(df, &table, spec) {
+                        Some(wide) => {
+                            let mut cfg2 = cfg.clone();
+                            cfg2.target = None;
+                            let wide_report = profile_inner(&wide, &cfg2, extensions, depth + 1);
+                            let n_wide = wide_report.findings.len();
+                            for mut f in wide_report.findings {
+                                for e in &mut f.evidence {
+                                    e.metrics
+                                        .insert("source_form".into(), json!("pivoted wide form"));
+                                }
+                                findings.push(f);
+                            }
+                            coverage.insert(
+                                "pivot_profile".into(),
+                                PassInfo::ran(format!(
+                                    "profiled the pivoted wide form ({} index columns, {} levels of {} -> {} rows x {} columns); {} findings included, tagged source_form in their evidence",
+                                    spec.index.len(),
+                                    spec.levels.len(),
+                                    spec.attribute,
+                                    spec.n_index,
+                                    wide_cols,
+                                    n_wide
+                                )),
+                            );
+                        }
+                        None => {
+                            coverage.insert(
+                                "pivot_profile".into(),
+                                PassInfo::na(
+                                    "the pivoted wide form could not be materialized (a level name collides with an index column, or the measure is not numeric)"
+                                        .to_string(),
+                                ),
+                            );
+                        }
                     }
                 }
             }
@@ -1045,6 +1148,82 @@ fn keys_pk(findings: &[Finding]) -> Option<String> {
 }
 
 /// Duplicate value examples for dirty-key findings (dtype-aware display).
+/// Materialize the pivoted wide form of a verified long-format
+/// frame: one row per index tuple (first-appearance order), the
+/// index columns with their original dtypes (a take of their
+/// first-occurrence rows), and one f64 column per attribute level
+/// holding the measure. None when a level name collides with an
+/// index column or the measure is not numeric.
+fn build_wide_frame(
+    df: &DataFrame,
+    table: &TypedTable,
+    spec: &onceover_deps::PivotSpec,
+) -> Option<DataFrame> {
+    use polars::prelude::*;
+    use std::collections::HashMap;
+
+    if spec.levels.iter().any(|l| spec.index.contains(l)) {
+        return None;
+    }
+    let attr_idx = table.names.iter().position(|n| n == &spec.attribute)?;
+    let measure_idx = table.names.iter().position(|n| n == &spec.measure)?;
+    let index_idx: Option<Vec<usize>> = spec
+        .index
+        .iter()
+        .map(|n| table.names.iter().position(|x| x == n))
+        .collect();
+    let index_idx = index_idx?;
+    let measure: Vec<Option<f64>> = match &table.cols[measure_idx] {
+        onceover_core::TypedCol::F64 { vals } => vals.iter().map(|v| v.copied()).collect(),
+        onceover_core::TypedCol::I64 { vals } => {
+            vals.iter().map(|v| v.map(|x| *x as f64)).collect()
+        }
+        _ => return None,
+    };
+    let level_pos: HashMap<&str, usize> = spec
+        .levels
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (l.as_str(), i))
+        .collect();
+    let mut row_of: HashMap<String, usize> = HashMap::new();
+    let mut first_rows: Vec<u32> = Vec::new();
+    let mut cells: Vec<Vec<Option<f64>>> = Vec::new();
+    for (r, m) in measure.iter().enumerate() {
+        let key = index_idx
+            .iter()
+            .map(|&i| table.cols[i].render_cell(r))
+            .collect::<Vec<_>>()
+            .join("\u{1}");
+        let w = *row_of.entry(key).or_insert_with(|| {
+            first_rows.push(r as u32);
+            cells.push(vec![None; spec.levels.len()]);
+            cells.len() - 1
+        });
+        let level = table.cols[attr_idx].render_cell(r);
+        if let Some(&lp) = level_pos.get(level.as_str()) {
+            cells[w][lp] = *m;
+        }
+    }
+    let take_idx = IdxCa::from_vec("".into(), first_rows);
+    let mut columns: Vec<Column> = Vec::new();
+    for name in &spec.index {
+        let s = df
+            .columns()
+            .iter()
+            .find(|c| c.name() == name.as_str())?
+            .as_materialized_series()
+            .take(&take_idx)
+            .ok()?;
+        columns.push(s.into_column());
+    }
+    for (li, level) in spec.levels.iter().enumerate() {
+        let col: Vec<Option<f64>> = cells.iter().map(|row| row[li]).collect();
+        columns.push(Series::new(level.into(), col).into_column());
+    }
+    DataFrame::new_infer_height(columns).ok()
+}
+
 fn dup_examples(table: &TypedTable, i: usize, c: &CardOut) -> Vec<String> {
     c.counts
         .top

@@ -12,7 +12,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows |
 | `concentration` | Distinct counts, dominant shares, concentration measures | Concentration of a value distribution, including constants |
 | `column_roles` | `specification.definition.role` | Suggested interpretation of a column, supported by observations |
-| `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level |
+| `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level. At standard and deep budgets the wide form is profiled too and its findings are merged into the same report, tagged `source_form` in their evidence (coverage entry `pivot_profile`) |
 | `uniqueness` | Compared columns and equality criterion | Single-column or composite uniqueness, with any recorded repetitions |
 | `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison |
 | `formats` | Format counts and examples | Inconsistent representations within a field |
@@ -33,6 +33,21 @@ The mathematical form is separate from dependency type. Current forms include
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
+
+When the pivot pass verifies a long-format frame, the relationships
+between the attribute's levels exist only in the pivoted wide form, so
+at the standard and deep budgets the pipeline profiles that form as
+well (one row per index tuple, one column per level) and merges its
+findings into the same report. A wide-form finding is recognizable by
+the `source_form: "pivoted wide form"` metric in its evidence; its
+columns are the wide form's columns (the index columns and the level
+names), which need not exist in the profiled frame. The coverage entry
+`pivot_profile` states the wide form's shape and how many findings it
+contributed, or why it was not profiled: the quick budget skips it,
+wide forms over 64 columns or under 8 index tuples are out of bounds,
+and a mostly-spent deadline skips it. The wide form is profiled with
+the same configuration minus any designated target, and it is never
+itself re-pivoted.
 
 A predictive statement with form `interaction_h` names two input columns and
 one target. It states that the pair's joint effect on the target, under the
@@ -123,7 +138,10 @@ substantive ones:
   changes that block parsing are not demoted), and
   `long_format_encoding` (a functional dependency from a verified
   long-format frame's measure column to its attribute column,
-  which holds because the levels occupy disjoint value ranges).
+  which holds because the levels occupy disjoint value ranges;
+  the same reason covers the layout's predictive restatements —
+  the attribute predicted from the pooled measure, or the pooled
+  measure predicted with the attribute among its inputs).
 
 Demotion is the only triviality action: findings are never dropped
 for being trivial, only ranked lower, with the reason recorded in
