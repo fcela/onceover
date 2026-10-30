@@ -95,3 +95,34 @@ def test_near_unique_measurement_column_is_scanned():
     assert len(hits) == 1
     metrics = hits[0]["evidence"][0]["metrics"]
     assert metrics["extreme_values"] == [400.0]
+
+
+def categorical_outliers(report):
+    return [f for f in report.findings if f.get("type") == "categorical_outlier"]
+
+
+def test_categorical_breaker_isolated():
+    # Within grp = A the outcome is "ok" except row 7; grp = B
+    # varies ordinarily (issue #68).
+    grp = ["A"] * 150 + ["B"] * 150
+    out = ["ok"] * 150 + ["ok" if i % 5 else "bad" for i in range(150)]
+    out[7] = "bad"
+    df = pl.DataFrame({"grp": grp, "outcome": out})
+    hits = categorical_outliers(onceover.profile(df))
+    assert len(hits) == 1
+    hit = hits[0]
+    assert hit["category"] == "intervals"
+    metrics = hit["evidence"][0]["metrics"]
+    assert metrics["outlier_rows"] == [7]
+    assert metrics["outlier_values"] == ["bad"]
+    assert metrics["dominant_level"] == "ok"
+    assert metrics["dominant_share"] >= 0.99
+    assert metrics["n"] == 150
+
+
+def test_categorical_quiet_on_ordinary_variation():
+    grp = ["A" if i % 2 == 0 else "B" for i in range(300)]
+    out = ["bad" if i % 5 == 0 else "ok" for i in range(300)]
+    df = pl.DataFrame({"grp": grp, "outcome": out})
+    hits = categorical_outliers(onceover.profile(df))
+    assert hits == []

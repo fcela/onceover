@@ -77,6 +77,7 @@ pub enum Pattern {
     VarianceChange,
     LongFormat,
     ExtremeValue,
+    CategoricalOutlier,
     TransientExcursion,
     StepDiscontinuity,
     DuplicateEncoding,
@@ -107,7 +108,7 @@ impl Pattern {
                 Category::Changes
             }
             Self::LongFormat => Category::ColumnRoles,
-            Self::ExtremeValue => Category::Intervals,
+            Self::ExtremeValue | Self::CategoricalOutlier => Category::Intervals,
             Self::TransientExcursion => Category::Changes,
             Self::StepDiscontinuity => Category::Changes,
             Self::DuplicateEncoding => Category::ColumnRoles,
@@ -150,6 +151,7 @@ impl Pattern {
             Self::VarianceChange => "variance_change",
             Self::LongFormat => "long_format",
             Self::ExtremeValue => "extreme_value",
+            Self::CategoricalOutlier => "categorical_outlier",
             Self::TransientExcursion => "transient_excursion",
             Self::StepDiscontinuity => "step_discontinuity",
             Self::DistributionShift => "distribution_shift",

@@ -146,16 +146,39 @@
      "note": "Row 78 of the bundled file: leafspots_halo = absent with leafspot_size = gt-1/8 -- the combination GritBot flagged (large spots almost always come with halos)."
     },
     {
+     "kind": "finding",
+     "category": "intervals",
+     "type": "categorical_outlier",
+     "columns_all": [
+      "seed",
+      "mold_growth",
+      "seed_discolor"
+     ],
+     "expect": "found",
+     "note": "GritBot case 558: seed = abnorm breaking a near-universal seed = norm context (mold_growth = absent and seed_discolor = absent, 474 rows, 99.6% norm; rows 250 and 557 flagged)."
+    },
+    {
+     "kind": "finding",
+     "category": "intervals",
+     "type": "categorical_outlier",
+     "columns_all": [
+      "stem",
+      "stem_cankers"
+     ],
+     "expect": "found",
+     "note": "GritBot case 614: stem = norm breaking the stem_cankers = above-sec-nde context (191 rows, 99.5% abnorm; row 613 flagged)."
+    },
+    {
      "kind": "documented_case",
      "ref": "GritBot case 558",
-     "status": "missed",
-     "note": "leaves = normal with leaf_mild = present (upper leaf mildew accompanies abnormal leaves in its subset). Case-level isolation is not a current finding type."
+     "status": "found",
+     "note": "Row 558 of the bundled file (index 557): seed = abnorm. GritBot's published context is fruiting_bodies = absent, mold_growth = absent, seed_discolor = absent (405 cases, 99.8% seed = norm). The categorical surprises pass (issue #68) isolates the row through the pair context mold_growth = absent and seed_discolor = absent. (The earlier note's leaves/leaf_mild description was a garbled paraphrase and has been corrected against the published case list.)"
     },
     {
      "kind": "documented_case",
      "ref": "GritBot case 614",
-     "status": "missed",
-     "note": "stem = normal with canker_lesion = below_soil in an all-abnormal-stem subset. Same limitation as case 558."
+     "status": "found",
+     "note": "Row 614 of the bundled file (index 613): stem = norm within stem_cankers = above-sec-nde, where stem is abnorm in 99.5% of 191 rows -- GritBot's published context exactly. Isolated by the categorical surprises pass (issue #68). (The earlier note's canker_lesion description was a garbled paraphrase and has been corrected against the published case list.)"
     }
    ],
    "notes": [

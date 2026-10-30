@@ -24,6 +24,7 @@ Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
+| `intervals` | Type `categorical_outlier`; the context (one to three condition levels), the dominant level and its share, and the pattern-breaking rows with their values in the evidence | A categorical value contradicting its context's near-universal pattern, from the surprises detector: within the context one level of the column holds at least 99% of at least 30 rows, and at most 3 rows break it. Contexts are conjunctions of levels from the conditioning columns whose single levels come closest to the bar; findings are ranked by binomial significance against the dominant level's global rate, at most 3 per column, and a row is reported once per column |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence; also the backfill shape — a column ordered except for a late block whose values return to earlier territory (at most 3 descents, no post-seam value above the pre-seam peak), reported with the seam row and tail length in the evidence |
 | `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; or cluster differences from the opt-in views pass; inspect the statement definition |
 
@@ -475,6 +476,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `date_gap` | `gaps`, with a temporal domain and reference |
 | `irregular_interval` | `intervals` |
 | `extreme_value` | `intervals/extreme_value` |
+| `categorical_outlier` | `intervals/categorical_outlier` |
 | `sorted_by_index` | `ordering` |
 | `residual_shift` | `changes/residual_level` |
 | `level_shift` | `changes/level_shift` |
