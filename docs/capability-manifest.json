@@ -56,6 +56,13 @@
    "requires": []
   },
   {
+   "id": "granularity",
+   "categories": [
+    "formats"
+   ],
+   "requires": []
+  },
+  {
    "id": "dates",
    "categories": [
     "gaps",
