@@ -108,7 +108,6 @@ substantive ones:
   identifier scores 0.95; an all-distinct float measurement scores
   about 0.61, and its interpretation says to treat it as a
   distinct-count check rather than a join key.
-
 Demotion is the only triviality action: findings are never dropped
 for being trivial, only ranked lower, with the reason recorded in
 their evidence.
@@ -142,6 +141,39 @@ results were used during selection. These dimensions replace `confidence`.
 
 An exact comparison on sampled rows is not a full-population guarantee. Inferred
 roles remain inferences even when the supporting counts cover the full dataset.
+
+Some finding types carry a bespoke evidence payload in `metrics`: a table
+whose columns are specific to that type, so the claim can be inspected
+without a follow-up query. Payloads are capped per type; the scalar
+metrics always carry the full counts the payload samples. In Markdown
+each payload renders as a table under its finding. The payloads defined
+so far:
+
+- functional dependencies (`functional_dependency`,
+  `approximate_fd`): `mapping` — rows of `{key, value, rows}`. For an
+  approximate dependency these are the keys mapping to more than one
+  value, worst ambiguity first (up to 8 keys, 3 values per key), with
+  `mapping_ambiguous_keys` and `mapping_keys` giving the totals; for
+  an exact dependency, the 8 largest keys with their single value.
+  Above 100,000 distinct keys no mapping is collected and
+  `mapping_omitted` says why.
+- level shifts (`level_shift`): `segments` — the full training
+  segmentation the finding is drawn from, rows of `{segment, from,
+  to, rows, mean}`.
+- trend changes (`trend_change`): `segments` — the two fitted
+  segments, rows of `{segment, from, to, rows, slope}`.
+- variance changes (`variance_change`): `segments` — the two
+  segments of the split, rows of `{segment, from, to, rows, mean,
+  variance}`.
+- duplicate rows (`duplicates`): `duplicate_groups` — the largest
+  duplicate groups (up to 10), rows of `{values, rows, first_row}`,
+  where `values` renders the group's first row over the compared
+  columns (first 8, joined with ` | `).
+- distribution shift (`distribution_shift`): `periods` — one row per
+  period with its range, row counts, and drift scores.
+
+New detectors define their payload shape with the finding type; there
+is no shared envelope beyond the metrics map itself.
 
 ## Report outputs
 

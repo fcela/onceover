@@ -175,6 +175,36 @@ impl<'a> TypedCol<'a> {
         }
     }
 
+    /// Render one cell as a display string for evidence payloads
+    /// (example values in findings). Nulls and non-comparable columns
+    /// render as "null".
+    pub fn render_cell(&self, i: usize) -> String {
+        match self {
+            TypedCol::I64 { vals } => vals
+                .at(i)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::F64 { vals } => vals
+                .at(i)
+                .map(|v| format!("{v}"))
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::Str { vals } => vals[i].unwrap_or("null").to_string(),
+            TypedCol::StrOwned { vals } => {
+                vals[i].as_deref().unwrap_or("null").to_string()
+            }
+            TypedCol::Bool { vals } => vals[i]
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::Date { vals } => vals[i]
+                .map(|v| crate::dateutil::iso_date(v as i64))
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::Datetime { vals } => vals[i]
+                .map(crate::dateutil::iso_datetime)
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::Null { .. } | TypedCol::Other { .. } => "null".into(),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
