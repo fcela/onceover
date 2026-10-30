@@ -134,7 +134,8 @@ their evidence.
 Each finding contains:
 
 - `id`: derived from the canonical statement, independent of rank and detector ID;
-- `category` and optional `type`;
+- `category` and `type` (every finding carries both; the type is part
+  of the canonical statement the `id` is derived from);
 - `subject`: `columns`, optional `inputs`, `target`, and comparison `unit`;
 - `specification`: form, conditions, outcome, and the definitions needed to
   interpret a reference or comparison;
@@ -198,7 +199,19 @@ The same ledger is available in four forms:
 
 - **JSON** (`report.data`, `report.to_json()`): the complete record —
   findings with every evidence record and metric, column cards, groups,
-  selection counts, and coverage.
+  selection counts, and coverage. The contract is
+  `docs/report-schema.json`, validated against live reports in the
+  test suite. Findings are addressable without rendering the whole
+  record: `report.finding(id)` returns one finding (or None), and
+  `report.select(category=, type=, column=, target=)` returns the
+  findings matching every given filter, in report order.
+  `report.to_json(max_chars=N)` renders a size-budgeted view that
+  degrades in a stated order — findings past the budget collapse to
+  `finding_index` entries (id, category, type, columns,
+  interestingness, claim), then column cards collapse to
+  `column_names`, then coverage details truncate and finally drop
+  to status only — and carries a `budget` record stating what was
+  cut. The view never exceeds `max_chars`.
 - **Markdown** (`report.to_markdown()`): the headline and overview,
   then each finding's claim followed directly by its evidence. An
   evidence block names the detector and algorithm, the validation

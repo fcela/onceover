@@ -17,7 +17,6 @@ __pycache__/
 .vscode/
 
 # Local agent instructions
-/AGENTS.md
 /doc/WRITING_GUIDE.md
 
 # built in-tree by maturin develop

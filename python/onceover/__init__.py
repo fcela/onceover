@@ -89,10 +89,13 @@ class ProfileReport:
     """Profiling results and evidence.
 
     Access the full versioned JSON via `.data` (dict), the ranked findings
-    via `.findings`, the same findings as a Polars DataFrame via
-    `.findings_frame()`, a context-budgeted digest via `.to_digest(chars)`,
-    the one-glance summary via `.overview`,
-    per-column cards via `.columns`, and pass coverage via `.coverage`.
+    via `.findings`, filtered findings via `.select(category=, type=,
+    column=, target=)` and one finding by id via `.finding(id)`, the same
+    findings as a Polars DataFrame via `.findings_frame()`, a
+    context-budgeted digest via `.to_digest(chars)`, a size-budgeted
+    JSON view via `.to_json(max_chars=...)`, the one-glance summary via
+    `.overview`, per-column cards via `.columns`, and pass coverage
+    via `.coverage`. The report's contract is `docs/report-schema.json`.
     """
 
     def __init__(self, native: _NativeProfileReport):
@@ -136,6 +139,37 @@ class ProfileReport:
         """Connected findings; group membership does not imply redundancy."""
         self._ensure()
         return self._data["groups"]
+
+    def finding(self, finding_id: str):
+        """One finding by its stable id, or None if the report has no
+        finding with that id. The returned dict is the live report
+        entry (the same object `.findings` carries)."""
+        for f in self.findings:
+            if f.get("id") == finding_id:
+                return f
+        return None
+
+    def select(self, category=None, type=None, column=None, target=None) -> list:
+        """Findings matching every given filter, in report order.
+
+        `category` and `type` match the finding's fields exactly
+        (note `type` is absent for single-kind categories);
+        `column` matches membership in the finding's subject columns;
+        `target` matches the subject target. With no filters, returns
+        all findings. The dicts are the live report entries."""
+        out = []
+        for f in self.findings:
+            if category is not None and f.get("category") != category:
+                continue
+            if type is not None and f.get("type") != type:
+                continue
+            subject = f.get("subject") or {}
+            if column is not None and column not in (subject.get("columns") or []):
+                continue
+            if target is not None and subject.get("target") != target:
+                continue
+            out.append(f)
+        return out
 
     def findings_frame(self):
         """The findings ledger as a Polars DataFrame, one row per finding.
@@ -188,8 +222,88 @@ class ProfileReport:
             return pl.DataFrame(schema=schema)
         return pl.DataFrame(rows)
 
-    def to_json(self) -> str:
-        return self._native.to_json()
+    def to_json(self, max_chars: int | None = None) -> str:
+        """The report as JSON. With `max_chars`, a size-budgeted view:
+        findings are kept in full in rank order until the budget is
+        reached; the rest collapse to `finding_index` entries (id,
+        category, type, columns, interestingness, claim). If that is
+        still too large, column cards collapse to `column_names`, and
+        finally coverage detail strings are truncated. A `budget`
+        record in the output states what was cut; the view never
+        exceeds `max_chars`. Raises ValueError if `max_chars` is
+        below the minimal skeleton. The full report stays available
+        via `.data` / `to_json()`."""
+        if max_chars is None:
+            return self._native.to_json()
+        import copy
+
+        data = copy.deepcopy(self.data)
+        total = len(data["findings"])
+        index: list[dict] = []
+        state = {"columns": "full", "coverage_detail": "full"}
+
+        def render() -> str:
+            view = {
+                "schema_version": data["schema_version"],
+                "overview": data["overview"],
+                "columns": data["columns"],
+                "findings": data["findings"],
+                "finding_index": list(reversed(index)),
+                "groups": data["groups"],
+                "selection": data["selection"],
+                "coverage": data["coverage"],
+                "budget": {
+                    "max_chars": max_chars,
+                    "full_findings": len(data["findings"]),
+                    "indexed_findings": len(index),
+                    "columns": state["columns"],
+                    "coverage_detail": state["coverage_detail"],
+                },
+            }
+            if state["columns"] == "names_only":
+                view["column_names"] = list(data["columns"].keys())
+                view["columns"] = {}
+            return _json.dumps(view)
+
+        out = render()
+        while len(out) > max_chars and data["findings"]:
+            f = data["findings"].pop()
+            subject = f.get("subject") or {}
+            index.append(
+                {
+                    "id": f.get("id"),
+                    "category": f.get("category"),
+                    "type": f.get("type"),
+                    "columns": list(subject.get("columns") or []),
+                    "interestingness": f.get("interestingness"),
+                    "claim": f.get("claim"),
+                }
+            )
+            out = render()
+        if len(out) > max_chars and state["columns"] == "full":
+            state["columns"] = "names_only"
+            out = render()
+        if len(out) > max_chars:
+            for entry in data["coverage"].values():
+                detail = entry.get("detail") or ""
+                if len(detail) > 160:
+                    entry["detail"] = detail[:160] + " [truncated]"
+            state["coverage_detail"] = "truncated"
+            out = render()
+        if len(out) > max_chars:
+            # Coverage detail strings are the known size sink on wide
+            # tables; the statuses alone still say what ran.
+            for entry in data["coverage"].values():
+                entry["detail"] = ""
+            state["coverage_detail"] = "status_only"
+            out = render()
+        if len(out) > max_chars:
+            raise ValueError(
+                f"max_chars={max_chars} is below the minimal budgeted "
+                f"report skeleton ({len(out)} chars with all {total} "
+                "findings indexed)"
+            )
+        return out
 
     def to_markdown(self) -> str:
         return self._native.to_markdown()
