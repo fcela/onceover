@@ -283,8 +283,10 @@
     }
    ],
    "notes": [
-    "Test-only for size: the prepared CSV is ~93 MB, beyond this repo's publishing path; prepare.py regenerates it locally. Bundling is a Git LFS decision. Expectations are set from the first local run (see docs/benchmarks)."
-   ]
+    "Ships as a reference, not a bundle (decided 2026-10-30: no Git LFS): the prepared CSV is ~93 MB and stays uncommitted, but this entry pins its sha256 and row count, prepare.py verifies the downloaded source zip against a pinned hash, and the runner hash-verifies the prepared CSV whenever it is present locally. Expectations are set from the first local run (see docs/benchmarks)."
+   ],
+   "sha256": "f58108fb637bfae3e14a8adcd5535808478d0f03bfdd9927659044dd29718c19",
+   "rows": 1067371
   },
   {
    "id": "bank-marketing",
