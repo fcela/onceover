@@ -12,7 +12,7 @@ pub mod sorted;
 pub use dupe::{profile_duplicate_encodings, DupeConfig};
 pub use fd::{discover, DepsOutcome, FdConfig};
 pub use keys::{analyze_keys, KeyOutcome};
-pub use pivot::{analyze_pivot, PivotConfig, PivotOutcome};
+pub use pivot::{analyze_pivot, PivotConfig, PivotOutcome, PivotSpec};
 pub use sorted::sortedness;
 
 /// Compact per-column info the dependency passes need (built by the

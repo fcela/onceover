@@ -36,6 +36,18 @@ impl Default for PivotConfig {
     }
 }
 
+/// A verified long-format reading of the frame, in names: the
+/// columns that form the index, the attribute whose levels become
+/// columns, and the single measure column that fills them.
+#[derive(Clone, Debug)]
+pub struct PivotSpec {
+    pub index: Vec<String>,
+    pub attribute: String,
+    pub measure: String,
+    pub levels: Vec<String>,
+    pub n_index: usize,
+}
+
 #[derive(Default, Debug)]
 pub struct PivotOutcome {
     pub findings: Vec<Finding>,
@@ -47,6 +59,9 @@ pub struct PivotOutcome {
     /// produced findings, so callers can cross-reference other
     /// findings against the verified long-format structure.
     pub reported: Vec<(String, String)>,
+    /// The verified readings behind `reported`, in the same ranked
+    /// order, for callers that want to pivot the frame themselves.
+    pub specs: Vec<PivotSpec>,
 }
 
 struct Candidate {
@@ -193,6 +208,13 @@ pub fn analyze_pivot(table: &TypedTable, info: &[ColInfo], cfg: &PivotConfig) ->
     for c in &candidates {
         out.reported
             .push((info[c.attr].name.clone(), info[c.measure].name.clone()));
+        out.specs.push(PivotSpec {
+            index: c.index.iter().map(|&i| info[i].name.clone()).collect(),
+            attribute: info[c.attr].name.clone(),
+            measure: info[c.measure].name.clone(),
+            levels: c.levels.clone(),
+            n_index: c.n_index,
+        });
         out.findings.push(pivot_finding(info, c, n));
     }
     out
