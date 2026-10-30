@@ -843,6 +843,103 @@ impl FittedGbm {
     }
 }
 
+// ---------- drift ----------
+
+/// Chi-square statistic of a 2x2 contingency table `[[a, b], [c, d]]`.
+/// Returns NaN when a margin is zero (the table carries no routing
+/// information).
+pub fn chi2_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    let n = a + b + c + d;
+    let denom = (a + b) * (c + d) * (a + c) * (b + d);
+    if n == 0.0 || denom == 0.0 {
+        return f64::NAN;
+    }
+    let diff = a * d - b * c;
+    n * diff * diff / denom
+}
+
+impl FittedGbm {
+    /// Drift of a comparison row set against a reference row set, as
+    /// seen by this ensemble: for every split, the reference and
+    /// comparison counts routed to each child form a 2x2 table, and
+    /// the score is the mean chi-square across splits. Rows are bin
+    /// values in `selected` order, as `predict_row` takes, and are
+    /// routed with the same comparison prediction uses. Under no
+    /// drift the statistic averages ~1 (chi-square, 1 df); for a
+    /// fixed proportional shift it grows with row counts, so scores
+    /// are comparable only between row sets of equal size.
+    ///
+    /// `concept = true` restricts the average to splits with a leaf
+    /// child (the splits closest to the prediction surface);
+    /// `false` averages over all splits.
+    pub fn drift_score(&self, reference: &[Vec<u8>], comparison: &[Vec<u8>], concept: bool) -> f64 {
+        // Splits are weighted by their feature's share of the model's
+        // total gain: a split on a feature the model barely uses (a
+        // noise split picked up while chasing residuals) must not be
+        // able to produce a drift signal when that feature's
+        // distribution moves. With no recorded gains the weighting
+        // falls back to the plain mean.
+        let total_gain: f64 = self.best_gains.iter().sum();
+        let mut stats: Vec<(f64, f64)> = Vec::new();
+        for tree in &self.trees {
+            // (left, right) routed counts per node index, per row set.
+            let mut ref_counts = vec![(0u64, 0u64); tree.len()];
+            let mut new_counts = vec![(0u64, 0u64); tree.len()];
+            for (rows, counts) in [(reference, &mut ref_counts), (comparison, &mut new_counts)] {
+                for row in rows {
+                    let mut idx = 0usize;
+                    while tree[idx].feat != u32::MAX {
+                        let node = &tree[idx];
+                        if row[node.feat as usize] <= node.thr {
+                            counts[idx].0 += 1;
+                            idx = node.left as usize;
+                        } else {
+                            counts[idx].1 += 1;
+                            idx = node.right as usize;
+                        }
+                    }
+                }
+            }
+            for (idx, node) in tree.iter().enumerate() {
+                if node.feat == u32::MAX {
+                    continue;
+                }
+                if concept {
+                    let left_leaf = tree[node.left as usize].feat == u32::MAX;
+                    let right_leaf = tree[node.right as usize].feat == u32::MAX;
+                    if !left_leaf && !right_leaf {
+                        continue;
+                    }
+                }
+                let (rl, rr) = ref_counts[idx];
+                let (nl, nr) = new_counts[idx];
+                if (rl + rr) == 0 || (nl + nr) == 0 {
+                    continue;
+                }
+                let stat = chi2_2x2(rl as f64, nl as f64, rr as f64, nr as f64);
+                if stat.is_finite() {
+                    let w = if total_gain > 0.0 {
+                        self.best_gains
+                            .get(node.feat as usize)
+                            .copied()
+                            .unwrap_or(0.0)
+                            / total_gain
+                    } else {
+                        1.0
+                    };
+                    stats.push((stat, w));
+                }
+            }
+        }
+        let wsum: f64 = stats.iter().map(|(_, w)| w).sum();
+        if stats.is_empty() || wsum <= 0.0 {
+            0.0
+        } else {
+            stats.iter().map(|(s, w)| s * w).sum::<f64>() / wsum
+        }
+    }
+}
+
 /// Fit the screen's numeric model for one target column and retain
 /// the ensemble. Returns None for categorical targets, ineligible
 /// targets, and targets whose best holdout R² is not positive —
@@ -854,6 +951,27 @@ pub fn fit_gbm_model(
     ci: usize,
     cfg: &ScreenConfig,
 ) -> Option<FittedGbm> {
+    fit_gbm_model_restricted(table, enc, ci, cfg, None, &[])
+}
+
+/// Like `fit_gbm_model`, but the target's present rows are first
+/// restricted to `restrict` (encoded-space row indices) when given —
+/// e.g. the reference period of a drift comparison — and the columns
+/// in `exclude_cols` are withheld from the predictor set (a drift
+/// reference model must not split on the time axis itself: later
+/// periods route through such a split one-sidedly by construction,
+/// which reads as maximal drift on stable data). Preparation, split,
+/// shortlist and boosting are otherwise identical, so the retained
+/// ensemble is the model the screen would have fit on that row
+/// subset alone.
+pub fn fit_gbm_model_restricted(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    ci: usize,
+    cfg: &ScreenConfig,
+    restrict: Option<&std::collections::BTreeSet<u32>>,
+    exclude_cols: &[usize],
+) -> Option<FittedGbm> {
     let target = prepare_target(table, enc, ci, cfg)?;
     let TargetKind::Numeric(ys) = target else {
         return None;
@@ -861,6 +979,7 @@ pub fn fit_gbm_model(
     let present: Vec<u32> = (0..enc.n)
         .filter(|&j| !ys[j].is_nan())
         .map(|j| j as u32)
+        .filter(|j| restrict.is_none_or(|set| set.contains(j)))
         .collect();
     if present.len() < cfg.min_target_rows {
         return None;
@@ -877,7 +996,9 @@ pub fn fit_gbm_model(
     let min_leaf = (train.len() / 200).clamp(10, 1_000);
     let own = enc.feat_cols.iter().position(|&c| c == ci)?;
     let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
-    let mut selected: Vec<usize> = (0..enc.bins.len()).filter(|&f| f != own).collect();
+    let mut selected: Vec<usize> = (0..enc.bins.len())
+        .filter(|&f| f != own && !exclude_cols.contains(&enc.feat_cols[f]))
+        .collect();
     if selected.len() > cfg.max_predictors {
         let scores: Vec<f64> = selected
             .iter()
@@ -980,6 +1101,69 @@ mod tests {
         let res = out.results.iter().find(|r| r.name == "class").unwrap();
         assert!(res.metric > 0.85, "acc = {}", res.metric);
         assert!(res.metric > res.baseline + 0.2);
+    }
+
+    fn one_split_model() -> FittedGbm {
+        // One tree: split feature 0 at bin 5; left leaf 0.0, right leaf 1.0.
+        let tree = vec![
+            Node {
+                feat: 0,
+                thr: 5,
+                left: 1,
+                right: 2,
+                leaf: 0.0,
+            },
+            Node {
+                feat: u32::MAX,
+                thr: 0,
+                left: 0,
+                right: 0,
+                leaf: 0.0,
+            },
+            Node {
+                feat: u32::MAX,
+                thr: 0,
+                left: 0,
+                right: 0,
+                leaf: 1.0,
+            },
+        ];
+        FittedGbm {
+            selected: vec![0],
+            best_gains: vec![0.0],
+            holdout_r2: 0.0,
+            n_holdout: 0,
+            rounds: 1,
+            present: vec![],
+            y: vec![],
+            base: 0.0,
+            learning_rate: 1.0,
+            trees: vec![tree],
+        }
+    }
+
+    #[test]
+    fn drift_score_zero_for_identical_rows() {
+        let m = one_split_model();
+        let rows: Vec<Vec<u8>> = (0..10).map(|i| vec![i as u8]).collect();
+        assert_eq!(m.drift_score(&rows, &rows, false), 0.0);
+        assert_eq!(m.drift_score(&rows, &rows, true), 0.0);
+    }
+
+    #[test]
+    fn drift_score_maximal_for_opposite_routing() {
+        let m = one_split_model();
+        let reference: Vec<Vec<u8>> = (0..=5).map(|v| vec![v]).collect();
+        let shifted: Vec<Vec<u8>> = (6..=11).map(|v| vec![v]).collect();
+        // Table [[6, 0], [0, 6]]: chi-square = 12.
+        let score = m.drift_score(&reference, &shifted, false);
+        assert!((score - 12.0).abs() < 1e-9, "score = {score}");
+    }
+
+    #[test]
+    fn chi2_2x2_known_values() {
+        assert_eq!(chi2_2x2(10.0, 10.0, 10.0, 10.0), 0.0);
+        assert!(chi2_2x2(0.0, 0.0, 3.0, 4.0).is_nan());
     }
 
     #[test]

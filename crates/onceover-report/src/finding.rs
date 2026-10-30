@@ -75,6 +75,7 @@ pub enum Pattern {
     TransientExcursion,
     StepDiscontinuity,
     DuplicateEncoding,
+    DistributionShift,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -104,6 +105,7 @@ impl Pattern {
             Self::TransientExcursion => Category::Changes,
             Self::StepDiscontinuity => Category::Changes,
             Self::DuplicateEncoding => Category::ColumnRoles,
+            Self::DistributionShift => Category::Changes,
         }
     }
     pub fn subtype(self) -> Option<&'static str> {
@@ -123,6 +125,7 @@ impl Pattern {
             Self::ExtremeValue => Some("extreme_value"),
             Self::TransientExcursion => Some("transient_excursion"),
             Self::StepDiscontinuity => Some("step_discontinuity"),
+            Self::DistributionShift => Some("distribution_shift"),
             Self::DuplicateEncoding => Some("duplicate_encoding"),
             _ => None,
         }
@@ -628,6 +631,22 @@ impl Finding {
                     json!("exclude rows incomplete on target or axis columns"),
                 );
             }
+            Pattern::DistributionShift => {
+                spec.form = Some("drift".into());
+                for k in ["time_column", "reference_period", "max_period"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "method".into(),
+                    json!("gain-weighted mean chi-square of per-split routing counts, comparison period vs reference period, over the reference model's trees; the finding requires the maximum score to exceed a label-permutation maximum"),
+                );
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude rows missing the target or the time value"),
+                );
+            }
             Pattern::DuplicateEncoding => {
                 spec.form = Some(
                     metrics
@@ -819,11 +838,12 @@ impl Finding {
                             | "trend_change"
                             | "variance_change"
                             | "transient_excursion"
-                            | "step_discontinuity",
+                            | "step_discontinuity"
+                            | "distribution_shift",
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, or step_discontinuity".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, or distribution_shift".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()
