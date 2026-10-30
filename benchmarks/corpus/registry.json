@@ -338,15 +338,151 @@
    "pack": "business",
    "title": "Credit card fraud (ULB)",
    "mode": "test-only",
-   "license": "Kaggle distribution",
-   "source": "Kaggle mlg-ulb/creditcardfraud (also OpenML 1597, ADBench 'fraud')",
+   "license": "ODbL (database) / DbCL (contents), per the OpenML record",
+   "source": "OpenML 43627 (credit-card-fraud-detection); original distribution Kaggle mlg-ulb/creditcardfraud (ULB / Worldline); also ADBench 'fraud'",
    "dir": "data/business/credit-card-fraud",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "class"
+     ],
+     "note": "class is 99.83% '0' with 492 fraud rows (0.17%) - the dataset's defining imbalance is reported as a concentration finding."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "categorical_role",
+     "columns_any": [
+      "class"
+     ],
+     "note": "class is recognized as a categorical column despite numeric storage."
+    },
+    {
+     "kind": "finding",
+     "category": "duplicates",
+     "type": "duplicate_rows",
+     "note": "1,081 rows repeat earlier rows across the compared columns (773 groups) in the first run - recorded as found, not predicted."
+    }
+   ],
+   "notes": [
+    "Test-only (license gate): ships as a pinned reference - prepare.py verifies the md5 OpenML publishes for the source ARFF plus a pinned sha256; this entry pins the prepared CSV's sha256. An earlier registry version cited OpenML 1597, a different dataset (Taiwan credit-card clients); corrected 2026-10-30."
+   ],
+   "sha256": "183cecf37f1e02b25634af1e8b35c12f780cad23c4718272db44b400b05b81ec",
+   "rows": 284807
+  },
+  {
+   "id": "chinook",
+   "pack": "business",
+   "title": "Chinook sample database - invoices",
+   "mode": "bundled",
+   "license": "MIT",
+   "source": "Chinook sample database (lerocha/chinook-database), Invoice table extracted from Chinook_Sqlite.sqlite",
+   "dir": "data/business/chinook",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "billing_address",
+     "note": "Address structure is functionally determined (e.g. billing_postal_code -> billing_address, 0 violations; 19 FD findings in the first run)."
+    },
+    {
+     "kind": "finding",
+     "category": "uniqueness",
+     "columns_any": [
+      "invoice_id"
+     ],
+     "note": "invoice_id is the documented primary key and is reported as uniquely identifying rows."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "duplicate_encoding",
+     "columns_any": [
+      "customer_id",
+      "billing_address"
+     ],
+     "note": "customer_id and the billing-address block encode the same 59-customer grouping one-to-one on all 412 rows."
+    }
+   ],
+   "notes": [
+    "Known-answer table for the pack: a small, fully documented sample schema. prepare.py pins the source database file's sha256."
+   ],
+   "sha256": "3c00c59f4c9e72c5a2990bf7c7775d5e67b763465a3e6127da1847d26f861994",
+   "rows": 412
+  },
+  {
+   "id": "adventureworks",
+   "pack": "business",
+   "title": "AdventureWorks sample database - sales order headers",
+   "mode": "bundled",
+   "license": "MIT",
+   "source": "Microsoft sql-server-samples, AdventureWorks oltp-install-script SalesOrderHeader.csv (Sales.SalesOrderHeader)",
+   "dir": "data/business/adventureworks",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "revision_number"
+     ],
+     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run."
+    },
+    {
+     "kind": "finding",
+     "category": "uniqueness",
+     "columns_any": [
+      "sales_order_id"
+     ],
+     "note": "sales_order_id is the documented primary key and is reported as uniquely identifying rows."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "account_number",
+     "note": "credit_card_id -> account_number holds with 0 violations in the first run (one of 58 FD findings)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "total_due = subtotal + tax_amt + freight (exact, all 31,465 rows)",
+     "status": "missed",
+     "note": "The arithmetic identity is verified in the data (see ATTRIBUTION.md) but no identity finding reports it; the nearest signal is a 99.98% near-FD on (subtotal, online_order_flag) -> total_due whose 6 violations are cent-rounding. A known miss for the identities machinery."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "comment empty on all 31,465 rows",
+     "status": "missed",
+     "note": "A fully empty column; no finding reports the dead column in the first run."
+    }
+   ],
+   "notes": [
+    "Known-answer table for the pack: a documented sample schema carrying an exact arithmetic identity, verified on the source file before preparation."
+   ],
+   "sha256": "d0a8e1882a78ea44889c3f316e97bab8ddf98588aa6eb76b8c0d5b3c0b7eab64",
+   "rows": 31465
+  },
+  {
+   "id": "northwind",
+   "pack": "business",
+   "title": "Northwind sample database",
+   "mode": "test-only",
+   "license": "MIT",
+   "source": "Microsoft sql-server-samples, samples/databases/northwind-pubs (instnwnd.sql)",
+   "dir": "data/business/northwind",
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "Test-only: Kaggle-account distribution."
+    "License check resolved 2026-10-30: MIT (the repository's license.txt), bundle-compatible. Not fetched: the canonical distribution is a T-SQL install script, with no flat table file to pin. The pack's known-answer role is carried by chinook and adventureworks."
    ],
-   "skip_reason": "Kaggle credentials required"
+   "skip_reason": "canonical distribution is a T-SQL install script - no flat table file (see ATTRIBUTION.md)"
   },
   {
    "id": "sec-edgar-company-facts",

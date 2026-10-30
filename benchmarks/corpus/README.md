@@ -7,7 +7,7 @@ impressions. Issues #20 (harness), #21 (business pack), #23 (GritBot pack).
 ## Layout
 
 - `registry.json` — every dataset: pack, mode, license, source, shape,
-  content hash (bundled), expectations, notes.
+  content hash (bundled, and for reference datasets), expectations, notes.
 - `data/<pack>/<dataset>/` — `data.csv` (bundled datasets only),
   `ATTRIBUTION.md` (source, license, citation, preprocessing log),
   `prepare.py` (regenerates `data.csv` from the raw source).

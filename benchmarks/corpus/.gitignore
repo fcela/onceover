@@ -2,3 +2,4 @@
 runs/*.json
 __pycache__/
 data/business/online-retail-ii/data.csv
+data/business/credit-card-fraud/data.csv
