@@ -211,7 +211,16 @@ The same ledger is available in four forms:
   interestingness, claim), then column cards collapse to
   `column_names`, then coverage details truncate and finally drop
   to status only — and carries a `budget` record stating what was
-  cut. The view never exceeds `max_chars`.
+  cut. The view never exceeds `max_chars`. Two profiles of a table
+  compare directly: `report.diff(other)` matches findings by their
+  stable `id` and returns the findings `other` added, the ones it
+  removed, the ones whose claim or interestingness changed (with
+  the old and new values), an unchanged count, and any per-pass
+  coverage status changes. Evidence internals are not diffed — a
+  finding whose evidence changed but whose claim and score held
+  counts as unchanged. Digest rollups for multi-member groups list
+  up to three exemplar finding ids so a rolled-up line can be
+  expanded with `report.finding(id)`.
 - **Markdown** (`report.to_markdown()`): the headline and overview,
   then each finding's claim followed directly by its evidence. An
   evidence block names the detector and algorithm, the validation
