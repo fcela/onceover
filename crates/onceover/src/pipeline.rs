@@ -528,7 +528,8 @@ pub fn profile_with_detectors(
                             .then_some(i)
                     })
                     .collect();
-                let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks);
+                let time_hint = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
+                let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks, time_hint);
                 coverage.insert("breaks".into(), PassInfo::sampled(cov));
                 findings.extend(f);
             }
