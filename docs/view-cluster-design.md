@@ -64,9 +64,9 @@ use fixed indices. The limits are:
 | Work | Limit |
 |---|---:|
 | Search subsample | 2,000 rows |
-| Modeled width | First 64 eligible columns in table order |
+| Modeled width | 64 eligible columns; when more are eligible, a pairwise normalized-mutual-information pre-screen keeps the strongest (near-unique columns get no ranking signal) |
 | Clusters per view | 8 |
-| Merge attempts | 64 |
+| Merge attempts | 256 |
 | Counted split-evaluation cell visits | 300 million |
 
 After search, rows from the fitting sample are assigned using predictive
@@ -122,9 +122,12 @@ Further evaluation should measure:
 - Sensitivity to `gamma`, samples, rare groups, missing values, and column order.
 - Anomaly precision and recall on held-out observations, including valid rare
   groups and pooled categorical levels.
-- Runtime and memory at large row counts and widths. The current 64-column
-  selection limit excludes later columns from this pass, even though other
-  onceover detectors screen them.
+- Runtime and memory at large row counts and widths. The 64-column cap
+  selects by pairwise dependence (issue #73), which keeps dependent
+  columns in reach regardless of table position; a rare column can still
+  rank below the cut when its sample association is weak (on the Lace
+  Animals table the pre-screen drops `paws`, whose posterior dependence
+  on `claws` is 1.000 but whose 50-row association is not).
 
 The [scale benchmark](../benchmarks/README.md) covers the profiler's existing
 large-table behavior. Its late-column checks do not validate discovery by this

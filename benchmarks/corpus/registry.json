@@ -735,7 +735,7 @@
      "detector": "views",
      "status": "ran_exact",
      "detail_contains": "64-column cap",
-     "note": "Views runs but only on the first 64 columns: coverage reports 4,942 columns dropped past the cap (measured on this table)."
+     "note": "Views selects 64 of 5,006 columns by the dependence pre-screen (issue #73; the wide-table screen is pair- and row-bounded): coverage reports 4,942 columns dropped past the cap (measured on this table)."
     },
     {
      "kind": "finding",
@@ -747,7 +747,7 @@
      "kind": "documented_case",
      "ref": "Views column cap on wide tables",
      "status": "partial",
-     "note": "4,942 of 5,006 columns never reach the views pass. The cap is reported in coverage with the dropped columns named -- a 63 KB coverage detail string, itself relevant to issue #27 (context-budgeted reporting)."
+     "note": "4,942 of 5,006 columns do not reach the views search; since issue #73 the 64 that do are the strongest by a pairwise-dependence pre-screen rather than the first 64 in table order. The cap is reported in coverage with the dropped columns named -- a 63 KB coverage detail string, itself relevant to issue #27 (context-budgeted reporting)."
     }
    ],
    "notes": [
@@ -797,11 +797,11 @@
      "detector": "views",
      "status": "ran_exact",
      "detail_contains": "64-column cap",
-     "note": "The views pass runs on the first 64 of 86 columns; 22 columns past the cap are dropped and named in the coverage detail. The cap interaction is the recorded behavior for this table (see the head-to-head note)."
+     "note": "The views pass selects 64 of 86 columns by a pairwise-dependence pre-screen (issue #73); the 22 dropped columns - the identifier first - are named in the coverage detail. Selection and recall against Lace are recorded in the head-to-head note."
     }
    ],
    "notes": [
-    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md."
+    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md. Issue #73 fix (pre-screen selection, 256 merge attempts) is measured in the follow-up section of the head-to-head note."
    ],
    "detectors": [
     "column_profile",
