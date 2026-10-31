@@ -28,7 +28,12 @@ pub fn granularity_changes(table: &TypedTable) -> Vec<Finding> {
             .iter()
             .enumerate()
             .filter_map(|(r, v)| {
-                v.map(|x| (r, x.is_finite() && x.fract() == 0.0 && x.abs() < 9_007_199_254_740_992.0))
+                v.map(|x| {
+                    (
+                        r,
+                        x.is_finite() && x.fract() == 0.0 && x.abs() < 9_007_199_254_740_992.0,
+                    )
+                })
             })
             .collect();
         if seq.len() < MIN_VALUES {

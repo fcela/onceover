@@ -265,33 +265,31 @@ pub fn screen_sampled(
             .iter()
             .map(|bins| crate::screen::marginal_entropy(bins, &stage1_rows))
             .collect();
-        let score_pairs = |rows: &[u32],
-                           pairs: Vec<(usize, usize)>,
-                           fast: bool|
-         -> Vec<((usize, usize), f64)> {
-            pairs
-                .into_par_iter()
-                .map(|(a, b)| {
-                    let (x, y) = (inv[a], inv[b]);
-                    let score = if x >= 0 && y >= 0 {
-                        let (x, y) = (x as usize, y as usize);
-                        if fast {
-                            crate::screen::information_fast(
-                                &encoded.bins[x],
-                                &encoded.bins[y],
-                                rows,
-                                (ents[x], ents[y]),
-                            )
+        let score_pairs =
+            |rows: &[u32], pairs: Vec<(usize, usize)>, fast: bool| -> Vec<((usize, usize), f64)> {
+                pairs
+                    .into_par_iter()
+                    .map(|(a, b)| {
+                        let (x, y) = (inv[a], inv[b]);
+                        let score = if x >= 0 && y >= 0 {
+                            let (x, y) = (x as usize, y as usize);
+                            if fast {
+                                crate::screen::information_fast(
+                                    &encoded.bins[x],
+                                    &encoded.bins[y],
+                                    rows,
+                                    (ents[x], ents[y]),
+                                )
+                            } else {
+                                crate::screen::information(&encoded.bins[x], &encoded.bins[y], rows)
+                            }
                         } else {
-                            crate::screen::information(&encoded.bins[x], &encoded.bins[y], rows)
-                        }
-                    } else {
-                        0.0
-                    };
-                    ((a, b), score)
-                })
-                .collect()
-        };
+                            0.0
+                        };
+                        ((a, b), score)
+                    })
+                    .collect()
+            };
         let by_score = |ranked: &mut Vec<((usize, usize), f64)>| {
             ranked.sort_by(|a, b| {
                 b.1.total_cmp(&a.1)
@@ -306,8 +304,7 @@ pub fn screen_sampled(
         // exactly the full sort's top `want` entries.
         let want = (pair_cap * 4).max(1024).min(ranked.len());
         if ranked.len() > want {
-            let (_, pivot, _) =
-                ranked.select_nth_unstable_by(want - 1, |a, b| b.1.total_cmp(&a.1));
+            let (_, pivot, _) = ranked.select_nth_unstable_by(want - 1, |a, b| b.1.total_cmp(&a.1));
             let boundary = pivot.1;
             let mut top: Vec<((usize, usize), f64)> =
                 ranked.iter().filter(|r| r.1 > boundary).cloned().collect();
@@ -323,8 +320,7 @@ pub fn screen_sampled(
             ranked = top;
         }
         by_score(&mut ranked);
-        let survivors: Vec<(usize, usize)> =
-            ranked.into_iter().map(|(pair, _)| pair).collect();
+        let survivors: Vec<(usize, usize)> = ranked.into_iter().map(|(pair, _)| pair).collect();
         // Stage 2: survivors rescored on all encoded rows.
         let mut ranked = score_pairs(&positions, survivors, false);
         by_score(&mut ranked);

@@ -18,15 +18,16 @@
 //! - **Benford deviation**: first digits of positive values
 //!   against Benford's law, only for eligible columns —
 //!   eligibility is conservative and recorded in coverage:
-//!   >= 500 values, >= 95% of them positive, max/min >= 1000
-//!   (three orders of magnitude), >= 100 distinct values with
-//!   distinct share < 50% for integer-valued columns among integer-valued columns
-//!   (near-unique integer columns are identifier-like, not quantities;
-//!   continuous quantities are near-unique by nature and stay eligible). A deviation reports
-//!   only when it is both significant (chi-square, df 8) and
-//!   material (mean absolute deviation >= 0.012, the published
-//!   nonconformity boundary for first digits), so a conforming
-//!   column stays quiet at any sample size.
+//!   at least 500 values, at least 95% of them positive,
+//!   max/min >= 1000 (three orders of magnitude), at least 100
+//!   distinct values, and, for integer-valued columns only, a
+//!   distinct share < 50% (near-unique integer columns are
+//!   identifier-like, not quantities; continuous quantities are
+//!   near-unique by nature and stay eligible). A deviation
+//!   reports only when it is both significant (chi-square,
+//!   df 8) and material (mean absolute deviation >= 0.012, the
+//!   published nonconformity boundary for first digits), so a
+//!   conforming column stays quiet at any sample size.
 //!
 //! Fixed-precision non-integer columns (money with cents) are
 //! not digit-tested in this version; that is a scope limit,
@@ -67,9 +68,11 @@ pub fn digit_fingerprints(table: &TypedTable) -> (Vec<Finding>, String) {
         let name = &table.names[i];
 
         // ---- integer-valued checks: heaping + terminal digit ----
-        if vals.iter().all(|v| v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0) {
-            let distinct: std::collections::HashSet<i64> =
-                vals.iter().map(|v| *v as i64).collect();
+        if vals
+            .iter()
+            .all(|v| v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0)
+        {
+            let distinct: std::collections::HashSet<i64> = vals.iter().map(|v| *v as i64).collect();
             if distinct.len() >= MIN_DISTINCT {
                 let heaped = heaping(name, &vals, &mut out);
                 if !heaped {
@@ -181,11 +184,7 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
         .iter()
         .map(|&c| (c as f64 - expected).powi(2) / expected)
         .sum();
-    let (top_digit, top_count) = counts
-        .iter()
-        .enumerate()
-        .max_by_key(|&(_, &c)| c)
-        .unwrap();
+    let (top_digit, top_count) = counts.iter().enumerate().max_by_key(|&(_, &c)| c).unwrap();
     let top_share = *top_count as f64 / n;
     if chi2 < CHI2_DIGIT_BAR || top_share < 0.15 {
         return;
@@ -232,9 +231,7 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
 /// or not a deviation was reported).
 fn benford(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
     let positives: Vec<f64> = vals.iter().copied().filter(|&v| v > 0.0).collect();
-    if positives.len() < MIN_VALUES
-        || positives.len() as f64 / vals.len() as f64 <= 0.95
-    {
+    if positives.len() < MIN_VALUES || positives.len() as f64 / vals.len() as f64 <= 0.95 {
         return false;
     }
     let (mut lo, mut hi) = (f64::INFINITY, 0.0f64);

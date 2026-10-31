@@ -25,7 +25,10 @@ pub struct ViewsConfig {
     pub row_cap: usize,
     /// Rows used for search decisions (splits, merges).
     pub search_rows: usize,
-    /// Maximum eligible columns considered (table order).
+    /// Maximum eligible columns considered. When more columns are
+    /// eligible, a pairwise-dependence pre-screen keeps the ones
+    /// with the strongest normalized dependence to any other column (see
+    /// `select_columns`); the rest are recorded as dropped.
     pub max_columns: usize,
     /// Maximum clusters per view.
     pub max_clusters: usize,
@@ -52,7 +55,7 @@ impl Default for ViewsConfig {
             search_rows: 2000,
             max_columns: 64,
             max_clusters: 8,
-            tried_merges_cap: 64,
+            tried_merges_cap: 256,
             nominal_max_levels: 32,
             gamma: 2.0,
             anomaly_threshold_nats: 10.0,
@@ -236,7 +239,7 @@ fn extract_columns(
                 // A column with no non-null values on the sample carries
                 // no information; exclude it (recorded as dropped).
                 let any = vc.vals.iter().any(|v| v.is_some());
-                if !any || cols.len() >= cfg.max_columns {
+                if !any {
                     dropped.push(name);
                 } else {
                     cols.push(vc);
@@ -246,6 +249,182 @@ fn extract_columns(
         }
     }
     (cols, dropped)
+}
+
+/// Equal-frequency bins used to discretize continuous columns for
+/// the cap pre-screen.
+const SCREEN_BINS: usize = 8;
+
+/// Rows used by the cap pre-screen (a prefix of the search rows).
+const SCREEN_ROW_LIMIT: usize = 256;
+
+/// Pair evaluations the cap pre-screen performs at most; wider
+/// tables are screened on a fixed stride over the pair list.
+const SCREEN_PAIR_LIMIT: u64 = 250_000;
+
+/// Discretize one column over the search rows for the cap
+/// pre-screen: level ids for categorical columns, equal-frequency
+/// bins for continuous ones. `None` marks missing values.
+fn screen_codes(col: &ViewCol, search_pos: &[usize]) -> Vec<Option<u32>> {
+    match col.kind {
+        ColKind::Categorical => search_pos
+            .iter()
+            .map(|&p| col.vals[p].map(|v| v as u32))
+            .collect(),
+        ColKind::Continuous => {
+            let mut present: Vec<(f64, usize)> = search_pos
+                .iter()
+                .enumerate()
+                .filter_map(|(k, &p)| col.vals[p].map(|v| (v, k)))
+                .collect();
+            present.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            let mut out: Vec<Option<u32>> = vec![None; search_pos.len()];
+            let n = present.len().max(1);
+            for (rank, (_, k)) in present.iter().enumerate() {
+                out[*k] = Some((rank * SCREEN_BINS / n) as u32);
+            }
+            out
+        }
+    }
+}
+
+/// Normalized mutual information between two coded columns, over
+/// the rows where both are present: MI divided by the smaller
+/// marginal entropy, in [0, 1]. Raw MI ranks frequent columns
+/// above rare ones at equal association strength; the normalized
+/// score ranks the association itself, so a rare column in a
+/// near-perfect dependent pair scores near 1.
+fn mutual_information(a: &[Option<u32>], b: &[Option<u32>]) -> f64 {
+    let mut joint: BTreeMap<(u32, u32), u64> = BTreeMap::new();
+    let mut ca: BTreeMap<u32, u64> = BTreeMap::new();
+    let mut cb: BTreeMap<u32, u64> = BTreeMap::new();
+    let mut n = 0u64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        if let (Some(x), Some(y)) = (x, y) {
+            *joint.entry((*x, *y)).or_default() += 1;
+            *ca.entry(*x).or_default() += 1;
+            *cb.entry(*y).or_default() += 1;
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return 0.0;
+    }
+    let nf = n as f64;
+    let mut mi = 0.0;
+    for ((x, y), c) in &joint {
+        let pxy = *c as f64 / nf;
+        mi += pxy * (pxy / ((ca[x] as f64 / nf) * (cb[y] as f64 / nf))).ln();
+    }
+    let entropy = |counts: &BTreeMap<u32, u64>| -> f64 {
+        counts
+            .values()
+            .map(|&k| {
+                let p = k as f64 / nf;
+                -p * p.ln()
+            })
+            .sum()
+    };
+    let denom = entropy(&ca).min(entropy(&cb));
+    if denom <= 0.0 {
+        0.0
+    } else {
+        mi / denom
+    }
+}
+
+/// Apply the column cap. With more eligible columns than the cap,
+/// taking the first ones in table order silently removes every
+/// later column from the pass — including columns in strong
+/// dependent pairs, which the pass then cannot recover by
+/// construction. Instead, rank each column by its strongest
+/// pairwise normalized mutual information with any other eligible column
+/// (over the search rows) and keep the top `max_columns`; ties
+/// break by table order, and both the kept set and the dropped
+/// list preserve table order. Returns (kept columns, dropped
+/// names, whether selection ran). The screen charges the shared
+/// work budget; if the budget runs out mid-screen the ranking
+/// uses the pairs computed so far (iteration order is fixed, so
+/// the result stays deterministic).
+fn select_columns(
+    cols: Vec<ViewCol>,
+    search_pos: &[usize],
+    cfg: &ViewsConfig,
+    work: &mut WorkBudget,
+) -> (Vec<ViewCol>, Vec<String>, bool) {
+    if cols.len() <= cfg.max_columns {
+        return (cols, Vec::new(), false);
+    }
+    // The screen's cost is bounded on both axes: at most
+    // SCREEN_ROW_LIMIT rows, and at most SCREEN_PAIR_LIMIT pairs
+    // (a fixed stride over the flattened pair list when the table
+    // is wider than the pair limit, so every column keeps partners
+    // spread across the table). Without the pair bound, a
+    // several-thousand-column table makes the screen itself the
+    // most expensive part of the pass.
+    let screen_pos = &search_pos[..search_pos.len().min(SCREEN_ROW_LIMIT)];
+    let codes: Vec<Vec<Option<u32>>> = cols.iter().map(|c| screen_codes(c, screen_pos)).collect();
+    // A column with more distinct codes than half its present rows
+    // (an identifier, pre-pooling) can memorize every other column
+    // on the sample: its empirical dependence is maximal against
+    // everything and means nothing. Pairs touching such a column
+    // contribute no ranking signal to either side.
+    let near_unique: Vec<bool> = codes
+        .iter()
+        .map(|col| {
+            let mut distinct = std::collections::BTreeSet::new();
+            let mut present = 0usize;
+            for v in col.iter().flatten() {
+                distinct.insert(*v);
+                present += 1;
+            }
+            distinct.len() * 2 > present
+        })
+        .collect();
+    let c = cols.len();
+    let total_pairs = (c * (c - 1) / 2) as u64;
+    let stride = (total_pairs / SCREEN_PAIR_LIMIT).max(1);
+    let mut best = vec![0.0f64; c];
+    let mut pair_idx = 0u64;
+    'outer: for i in 0..c {
+        for j in (i + 1)..c {
+            let take = pair_idx.is_multiple_of(stride);
+            pair_idx += 1;
+            if !take {
+                continue;
+            }
+            work.charge(screen_pos.len() as u64);
+            if work.hit {
+                break 'outer;
+            }
+            if near_unique[i] || near_unique[j] {
+                continue;
+            }
+            let mi = mutual_information(&codes[i], &codes[j]);
+            if mi > best[i] {
+                best[i] = mi;
+            }
+            if mi > best[j] {
+                best[j] = mi;
+            }
+        }
+    }
+    let mut order: Vec<usize> = (0..c).collect();
+    order.sort_by(|&a, &b| best[b].total_cmp(&best[a]).then_with(|| a.cmp(&b)));
+    let mut keep = vec![false; c];
+    for &i in order.iter().take(cfg.max_columns) {
+        keep[i] = true;
+    }
+    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
+    for (i, col) in cols.into_iter().enumerate() {
+        if keep[i] {
+            kept.push(col);
+        } else {
+            dropped.push(col.name.clone());
+        }
+    }
+    (kept, dropped, true)
 }
 
 /// Standardize a continuous column robustly: z = (x - median) / IQR,
@@ -901,8 +1080,8 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         .map(|&r| r as usize)
         .collect();
     let n_sample = sample.len();
-    let (cols, dropped) = extract_columns(table, &sample, cfg);
-    if cols.is_empty() {
+    let (all_cols, mut dropped) = extract_columns(table, &sample, cfg);
+    if all_cols.is_empty() {
         return (
             Vec::new(),
             ViewsOutcome {
@@ -923,6 +1102,9 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         cap: cfg.work_budget,
         hit: false,
     };
+    let n_eligible = all_cols.len();
+    let (cols, cap_dropped, prescreened) = select_columns(all_cols, &search_pos, cfg, &mut work);
+    dropped.extend(cap_dropped);
     let views = views_search(&cols, &search_pos, cfg, &mut work);
     // A budget hit mid-singleton drops tail columns from the search
     // entirely: they are in no view. They are not extract drops, so
@@ -986,15 +1168,27 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     } else {
         String::new()
     };
+    let cap_suffix = if prescreened {
+        format!(
+            "; {} eligible columns over the {}-column cap: kept the {} with \
+             the strongest pairwise dependence (mutual-information pre-screen)",
+            n_eligible,
+            cfg.max_columns,
+            cfg.max_columns.min(n_eligible)
+        )
+    } else {
+        String::new()
+    };
     let coverage = format!(
-        "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats{}",
+        "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats{}{}",
         views.len(),
         views.iter().filter(|v| v.cols.len() > 1).count(),
         n_findings,
         n_sample,
         table.n,
         total_score,
-        budget_suffix
+        budget_suffix,
+        cap_suffix
     );
     (
         findings,
@@ -1859,6 +2053,142 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn cap_prescreen_keeps_dependent_columns_past_the_old_cutoff() {
+        // 70 eligible columns, cap 64. The two columns past the old
+        // table-order cutoff are identical regime columns (maximally
+        // dependent); the other 68 are independent noise. Table-order
+        // capping dropped the pair by construction; the
+        // dependence pre-screen must keep them and drop noise
+        // columns instead.
+        let mut s = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let n = 400usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..68 {
+            names.push(format!("noise_{i}"));
+            let vals: Vec<Option<f64>> = (0..n).map(|_| Some(next() * 10.0)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        let regime: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                let base = if i < n / 2 { 0.0 } else { 10.0 };
+                Some(base + next() * 0.01)
+            })
+            .collect();
+        for name in ["signal_a", "signal_b"] {
+            names.push(name.to_string());
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(regime.clone()),
+            });
+        }
+        let table = TypedTable {
+            n,
+            names,
+            dtypes: vec!["float64".to_string(); 70],
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 400,
+            ..Default::default()
+        };
+        let (findings, outcome) = views_pass(&table, &cfg);
+        assert_eq!(
+            outcome.dropped_columns.len(),
+            6,
+            "dropped = {:?}",
+            outcome.dropped_columns
+        );
+        assert!(!outcome.dropped_columns.contains(&"signal_a".to_string()));
+        assert!(!outcome.dropped_columns.contains(&"signal_b".to_string()));
+        assert!(
+            findings.iter().any(|f| f.category == Category::Associations
+                && f.subject.columns.contains(&"signal_a".to_string())
+                && f.subject.columns.contains(&"signal_b".to_string())),
+            "the kept pair must merge into one view"
+        );
+    }
+
+    #[test]
+    fn cap_prescreen_drops_identifier_before_dependent_columns() {
+        // 66 eligible columns at Animals scale (60 rows), cap 64.
+        // A unique string identifier can memorize every other
+        // column on a sample this size, so raw dependence ranks it
+        // first; the screen must give it no ranking signal and drop
+        // it ahead of the genuinely dependent pair at the end.
+        let mut s = 0x2545F4914F6CDD1Du64;
+        let mut next = move || {
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            (s.wrapping_mul(0x9E3779B97F4A7C15) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let n = 60usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut dtypes: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..63 {
+            names.push(format!("noise_{i}"));
+            dtypes.push("float64".to_string());
+            let vals: Vec<Option<f64>> = (0..n).map(|_| Some(next() * 10.0)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        names.push("row_id".to_string());
+        dtypes.push("string".to_string());
+        cols.push(TypedCol::StrOwned {
+            vals: (0..n).map(|i| Some(format!("row_{i:03}"))).collect(),
+        });
+        let regime: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                let base = if i < n / 2 { 0.0 } else { 10.0 };
+                Some(base + next() * 0.01)
+            })
+            .collect();
+        for name in ["signal_a", "signal_b"] {
+            names.push(name.to_string());
+            dtypes.push("float64".to_string());
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(regime.clone()),
+            });
+        }
+        let table = TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 200,
+            ..Default::default()
+        };
+        let (_, outcome) = views_pass(&table, &cfg);
+        assert_eq!(
+            outcome.dropped_columns.len(),
+            2,
+            "dropped = {:?}",
+            outcome.dropped_columns
+        );
+        assert!(
+            outcome.dropped_columns.contains(&"row_id".to_string()),
+            "identifier must be dropped: {:?}",
+            outcome.dropped_columns
+        );
+        assert!(!outcome.dropped_columns.contains(&"signal_a".to_string()));
+        assert!(!outcome.dropped_columns.contains(&"signal_b".to_string()));
     }
 
     #[test]
