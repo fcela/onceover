@@ -12,11 +12,13 @@ project:
       children:
         - file: usage/install.ipynb
         - file: usage/quickstart.ipynb
+        - file: usage/capabilities.ipynb
         - file: usage/findings.ipynb
         - file: usage/columns.ipynb
         - file: usage/coverage.ipynb
         - file: usage/large_tables.ipynb
         - file: usage/serialization.ipynb
+        - file: usage/api.ipynb
     - title: Part II — Case studies
       children:
         - file: case_studies/vendor_extract.ipynb
@@ -27,6 +29,7 @@ project:
       children:
         - file: methodology/evidence.ipynb
         - file: methodology/sampling.ipynb
+        - file: methodology/expectations.ipynb
         - file: methodology/column_cards.ipynb
         - file: methodology/sentinel_values.ipynb
         - file: methodology/keys_duplicates.ipynb
@@ -35,6 +38,9 @@ project:
         - file: methodology/rules_tables.ipynb
         - file: methodology/associations.ipynb
         - file: methodology/dependence_measures.ipynb
+        - file: methodology/target_shapes.ipynb
+        - file: methodology/interactions.ipynb
+        - file: methodology/period_associations.ipynb
         - file: methodology/view_clusters.ipynb
         - file: methodology/view_clusters_reference.ipynb
         - file: methodology/hotspots.ipynb

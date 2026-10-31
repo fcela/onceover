@@ -3,7 +3,7 @@
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.2 replaces schema 0.1 and is used by package version 0.1.1.
+Schema 0.2 replaces schema 0.1 and is used by package version 0.1.3.
 
 ## Categories and statement definitions
 

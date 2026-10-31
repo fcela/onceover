@@ -64,7 +64,7 @@ report.finding("<id>")                       # one finding or None
 report.select(category="dependencies")       # filters compose:
 report.select(type="functional", column="x") # category, type,
                                              # column, target
-report.to_digest(chars=8_000)                # rollup for triage
+report.to_digest(budget_chars=8_000)                # rollup for triage
 report.to_json()                             # full report
 report.to_json(max_chars=12_000)             # budgeted view; a
         # `budget` record in the output states what was cut

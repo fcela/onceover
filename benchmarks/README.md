@@ -1,60 +1,45 @@
 # Benchmarks
 
-A corpus of real tables with documented behavior, profiled on every run
-so that detector changes are measured against known answers rather than
-impressions. Issues #20 (harness), #21 (business pack), #23 (GritBot pack).
+The benchmarks exercise profiling cost and result quality together. The
+synthetic scale fixture tests exact counts and recovery of known
+relationships on large, wide tables. The corpus checks documented behavior
+on real datasets.
 
-## Layout
+| Benchmark | What it measures | Documentation |
+|---|---|---|
+| Large-table fixture | Runtime, resident memory, exact cardinalities, and relationships beyond column 64 | [Protocol and recorded results](../docs/benchmarks/large-table-performance.md) |
+| Known-answer corpus | Findings and coverage against per-dataset expectations | [Corpus guide](corpus/README.md) |
+| CI timing gate | Large runtime regressions on two smaller synthetic tables | [Timing gate](timing_gate.py) |
 
-- `registry.json` — every dataset: pack, mode, license, source, shape,
-  content hash (bundled), expectations, notes.
-- `data/<pack>/<dataset>/` — `data.csv` (bundled datasets only),
-  `ATTRIBUTION.md` (source, license, citation, preprocessing log),
-  `prepare.py` (regenerates `data.csv` from the raw source).
-- `run_benchmarks.py` — the runner (below).
-- Results are written up in `docs/benchmarks/` (project convention:
-  a benchmark that is not in the docs does not exist).
+## Large tables
 
-## License gate
+Run from the repository root against the installed package:
 
-The package is MIT. A dataset is bundled only when its terms are
-compatible with redistribution inside an MIT-licensed package (public
-domain, CC BY 4.0). Non-commercial, share-alike, no-derivatives, or
-unclear terms make a dataset **test-only**: its `prepare.py` fetches
-and prepares it locally, the registry records attribution and
-expectations, and its CSV is never committed.
+```bash
+python -m pip install '.[benchmark]'
+python benchmarks/scale.py --rows 2000000 --columns 200 --threads 4 \
+  --output /tmp/onceover-scale.json
+```
 
-## Preprocessing standard
+The fixed seed plants an affine identity, a nonlinear response, and a
+category-to-label dependency in the final columns. The script fails if
+recovery or exact cardinality checks fail. Its JSON output records package
+versions, search coverage, timing, and sampled process RSS. See the
+[benchmark documentation](../docs/benchmarks/large-table-performance.md)
+for the workload, measurement boundaries, comparison caveats, and results.
 
-Decode and rename only: coded categoricals become the labels in the
-dataset's own documentation, cryptic columns get plain names, dates
-become ISO. No rows dropped, no values imputed, no outliers touched.
-Every transformation is listed in the dataset's `ATTRIBUTION.md`, and
-`prepare.py` implements exactly that list.
+## Real datasets
 
-## Running
+```bash
+python benchmarks/corpus/run_benchmarks.py --pack gritbot
+```
 
-    python benchmarks/run_benchmarks.py [--pack gritbot|business]
-                                        [--only <dataset-id>]
+The [registry](corpus/registry.json) records each dataset's source, license,
+preprocessing, and expectations. Bundled data is hash-verified before
+profiling. Test-only datasets run when their prepared CSV exists locally;
+otherwise the runner reports why they were skipped.
 
-Bundled datasets are hash-verified against the registry before
-profiling. Test-only datasets run when their `data.csv` exists locally
-and are otherwise reported as skipped with the registry's reason.
-Each run writes a JSON record under `runs/` (gitignored) and exits
-nonzero if any "found" expectation misses, any known-miss tripwire
-matches, or any coverage entry errors.
-
-Expectations come in three kinds: `finding` predicates over the
-report (category / type / form / target / columns), `documented_case`
-records (published anomalies with a found / partial / missed
-disposition, reviewed by hand each run), and `max_findings` guards.
-A `finding` expectation with `"expect": "missed"` is a known-miss
-tripwire: it passes while nothing matches, and fails loudly when a
-future detector starts matching — the signal to promote the case.
-
-## Benchmark corpus (known-answer datasets)
-
-`benchmarks/corpus/` holds the registry-driven corpus of real tables
-with documented behavior (GritBot and business packs): bundled CSVs
-with attribution where the license allows, per-dataset expectations,
-and run write-ups in `docs/benchmarks/`. See `benchmarks/corpus/README.md`.
+Every dataset has attribution and a preparation script. Preparation decodes
+or renames source fields; it does not drop rows, impute values, or remove
+outliers. The [corpus guide](corpus/README.md) explains the redistribution
+policy, expectation types, and known-miss checks.
