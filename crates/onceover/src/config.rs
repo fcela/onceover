@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
-    AssociationConfig, BreaksConfig, HotspotConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
-    PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
+    AssociationConfig, BreaksConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
+    HotspotConfig, PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig,
+    ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

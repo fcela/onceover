@@ -814,8 +814,7 @@ pub fn profile_breaks(
         None => {
             return (
                 Vec::new(),
-                "no date, datetime, or year-like integer column; break scan skipped"
-                    .to_string(),
+                "no date, datetime, or year-like integer column; break scan skipped".to_string(),
             )
         }
     };
@@ -850,13 +849,7 @@ pub fn profile_breaks(
             skipped += 1;
             continue;
         }
-        findings.extend(excursion_findings(
-            name,
-            time_name,
-            axis,
-            &points,
-            cfg,
-        ));
+        findings.extend(excursion_findings(name, time_name, axis, &points, cfg));
         let train: Vec<(i64, f64)> = points
             .iter()
             .filter(|&&(_, r, _)| !is_holdout(r))
@@ -1181,11 +1174,7 @@ struct Excursion {
     peak_z: f64,
 }
 
-fn excursion_scan(
-    points: &[(i64, u32, f64)],
-    axis: Axis,
-    cfg: &BreaksConfig,
-) -> Vec<Excursion> {
+fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) -> Vec<Excursion> {
     let n = points.len();
     if n < 50 {
         return Vec::new();

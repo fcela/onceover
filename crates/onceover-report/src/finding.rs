@@ -91,7 +91,9 @@ impl Pattern {
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
             Self::Duplicates => Category::Duplicates,
-            Self::FormatVariation | Self::Heaping | Self::DigitPreference
+            Self::FormatVariation
+            | Self::Heaping
+            | Self::DigitPreference
             | Self::BenfordDeviation => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency

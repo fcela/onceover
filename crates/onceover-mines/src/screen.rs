@@ -11,7 +11,13 @@ fn ln_table() -> &'static [f64] {
     static TABLE: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
         (0..=(1 << 20))
-            .map(|k| if k == 0 { f64::NEG_INFINITY } else { (k as f64).ln() })
+            .map(|k| {
+                if k == 0 {
+                    f64::NEG_INFINITY
+                } else {
+                    (k as f64).ln()
+                }
+            })
             .collect()
     })
 }
@@ -69,12 +75,7 @@ pub fn marginal_entropy(bins: &[u8], rows: &[u32]) -> Option<f64> {
 /// neither column has a missing value in `rows` (so the
 /// pair-complete row count equals the full row count and the
 /// marginals are pair-independent).
-pub fn information_fast(
-    a: &[u8],
-    b: &[u8],
-    rows: &[u32],
-    ent: (Option<f64>, Option<f64>),
-) -> f64 {
+pub fn information_fast(a: &[u8], b: &[u8], rows: &[u32], ent: (Option<f64>, Option<f64>)) -> f64 {
     information_fast_t(a, b, rows, ent, ln_table())
 }
 
@@ -219,9 +220,7 @@ mod fast_score_tests {
     fn bins_from(state: &mut u64, n: usize, missing_every: usize) -> Vec<u8> {
         (0..n)
             .map(|i| {
-                *state = state
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1);
+                *state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
                 if missing_every > 0 && i % missing_every == 7 {
                     MISSING
                 } else {
@@ -262,10 +261,7 @@ mod fast_score_tests {
         let b = bins_from(&mut s, 300, 13);
         let exact = information(&a, &b, &rows);
         let fast = information_fast(&a, &b, &rows, (None, None));
-        assert!(
-            (exact - fast).abs() < 1e-9,
-            "exact {exact} fast {fast}"
-        );
+        assert!((exact - fast).abs() < 1e-9, "exact {exact} fast {fast}");
         // A column with missing values has no cacheable entropy.
         assert!(marginal_entropy(&a, &rows).is_none());
         assert!(marginal_entropy(&b, &rows).is_none());

@@ -29,7 +29,6 @@ pub use targets::TargetProfile;
 pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, AssociationConfig};
-pub use hotspots::{hotspots, HotspotConfig};
 pub use breaks::{profile_breaks, BreaksConfig};
 pub use dates::{analyze_temporal, DatesOutcome};
 pub use dep::{screen as screen_dependence, PairDep};
@@ -38,6 +37,7 @@ pub use drift::{profile_drift, DriftConfig};
 pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
 pub use gbm::{screen as screen_predictability, ScreenConfig, ScreenOutcome, TargetResult};
+pub use hotspots::{hotspots, HotspotConfig};
 pub use hstat::{profile_interactions, HConfig};
 pub use ident::identities;
 pub use ident::multiterm_identities;

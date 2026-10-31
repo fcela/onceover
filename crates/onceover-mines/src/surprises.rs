@@ -437,10 +437,7 @@ fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<C
     if !(2..=cfg.max_condition_levels).contains(&labels.len()) {
         return None;
     }
-    let codes = raw
-        .iter()
-        .map(|v| v.as_ref().map(|s| index[s]))
-        .collect();
+    let codes = raw.iter().map(|v| v.as_ref().map(|s| index[s])).collect();
     Some(Coded { codes, labels })
 }
 
@@ -538,11 +535,7 @@ fn eval_context(
     if present == 0 || counts.iter().filter(|&&c| c > 0).count() < 2 {
         return None;
     }
-    let (dom, &dom_count) = counts
-        .iter()
-        .enumerate()
-        .max_by_key(|&(_, c)| c)
-        .unwrap();
+    let (dom, &dom_count) = counts.iter().enumerate().max_by_key(|&(_, c)| c).unwrap();
     let mut breakers: Vec<usize> = Vec::new();
     for (w, &word) in ctx.iter().enumerate() {
         let mut bits = word;
@@ -571,9 +564,7 @@ fn make_categorical_finding(
     let dom_label = &tcoded.labels[cand.dom as usize];
     let ctx_desc: Vec<String> = ctx_cols
         .iter()
-        .map(|(c, coded, lvl)| {
-            format!("{} = {}", table.names[*c], coded.labels[*lvl as usize])
-        })
+        .map(|(c, coded, lvl)| format!("{} = {}", table.names[*c], coded.labels[*lvl as usize]))
         .collect();
     let breaker_desc: Vec<String> = cand
         .breakers
@@ -595,8 +586,16 @@ fn make_categorical_finding(
         dom_label,
         cand.share * 100.0,
         cand.breakers.len(),
-        if cand.breakers.len() == 1 { "row" } else { "rows" },
-        if cand.breakers.len() == 1 { "breaks" } else { "break" },
+        if cand.breakers.len() == 1 {
+            "row"
+        } else {
+            "rows"
+        },
+        if cand.breakers.len() == 1 {
+            "breaks"
+        } else {
+            "break"
+        },
         breaker_desc.join(", "),
     );
     let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -647,13 +646,18 @@ fn make_categorical_finding(
     )
 }
 
+/// One beam entry in the triple extension: the condition levels
+/// chosen so far, their row bitset, the dominant share, and the
+/// number of rows covered.
+type BeamState = (Vec<(usize, u32)>, Vec<u64>, f64, usize);
+
 fn profile_categorical_surprises(
     table: &TypedTable,
     excluded: &[usize],
     cfg: &SurpriseConfig,
     budget: usize,
 ) -> (Vec<Finding>, usize, usize) {
-    let words = (table.n + 63) / 64;
+    let words = table.n.div_ceil(64);
     // Eligible columns coded once: conditions may be any eligible
     // column; targets are the text/bool ones.
     let coded: Vec<Option<Coded>> = (0..table.cols.len())
@@ -789,7 +793,7 @@ fn profile_categorical_surprises(
                 })
                 .collect();
             // Level 2: pairs of items from distinct deep columns.
-            let mut beam: Vec<(Vec<(usize, u32)>, Vec<u64>, f64, usize)> = Vec::new();
+            let mut beam: Vec<BeamState> = Vec::new();
             let mut scratch = vec![0u64; words];
             for i in 0..deep_items.len() {
                 for j in i + 1..deep_items.len() {
@@ -894,7 +898,13 @@ fn profile_categorical_surprises(
             logtail: cand.logtail,
         };
         cand.breakers.sort_unstable();
-        findings.push(make_categorical_finding(table, cand.target, tcoded, &ctx_cols, &cand));
+        findings.push(make_categorical_finding(
+            table,
+            cand.target,
+            tcoded,
+            &ctx_cols,
+            &cand,
+        ));
     }
     (findings, targets.len(), contexts_evaluated)
 }
@@ -986,12 +996,7 @@ pub fn profile_surprises(
     }
     let numeric_findings = findings.len();
     let (cat_findings, cat_targets, cat_contexts) = if findings.len() < cfg.max_findings {
-        profile_categorical_surprises(
-            table,
-            excluded,
-            cfg,
-            cfg.max_findings - findings.len(),
-        )
+        profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
     } else {
         (Vec::new(), 0, 0)
     };
@@ -1048,10 +1053,7 @@ mod tests {
 
     fn str_col(vals: Vec<Option<&str>>) -> TypedCol<'static> {
         TypedCol::StrOwned {
-            vals: vals
-                .into_iter()
-                .map(|v| v.map(|s| s.to_string()))
-                .collect(),
+            vals: vals.into_iter().map(|v| v.map(|s| s.to_string())).collect(),
         }
     }
 
@@ -1085,9 +1087,22 @@ mod tests {
         );
         let cfg = SurpriseConfig::default();
         let (findings, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
-        assert_eq!(findings.len(), 1, "claims: {:?}", findings.iter().map(|f| &f.claim).collect::<Vec<_>>());
-        assert!(findings[0].claim.contains("row 7"), "claim: {}", findings[0].claim);
-        assert!(findings[0].claim.contains("grp = A"), "claim: {}", findings[0].claim);
+        assert_eq!(
+            findings.len(),
+            1,
+            "claims: {:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert!(
+            findings[0].claim.contains("row 7"),
+            "claim: {}",
+            findings[0].claim
+        );
+        assert!(
+            findings[0].claim.contains("grp = A"),
+            "claim: {}",
+            findings[0].claim
+        );
     }
 
     #[test]
@@ -1107,7 +1122,11 @@ mod tests {
         );
         let cfg = SurpriseConfig::default();
         let (findings, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
-        assert!(findings.is_empty(), "claims: {:?}", findings.iter().map(|f| &f.claim).collect::<Vec<_>>());
+        assert!(
+            findings.is_empty(),
+            "claims: {:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1139,7 +1158,11 @@ mod tests {
         // the breaker from the other two columns' perspectives
         // (one finding per target, by design).
         assert!(!findings.is_empty());
-        assert!(findings[0].claim.contains("row 42"), "claim: {}", findings[0].claim);
+        assert!(
+            findings[0].claim.contains("row 42"),
+            "claim: {}",
+            findings[0].claim
+        );
         assert!(
             findings[0].claim.contains("c1 = a") && findings[0].claim.contains("c2 = b"),
             "claim: {}",

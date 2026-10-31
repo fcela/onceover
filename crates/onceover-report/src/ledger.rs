@@ -239,11 +239,7 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
         if !demotions.is_empty() {
             let factor: f64 = demotions.values().product();
             combined *= factor;
-            let reasons = demotions
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("+");
+            let reasons = demotions.keys().cloned().collect::<Vec<_>>().join("+");
             let rounded = (factor * 10_000.0).round() / 10_000.0;
             for e in &mut f.evidence {
                 e.metrics.insert("triviality".into(), json!(reasons));
