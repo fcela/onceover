@@ -63,10 +63,10 @@ fn col_index(table: &TypedTable, name: &str) -> Option<usize> {
 fn distinct_days(col: &TypedCol) -> Option<Vec<i64>> {
     let mut days: Vec<i64> = match col {
         TypedCol::Date { vals } => vals.iter().flatten().map(|&d| d as i64).collect(),
-        TypedCol::Datetime { vals } => vals
+        TypedCol::Datetime { vals, unit } => vals
             .iter()
             .flatten()
-            .map(|us| us.div_euclid(86_400_000_000))
+            .map(|us| onceover_core::dateutil::timestamp_days(*us, *unit))
             .collect(),
         _ => return None,
     };
@@ -75,10 +75,16 @@ fn distinct_days(col: &TypedCol) -> Option<Vec<i64>> {
     Some(days)
 }
 
-fn distinct_ints(col: &TypedCol) -> Option<Vec<i64>> {
+fn distinct_ints(col: &TypedCol) -> Option<Vec<i128>> {
     match col {
         TypedCol::I64 { vals } => {
-            let mut v: Vec<i64> = vals.iter().flatten().copied().collect();
+            let mut v: Vec<i128> = vals.iter().flatten().map(|v| *v as i128).collect();
+            v.sort_unstable();
+            v.dedup();
+            Some(v)
+        }
+        TypedCol::U64 { vals } => {
+            let mut v: Vec<i128> = vals.iter().flatten().map(|v| *v as i128).collect();
             v.sort_unstable();
             v.dedup();
             Some(v)
@@ -151,28 +157,23 @@ fn expected_periods(kind: CadenceKind, days: &[i64]) -> Vec<i64> {
                 CadenceKind::Fixed(k) => k,
                 _ => unreachable!(),
             };
-            let mut out = Vec::new();
-            let mut d = min;
-            while d <= max {
-                out.push(d);
-                d += step;
-            }
-            out
+            std::iter::successors(Some(min), |d| d.checked_add(step))
+                .take_while(|&d| d <= max)
+                .take(MAX_EXPECTED_PERIODS + 1)
+                .collect()
         }
-        CadenceKind::BusinessDay => (min..=max).filter(|&d| !is_weekend(d)).collect(),
-        CadenceKind::Weekly => {
-            let mut out = Vec::new();
-            let mut d = min;
-            while d <= max {
-                out.push(d);
-                d += 7;
-            }
-            out
-        }
+        CadenceKind::BusinessDay => (min..=max)
+            .filter(|&d| !is_weekend(d))
+            .take(MAX_EXPECTED_PERIODS + 1)
+            .collect(),
+        CadenceKind::Weekly => std::iter::successors(Some(min), |d| d.checked_add(7))
+            .take_while(|&d| d <= max)
+            .take(MAX_EXPECTED_PERIODS + 1)
+            .collect(),
         CadenceKind::Monthly => {
             let lo = period_key(kind, min);
             let hi = period_key(kind, max);
-            (lo..=hi).collect()
+            (lo..=hi).take(MAX_EXPECTED_PERIODS + 1).collect()
         }
     }
 }
@@ -207,8 +208,7 @@ fn declared_date_gaps(
         return (
             Vec::new(),
             Some(format!(
-                "gap check on '{name}' skipped: {} expected periods exceeds the {MAX_EXPECTED_PERIODS} cap",
-                expected.len()
+                "gap check on '{name}' skipped: more than {MAX_EXPECTED_PERIODS} expected periods exceeds the {MAX_EXPECTED_PERIODS} cap"
             )),
         );
     }
@@ -314,7 +314,7 @@ fn sequence_check(
         );
     }
     let step = match hints.cadence.get(name) {
-        Some(Cadence::Days(k)) if *k >= 1 => *k,
+        Some(Cadence::Days(k)) if *k >= 1 => *k as i128,
         Some(Cadence::Days(_)) => {
             return (
                 Vec::new(),
@@ -333,7 +333,7 @@ fn sequence_check(
         }
         None => {
             // Modal positive difference between consecutive distinct values.
-            let mut counts: BTreeMap<i64, u32> = BTreeMap::new();
+            let mut counts: BTreeMap<i128, u32> = BTreeMap::new();
             for w in values.windows(2) {
                 *counts.entry(w[1] - w[0]).or_insert(0) += 1;
             }
@@ -345,7 +345,7 @@ fn sequence_check(
         }
     };
     let (min, max) = (values[0], values[values.len() - 1]);
-    let expected = ((max as i128 - min as i128) / step as i128) + 1;
+    let expected = ((max - min) / step) + 1;
     if expected > MAX_SEQUENCE_EXPECTED {
         return (
             Vec::new(),
@@ -354,8 +354,8 @@ fn sequence_check(
             )),
         );
     }
-    let observed: HashSet<i64> = values.iter().copied().collect();
-    let mut absent: Vec<i64> = Vec::new();
+    let observed: HashSet<i128> = values.iter().copied().collect();
+    let mut absent: Vec<i128> = Vec::new();
     let mut missing: i64 = 0;
     let mut v = min;
     while v <= max {
@@ -408,6 +408,7 @@ fn sequence_check(
 fn cell_value(col: &TypedCol, row: usize) -> Option<Value> {
     match col {
         TypedCol::I64 { vals } => vals.get(row).flatten().map(|v| json!(v)),
+        TypedCol::U64 { vals } => vals.get(row).flatten().map(|v| json!(v)),
         TypedCol::F64 { vals } => vals.get(row).flatten().and_then(|v| {
             if v.is_finite() {
                 serde_json::Number::from_f64(v).map(Value::Number)
@@ -419,7 +420,9 @@ fn cell_value(col: &TypedCol, row: usize) -> Option<Value> {
         TypedCol::StrOwned { vals } => vals.get(row).and_then(|o| o.as_deref()).map(|s| json!(s)),
         TypedCol::Bool { vals } => vals.get(row).copied().flatten().map(|b| json!(b)),
         TypedCol::Date { vals } => vals.get(row).copied().flatten().map(|d| json!(d)),
-        TypedCol::Datetime { vals } => vals.get(row).copied().flatten().map(|us| json!(us)),
+        TypedCol::Datetime { vals, .. } => {
+            vals.get(row).copied().flatten().map(|ticks| json!(ticks))
+        }
         _ => None,
     }
 }
@@ -429,6 +432,7 @@ fn cmp_value(a: &Value, b: &Value) -> std::cmp::Ordering {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => match (x.as_i64(), y.as_i64()) {
             (Some(p), Some(q)) => p.cmp(&q),
+            _ if x.as_u64().is_some() && y.as_u64().is_some() => x.as_u64().cmp(&y.as_u64()),
             _ => x
                 .as_f64()
                 .unwrap_or(f64::NAN)
@@ -579,6 +583,7 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
                             TypedCol::Date { .. }
                                 | TypedCol::Datetime { .. }
                                 | TypedCol::I64 { .. }
+                                | TypedCol::U64 { .. }
                         )
                     })
                 })
@@ -639,13 +644,14 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
                 .copied()
                 .flatten()
                 .map(|d| period_key(kind.unwrap_or(CadenceKind::Daily), d as i64)),
-            TypedCol::Datetime { vals } => vals.get(row).copied().flatten().map(|us| {
+            TypedCol::Datetime { vals, unit } => vals.get(row).copied().flatten().map(|us| {
                 period_key(
                     kind.unwrap_or(CadenceKind::Daily),
-                    us.div_euclid(86_400_000_000),
+                    onceover_core::dateutil::timestamp_days(us, *unit),
                 )
             }),
             TypedCol::I64 { vals } => vals.get(row).flatten(),
+            TypedCol::U64 { vals } => vals.at(row).and_then(|v| i64::try_from(v).ok()),
             _ => None,
         }
     };
@@ -708,7 +714,9 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
             let days: Vec<i64> = all_periods.iter().copied().collect();
             // For monthly, all_periods already holds month indices.
             match k {
-                CadenceKind::Monthly => (days[0]..=days[days.len() - 1]).collect(),
+                CadenceKind::Monthly => (days[0]..=days[days.len() - 1])
+                    .take(MAX_PANEL_CELLS / groups.len() + 1)
+                    .collect(),
                 _ => expected_periods(k, &days),
             }
         }
@@ -717,7 +725,7 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
     let expected_cells = groups.len() * expected_periods.len();
     if expected_cells > MAX_PANEL_CELLS {
         notes.push(format!(
-            "panel check skipped: {} groups × {} periods exceeds the {MAX_PANEL_CELLS} cell cap",
+            "panel check skipped: {} groups × at least {} periods exceeds the {MAX_PANEL_CELLS} cell cap",
             groups.len(),
             expected_periods.len()
         ));
@@ -919,7 +927,7 @@ pub fn analyze_expectations(table: &TypedTable, hints: &ProfileHints) -> Expecta
         };
         let in_no_gaps = hints.no_gaps.contains(name);
         match &table.cols[i] {
-            TypedCol::I64 { .. } => {
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } => {
                 if !in_no_gaps {
                     notes.push(format!(
                         "gap check on '{name}' skipped: a cadence alone does not declare an integer column gap-free; add it to no_gaps"
@@ -1025,6 +1033,26 @@ pub fn analyze_expectations(table: &TypedTable, hints: &ProfileHints) -> Expecta
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn period_enumeration_is_bounded_even_at_date_extremes() {
+        use super::*;
+        let days = [i32::MIN as i64, i32::MAX as i64];
+        for kind in [
+            CadenceKind::Daily,
+            CadenceKind::BusinessDay,
+            CadenceKind::Weekly,
+            CadenceKind::Monthly,
+        ] {
+            assert_eq!(
+                expected_periods(kind, &days).len(),
+                MAX_EXPECTED_PERIODS + 1
+            );
+        }
+        assert_eq!(
+            expected_periods(CadenceKind::Fixed(i64::MAX), &[0, 2]),
+            vec![0]
+        );
+    }
     use super::*;
 
     fn hints(v: serde_json::Value) -> ProfileHints {

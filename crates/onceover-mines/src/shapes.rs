@@ -216,6 +216,7 @@ pub fn shape_diagnostics(x: &[f64], y: &[f64]) -> ShapeDiagnostics {
 fn column_f64(table: &TypedTable, ci: usize) -> Option<Vec<Option<f64>>> {
     match &table.cols[ci] {
         TypedCol::I64 { vals } => Some(vals.iter().map(|v| v.map(|x| *x as f64)).collect()),
+        TypedCol::U64 { vals } => Some(vals.iter().map(|v| v.map(|x| *x as f64)).collect()),
         TypedCol::F64 { vals } => Some(vals.iter().map(|v| v.copied()).collect()),
         _ => None,
     }

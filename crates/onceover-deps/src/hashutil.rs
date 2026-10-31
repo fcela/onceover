@@ -41,6 +41,14 @@ pub fn build_hashes(cols: &[&TypedCol], rows: &[u32]) -> ColHashes {
                     }
                 }
             }
+            TypedCol::U64 { vals } => {
+                for (j, &r) in rows.iter().enumerate() {
+                    match vals.at(r as usize) {
+                        Some(v) => h[j] = v,
+                        None => nul[j] = true,
+                    }
+                }
+            }
             TypedCol::F64 { vals } => {
                 for (j, &r) in rows.iter().enumerate() {
                     match vals.at(r as usize) {
@@ -82,7 +90,7 @@ pub fn build_hashes(cols: &[&TypedCol], rows: &[u32]) -> ColHashes {
                     }
                 }
             }
-            TypedCol::Datetime { vals } => {
+            TypedCol::Datetime { vals, .. } => {
                 for (j, &r) in rows.iter().enumerate() {
                     match vals[r as usize] {
                         Some(v) => h[j] = v as u64,
@@ -129,6 +137,13 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
             }
             None => out.push(0x00),
         },
+        TypedCol::U64 { vals } => match vals.at(row) {
+            Some(v) => {
+                out.push(0x07);
+                push_u64!(v);
+            }
+            None => out.push(0x00),
+        },
         TypedCol::F64 { vals } => match vals.at(row) {
             Some(v) => {
                 out.push(0x02);
@@ -170,7 +185,7 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
             }
             None => out.push(0x00),
         },
-        TypedCol::Datetime { vals } => match vals[row] {
+        TypedCol::Datetime { vals, .. } => match vals[row] {
             Some(v) => {
                 out.push(0x06);
                 push_u64!(v as u64);

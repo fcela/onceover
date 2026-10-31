@@ -22,7 +22,7 @@ use onceover_core::{TypedCol, TypedTable};
 /// Minimum occurrences before a value is a sentinel candidate,
 /// and the minimum number of other values before a bulk fence is
 /// meaningful.
-const MIN_OCCURRENCES: usize = 20;
+pub const MIN_OCCURRENCES: usize = 20;
 const MIN_OTHERS: usize = 40;
 /// The window test: the shortest run of rows covering at least
 /// this share of the value's occurrences must span at most
@@ -39,8 +39,15 @@ const MAX_PER_COLUMN: usize = 3;
 const EXACT_FENCE_SHARE: f64 = 0.05;
 
 pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
+    sentinel_values_for_columns(table, &(0..table.cols.len()).collect::<Vec<_>>())
+}
+
+/// The pipeline reuses exact column counts to exclude columns whose most
+/// frequent value cannot meet the occurrence floor. No candidate is sampled.
+pub fn sentinel_values_for_columns(table: &TypedTable, columns: &[usize]) -> Vec<Finding> {
     let mut out = Vec::new();
-    for (i, col) in table.cols.iter().enumerate() {
+    for &i in columns {
+        let col = &table.cols[i];
         // (row, exact key, value) over the non-null entries.
         let entries: Vec<(usize, u64, f64)> = match col {
             TypedCol::F64 { vals } => vals
@@ -53,26 +60,42 @@ pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
                 .enumerate()
                 .filter_map(|(r, v)| v.map(|x| (r, *x as u64, *x as f64)))
                 .collect(),
+            TypedCol::U64 { vals } => vals
+                .iter()
+                .enumerate()
+                .filter_map(|(r, v)| v.map(|x| (r, *x, *x as f64)))
+                .collect(),
             _ => continue,
         };
         if entries.len() < MIN_OCCURRENCES + MIN_OTHERS {
             continue;
         }
-        let mut positions: HashMap<u64, Vec<usize>> = HashMap::new();
-        let mut value_of: HashMap<u64, f64> = HashMap::new();
-        for &(r, key, x) in &entries {
-            positions.entry(key).or_default().push(r);
-            value_of.insert(key, x);
+        let mut counts: HashMap<u64, usize> = HashMap::new();
+        for &(_, key, _) in &entries {
+            *counts.entry(key).or_default() += 1;
+        }
+        let mut positions: HashMap<u64, Vec<usize>> = counts
+            .into_iter()
+            .filter(|(_, n)| *n >= MIN_OCCURRENCES)
+            .map(|(key, n)| (key, Vec::with_capacity(n)))
+            .collect();
+        if positions.is_empty() {
+            continue;
+        }
+        for &(r, key, _) in &entries {
+            if let Some(pos) = positions.get_mut(&key) {
+                pos.push(r);
+            }
         }
         let mut candidates: Vec<(u64, &Vec<usize>)> = positions
             .iter()
             .filter(|(_, p)| p.len() >= MIN_OCCURRENCES)
             .map(|(k, p)| (*k, p))
             .collect();
-        candidates.sort_by_key(|(_, p)| std::cmp::Reverse(p.len()));
+        candidates.sort_by_key(|(key, p)| (std::cmp::Reverse(p.len()), *key));
 
         let all_values: Vec<f64> = entries.iter().map(|&(_, _, x)| x).collect();
-        let whole_fence = fence(&all_values);
+        let mut whole_fence = None;
         let n_rows = table.n.max(1) as f64;
 
         let mut emitted = 0;
@@ -80,7 +103,11 @@ pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
             if emitted >= MAX_PER_COLUMN {
                 break;
             }
-            let v = value_of[&key];
+            let v = match col {
+                TypedCol::I64 { .. } => (key as i64) as f64,
+                TypedCol::U64 { .. } => key as f64,
+                _ => f64::from_bits(key),
+            };
             let count = pos.len();
             // Shortest window covering >= WINDOW_COVER_SHARE of
             // the occurrences.
@@ -110,7 +137,7 @@ pub fn sentinel_values(table: &TypedTable) -> Vec<Finding> {
                 }
                 fence(&others)
             } else {
-                whole_fence
+                *whole_fence.get_or_insert_with(|| fence(&all_values))
             };
             // Boundary rules: a value on the impossible side of
             // the other values' sign boundary is a code however

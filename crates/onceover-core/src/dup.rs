@@ -36,6 +36,11 @@ fn row_eq(t: &TypedTable, i: usize, j: usize) -> bool {
                     return false;
                 }
             }
+            TypedCol::U64 { vals } => {
+                if vals.at(i) != vals.at(j) {
+                    return false;
+                }
+            }
             TypedCol::F64 { vals } => {
                 if vals.at(i) != vals.at(j) {
                     return false;
@@ -61,7 +66,7 @@ fn row_eq(t: &TypedTable, i: usize, j: usize) -> bool {
                     return false;
                 }
             }
-            TypedCol::Datetime { vals } => {
+            TypedCol::Datetime { vals, .. } => {
                 if vals[i] != vals[j] {
                     return false;
                 }
@@ -77,6 +82,7 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
     for (ci, col) in t.cols.iter().enumerate() {
         let vh = match col {
             TypedCol::I64 { vals } => vals.at(i).map(|v| v as u64).unwrap_or(MISSING),
+            TypedCol::U64 { vals } => vals.at(i).unwrap_or(MISSING),
             TypedCol::F64 { vals } => vals.at(i).map(|v| v.to_bits()).unwrap_or(MISSING),
             TypedCol::Str { vals } => match vals[i] {
                 Some(s) => fnv64(s.as_bytes()),
@@ -92,7 +98,7 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
                 None => MISSING,
             },
             TypedCol::Date { vals } => vals[i].map(|v| v as u64).unwrap_or(MISSING),
-            TypedCol::Datetime { vals } => vals[i].map(|v| v as u64).unwrap_or(MISSING),
+            TypedCol::Datetime { vals, .. } => vals[i].map(|v| v as u64).unwrap_or(MISSING),
             TypedCol::Null { .. } | TypedCol::Other { .. } => continue,
         };
         h ^= vh
@@ -117,23 +123,31 @@ pub fn find_duplicate_rows(t: &TypedTable) -> Option<DupInfo> {
     }
 
     let mut confirmed: Vec<Vec<u32>> = Vec::new();
-    for (_, mut rows) in by_hash {
+    for (_, rows) in by_hash {
         if rows.len() < 2 {
             continue;
         }
-        // Verify exactly against the first row (collision-safe).
-        let anchor = rows[0] as usize;
-        rows.retain(|r| row_eq(t, *r as usize, anchor));
-        if rows.len() >= 2 {
-            rows.sort_unstable();
-            confirmed.push(rows);
+        // A hash bucket may contain several exact equality classes. Keep
+        // every class: comparing only with the first row loses duplicates
+        // among the other colliding values.
+        let mut groups: Vec<Vec<u32>> = Vec::new();
+        for row in rows {
+            if let Some(group) = groups
+                .iter_mut()
+                .find(|group| row_eq(t, row as usize, group[0] as usize))
+            {
+                group.push(row);
+            } else {
+                groups.push(vec![row]);
+            }
         }
+        confirmed.extend(groups.into_iter().filter(|group| group.len() >= 2));
     }
 
     if confirmed.is_empty() {
         return None;
     }
-    confirmed.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    confirmed.sort_by_key(|g| (std::cmp::Reverse(g.len()), g[0]));
 
     let n_redundant: usize = confirmed.iter().map(|g| g.len() - 1).sum();
     let max_group_size = confirmed[0].len();

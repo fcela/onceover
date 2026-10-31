@@ -66,7 +66,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
 
     for (ci, col) in table.cols.iter().enumerate() {
         match col {
-            TypedCol::I64 { .. } | TypedCol::F64 { .. } => {
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
                 let vals: Vec<Option<f64>> = (0..m)
                     .map(|j| numeric_at(col, out.rows[j] as usize))
                     .collect();
@@ -177,6 +177,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
 pub(crate) fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
     match col {
         TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
+        TypedCol::U64 { vals } => vals.at(r).map(|v| v as f64),
         TypedCol::F64 { vals } => vals.at(r),
         _ => None,
     }
@@ -185,7 +186,9 @@ pub(crate) fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
 fn days_at(col: &TypedCol, r: usize) -> Option<f64> {
     match col {
         TypedCol::Date { vals } => vals[r].map(|v| v as f64),
-        TypedCol::Datetime { vals } => vals[r].map(|v| (v.div_euclid(86_400_000_000)) as f64),
+        TypedCol::Datetime { vals, unit } => {
+            vals[r].map(|v| onceover_core::dateutil::timestamp_days(v, *unit) as f64)
+        }
         _ => None,
     }
 }

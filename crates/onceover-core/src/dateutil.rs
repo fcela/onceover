@@ -1,6 +1,46 @@
 //! Date utilities: civil-from-days (Howard Hinnant's algorithm), ISO
 //! formatting, and weekday math. No external time crate.
 
+use polars::prelude::TimeUnit;
+
+pub fn ticks_per_second(unit: TimeUnit) -> i64 {
+    match unit {
+        TimeUnit::Milliseconds => 1_000,
+        TimeUnit::Microseconds => 1_000_000,
+        TimeUnit::Nanoseconds => 1_000_000_000,
+    }
+}
+
+pub fn timestamp_days(ticks: i64, unit: TimeUnit) -> i64 {
+    ticks.div_euclid(86_400 * ticks_per_second(unit))
+}
+
+/// Format source ticks without losing sub-microsecond identity or
+/// overflowing when millisecond epochs exceed the microsecond range.
+pub fn iso_timestamp(ticks: i64, unit: TimeUnit) -> String {
+    let per_sec = ticks_per_second(unit);
+    let secs = ticks.div_euclid(per_sec);
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let mut text = format!(
+        "{} {:02}:{:02}:{:02}",
+        iso_date(days),
+        rem / 3600,
+        rem / 60 % 60,
+        rem % 60
+    );
+    let fraction = ticks.rem_euclid(per_sec);
+    if fraction != 0 {
+        let width = match unit {
+            TimeUnit::Milliseconds => 3,
+            TimeUnit::Microseconds => 6,
+            TimeUnit::Nanoseconds => 9,
+        };
+        text.push_str(&format!(".{fraction:0width$}"));
+    }
+    text
+}
+
 /// Convert days since 1970-01-01 to (year, month, day).
 pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;

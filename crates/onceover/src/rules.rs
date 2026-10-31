@@ -18,6 +18,7 @@ fn value(col: &TypedCol, row: usize, transform: Option<&str>) -> Option<Value> {
     }
     match col {
         TypedCol::I64 { vals } => vals.at(row).map(|v| json!(v)),
+        TypedCol::U64 { vals } => vals.at(row).map(|v| json!(v)),
         TypedCol::F64 { vals } => vals.at(row).map(|v| json!(v)),
         TypedCol::Str { .. } | TypedCol::StrOwned { .. } => col.str_at(row).map(|s| json!(s)),
         TypedCol::Bool { vals } => vals[row].map(|b| json!(b)),
@@ -28,11 +29,11 @@ fn value(col: &TypedCol, row: usize, transform: Option<&str>) -> Option<Value> {
                 json!(onceover_core::dateutil::iso_date(v as i64))
             }
         }),
-        TypedCol::Datetime { vals } => vals[row].map(|v| {
+        TypedCol::Datetime { vals, unit } => vals[row].map(|v| {
             if transform == Some("day_index") {
-                json!(v.div_euclid(86_400_000_000))
+                json!(onceover_core::dateutil::timestamp_days(v, *unit))
             } else {
-                json!(onceover_core::dateutil::iso_datetime(v))
+                json!(onceover_core::dateutil::iso_timestamp(v, *unit))
             }
         }),
         _ => None,
@@ -99,6 +100,16 @@ pub fn evaluate_rules(
         .map(|(i, name)| (name.as_str(), i))
         .collect();
     findings.retain_mut(|finding| {
+        // Wide-form rules were evaluated against their own source table
+        // before being merged into the long-form report. Its column names
+        // (and row population) are not those of this table.
+        if finding.evidence.iter().any(|e| {
+            e.metrics.get("source_form").and_then(Value::as_str) == Some("pivoted wide form")
+                && e.method.detector == "rule_evaluator"
+                && e.validation.method == "diagnostic_partition"
+        }) {
+            return true;
+        }
         if finding.category != Category::ConditionalRules {
             return true;
         }

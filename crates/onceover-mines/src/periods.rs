@@ -132,9 +132,9 @@ fn period_axis(table: &TypedTable) -> Option<PeriodAxis> {
     {
         let days: Vec<Option<i64>> = match &table.cols[di] {
             TypedCol::Date { vals } => vals.iter().map(|v| v.map(i64::from)).collect(),
-            TypedCol::Datetime { vals } => vals
+            TypedCol::Datetime { vals, unit } => vals
                 .iter()
-                .map(|v| v.map(|us| us.div_euclid(86_400_000_000)))
+                .map(|v| v.map(|us| onceover_core::dateutil::timestamp_days(us, *unit)))
                 .collect(),
             _ => unreachable!(),
         };
@@ -216,7 +216,11 @@ pub fn period_associations(table: &TypedTable, deps: &[PairDep], row_cap: usize)
 
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| {
-            i != axis.column && matches!(table.cols[i], TypedCol::I64 { .. } | TypedCol::F64 { .. })
+            i != axis.column
+                && matches!(
+                    table.cols[i],
+                    TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                )
         })
         .collect();
     let universe = numeric.len() * numeric.len().saturating_sub(1) / 2;

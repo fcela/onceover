@@ -157,6 +157,7 @@ fn label_like(col: &TypedCol) -> bool {
         TypedCol::Str { .. }
             | TypedCol::StrOwned { .. }
             | TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
             | TypedCol::F64 { .. }
     )
 }

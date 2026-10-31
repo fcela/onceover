@@ -107,7 +107,7 @@ struct Extreme {
     bulk_share: f64,
 }
 
-fn quantile(sorted: &[f64], q: f64) -> f64 {
+fn quantile(sorted: &[(f64, usize)], q: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
     }
@@ -115,7 +115,7 @@ fn quantile(sorted: &[f64], q: f64) -> f64 {
     let lo = pos.floor() as usize;
     let hi = (lo + 1).min(sorted.len() - 1);
     let frac = pos - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+    sorted[lo].0 * (1.0 - frac) + sorted[hi].0 * frac
 }
 
 /// Test the top-`k` values of `sorted` (ascending) as an extreme
@@ -138,11 +138,10 @@ fn test_cluster(
     } else {
         (&sorted[..k], &sorted[k..])
     };
-    let bulk_vals: Vec<f64> = bulk.iter().map(|v| v.0).collect();
-    let q1 = quantile(&bulk_vals, 0.25);
-    let q3 = quantile(&bulk_vals, 0.75);
+    let q1 = quantile(bulk, 0.25);
+    let q3 = quantile(bulk, 0.75);
     let iqr = q3 - q1;
-    let spread = quantile(&bulk_vals, 0.90) - quantile(&bulk_vals, 0.10);
+    let spread = quantile(bulk, 0.90) - quantile(bulk, 0.10);
     if spread <= 0.0 {
         return None;
     }
@@ -152,9 +151,9 @@ fn test_cluster(
         cluster[cluster.len() - 1].0
     };
     let bulk_edge = if high {
-        bulk_vals[bulk_vals.len() - 1]
+        bulk[bulk.len() - 1].0
     } else {
-        bulk_vals[0]
+        bulk[0].0
     };
     let (beyond_fence, gap) = if high {
         (inner > q3 + cfg.fence_iqr_mult * iqr, inner - bulk_edge)
@@ -186,18 +185,29 @@ fn test_cluster(
 /// Cluster sizes from `max_per_side` down to 1 are tried in order:
 /// adjacent extremes mask each other under a nearest-neighbour gap,
 /// so the cluster is tested against the bulk as a unit.
+#[cfg(test)]
 fn peel_side(
     vals: &[(f64, usize)],
     high: bool,
     min_n: usize,
     cfg: &SurpriseConfig,
 ) -> Vec<Extreme> {
-    if vals.len() < min_n.max(10) {
+    let mut sorted = vals.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    peel_presorted(&sorted, high, min_n, cfg)
+}
+
+/// Reuse one value order for the IQR, both tails and every subset.
+fn peel_presorted(
+    sorted: &[(f64, usize)],
+    high: bool,
+    min_n: usize,
+    cfg: &SurpriseConfig,
+) -> Vec<Extreme> {
+    if sorted.len() < min_n.max(10) {
         return Vec::new();
     }
-    let mut sorted: Vec<(f64, usize)> = vals.to_vec();
-    sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let raw = peel_sorted(&sorted, high, min_n, cfg, cfg.gap_ratio);
+    let raw = peel_sorted(sorted, high, min_n, cfg, cfg.gap_ratio);
     if raw.is_empty() || !sorted.iter().all(|(v, _)| *v > 0.0) {
         return raw;
     }
@@ -246,6 +256,13 @@ fn column_values(table: &TypedTable, col: usize) -> Vec<(f64, usize)> {
                 }
             }
         }
+        TypedCol::U64 { vals } => {
+            for r in 0..table.n {
+                if let Some(Some(v)) = vals.get(r) {
+                    out.push((v as f64, r));
+                }
+            }
+        }
         TypedCol::F64 { vals } => {
             for r in 0..table.n {
                 if let Some(Some(v)) = vals.get(r) {
@@ -272,6 +289,9 @@ fn condition_levels(
             let mut set = std::collections::BTreeSet::new();
             for s in vals.iter().flatten() {
                 set.insert(*s);
+                if set.len() > cfg.max_condition_levels {
+                    return None;
+                }
             }
             if !distinct_ok(set.len()) {
                 return None;
@@ -282,6 +302,9 @@ fn condition_levels(
             let mut set = std::collections::BTreeSet::new();
             for s in vals.iter().flatten() {
                 set.insert(s.as_str());
+                if set.len() > cfg.max_condition_levels {
+                    return None;
+                }
             }
             if !distinct_ok(set.len()) {
                 return None;
@@ -298,6 +321,31 @@ fn condition_levels(
             for r in 0..table.n {
                 if let Some(Some(v)) = vals.get(r) {
                     set.insert(v);
+                    if set.len() > cfg.max_condition_levels {
+                        return None;
+                    }
+                }
+            }
+            if !distinct_ok(set.len()) {
+                return None;
+            }
+            Some(
+                (0..table.n)
+                    .map(|r| match vals.get(r) {
+                        Some(Some(v)) => Some(v.to_string()),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        TypedCol::U64 { vals } => {
+            let mut set = std::collections::BTreeSet::new();
+            for r in 0..table.n {
+                if let Some(Some(v)) = vals.get(r) {
+                    set.insert(v);
+                    if set.len() > cfg.max_condition_levels {
+                        return None;
+                    }
                 }
             }
             if !distinct_ok(set.len()) {
@@ -411,21 +459,7 @@ struct Coded {
 }
 
 fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<Coded> {
-    let raw: Vec<Option<String>> = match &table.cols[col] {
-        TypedCol::Str { vals } => vals.iter().map(|v| v.map(|s| s.to_string())).collect(),
-        TypedCol::StrOwned { vals } => vals.iter().map(|v| v.as_ref().cloned()).collect(),
-        TypedCol::Bool { vals } => vals
-            .iter()
-            .map(|v| v.map(|b| if b { "true".into() } else { "false".into() }))
-            .collect(),
-        TypedCol::I64 { vals } => (0..table.n)
-            .map(|r| match vals.get(r) {
-                Some(Some(v)) => Some(v.to_string()),
-                _ => None,
-            })
-            .collect(),
-        _ => return None,
-    };
+    let raw = condition_levels(table, col, cfg)?;
     let mut labels: Vec<String> = Vec::new();
     let mut index: BTreeMap<String, u32> = BTreeMap::new();
     for v in raw.iter().flatten() {
@@ -917,28 +951,28 @@ pub fn profile_surprises(
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
-    let conditions: Vec<usize> = (0..table.cols.len())
-        .filter(|&i| !excluded.contains(&i))
-        .filter(|&i| condition_levels(table, i, cfg).is_some())
+    // Compact per-row codes are target-independent. Build each once.
+    let conditions: Vec<(usize, Coded)> = (0..table.cols.len())
+        .filter(|i| !excluded.contains(i))
+        .filter_map(|i| code_column(table, i, cfg).map(|coded| (i, coded)))
         .collect();
     let mut findings: Vec<Finding> = Vec::new();
     let mut scanned = 0usize;
     'targets: for &t in &numeric {
-        let vals = column_values(table, t);
+        let mut vals = column_values(table, t);
         if vals.len() < cfg.min_rows {
             continue;
         }
         // Near-constant columns are the concentration pass's story.
-        let mut sorted: Vec<f64> = vals.iter().map(|v| v.0).collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        if quantile(&sorted, 0.75) - quantile(&sorted, 0.25) <= 0.0 {
+        vals.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        if quantile(&vals, 0.75) - quantile(&vals, 0.25) <= 0.0 {
             continue;
         }
         scanned += 1;
         let tname = table.names[t].as_str();
         let mut reported_rows: std::collections::BTreeSet<usize> = Default::default();
         for high in [true, false] {
-            let ex = peel_side(&vals, high, cfg.min_rows, cfg);
+            let ex = peel_presorted(&vals, high, cfg.min_rows, cfg);
             if !ex.is_empty() {
                 for e in &ex {
                     reported_rows.insert(e.row);
@@ -951,25 +985,29 @@ pub fn profile_surprises(
         }
         // Subset pass: one categorical condition at a time.
         let mut tried = 0usize;
-        for &c in &conditions {
-            if c == t || tried >= cfg.max_conditions {
+        for (c, coded) in &conditions {
+            if *c == t || tried >= cfg.max_conditions {
                 continue;
             }
             tried += 1;
-            let levels = condition_levels(table, c, cfg).unwrap();
-            let mut by_level: BTreeMap<String, Vec<(f64, usize)>> = BTreeMap::new();
-            let val_by_row: BTreeMap<usize, f64> = vals.iter().map(|(v, r)| (*r, *v)).collect();
-            for (r, lvl) in levels.iter().enumerate() {
-                if let (Some(l), Some(v)) = (lvl, val_by_row.get(&r)) {
-                    by_level.entry(l.clone()).or_default().push((*v, r));
+            let mut by_level = vec![Vec::new(); coded.labels.len()];
+            for &(value, row) in &vals {
+                if let Some(code) = coded.codes[row] {
+                    by_level[code as usize].push((value, row));
                 }
             }
-            for (lvl, lvals) in &by_level {
+            // Filtering an already sorted target preserves each subset's
+            // order. Match the original lexical context traversal exactly.
+            let mut level_order: Vec<usize> = (0..coded.labels.len()).collect();
+            level_order.sort_by_key(|&i| &coded.labels[i]);
+            for level in level_order {
+                let lvl = &coded.labels[level];
+                let lvals = &by_level[level];
                 if lvals.len() < cfg.min_subset_rows {
                     continue;
                 }
                 for high in [true, false] {
-                    let ex = peel_side(lvals, high, cfg.min_subset_rows, cfg);
+                    let ex = peel_presorted(lvals, high, cfg.min_subset_rows, cfg);
                     let fresh: Vec<Extreme> = ex
                         .into_iter()
                         .filter(|e| !reported_rows.contains(&e.row))
@@ -980,7 +1018,7 @@ pub fn profile_surprises(
                         }
                         findings.push(make_finding(
                             tname,
-                            Some((table.names[c].as_str(), lvl.as_str())),
+                            Some((table.names[*c].as_str(), lvl.as_str())),
                             lvals.len(),
                             &fresh,
                             high,

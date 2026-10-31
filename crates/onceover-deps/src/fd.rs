@@ -74,12 +74,13 @@ pub struct DepsOutcome {
 fn value_is_null(col: &TypedCol, r: usize) -> bool {
     match col {
         TypedCol::I64 { vals } => vals.at(r).is_none(),
+        TypedCol::U64 { vals } => vals.at(r).is_none(),
         TypedCol::F64 { vals } => vals.at(r).is_none(),
         TypedCol::Str { vals } => vals[r].is_none(),
         TypedCol::StrOwned { vals } => vals[r].is_none(),
         TypedCol::Bool { vals } => vals[r].is_none(),
         TypedCol::Date { vals } => vals[r].is_none(),
-        TypedCol::Datetime { vals } => vals[r].is_none(),
+        TypedCol::Datetime { vals, .. } => vals[r].is_none(),
         TypedCol::Null { .. } => true,
         TypedCol::Other { .. } => true,
     }
@@ -866,6 +867,7 @@ fn fnv64_local(bytes: &[u8]) -> u64 {
 fn value_hash64(col: &TypedCol, r: usize) -> u64 {
     match col {
         TypedCol::I64 { vals } => vals.at(r).map(|v| v as u64).unwrap_or(0),
+        TypedCol::U64 { vals } => vals.at(r).unwrap_or(0),
         TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_bits()).unwrap_or(0),
         TypedCol::Str { vals } => match vals[r] {
             Some(s) => fnv64_local(s.as_bytes()),
@@ -881,7 +883,7 @@ fn value_hash64(col: &TypedCol, r: usize) -> u64 {
             None => 0,
         },
         TypedCol::Date { vals } => vals[r].map(|v| v as u64).unwrap_or(0),
-        TypedCol::Datetime { vals } => vals[r].map(|v| v as u64).unwrap_or(0),
+        TypedCol::Datetime { vals, .. } => vals[r].map(|v| v as u64).unwrap_or(0),
         TypedCol::Null { .. } | TypedCol::Other { .. } => 0,
     }
 }
