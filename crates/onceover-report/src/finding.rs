@@ -82,6 +82,7 @@ pub enum Pattern {
     StepDiscontinuity,
     DuplicateEncoding,
     DistributionShift,
+    OrderedPartition,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -115,6 +116,7 @@ impl Pattern {
             Self::StepDiscontinuity => Category::Changes,
             Self::DuplicateEncoding => Category::ColumnRoles,
             Self::DistributionShift => Category::Changes,
+            Self::OrderedPartition => Category::Changes,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -157,6 +159,7 @@ impl Pattern {
             Self::TransientExcursion => "transient_excursion",
             Self::StepDiscontinuity => "step_discontinuity",
             Self::DistributionShift => "distribution_shift",
+            Self::OrderedPartition => "ordered_partition",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
@@ -608,6 +611,20 @@ impl Finding {
                     json!("rows without a period, or with a missing value in either column, are excluded"),
                 );
             }
+            Pattern::OrderedPartition => {
+                spec.form = Some("recursive_partition".into());
+                if let Some(oc) = string("time_column") {
+                    spec.definition.insert("ordering_column".into(), json!(oc));
+                }
+                if let Some(m) = string("model") {
+                    spec.definition.insert("model".into(), json!(m));
+                }
+                spec.definition.insert("statistic".into(), json!("split_f"));
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows without an ordering value, or with a missing or non-finite response, are excluded"),
+                );
+            }
             Pattern::ResidualShift => {
                 subject.target = string("target");
                 if let Some(model) = metrics.get("reference_model") {
@@ -872,11 +889,12 @@ impl Finding {
                             | "variance_change"
                             | "transient_excursion"
                             | "step_discontinuity"
-                            | "distribution_shift",
+                            | "distribution_shift"
+                            | "ordered_partition",
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, or distribution_shift".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, or ordered_partition".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()

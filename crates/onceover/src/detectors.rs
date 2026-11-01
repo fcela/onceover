@@ -54,6 +54,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("interactions", vec![Dependencies], &["gbm"]),
         make("target_shapes", vec![Dependencies], &[]),
         make("breaks", vec![Changes], &[]),
+        make("ordered_partitions", vec![Changes], &[]),
         make("surprises", vec![Intervals], &[]),
         make("discontinuities", vec![Changes], &[]),
         make("drift", vec![Changes], &["gbm"]),

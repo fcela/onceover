@@ -878,6 +878,48 @@ fn profile_inner(
                 );
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "ordered_partitions") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("ordered_partitions") {
+                let excluded: Vec<usize> = info
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        let name = c.name.to_ascii_lowercase();
+                        let id_name =
+                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
+                        (matches!(c.role.as_str(), "constant" | "all_null")
+                            || (c.role == "identifier"
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
+                            .then_some(i)
+                    })
+                    .collect();
+                let time_hint = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
+                let out = onceover_mines::ordered_partitions(
+                    &table,
+                    &excluded,
+                    &tier.partitions,
+                    time_hint,
+                );
+                let info2 = match out.status {
+                    onceover_mines::PartitionsStatus::NotApplicable(d) => PassInfo::na(d),
+                    onceover_mines::PartitionsStatus::Ran(d) => PassInfo::ran(d),
+                    onceover_mines::PartitionsStatus::Capped(d) => PassInfo::capped(d),
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "ordered_partitions".into(),
+                    info2,
+                );
+                findings.extend(out.findings);
+            }
             if check_deadline(&mut coverage, "surprises") {
                 deadline_hit = true;
             }
@@ -1188,6 +1230,7 @@ fn profile_inner(
             "prism_rules",
             "regimes",
             "breaks",
+            "ordered_partitions",
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",

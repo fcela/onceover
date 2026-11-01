@@ -151,6 +151,13 @@
    "requires": []
   },
   {
+   "id": "ordered_partitions",
+   "categories": [
+    "changes"
+   ],
+   "requires": []
+  },
+  {
    "id": "surprises",
    "categories": [
     "intervals"

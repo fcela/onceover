@@ -905,6 +905,19 @@
      "detector": "views",
      "status": "ran_exact",
      "note": "Views partitions the 51 state columns."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "ordered_partition",
+     "min": 20,
+     "note": "Ordered partitions fit a level+trend regime tree for the state series (standard-tier pass cap is 25 emitted; the design expectation is a tree for at least 30 of 51 series, pinned exactly in tests/test_partitions_panel.py)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "status": "ran_exact",
+     "note": "The panel's date column orders every series."
     }
    ],
    "notes": [
@@ -927,10 +940,47 @@
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "views",
+    "ordered_partitions"
    ],
    "sha256": "162a9fcab6db0d44a9d7bd00b29fe4d7be0cd56f72a5f027c2c994ebc7e3f475",
-   "rows": 609
+   "rows": 609,
+   "parse_dates": true
+  },
+  {
+   "id": "state-unemployment-long",
+   "pack": "crosscat",
+   "title": "State unemployment rates panel, long form (BLS via FRED)",
+   "mode": "bundled",
+   "license": "Public (BLS / FRED)",
+   "source": "Reshape of the bundled wide panel (FRED fredgraph downloads of BLS LAUS state series)",
+   "dir": "data/crosscat/state-unemployment-long",
+   "budget": "standard",
+   "parse_dates": true,
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "ordered_partition",
+     "min": 1,
+     "note": "One pooled regime tree for the panel's single response, with time and state splits competing."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "status": "ran_exact",
+     "note": "The date column orders the panel; the state column is the partitioning dimension."
+    }
+   ],
+   "notes": [
+    "Long form of the state unemployment panel: 31,059 rows (609 months x 51 series). Pooled tree behavior is pinned in tests/test_partitions_panel.py; the energy-state slope split is recorded there as a known miss."
+   ],
+   "detectors": [
+    "column_profile",
+    "ordered_partitions"
+   ],
+   "sha256": "1a1d5580fa7b556730a47695562c3febfc60231fce7658f0e5ad414ec29e77e2",
+   "rows": 31059
   },
   {
    "id": "gse15258-expression",
