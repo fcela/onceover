@@ -168,44 +168,81 @@ pub fn disc_scan(
 }
 
 /// The sort order of `u` (ties by row index) — the scan's only
-/// superlinear step. Callers scanning the same projection for
-/// several targets compute it once and share it; the arithmetic
-/// of the scan itself is unchanged.
+/// superlinear step. LSD radix sort on the order-preserving bit
+/// transform of the values (negative values invert, non-negative
+/// values set the sign bit), which orders bit patterns exactly
+/// as `f64::total_cmp`; eight counting passes over the index
+/// array replace the comparison sort's n log n indirect
+/// comparisons, the measured hot spot of the wide-table screen.
+/// The sort is stable, so ties keep row-index order, matching
+/// the previous comparison sort's output exactly.
 pub fn sort_order(u: &[f64]) -> Vec<u32> {
-    let mut order: Vec<u32> = (0..u.len() as u32).collect();
-    order.sort_by(|&a, &b| {
-        u[a as usize]
-            .total_cmp(&u[b as usize])
-            .then_with(|| a.cmp(&b))
-    });
-    order
+    let n = u.len();
+    let mut a: Vec<u32> = (0..n as u32).collect();
+    if n < 2 {
+        return a;
+    }
+    let keys: Vec<u64> = u
+        .iter()
+        .map(|&v| {
+            let b = v.to_bits();
+            if b & (1u64 << 63) != 0 {
+                !b
+            } else {
+                b | (1u64 << 63)
+            }
+        })
+        .collect();
+    let mut b = vec![0u32; n];
+    for pass in 0..8 {
+        let shift = pass * 8;
+        let mut counts = [0usize; 256];
+        for &i in &a {
+            counts[((keys[i as usize] >> shift) & 0xff) as usize] += 1;
+        }
+        let mut offset = 0usize;
+        for c in counts.iter_mut() {
+            let t = *c;
+            *c = offset;
+            offset += t;
+        }
+        for &i in &a {
+            let k = ((keys[i as usize] >> shift) & 0xff) as usize;
+            b[counts[k]] = i;
+            counts[k] += 1;
+        }
+        std::mem::swap(&mut a, &mut b);
+    }
+    a
 }
 
-/// `disc_scan` with a caller-supplied sort order of `u` (from
-/// `sort_order`); identical results to `disc_scan`.
-pub fn disc_scan_ordered(
-    u: &[f64],
-    order: &[u32],
+/// Per-half totals, base-model Grams and rhs, and the base
+/// model's evaluation-half MSE: the part of a scan that does not
+/// depend on any cut. Computed in one pass over the rows in
+/// original order; `on_row` lets a caller accumulate per-row
+/// extras in the same pass.
+struct ScanBase {
+    q: usize,
+    total_fit: Vec<f64>,
+    total_eval: Vec<f64>,
+    gram_fit: Vec<f64>,
+    gram_eval: Vec<f64>,
+    rhs_fit: Vec<f64>,
+    rhs_eval: Vec<f64>,
+    n_fit: usize,
+    n_eval: usize,
+    mse_base_eval: f64,
+}
+
+fn scan_totals(
     background: &[f64],
     target: &[f64],
     fit: &[u8],
-    cuts: &[f64],
-    min_side: usize,
-) -> Vec<DiscCandidate> {
-    let n = u.len();
-    if n == 0 || order.len() != n {
-        return Vec::new();
-    }
-    let q = background.len() / n;
-    if q == 0 || target.len() != n || fit.len() != n {
-        return Vec::new();
-    }
+    n: usize,
+    q: usize,
+    mut on_row: impl FnMut(usize),
+) -> Option<ScanBase> {
     let streams = q + 3; // count, target, target^2, background columns
-
-    let us: Vec<f64> = order.iter().map(|&i| u[i as usize]).collect();
-
-    // Stream totals per half (one pass), and the base-model Gram and
-    // rhs per half, in original row order.
     let mut total_fit = vec![0.0f64; streams];
     let mut total_eval = vec![0.0f64; streams];
     let mut gram_fit = vec![0.0f64; q * q];
@@ -235,17 +272,14 @@ pub fn disc_scan_ordered(
                 gram[a * q + b] += va * background[row * q + b];
             }
         }
+        on_row(row);
     }
     let n_eval = n - n_fit;
     if n_fit == 0 || n_eval == 0 {
-        return Vec::new();
+        return None;
     }
-    let Some(l_base) = cholesky(&gram_fit, q) else {
-        return Vec::new();
-    };
-    let Some(gamma) = chol_solve(&l_base, q, &rhs_fit) else {
-        return Vec::new();
-    };
+    let l_base = cholesky(&gram_fit, q)?;
+    let gamma = chol_solve(&l_base, q, &rhs_fit)?;
     let mut mse_base_eval = total_eval[2];
     for a in 0..q {
         mse_base_eval -= 2.0 * gamma[a] * rhs_eval[a];
@@ -254,6 +288,170 @@ pub fn disc_scan_ordered(
         }
     }
     mse_base_eval /= n_eval as f64;
+    Some(ScanBase {
+        q,
+        total_fit,
+        total_eval,
+        gram_fit,
+        gram_eval,
+        rhs_fit,
+        rhs_eval,
+        n_fit,
+        n_eval,
+        mse_base_eval,
+    })
+}
+
+/// Evaluate one cut from its per-half suffix stream sums (the
+/// streams of the rows above the cut: count, target, target^2,
+/// background columns). Shared by the ordered and binned scans;
+/// the arithmetic is the scan's original per-cut evaluation.
+#[allow(clippy::too_many_arguments)]
+fn eval_cut(
+    base: &ScanBase,
+    cut: f64,
+    min_side: usize,
+    suffix_fit: &[f64],
+    suffix_eval: &[f64],
+    gram: &mut [f64],
+    rhs: &mut [f64],
+    gram_e: &mut [f64],
+    rhs_e: &mut [f64],
+) -> Option<DiscCandidate> {
+    let q = base.q;
+    let dim = q + 1;
+    let n_fit = base.n_fit;
+    let n_eval = base.n_eval;
+    let n_g_fit = suffix_fit[0] as usize;
+    let n_g_eval = suffix_eval[0] as usize;
+    if (n_g_fit == n_fit && n_g_eval == n_eval) || (n_g_fit == 0 && n_g_eval == 0) {
+        return None;
+    }
+    if n_g_fit < min_side
+        || (n_fit - n_g_fit) < min_side
+        || n_g_eval < min_side
+        || (n_eval - n_g_eval) < min_side
+    {
+        return None;
+    }
+    // Fit half: Gram of [background, step] and rhs.
+    gram.fill(0.0);
+    rhs.fill(0.0);
+    for a in 0..q {
+        rhs[a] = base.rhs_fit[a];
+        for b in 0..q {
+            gram[a * dim + b] = base.gram_fit[a * q + b];
+        }
+        let cross = suffix_fit[3 + a];
+        gram[a * dim + q] = cross;
+        gram[q * dim + a] = cross;
+    }
+    gram[q * dim + q] = suffix_fit[0];
+    rhs[q] = suffix_fit[1];
+    let l_fit = cholesky(gram, dim)?;
+    let theta_fit = chol_solve(&l_fit, dim, rhs)?;
+    let rss_fit = base.total_fit[2]
+        - theta_fit
+            .iter()
+            .zip(rhs.iter())
+            .map(|(t, r)| t * r)
+            .sum::<f64>();
+    if n_fit <= dim || rss_fit <= 0.0 {
+        return None;
+    }
+    let dof_fit = (n_fit - dim) as f64;
+    let var_fit = chol_inv_last_diag(&l_fit, dim)?;
+    let var_fit = (rss_fit / dof_fit) * var_fit;
+    if var_fit <= 0.0 {
+        return None;
+    }
+    let jump_fit = theta_fit[q];
+    let t_fit = jump_fit / var_fit.sqrt();
+
+    // Evaluation half: the honest estimate and its standard error.
+    gram_e.fill(0.0);
+    rhs_e.fill(0.0);
+    for a in 0..q {
+        rhs_e[a] = base.rhs_eval[a];
+        for b in 0..q {
+            gram_e[a * dim + b] = base.gram_eval[a * q + b];
+        }
+        let cross = suffix_eval[3 + a];
+        gram_e[a * dim + q] = cross;
+        gram_e[q * dim + a] = cross;
+    }
+    gram_e[q * dim + q] = suffix_eval[0];
+    rhs_e[q] = suffix_eval[1];
+    let l_eval = cholesky(gram_e, dim)?;
+    let theta_eval = chol_solve(&l_eval, dim, rhs_e)?;
+    let rss_eval = base.total_eval[2]
+        - theta_eval
+            .iter()
+            .zip(rhs_e.iter())
+            .map(|(t, r)| t * r)
+            .sum::<f64>();
+    if n_eval <= dim || rss_eval <= 0.0 {
+        return None;
+    }
+    let dof_eval = (n_eval - dim) as f64;
+    let var_eval = chol_inv_last_diag(&l_eval, dim)?;
+    let var_eval = (rss_eval / dof_eval) * var_eval;
+    if var_eval <= 0.0 {
+        return None;
+    }
+    let jump = theta_eval[q];
+    let se = var_eval.sqrt();
+    let z = jump / se;
+
+    // Held-out gain: fit-half step model vs fit-half base model,
+    // both scored on the evaluation half.
+    let mut mse_full_eval = base.total_eval[2];
+    for a in 0..dim {
+        mse_full_eval -= 2.0 * theta_fit[a] * rhs_e[a];
+        for b in 0..dim {
+            mse_full_eval += theta_fit[a] * gram_e[a * dim + b] * theta_fit[b];
+        }
+    }
+    mse_full_eval /= n_eval as f64;
+    let gain = base.mse_base_eval - mse_full_eval;
+
+    Some(DiscCandidate {
+        threshold: cut,
+        n_above: n_g_fit + n_g_eval,
+        jump_fit,
+        t_fit,
+        jump,
+        se,
+        z,
+        gain,
+    })
+}
+
+/// `disc_scan` with a caller-supplied sort order of `u` (from
+/// `sort_order`); identical results to `disc_scan`.
+pub fn disc_scan_ordered(
+    u: &[f64],
+    order: &[u32],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    cuts: &[f64],
+    min_side: usize,
+) -> Vec<DiscCandidate> {
+    let n = u.len();
+    if n == 0 || order.len() != n {
+        return Vec::new();
+    }
+    let q = background.len() / n;
+    if q == 0 || target.len() != n || fit.len() != n {
+        return Vec::new();
+    }
+    let streams = q + 3;
+    let Some(base) = scan_totals(background, target, fit, n, q, |_| {}) else {
+        return Vec::new();
+    };
+
+    let us: Vec<f64> = order.iter().map(|&i| u[i as usize]).collect();
 
     // Evaluate cuts in ascending order, walking the sorted rows once
     // and maintaining prefix stream sums for both halves; a cut's
@@ -273,6 +471,8 @@ pub fn disc_scan_ordered(
     let mut rhs = vec![0.0f64; dim];
     let mut gram_e = vec![0.0f64; dim * dim];
     let mut rhs_e = vec![0.0f64; dim];
+    let mut suffix_fit = vec![0.0f64; streams];
+    let mut suffix_eval = vec![0.0f64; streams];
     for &ci in &cut_order {
         let cut = cuts[ci];
         while ptr < n && us[ptr] <= cut {
@@ -291,119 +491,21 @@ pub fn disc_scan_ordered(
             }
             ptr += 1;
         }
-        let k = ptr;
-        if k == 0 || k >= n {
-            continue;
+        for s in 0..streams {
+            suffix_fit[s] = base.total_fit[s] - cum_fit[s];
+            suffix_eval[s] = base.total_eval[s] - cum_eval[s];
         }
-        let suffix =
-            |cum: &[f64], total: &[f64], stream: usize| -> f64 { total[stream] - cum[stream] };
-        let n_g_fit = suffix(&cum_fit, &total_fit, 0) as usize;
-        let n_g_eval = suffix(&cum_eval, &total_eval, 0) as usize;
-        if n_g_fit < min_side
-            || (n_fit - n_g_fit) < min_side
-            || n_g_eval < min_side
-            || (n_eval - n_g_eval) < min_side
-        {
-            continue;
-        }
-        // Fit half: Gram of [background, step] and rhs.
-        gram.fill(0.0);
-        rhs.fill(0.0);
-        for a in 0..q {
-            rhs[a] = rhs_fit[a];
-            for b in 0..q {
-                gram[a * dim + b] = gram_fit[a * q + b];
-            }
-            let cross = suffix(&cum_fit, &total_fit, 3 + a);
-            gram[a * dim + q] = cross;
-            gram[q * dim + a] = cross;
-        }
-        gram[q * dim + q] = suffix(&cum_fit, &total_fit, 0);
-        rhs[q] = suffix(&cum_fit, &total_fit, 1);
-        let Some(l_fit) = cholesky(&gram, dim) else {
-            continue;
-        };
-        let Some(theta_fit) = chol_solve(&l_fit, dim, &rhs) else {
-            continue;
-        };
-        let rss_fit = total_fit[2] - theta_fit.iter().zip(&rhs).map(|(t, r)| t * r).sum::<f64>();
-        if n_fit <= dim || rss_fit <= 0.0 {
-            continue;
-        }
-        let dof_fit = (n_fit - dim) as f64;
-        let Some(var_fit) = chol_inv_last_diag(&l_fit, dim) else {
-            continue;
-        };
-        let var_fit = (rss_fit / dof_fit) * var_fit;
-        if var_fit <= 0.0 {
-            continue;
-        }
-        let jump_fit = theta_fit[q];
-        let t_fit = jump_fit / var_fit.sqrt();
-
-        // Evaluation half: the honest estimate and its standard error.
-        gram_e.fill(0.0);
-        rhs_e.fill(0.0);
-        for a in 0..q {
-            rhs_e[a] = rhs_eval[a];
-            for b in 0..q {
-                gram_e[a * dim + b] = gram_eval[a * q + b];
-            }
-            let cross = suffix(&cum_eval, &total_eval, 3 + a);
-            gram_e[a * dim + q] = cross;
-            gram_e[q * dim + a] = cross;
-        }
-        gram_e[q * dim + q] = suffix(&cum_eval, &total_eval, 0);
-        rhs_e[q] = suffix(&cum_eval, &total_eval, 1);
-        let Some(l_eval) = cholesky(&gram_e, dim) else {
-            continue;
-        };
-        let Some(theta_eval) = chol_solve(&l_eval, dim, &rhs_e) else {
-            continue;
-        };
-        let rss_eval = total_eval[2]
-            - theta_eval
-                .iter()
-                .zip(&rhs_e)
-                .map(|(t, r)| t * r)
-                .sum::<f64>();
-        if n_eval <= dim || rss_eval <= 0.0 {
-            continue;
-        }
-        let dof_eval = (n_eval - dim) as f64;
-        let Some(var_eval) = chol_inv_last_diag(&l_eval, dim) else {
-            continue;
-        };
-        let var_eval = (rss_eval / dof_eval) * var_eval;
-        if var_eval <= 0.0 {
-            continue;
-        }
-        let jump = theta_eval[q];
-        let se = var_eval.sqrt();
-        let z = jump / se;
-
-        // Held-out gain: fit-half step model vs fit-half base model,
-        // both scored on the evaluation half.
-        let mut mse_full_eval = total_eval[2];
-        for a in 0..dim {
-            mse_full_eval -= 2.0 * theta_fit[a] * rhs_e[a];
-            for b in 0..dim {
-                mse_full_eval += theta_fit[a] * gram_e[a * dim + b] * theta_fit[b];
-            }
-        }
-        mse_full_eval /= n_eval as f64;
-        let gain = mse_base_eval - mse_full_eval;
-
-        by_cut[ci] = Some(DiscCandidate {
-            threshold: cut,
-            n_above: n_g_fit + n_g_eval,
-            jump_fit,
-            t_fit,
-            jump,
-            se,
-            z,
-            gain,
-        });
+        by_cut[ci] = eval_cut(
+            &base,
+            cut,
+            min_side,
+            &suffix_fit,
+            &suffix_eval,
+            &mut gram,
+            &mut rhs,
+            &mut gram_e,
+            &mut rhs_e,
+        );
     }
     by_cut.into_iter().flatten().collect()
 }
@@ -630,11 +732,11 @@ fn quantile_sorted(sorted: &[f64], p: f64) -> f64 {
 
 /// Scan one unit (a projection `u` against a fixed background) and
 /// return its best candidate by |t_fit|: the coarse quantile grid
-/// first, then a fit-half-only refinement on a finer grid inside the
-/// winning interval, so the reported threshold and jump are not
-/// diluted by grid placement. Refinement reads fit-half statistics
-/// only; the evaluation half is never touched by selection, so the
-/// winner's z keeps its null calibration.
+/// first, then a fit-half-only refinement on a finer grid inside
+/// the winning interval, so the reported threshold and jump are
+/// not diluted by grid placement. Refinement reads fit-half
+/// statistics only; the evaluation half is never touched by
+/// selection, so the winner's z keeps its null calibration.
 fn scan_unit(
     u: &[f64],
     background: &[f64],
@@ -643,23 +745,8 @@ fn scan_unit(
     cfg: &DiscConfig,
 ) -> Option<DiscCandidate> {
     let order = sort_order(u);
-    scan_unit_ordered(u, &order, background, target, fit, cfg)
-}
-
-/// `scan_unit` with the projection's sort order supplied by the
-/// caller (computed once, shared across targets scanning the
-/// same projection). The fit-half values in sorted order are the
-/// subsequence of the full order, so the quantile grid needs no
-/// second sort; both scans run through `disc_scan_ordered`.
-/// Arithmetic is identical to the unshared path.
-fn scan_unit_ordered(
-    u: &[f64],
-    order: &[u32],
-    background: &[f64],
-    target: &[f64],
-    fit: &[u8],
-    cfg: &DiscConfig,
-) -> Option<DiscCandidate> {
+    // Fit-half values in ascending order (the fit subsequence of
+    // the full order) for the quantile grid.
     let fit_sorted: Vec<f64> = order
         .iter()
         .filter(|&&i| fit[i as usize] != 0)
@@ -670,7 +757,7 @@ fn scan_unit_ordered(
     if cuts.is_empty() {
         return None;
     }
-    let cands = disc_scan_ordered(u, order, background, target, fit, &cuts, cfg.min_side);
+    let cands = disc_scan_ordered(u, &order, background, target, fit, &cuts, cfg.min_side);
     let best = cands
         .iter()
         .max_by(|a, b| {
@@ -678,8 +765,8 @@ fn scan_unit_ordered(
                 .abs()
                 .partial_cmp(&b.t_fit.abs())
                 .unwrap_or(std::cmp::Ordering::Equal)
-        })?
-        .clone();
+        })
+        .cloned()?;
     if !flagged(&best) {
         // Refinement only sharpens a boundary that is already
         // reportable evidence; unflagged units keep the coarse
@@ -704,7 +791,7 @@ fn scan_unit_ordered(
     let fine: Vec<f64> = (1..=20)
         .map(|k| lo + (hi - lo) * (k as f64) / 21.0)
         .collect();
-    let refined = disc_scan_ordered(u, order, background, target, fit, &fine, cfg.min_side);
+    let refined = disc_scan_ordered(u, &order, background, target, fit, &fine, cfg.min_side);
     let best_fine = refined.iter().max_by(|a, b| {
         a.t_fit
             .abs()
@@ -869,10 +956,10 @@ impl TargetOutcome {
 }
 
 /// Shared, target-independent scan data: standardized axis
-/// pairs (with their flat background) and diagonal projection
-/// sort orders, all validated by the kept-row vector they were
-/// built from. Everything cached is a pure function of the kept
-/// rows and the axis columns, so sharing changes no arithmetic.
+/// pairs (with their flat background), validated by the kept-row
+/// vector they were built from. Everything cached is a pure
+/// function of the kept rows and the axis columns, so sharing
+/// changes no arithmetic.
 struct PairData {
     rows: Vec<u32>,
     z: Vec<Vec<f64>>,
@@ -897,25 +984,14 @@ impl PairData {
                 * std::mem::size_of::<f64>()
     }
 }
-/// Sorted-order caches keyed by (target, predictor, axis) indices.
-type OrderCache =
-    std::collections::HashMap<(usize, usize, usize), (Vec<u32>, std::sync::Arc<Vec<u32>>)>;
-
 struct DiscCaches {
     pairs: std::sync::Mutex<PairCache>,
-    orders: std::sync::Mutex<OrderCache>,
-    order_elems: std::sync::Mutex<usize>,
 }
-
-/// Total cached order elements (rows + order per entry) bound.
-const ORDER_CACHE_BUDGET: usize = 8_000_000;
 
 impl DiscCaches {
     fn new() -> Self {
         Self {
             pairs: std::sync::Mutex::new(PairCache::default()),
-            orders: std::sync::Mutex::new(std::collections::HashMap::new()),
-            order_elems: std::sync::Mutex::new(0),
         }
     }
 
@@ -964,34 +1040,6 @@ impl DiscCaches {
             }
         }
         built
-    }
-
-    /// The sort order of a diagonal projection, shared across
-    /// targets scanning the same projection over the same rows.
-    fn order(
-        &self,
-        key: (usize, usize, usize),
-        rows: &[u32],
-        u: &[f64],
-    ) -> std::sync::Arc<Vec<u32>> {
-        if let Some((rows0, ord)) = self.orders.lock().unwrap().get(&key) {
-            if rows0 == rows {
-                return ord.clone();
-            }
-        }
-        let ord = std::sync::Arc::new(sort_order(u));
-        let elems = rows.len() + ord.len();
-        let mut total = self.order_elems.lock().unwrap();
-        if *total + elems > ORDER_CACHE_BUDGET {
-            self.orders.lock().unwrap().clear();
-            *total = 0;
-        }
-        *total += elems;
-        self.orders
-            .lock()
-            .unwrap()
-            .insert(key, (rows.to_vec(), ord.clone()));
-        ord
     }
 }
 
@@ -1149,7 +1197,6 @@ fn screen_target(
             let z: &Vec<Vec<f64>> = &pair.z;
             let fit: &Vec<u8> = &pair.fit;
             let stats: &Vec<(f64, f64)> = &pair.stats;
-            let rows32: &Vec<u32> = &pair.rows;
             let n = target.len();
             let bg: &[f64] = &pair.bg;
             let axis_tol = (std::f64::consts::PI / cfg.directions as f64).sin();
@@ -1163,12 +1210,7 @@ fn screen_target(
                 }
                 let u: Vec<f64> = (0..n).map(|i| c * z[0][i] + s * z[1][i]).collect();
                 out.n_diag += 1;
-                // The projection and its sort order depend on
-                // the axis pair and the kept rows only, not on
-                // the target: share the order across targets
-                // (validated by the kept-row vector).
-                let order = caches.order((a1, a2, d), rows32, &u);
-                let best = scan_unit_ordered(&u, &order, bg, &target, fit, cfg);
+                let best = scan_unit(&u, bg, &target, fit, cfg);
                 if let Some(best) = &best {
                     if flagged(best) {
                         flagged_units.push(Flagged {
