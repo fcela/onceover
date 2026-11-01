@@ -162,10 +162,10 @@ def main() -> int:
             continue
         rec = {"id": entry["id"], "pack": entry["pack"], "mode": entry["mode"]}
         ddir = BENCH / entry["dir"]
-        csv = ddir / "data.csv"
+        csv = ddir / entry.get("file", "data.csv")
         if not csv.exists():
             rec["status"] = "skipped"
-            rec["reason"] = entry.get("skip_reason", "data.csv not present (test-only dataset; run its prepare.py)")
+            rec["reason"] = entry.get("skip_reason", "data file not present (test-only dataset; run its prepare.py)")
             run["datasets"].append(rec)
             print(f"{entry['id']:<28} SKIPPED  {rec['reason'][:80]}")
             continue
