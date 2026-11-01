@@ -59,6 +59,7 @@ pub fn digit_fingerprints(table: &TypedTable) -> (Vec<Finding>, String) {
                 .filter_map(|v| v.filter(|x| x.is_finite()).copied())
                 .collect(),
             TypedCol::I64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
+            TypedCol::U64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
             _ => continue,
         };
         if vals.len() < MIN_VALUES {

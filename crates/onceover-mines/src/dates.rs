@@ -189,12 +189,16 @@ pub fn analyze_temporal(
                     modal_intervals.insert(name.clone(), m);
                 }
             }
-            TypedCol::Datetime { vals } => {
+            TypedCol::Datetime { vals, unit } => {
                 n_cols += 1;
                 // Convert to days (floor).
                 let days: Vec<Option<i32>> = vals
                     .iter()
-                    .map(|v| v.map(|us| (us.div_euclid(86_400_000_000)) as i32))
+                    .map(|v| {
+                        v.and_then(|us| {
+                            i32::try_from(onceover_core::dateutil::timestamp_days(us, *unit)).ok()
+                        })
+                    })
                     .collect();
                 let (f, m) = analyze_dates(name, &days);
                 findings.extend(f);

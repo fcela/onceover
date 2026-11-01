@@ -744,27 +744,41 @@ fn quantile_cuts_sorted(sorted: &[f64], cells: usize) -> Vec<f64> {
 // ---------------------------------------------------------------------
 // Driver: rotate every numeric column through the target role.
 
-fn column_f64(table: &TypedTable, idx: usize) -> Vec<f64> {
-    let n = table.n;
-    let mut out = vec![f64::NAN; n];
-    match &table.cols[idx] {
-        TypedCol::I64 { vals } => {
-            for (i, v) in vals.iter().enumerate() {
-                if let Some(v) = v {
-                    out[i] = *v as f64;
+/// Borrow normalized source values; only nullable columns need a validity
+/// bitmap. This keeps row selection exact without copying the whole table
+/// or materializing complete row lists before every sampled scan.
+struct NumericColumn<'a> {
+    col: &'a TypedCol<'a>,
+    n: usize,
+    finite_count: usize,
+    valid: Option<Vec<u64>>,
+    shared_sample: std::sync::Arc<Vec<usize>>,
+}
+
+impl<'a> NumericColumn<'a> {
+    fn new(col: &'a TypedCol<'a>, shared_sample: std::sync::Arc<Vec<usize>>) -> Self {
+        let n = col.len();
+        let missing = col.null_count();
+        let valid = (missing > 0).then(|| {
+            let mut bits = vec![0u64; n.div_ceil(64)];
+            for row in 0..n {
+                if crate::encode::numeric_at(col, row).is_some() {
+                    bits[row / 64] |= 1u64 << (row % 64);
                 }
             }
+            bits
+        });
+        Self {
+            col,
+            n,
+            finite_count: n - missing,
+            valid,
+            shared_sample,
         }
-        TypedCol::F64 { vals } => {
-            for (i, v) in vals.iter().enumerate() {
-                if let Some(v) = v {
-                    out[i] = *v;
-                }
-            }
-        }
-        _ => {}
     }
-    out
+    fn at(&self, row: usize) -> f64 {
+        crate::encode::numeric_at(self.col, row).unwrap_or(f64::NAN)
+    }
 }
 
 /// One unit's working data: the target values, the standardized axis
@@ -774,21 +788,18 @@ type UnitData = (Vec<f64>, Vec<Vec<f64>>, Vec<u8>, Vec<(f64, f64)>, Vec<u32>);
 
 /// Rows where the target and all given axis columns are finite,
 /// stride-sampled to the cap; deterministic parity half split.
-fn unit_data(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Option<UnitData> {
-    let n_all = target_col.len();
-    let mut rows: Vec<usize> = (0..n_all)
-        .filter(|&i| target_col[i].is_finite() && axis_cols.iter().all(|c| c[i].is_finite()))
-        .collect();
-    if rows.len() > cap {
-        let keep = crate::stride_rows(rows.len(), cap);
-        rows = keep.iter().map(|&k| rows[k as usize]).collect();
-    }
+fn unit_data(
+    target_col: &NumericColumn,
+    axis_cols: &[&NumericColumn],
+    cap: usize,
+) -> Option<UnitData> {
+    let rows = kept_rows(target_col, axis_cols, cap);
     let n = rows.len();
-    let target: Vec<f64> = rows.iter().map(|&i| target_col[i]).collect();
+    let target: Vec<f64> = rows.iter().map(|&i| target_col.at(i)).collect();
     let mut z: Vec<Vec<f64>> = Vec::with_capacity(axis_cols.len());
     let mut stats: Vec<(f64, f64)> = Vec::with_capacity(axis_cols.len());
     for col in axis_cols {
-        let vals: Vec<f64> = rows.iter().map(|&i| col[i]).collect();
+        let vals: Vec<f64> = rows.iter().map(|&i| col.at(i)).collect();
         let mean = vals.iter().sum::<f64>() / n as f64;
         let var = vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n as f64;
         let sd = var.sqrt();
@@ -871,7 +882,21 @@ struct PairData {
 }
 
 /// Pair projections cached by (target, predictor) column indices.
-type PairCache = std::collections::HashMap<(usize, usize), Option<std::sync::Arc<PairData>>>;
+#[derive(Default)]
+struct PairCache {
+    entries: std::collections::HashMap<(usize, usize), std::sync::Arc<PairData>>,
+    bytes: usize,
+}
+const PAIR_CACHE_BYTES: usize = 64 * 1024 * 1024;
+
+impl PairData {
+    fn bytes(&self) -> usize {
+        self.rows.len() * std::mem::size_of::<u32>()
+            + self.fit.len()
+            + (self.z.iter().map(Vec::len).sum::<usize>() + self.bg.len() + self.stats.len() * 2)
+                * std::mem::size_of::<f64>()
+    }
+}
 /// Sorted-order caches keyed by (target, predictor, axis) indices.
 type OrderCache =
     std::collections::HashMap<(usize, usize, usize), (Vec<u32>, std::sync::Arc<Vec<u32>>)>;
@@ -888,7 +913,7 @@ const ORDER_CACHE_BUDGET: usize = 8_000_000;
 impl DiscCaches {
     fn new() -> Self {
         Self {
-            pairs: std::sync::Mutex::new(std::collections::HashMap::new()),
+            pairs: std::sync::Mutex::new(PairCache::default()),
             orders: std::sync::Mutex::new(std::collections::HashMap::new()),
             order_elems: std::sync::Mutex::new(0),
         }
@@ -904,10 +929,10 @@ impl DiscCaches {
         a1: usize,
         a2: usize,
         rows: &[usize],
-        axis_cols: &[&[f64]],
+        axis_cols: &[&NumericColumn],
     ) -> Option<std::sync::Arc<PairData>> {
         let rows32: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
-        if let Some(Some(data)) = self.pairs.lock().unwrap().get(&(a1, a2)) {
+        if let Some(data) = self.pairs.lock().unwrap().entries.get(&(a1, a2)) {
             if data.rows == rows32 {
                 return Some(data.clone());
             }
@@ -924,7 +949,20 @@ impl DiscCaches {
                 bg,
             })
         });
-        self.pairs.lock().unwrap().insert((a1, a2), built.clone());
+        if let Some(data) = &built {
+            let size = data.bytes();
+            let mut cache = self.pairs.lock().unwrap();
+            if size <= PAIR_CACHE_BYTES {
+                if cache.bytes + size > PAIR_CACHE_BYTES {
+                    cache.entries.clear();
+                    cache.bytes = 0;
+                }
+                if let Some(previous) = cache.entries.insert((a1, a2), data.clone()) {
+                    cache.bytes -= previous.bytes();
+                }
+                cache.bytes += size;
+            }
+        }
         built
     }
 
@@ -959,14 +997,43 @@ impl DiscCaches {
 
 /// Rows where the target and all axis columns are finite,
 /// stride-sampled to the cap.
-fn kept_rows(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Vec<usize> {
-    let n_all = target_col.len();
-    let mut rows: Vec<usize> = (0..n_all)
-        .filter(|&i| target_col[i].is_finite() && axis_cols.iter().all(|c| c[i].is_finite()))
+fn kept_rows(target_col: &NumericColumn, axis_cols: &[&NumericColumn], cap: usize) -> Vec<usize> {
+    let masks: Vec<&[u64]> = std::iter::once(target_col)
+        .chain(axis_cols.iter().copied())
+        .filter_map(|col| col.valid.as_deref())
         .collect();
-    if rows.len() > cap {
-        let keep = crate::stride_rows(rows.len(), cap);
-        rows = keep.iter().map(|&k| rows[k as usize]).collect();
+    if masks.is_empty() {
+        return target_col.shared_sample.as_ref().clone();
+    }
+    // Enumerate ranks in the exact complete-case population, then select
+    // the same deterministic stratified ranks as the former full row list.
+    let words = target_col.n.div_ceil(64);
+    let word = |i: usize| masks.iter().fold(u64::MAX, |bits, m| bits & m[i]);
+    let total: usize = (0..words).map(|i| word(i).count_ones() as usize).sum();
+    let ranks = crate::stride_rows(total, cap);
+    let mut rows = Vec::with_capacity(ranks.len());
+    let (mut base, mut next) = (0usize, 0usize);
+    for w in 0..words {
+        if next == ranks.len() {
+            break;
+        }
+        let mut bits = word(w);
+        let count = bits.count_ones() as usize;
+        if ranks[next] as usize >= base + count {
+            base += count;
+            continue;
+        }
+        let mut rank = base;
+        while bits != 0 && next < ranks.len() {
+            let bit = bits.trailing_zeros() as usize;
+            if rank == ranks[next] as usize {
+                rows.push(w * 64 + bit);
+                next += 1;
+            }
+            bits &= bits - 1;
+            rank += 1;
+        }
+        base += count;
     }
     rows
 }
@@ -976,12 +1043,12 @@ fn kept_rows(target_col: &[f64], axis_cols: &[&[f64]], cap: usize) -> Vec<usize>
 /// Standardized columns with each column's (mean, sd) alongside.
 type Standardized = (Vec<Vec<f64>>, Vec<(f64, f64)>);
 
-fn standardize(rows: &[usize], axis_cols: &[&[f64]]) -> Option<Standardized> {
+fn standardize(rows: &[usize], axis_cols: &[&NumericColumn]) -> Option<Standardized> {
     let n = rows.len();
     let mut z: Vec<Vec<f64>> = Vec::with_capacity(axis_cols.len());
     let mut stats: Vec<(f64, f64)> = Vec::with_capacity(axis_cols.len());
     for col in axis_cols {
-        let vals: Vec<f64> = rows.iter().map(|&i| col[i]).collect();
+        let vals: Vec<f64> = rows.iter().map(|&i| col.at(i)).collect();
         let mean = vals.iter().sum::<f64>() / n as f64;
         let var = vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n as f64;
         let sd = var.sqrt();
@@ -999,14 +1066,14 @@ fn screen_target(
     table: &TypedTable,
     tcol: usize,
     numeric: &[usize],
-    values: &[Vec<f64>],
+    values: &[NumericColumn],
     pos_map: &[usize],
     cfg: &DiscConfig,
     caches: &DiscCaches,
 ) -> TargetOutcome {
     let mut out = TargetOutcome::new();
     let tvals = &values[pos_map[tcol]];
-    let finite_t = tvals.iter().filter(|v| v.is_finite()).count();
+    let finite_t = tvals.finite_count;
     if finite_t < cfg.min_rows {
         return out;
     }
@@ -1078,7 +1145,7 @@ fn screen_target(
             let Some(pair) = caches.pair(a1, a2, &rows, &[&values[p1], &values[p2]]) else {
                 continue;
             };
-            let target: Vec<f64> = rows.iter().map(|&i| tvals[i]).collect();
+            let target: Vec<f64> = rows.iter().map(|&i| tvals.at(i)).collect();
             let z: &Vec<Vec<f64>> = &pair.z;
             let fit: &Vec<u8> = &pair.fit;
             let stats: &Vec<(f64, f64)> = &pair.stats;
@@ -1238,7 +1305,16 @@ pub fn profile_discontinuities(
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
-    let values: Vec<Vec<f64>> = numeric.iter().map(|&i| column_f64(table, i)).collect();
+    let shared_sample = std::sync::Arc::new(
+        crate::stride_rows(table.n, cfg.row_cap)
+            .into_iter()
+            .map(|r| r as usize)
+            .collect(),
+    );
+    let values: Vec<NumericColumn> = numeric
+        .iter()
+        .map(|&i| NumericColumn::new(&table.cols[i], std::sync::Arc::clone(&shared_sample)))
+        .collect();
     let mut pos_map = vec![usize::MAX; table.cols.len()];
     for (pos, &c) in numeric.iter().enumerate() {
         pos_map[c] = pos;
@@ -1363,6 +1439,62 @@ fn make_finding(table: &TypedTable, f: &Flagged, _cfg: &DiscConfig) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bitmap_sampling_matches_complete_case_sampling_exactly() {
+        // Include word boundaries, sparse complete cases, and caps both
+        // below and above the complete population. Selection must preserve
+        // the old sample and its fit/evaluation parity, not just its size.
+        for n in [0, 1, 63, 64, 65, 300] {
+            for cap in [0, 1, 7, 1000] {
+                let cols = [
+                    TypedCol::F64 {
+                        vals: (0..n).map(|i| Some(i as f64)).collect::<Vec<_>>().into(),
+                    },
+                    TypedCol::F64 {
+                        vals: (0..n)
+                            .map(|i| (i % 3 != 0).then_some(i as f64))
+                            .collect::<Vec<_>>()
+                            .into(),
+                    },
+                    TypedCol::F64 {
+                        vals: (0..n)
+                            .map(|i| (i % 5 == 0).then_some(i as f64))
+                            .collect::<Vec<_>>()
+                            .into(),
+                    },
+                ];
+                let shared = std::sync::Arc::new(
+                    crate::stride_rows(n, cap)
+                        .into_iter()
+                        .map(|r| r as usize)
+                        .collect(),
+                );
+                let values: Vec<_> = cols
+                    .iter()
+                    .map(|col| NumericColumn::new(col, std::sync::Arc::clone(&shared)))
+                    .collect();
+                for target in &values {
+                    for axes in [
+                        vec![&values[0]],
+                        vec![&values[1]],
+                        vec![&values[1], &values[2]],
+                    ] {
+                        let complete: Vec<_> = (0..n)
+                            .filter(|&i| {
+                                target.at(i).is_finite() && axes.iter().all(|c| c.at(i).is_finite())
+                            })
+                            .collect();
+                        let expected: Vec<_> = crate::stride_rows(complete.len(), cap)
+                            .iter()
+                            .map(|&i| complete[i as usize])
+                            .collect();
+                        assert_eq!(kept_rows(target, &axes, cap), expected, "n={n}, cap={cap}");
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn ordered_scan_matches_plain_scan() {

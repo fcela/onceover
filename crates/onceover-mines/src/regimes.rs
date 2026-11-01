@@ -47,6 +47,7 @@ impl Default for RegimesConfig {
 fn numeric(col: &TypedCol<'_>, row: usize) -> Option<f64> {
     let v = match col {
         TypedCol::I64 { vals } => vals.get(row)?.map(|v| v as f64),
+        TypedCol::U64 { vals } => vals.get(row)?.map(|v| v as f64),
         TypedCol::F64 { vals } => vals.get(row)?,
         _ => None,
     }?;
@@ -56,7 +57,7 @@ fn numeric(col: &TypedCol<'_>, row: usize) -> Option<f64> {
 fn time_at(col: &TypedCol<'_>, row: usize) -> Option<i64> {
     match col {
         TypedCol::Date { vals } => vals[row].map(i64::from),
-        TypedCol::Datetime { vals } => vals[row],
+        TypedCol::Datetime { .. } => col.datetime_micros(row),
         _ => None,
     }
 }

@@ -268,8 +268,9 @@ use std::collections::BTreeMap;
 fn time_at(col: &TypedCol, row: usize) -> Option<i64> {
     match col {
         TypedCol::Date { vals } => vals[row].map(i64::from),
-        TypedCol::Datetime { vals } => vals[row],
+        TypedCol::Datetime { .. } => col.datetime_micros(row),
         TypedCol::I64 { vals } => vals.get(row).flatten(),
+        TypedCol::U64 { vals } => vals.at(row).and_then(|v| i64::try_from(v).ok()),
         _ => None,
     }
 }
@@ -277,6 +278,7 @@ fn time_at(col: &TypedCol, row: usize) -> Option<i64> {
 fn numeric_at(col: &TypedCol, row: usize) -> Option<f64> {
     let v = match col {
         TypedCol::I64 { vals } => vals.get(row)?.map(|v| v as f64),
+        TypedCol::U64 { vals } => vals.get(row)?.map(|v| v as f64),
         TypedCol::F64 { vals } => vals.get(row)?,
         _ => None,
     }?;
@@ -784,7 +786,7 @@ pub fn profile_breaks(
         match col {
             TypedCol::Date { .. } => Some(Axis::Date),
             TypedCol::Datetime { .. } => Some(Axis::Datetime),
-            TypedCol::I64 { .. } => Some(Axis::Integer),
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } => Some(Axis::Integer),
             _ => None,
         }
     }
@@ -799,6 +801,16 @@ pub fn profile_breaks(
     let year_like = table.cols.iter().enumerate().find_map(|(i, c)| match c {
         TypedCol::I64 { vals } => {
             let present: Vec<i64> = vals.iter().flatten().copied().collect();
+            let mut distinct = present.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            let year_like = !present.is_empty()
+                && distinct.len() >= 8
+                && present.iter().all(|&v| (1900..=2100).contains(&v));
+            year_like.then_some((i, Axis::Integer))
+        }
+        TypedCol::U64 { vals } => {
+            let present: Vec<u64> = vals.iter().flatten().copied().collect();
             let mut distinct = present.clone();
             distinct.sort_unstable();
             distinct.dedup();

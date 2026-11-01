@@ -91,6 +91,13 @@ fn time_keys(table: &TypedTable, ci: usize) -> Vec<f64> {
                 }
             }
         }
+        TypedCol::U64 { vals } => {
+            for (i, v) in vals.iter().enumerate() {
+                if let Some(v) = v {
+                    out[i] = *v as f64;
+                }
+            }
+        }
         TypedCol::F64 { vals } => {
             for (i, v) in vals.iter().enumerate() {
                 if let Some(v) = v {
@@ -105,10 +112,10 @@ fn time_keys(table: &TypedTable, ci: usize) -> Vec<f64> {
                 }
             }
         }
-        TypedCol::Datetime { vals } => {
-            for (i, v) in vals.iter().enumerate() {
-                if let Some(v) = v {
-                    out[i] = *v as f64;
+        TypedCol::Datetime { .. } => {
+            for (i, key) in out.iter_mut().enumerate() {
+                if let Some(v) = table.cols[ci].datetime_micros(i) {
+                    *key = v as f64;
                 }
             }
         }
@@ -123,6 +130,13 @@ fn column_f64(table: &TypedTable, idx: usize) -> Vec<f64> {
     let mut out = vec![f64::NAN; table.n];
     match &table.cols[idx] {
         TypedCol::I64 { vals } => {
+            for (i, v) in vals.iter().enumerate() {
+                if let Some(v) = v {
+                    out[i] = *v as f64;
+                }
+            }
+        }
+        TypedCol::U64 { vals } => {
             for (i, v) in vals.iter().enumerate() {
                 if let Some(v) = v {
                     out[i] = *v as f64;

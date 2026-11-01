@@ -42,6 +42,7 @@ pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
     let get = |c: &TypedCol, i: usize| -> Option<f64> {
         match c {
             TypedCol::I64 { vals } => vals.at(i).map(|v| v as f64),
+            TypedCol::U64 { vals } => vals.at(i).map(|v| v as f64),
             TypedCol::F64 { vals } => vals.at(i),
             _ => None,
         }
@@ -209,7 +210,12 @@ pub fn screen_sampled(
     use rayon::prelude::*;
 
     let numeric: Vec<usize> = (0..table.cols.len())
-        .filter(|&i| matches!(table.cols[i], TypedCol::I64 { .. } | TypedCol::F64 { .. }))
+        .filter(|&i| {
+            matches!(
+                table.cols[i],
+                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            )
+        })
         .collect();
     // Width gate: past 25M pairs even the cheap stage's constant
     // is too large (7,071+ numeric columns); skip pair screening

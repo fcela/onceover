@@ -1,0 +1,161 @@
+{
+  "rows": 2000000,
+  "columns": 200,
+  "budget": "standard",
+  "seed": 20241024,
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "python": "3.13.7",
+  "onceover": "0.1.3",
+  "polars": "2.0.0",
+  "rayon_threads": 4,
+  "system_memory_gib": 24.0,
+  "profile_seconds": 79.6673537089955,
+  "memory_sample_interval_seconds": 0.02,
+  "rss_before_profile_gib": 3.069488525390625,
+  "peak_profile_rss_gib": 3.4734649658203125,
+  "additional_peak_rss_gib": 0.4039764404296875,
+  "checks": {
+    "all_column_cards": true,
+    "exact_unique_count": true,
+    "exact_dirty_count": true,
+    "primary_key": true,
+    "dirty_key": true,
+    "late_nonlinear_target": true,
+    "late_identity": true,
+    "late_dependency": true
+  },
+  "coverage": {
+    "arithmetic_identities": {
+      "status": "ran_exact",
+      "detail": "4 candidate pairs checked, 2 identities"
+    },
+    "association_rules": {
+      "status": "ran_sampled",
+      "detail": "1 of 1 nominal features (all eligible columns, level cap 16); 15991 train / 4009 diagnostic holdout rows; 0 rules passing criteria, 0 emitted (cap 20)"
+    },
+    "breaks": {
+      "status": "ran_sampled",
+      "detail": "no date, datetime, or year-like integer column; break scan skipped"
+    },
+    "column_cards": {
+      "status": "ran_exact",
+      "detail": "200 cards (exact)"
+    },
+    "dates": {
+      "status": "ran_exact",
+      "detail": "skipped: no temporal columns"
+    },
+    "decision_tables": {
+      "status": "ran_sampled",
+      "detail": "2 categorical targets searched, 0 tables found; 2 of 2 eligible targets selected (cap 6)"
+    },
+    "dependence_screen": {
+      "status": "capped",
+      "detail": "496 of 19701 numeric pairs (capped); all 19701 pairs screened; detailed statistics over 20000 of 2000000 rows; 4 strong, 4 redundancy links"
+    },
+    "digits": {
+      "status": "ran_exact",
+      "detail": "199 numeric columns digit-scanned; 194 Benford-eligible (others fail the positivity, span, or distinctness eligibility recorded in the detector docs)"
+    },
+    "discontinuities": {
+      "status": "ran_exact",
+      "detail": "197 numeric targets screened over 38612 axis units and 124110 diagonal units (16 directions x pairs); 2888 candidates flagged on the evaluation half (|z| >= 2, held-out gain > 0), 1980 of the typed leaders rejected as steep smooth transitions; 0 jumps reported"
+    },
+    "drift": {
+      "status": "ran_exact",
+      "detail": "no time axis declared"
+    },
+    "duplicate_encodings": {
+      "status": "ran_exact",
+      "detail": "2 label-like columns, 1 pairs evaluated on 100000 rows (sampled); 1 duplicate encodings, 0 rollups"
+    },
+    "encoding": {
+      "status": "ran_sampled",
+      "detail": "20000 rows (20000 of 2000000), 200 features (all usable columns; per-model predictor budget 48, 0 skipped/unusable)"
+    },
+    "expectations": {
+      "status": "skipped",
+      "detail": "no hints provided"
+    },
+    "extraction": {
+      "status": "ran_exact",
+      "detail": "2000000 rows \u00d7 200 columns"
+    },
+    "functional_dependencies": {
+      "status": "capped",
+      "detail": "all 2 eligible lhs / 200 eligible rhs columns screened (398 directed pairs over 2048 rows); per-target lhs cap 16; levels <= 2; verification rows 200000 (stratified sample); 2 exact FDs, 0 AFDs; composite keys screen all eligible pairs, verify up to 16 candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns"
+    },
+    "granularity": {
+      "status": "ran_exact",
+      "detail": "196 float columns scanned for granularity changes"
+    },
+    "hotspots": {
+      "status": "ran_sampled",
+      "detail": "2 eligible columns, 1 combinations examined (0 triples), 20 cells examined, z bar 3.48 (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of 20000 rows"
+    },
+    "interactions": {
+      "status": "ran_sampled",
+      "detail": "5 numeric targets above the holdout R\u00b2 bar (0.1), 3 fitted, 0 clearing the additive-refit gate, 0 pairs evaluated on 128 sample rows; 0 interactions reported"
+    },
+    "keys": {
+      "status": "ran_exact",
+      "detail": "197 single-column unique, 0 composite"
+    },
+    "multiterm_identities": {
+      "status": "ran_exact",
+      "detail": "2000 multi-term candidates screened, 0 multi-term identities"
+    },
+    "period_associations": {
+      "status": "not_applicable",
+      "detail": "no date column or `year` column defines at least two periods of 30+ rows"
+    },
+    "pivot": {
+      "status": "not_applicable",
+      "detail": "needs exactly one continuous measure column and a categorical attribute candidate"
+    },
+    "predictability_screen": {
+      "status": "ran_sampled",
+      "detail": "200 target columns considered over 20000 encoded rows / 200 features; 7 predictable; predictors shortlisted from all features on training rows (max 48 predictors / 5000 fitting rows per target)"
+    },
+    "prism_rules": {
+      "status": "ran_sampled",
+      "detail": "2 targets eligible, 0 rules; 2 of 2 eligible targets selected (cap 6)"
+    },
+    "regimes": {
+      "status": "ran_sampled",
+      "detail": "3 of 3 eligible numeric targets (cap 4), 3 fitted over at most 5000 rows / 8 predictors / depth 3; 0 incomplete row-target cases dropped; 0 insufficient/invalid targets; 1 findings (numeric predictors only; first date column if present; diagnostic holdout)"
+    },
+    "row_duplicates": {
+      "status": "ran_exact",
+      "detail": "no exact duplicate rows (exact)"
+    },
+    "sentinels": {
+      "status": "ran_exact",
+      "detail": "199 numeric columns scanned for sentinel values"
+    },
+    "sortedness": {
+      "status": "ran_exact",
+      "detail": "1 columns sorted by row order"
+    },
+    "surprises": {
+      "status": "ran_exact",
+      "detail": "197 numeric columns scanned against 2 conditioning columns; 0 surprise findings; 1 categorical columns scanned in 4 contexts up to 3 conditions; 0 categorical surprise findings"
+    },
+    "target_shapes": {
+      "status": "skipped",
+      "detail": "detector not enabled"
+    },
+    "views": {
+      "status": "skipped",
+      "detail": "detector not enabled"
+    }
+  },
+  "schema_version": "0.2",
+  "selection": {
+    "candidates": 416,
+    "verified_candidates": 416,
+    "distinct_statements": 414,
+    "selected": 100
+  },
+  "noise_targets_flagged": 0
+}

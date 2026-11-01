@@ -29,6 +29,11 @@ impl NumericScalar for i64 {
         Some(self)
     }
 }
+impl NumericScalar for u64 {
+    fn canonical_ref(&self) -> Option<&Self> {
+        Some(self)
+    }
+}
 impl NumericScalar for f64 {
     fn canonical_ref(&self) -> Option<&Self> {
         if !self.is_finite() {
@@ -95,9 +100,13 @@ impl<T: NumericScalar + PartialEq> PartialEq<Vec<Option<T>>> for NumericValues<'
 /// `Str` borrows directly from the source DataFrame (zero-copy).
 #[derive(Debug)]
 pub enum TypedCol<'a> {
-    /// All integer dtypes (int8..64, uint8..32; uint64 when values fit i64).
+    /// Signed integers and uint8..32 (all represented losslessly as i64).
     I64 {
         vals: NumericValues<'a, i64>,
+    },
+    /// Unsigned integers retain all 64 bits for exact comparisons.
+    U64 {
+        vals: NumericValues<'a, u64>,
     },
     /// Floats (NaN/inf treated as null; -0.0 normalized to +0.0).
     F64 {
@@ -118,9 +127,10 @@ pub enum TypedCol<'a> {
     Date {
         vals: Vec<Option<i32>>,
     },
-    /// Datetime normalized to microseconds since epoch (naive).
+    /// Datetime ticks retain the source unit for exact comparisons.
     Datetime {
         vals: Vec<Option<i64>>,
+        unit: TimeUnit,
     },
     /// A column that is entirely null.
     Null {
@@ -137,12 +147,13 @@ impl<'a> TypedCol<'a> {
     pub fn len(&self) -> usize {
         match self {
             TypedCol::I64 { vals } => vals.len(),
+            TypedCol::U64 { vals } => vals.len(),
             TypedCol::F64 { vals } => vals.len(),
             TypedCol::Str { vals } => vals.len(),
             TypedCol::StrOwned { vals } => vals.len(),
             TypedCol::Bool { vals } => vals.len(),
             TypedCol::Date { vals } => vals.len(),
-            TypedCol::Datetime { vals } => vals.len(),
+            TypedCol::Datetime { vals, .. } => vals.len(),
             TypedCol::Null { n } | TypedCol::Other { n, .. } => *n,
         }
     }
@@ -150,12 +161,13 @@ impl<'a> TypedCol<'a> {
     pub fn null_count(&self) -> usize {
         match self {
             TypedCol::I64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
+            TypedCol::U64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::F64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Str { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::StrOwned { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Bool { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Date { vals } => vals.iter().filter(|v| v.is_none()).count(),
-            TypedCol::Datetime { vals } => vals.iter().filter(|v| v.is_none()).count(),
+            TypedCol::Datetime { vals, .. } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Null { n } => *n,
             TypedCol::Other { null_count, .. } => *null_count,
         }
@@ -184,6 +196,10 @@ impl<'a> TypedCol<'a> {
                 .at(i)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "null".into()),
+            TypedCol::U64 { vals } => vals
+                .at(i)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".into()),
             TypedCol::F64 { vals } => vals
                 .at(i)
                 .map(|v| format!("{v}"))
@@ -196,10 +212,33 @@ impl<'a> TypedCol<'a> {
             TypedCol::Date { vals } => vals[i]
                 .map(|v| crate::dateutil::iso_date(v as i64))
                 .unwrap_or_else(|| "null".into()),
-            TypedCol::Datetime { vals } => vals[i]
-                .map(crate::dateutil::iso_datetime)
+            TypedCol::Datetime { vals, unit } => vals[i]
+                .map(|v| crate::dateutil::iso_timestamp(v, *unit))
                 .unwrap_or_else(|| "null".into()),
             TypedCol::Null { .. } | TypedCol::Other { .. } => "null".into(),
+        }
+    }
+
+    /// Calendar projection is separate from exact source ticks.
+    pub fn datetime_days(&self, row: usize) -> Option<i64> {
+        match self {
+            Self::Datetime { vals, unit } => {
+                vals[row].map(|v| crate::dateutil::timestamp_days(v, *unit))
+            }
+            _ => None,
+        }
+    }
+
+    /// Microseconds for legacy temporal models; unrepresentable epochs
+    /// remain in the exact integrity passes but are excluded from models.
+    pub fn datetime_micros(&self, row: usize) -> Option<i64> {
+        match self {
+            Self::Datetime { vals, unit } => vals[row].and_then(|v| match unit {
+                TimeUnit::Milliseconds => v.checked_mul(1000),
+                TimeUnit::Microseconds => Some(v),
+                TimeUnit::Nanoseconds => Some(v.div_euclid(1000)),
+            }),
+            _ => None,
         }
     }
 
@@ -209,7 +248,10 @@ impl<'a> TypedCol<'a> {
 
     /// True when this column can act as a numeric feature (for screening).
     pub fn is_numeric(&self) -> bool {
-        matches!(self, TypedCol::I64 { .. } | TypedCol::F64 { .. })
+        matches!(
+            self,
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+        )
     }
 }
 
@@ -287,6 +329,28 @@ pub fn extract(df: &DataFrame) -> TypedTable<'_> {
 /// Extract a single Series into a TypedCol. Categorical/Enum columns are
 /// materialized to strings (they are low-cardinality by construction).
 pub fn extract_series(s: &Series) -> TypedCol<'_> {
+    if let Ok(ca) = s.u64() {
+        if let Ok(values) = ca.cont_slice() {
+            return TypedCol::U64 {
+                vals: NumericValues::Borrowed(values),
+            };
+        }
+        let mut end = 0;
+        let chunks = ca
+            .downcast_iter()
+            .map(|array| {
+                end += array.len();
+                NumericChunk {
+                    end,
+                    values: array.values().as_slice(),
+                    validity: array.validity(),
+                }
+            })
+            .collect();
+        return TypedCol::U64 {
+            vals: NumericValues::Chunked(chunks),
+        };
+    }
     if let Ok(ca) = s.i64() {
         if let Ok(values) = ca.cont_slice() {
             return TypedCol::I64 {
@@ -375,33 +439,16 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             }
             TypedCol::I64 { vals: vals.into() }
         }
-        DataType::UInt64 => {
-            // Collect as u64 first; fall back to f64 if any value overflows i64.
-            let mut raw: Vec<Option<u64>> = Vec::with_capacity(s.len());
-            let mut overflow = false;
-            for av in s.iter() {
-                match av {
-                    AnyValue::UInt64(v) => {
-                        if v > i64::MAX as u64 {
-                            overflow = true;
-                        }
-                        raw.push(Some(v));
-                    }
-                    AnyValue::Null => raw.push(None),
-                    _ => raw.push(None),
-                }
-            }
-            if overflow {
-                let vals: Vec<_> = raw
-                    .into_iter()
-                    .map(|o| o.and_then(|v| norm_f64(v as f64)))
-                    .collect();
-                TypedCol::F64 { vals: vals.into() }
-            } else {
-                let vals: Vec<_> = raw.into_iter().map(|o| o.map(|v| v as i64)).collect();
-                TypedCol::I64 { vals: vals.into() }
-            }
-        }
+        DataType::UInt64 => TypedCol::U64 {
+            vals: s
+                .iter()
+                .map(|v| match v {
+                    AnyValue::UInt64(v) => Some(v),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        },
         DataType::Float32 | DataType::Float64 => {
             let mut vals = Vec::with_capacity(s.len());
             for av in s.iter() {
@@ -452,20 +499,15 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             }
             TypedCol::Date { vals }
         }
-        DataType::Datetime(_, _) => {
-            let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::Datetime(v, tu, _) => Some(match tu {
-                        TimeUnit::Milliseconds => v * 1_000,
-                        TimeUnit::Microseconds => v,
-                        TimeUnit::Nanoseconds => v / 1_000,
-                    }),
-                    AnyValue::Null => None,
+        DataType::Datetime(unit, _) => {
+            let vals = s
+                .iter()
+                .map(|v| match v {
+                    AnyValue::Datetime(v, _, _) => Some(v),
                     _ => None,
-                });
-            }
-            TypedCol::Datetime { vals }
+                })
+                .collect();
+            TypedCol::Datetime { vals, unit: *unit }
         }
         DataType::Null => TypedCol::Null { n: s.len() },
         _ => TypedCol::Other {
@@ -495,6 +537,7 @@ mod tests {
         assert_eq!(t.dtypes, vec!["int32", "float64", "string", "boolean"]);
         match &t.cols[0] {
             TypedCol::I64 { vals } => assert_eq!(vals, &vec![Some(1i64), Some(2), Some(3)]),
+            TypedCol::U64 { vals } => assert_eq!(vals, &vec![Some(1u64), Some(2), Some(3)]),
             _ => panic!("i should be I64"),
         }
         match &t.cols[1] {

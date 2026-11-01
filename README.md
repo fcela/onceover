@@ -1,123 +1,164 @@
 # onceover
 
-Profile a Polars DataFrame with one call. `onceover` returns column summaries,
-ranked findings with evidence, and coverage describing what each pass examined.
-The computation runs in Rust; Python bindings release the GIL while profiling.
+Give a Polars DataFrame a first look: find data-quality problems, discover
+relationships between columns, and locate changes in how the data behaves.
+`onceover.profile(df)` returns ranked findings with their evidence, a
+summary of every column, and coverage showing what was examined.
+Computation runs in Rust, with Python and Rust APIs.
 
-**Documentation:** the full book — tutorials, case studies, per-pass
-methodology, implementation notes, and the report contract — is built from
-this repository and published at
-[https://fcela.github.io/onceover/](https://fcela.github.io/onceover/).
-The [analysis notebook](notebooks/onceover_analysis.ipynb) is a complete
-worked example with charts and controls.
+[Read the documentation](https://fcela.github.io/onceover/) ·
+[Explore the capabilities](docs/book/usage/capabilities.ipynb) ·
+[Work through the analysis notebook](notebooks/onceover_analysis.ipynb)
 
-## Install
+## Start with a table
 
 ```bash
 pip install onceover
 ```
 
-Requires CPython 3.10+ and Polars 1.28–2.x. Binary wheels cover Linux x86_64 and
-aarch64, macOS Intel and Apple silicon, and Windows x86_64. Building the
-source distribution requires Rust and a C compiler.
+Requires CPython 3.10+ and Polars 1.28–2.x. Binary wheels are available for
+Linux x86_64 and aarch64, macOS Intel and Apple silicon, and Windows x86_64.
+Building from source requires Rust and a C compiler.
 
-## Python
+This example contains a region lookup and a derived quantity. It has enough
+rows for the relationship detectors to run:
 
 ```python
 import polars as pl
 import onceover
 
+n = 600
+quantity = [1 + i % 20 for i in range(n)]
+region = [i % 3 for i in range(n)]
 df = pl.DataFrame({
-    "order_id": [1, 2, 3, 4],
-    "quantity": [2, 1, 4, 3],
-    "double_quantity": [4, 2, 8, 6],
+    "order_id": range(n),
+    "quantity": quantity,
+    "double_quantity": [2 * q for q in quantity],
+    "region_code": region,
+    "region_name": [["north", "south", "west"][r] for r in region],
 })
 
 report = onceover.profile(df)
-print(report.overview["headline"])
-print(report.to_markdown())
+print(report.to_digest(4_000))
 
-report.columns     # Per-column types, roles, counts, and statistics
-report.findings    # Selected statements with supporting evidence
-report.findings_frame()  # The findings as a Polars DataFrame, one row each
-report.coverage    # Pass status, samples, caps, and skipped work
-report.groups      # Connected findings, without a redundancy claim
-report.data        # Complete JSON-compatible report
+for finding in report.select(category="dependencies", target="double_quantity"):
+    print(finding["claim"])
+```
+
+The report can identify `order_id` as a key, recover the region mapping,
+and verify the quantity relationship. Inspect a finding's `evidence` for
+its evaluated rows, missing-value policy, validation, and measured effect.
+A report's rank indicates which findings to inspect first; it is not a
+probability that a claim is correct.
+
+## What can onceover find?
+
+| Your question | What to look for | Methods and examples |
+|---|---|---|
+| Can I join or deduplicate this table safely? | Candidate and nearly unique keys, composite keys, repeated rows | [Keys and duplicates](docs/book/methodology/keys_duplicates.ipynb) |
+| Are values missing, suspicious, or inconsistently recorded? | Nulls, sentinel codes, isolated extremes, rare categorical exceptions, mixed formats, rounding changes, digit patterns | [Column summaries](docs/book/usage/columns.ipynb), [extreme values](docs/book/methodology/extreme_values.ipynb), [digit fingerprints](docs/book/methodology/digit_fingerprints.ipynb) |
+| Which columns contain the same information? | Functional mappings, arithmetic identities, duplicate encodings, rollups, predictable targets | [Dependencies and identities](docs/book/methodology/functional_dependencies.ipynb), [predictability](docs/book/methodology/predictability_screen.ipynb) |
+| What happens within a group? | Conditional rules, decision tables, unexpectedly concentrated combinations, local linear equations | [Rules](docs/book/methodology/rules_tables.ipynb), [hotspots](docs/book/methodology/hotspots.ipynb), [local regimes](docs/book/methodology/local_linear_regimes.ipynb) |
+| How are variables related? | Linear, monotone, and nonlinear dependence; changing associations by period; target shapes and predictor interactions | [Dependence measures](docs/book/methodology/dependence_measures.ipynb), [target shapes](docs/book/methodology/target_shapes.ipynb), [interactions](docs/book/methodology/interactions.ipynb) |
+| Where does behavior change? | Calendar gaps, appended backfills, sustained level/trend/variance changes, temporary excursions, threshold jumps, model-routing drift | [Temporal analysis](docs/book/methodology/temporal_analysis.ipynb), [discontinuities](docs/book/methodology/step_discontinuities.ipynb), [drift](docs/book/methodology/drift.ipynb) |
+| Does the layout hide structure? | Verified long-format layouts and relationships in their wide form; shared row states across column groups | [Long-format reports](docs/book/usage/findings.ipynb), [experimental views](docs/book/methodology/view_clusters.ipynb) |
+
+The [capability guide](docs/book/usage/capabilities.ipynb) connects these
+questions to detector IDs, examples, and the methodological chapters.
+Each method documents the statement it supports, its assumptions, and what
+it can miss. Association and predictive findings describe observed
+structure; they do not establish causation.
+
+## Read and use the report
+
+```python
+report.columns                         # All-row summaries, keyed by column name
+report.findings_frame()                 # Searchable index of the selected findings
+report.select(column="region_name")    # Complete findings about one column
+report.finding(report.findings[0]["id"])  # One finding, including all its evidence
+report.coverage                        # Completed, sampled, capped, or skipped work
+report.data                            # Complete JSON-compatible report
 report.save("profile.json")
 ```
 
-`profile(df, budget="standard", deadline_seconds=None)` accepts three budgets:
+Use `report.to_digest(4_000)` for a short reading budget, or
+`report.to_json(max_chars=24_000)` for a budgeted JSON view. The latter
+raises `ValueError` if the requested size cannot hold its minimal index.
+Both keep the full report available. `report.diff(other)` compares two
+reports by finding ID and records coverage-status changes; it is separate
+from the statistical drift detector.
+
+Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
+[reading findings](docs/book/usage/findings.ipynb) and
+[checking evidence](docs/book/methodology/evidence.ipynb). The
+[API reference](docs/book/usage/api.ipynb) and
+[JSON contract](docs/report-schema.md) provide lookup details.
+
+## Choose the work and declare what you know
 
 | Budget | Work |
 |---|---|
-| `quick` | Column summaries, single-column keys, duplicates, dates, and sortedness |
-| `standard` | Default passes with bounded search and model samples |
-| `deep` | Default passes with larger search caps and model samples |
+| `quick` | All-row column summaries and integrity checks; no model-based relationship search |
+| `standard` | The default detectors with bounded relationship samples and search caps |
+| `deep` | Larger samples and wider searches for those detectors |
 
-Results are deterministic for the same data and configuration. An optional
-wall-clock deadline can change which passes finish; coverage records skipped work.
+Use `detectors=[...]` to replace the default selection with named methods.
+Required resource passes may also run; coverage explains that work. The
+experimental `views` detector is opt-in. Designating `target="response"`
+adds the opt-in target-shape pass when using the default detector selection;
+with an explicit list, include `target_shapes` yourself.
 
-Use `detectors=[...]` to select passes explicitly. The experimental `views`
-pass is disabled by default and can be selected at the standard or deep budget:
-
-## Declared hints
-
-What the profiler cannot infer, the caller can declare. `hints` states the
-table's intended structure, and an `expectations` pass checks the statements
-exactly, tagging its evidence `reference_source="declared"`:
+Hints declare intended structure, including ordering, complete sequences,
+calendar cadence, and panel dimensions. For example:
 
 ```python
-report = onceover.profile(df, hints={
-    "time": "month",                          # the time axis
-    "order_by": ["month"],                    # rows are ordered by it
-    "no_gaps": ["month", "order_id"],         # complete sequences expected
-    "cadence": {"month": "monthly"},          # or "daily" | "business_day" | "weekly" | a step
-    "dimensions": ["region", "product"],      # panel structure
-    "measures": ["revenue"],
+import datetime as dt
+
+monthly = pl.DataFrame({
+    "month": [dt.date(2024, m, 1) for m in (1, 2, 4, 5, 6)],
+    "revenue": [10.0, 11.0, 13.0, 12.0, 14.0],
 })
+hinted = onceover.profile(monthly, hints={
+    "time": "month",
+    "no_gaps": ["month"],
+    "cadence": {"month": "monthly"},
+})
+for finding in hinted.select(category="gaps"):
+    print(finding["claim"])
 ```
 
-Declared cadences replace inference for their column (monthly gaps and
-short series become checkable), declared ordering reports violations
-rather than only confirming sortedness, integer `no_gaps` columns get a
-sequence-completeness check, and declared dimensions × the time axis get
-a panel-completeness check. Hints naming missing or unusable columns are
-reported in the `expectations` coverage entry, not raised.
+This checks for the missing March against a declared monthly calendar.
+Unusable hints are explained in coverage. See
+[declared expectations](docs/book/methodology/expectations.ipynb) for
+ordering, integer sequences, and panel completeness.
 
-```python
-onceover.available_detectors()
-report = onceover.profile(df, detectors=["keys", "numeric_dependence", "views"])
-```
+Results are deterministic for the same package version, data, and settings
+when neither a deadline nor timing is enabled. `deadline_seconds` is a
+soft limit checked between passes; a running pass completes.
+`timing=True` records per-pass elapsed time without changing the findings.
 
-An explicit list replaces the default selection. Required passes may also run
-to supply resources; coverage identifies that work.
+## Large and wide tables
 
-## Findings
+Column summaries inspect every row. Dense and nullable Int64, UInt64, and
+Float64 columns borrow Arrow buffers; other dtypes may require normalized
+copies. Exact counts preserve unsigned integer values and timestamp
+resolution. Numeric summary statistics and model features use
+floating-point arithmetic.
 
-- Primary, composite, and nearly unique keys; duplicated rows.
-- Long-format frames: the jointly unique (index, attribute, measure) triple and the pivot that widens them.
-- Exact and approximate functional dependencies, with violation counts.
-- Predictable columns, cross-validated decision tables, and PRISM rules.
-- Pearson, Spearman, and Chatterjee's ξ dependence; connected finding groups.
-- Period-split associations: a pair's correlation recomputed within the
-  periods of a date or `year` column, reported when it changes materially.
-- Arithmetic identities, M5-style local linear regimes, and dated residual shifts.
-- Nominal associations with training and diagnostic holdout evidence.
-- Date gaps, irregular intervals, sortedness, constants, missing values,
-  concentration, numeric category codes, and inconsistent string formats.
+Relationship discovery screens broadly, then limits follow-up work.
+`sample_rows`, `max_predictors`, and `max_pairs` adjust specific search
+budgets; they do not reduce full-data integrity checks. Coverage identifies
+the rows and limits behind each result. Rare patterns and relationships
+visible only through interactions can escape a shortlist.
 
-Finding categories describe the discovered pattern, while contributing methods
-are recorded in `evidence`. Scope, measurement basis, and validation are separate
-fields. Equivalent statements combine evidence; shared selection limits apply
-across detectors. See [the report schema](https://github.com/fcela/onceover/blob/main/docs/findings.md).
-Model explanations and associations use diagnostic validation; they do not
-establish causal effects or multiple-testing guarantees.
+The [large-table guide](docs/book/usage/large_tables.ipynb) explains those
+tradeoffs. The [scale benchmark](docs/benchmarks/large-table-performance.md)
+reports runtime, memory, and recovery together on 2,000,000 rows × 200
+columns, with planted relationships beyond column 64.
 
-## Rust
+## Rust and development
 
-```bash
-cargo add onceover polars@0.55
-```
+The Rust API uses Polars 0.55:
 
 ```rust
 use onceover::{profile, ProfileConfig};
@@ -131,76 +172,17 @@ fn main() -> PolarsResult<()> {
 }
 ```
 
-The Rust API uses Polars 0.55. The `onceover` crate re-exports report types.
-
-## Large and wide tables
-
-The profiler accepts in-memory DataFrames with millions of rows and hundreds of
-columns. Column summaries examine every row and retain exact cardinality,
-null counts, distributions, and quantiles. Dense and nullable Int64/Float64
-columns borrow Arrow buffers; other dtypes can require normalized copies.
-This is an in-memory profiler, so input size and exact statistics still affect
-memory and runtime.
-
-Relationship discovery uses broad screening followed by bounded follow-up work:
-
-| Work | `standard` | `deep` |
-|---|---|---|
-| Encoded relationship sample | 20,000 rows, all usable columns | 50,000 rows, all usable columns |
-| Predictability | Every eligible target; up to 48 shortlisted predictors and 5,000 fitting rows per target | Up to 64 predictors and 10,000 fitting rows |
-| Numeric dependence | All pairs screened; up to 496 pairs examined over 20,000 rows | Up to 2,016 pairs over 50,000 rows |
-| Functional dependencies | Every eligible determinant/target screened; up to 16 determinants per target, verified over 200,000 rows | Up to 32 determinants, verified over 500,000 rows |
-| Decision tables / PRISM | Up to six promising targets per pass | Up to ten targets per pass |
-
-Predictor selection uses training rows. Nominal associations consider all eligible
-nominal columns. Arithmetic identities are fitted on a sample and their residuals
-are checked over all pair-complete input rows. Single-column key checks use exact
-full-column cardinality. Higher-order searches, category levels, and explanation
-output have additional budgets, described in `report.coverage`.
-
-Samples use deterministic stratified row selection. They can miss rare patterns;
-shortlisting can miss weak or interaction-only signals. Coverage records samples,
-shortlists, and skipped work. Absence of a finding is not proof of independence.
-
-Adjust the main relationship costs when needed:
-
-```python
-report = onceover.profile(
-    df,
-    sample_rows=50_000,
-    max_predictors=96,
-    max_pairs=2_000,
-)
-```
-
-These overrides keep exact column summaries and integrity checks on the full
-input. A deadline is soft: it skips later passes without interrupting a pass
-already running.
-
-See the [analysis notebook](https://github.com/fcela/onceover/blob/main/notebooks/onceover_analysis.ipynb) for planted examples,
-Altair charts, evidence, coverage, and a wide-table demonstration. Install its
-optional dependencies with `pip install 'onceover[notebook]'`.
-The [scale benchmark](https://github.com/fcela/onceover/blob/main/benchmarks/scale.py) measures runtime, peak resident memory,
-and recovery of relationships planted in the final columns:
+Install with `cargo add onceover polars@0.55`. For a Python development
+checkout, activate a virtual environment and run:
 
 ```bash
-pip install 'onceover[benchmark]'
-python benchmarks/scale.py --rows 2000000 --columns 200 --output /tmp/onceover-scale.json
-```
-
-## Development
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install 'maturin>=1.15,<2' pytest scipy
 maturin develop --release
 cargo test --workspace --locked
-pytest tests/
+python -m pytest tests/
 ```
 
-Publishing setup is described in [RELEASING.md](https://github.com/fcela/onceover/blob/main/RELEASING.md).
-
-## License
-
-MIT. See [LICENSE](https://github.com/fcela/onceover/blob/main/LICENSE).
+The [book](https://fcela.github.io/onceover/) includes case studies,
+methodology, implementation notes, and research references.
+[RELEASING.md](RELEASING.md) describes publication. The package is licensed
+under [MIT](LICENSE).

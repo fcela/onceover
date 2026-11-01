@@ -25,10 +25,13 @@ pub struct CardOut {
 }
 
 /// Format a VKey for display, dtype-aware (dates/datetimes stored as I).
-fn fmt_value(key: &VKey, dtype: &str) -> String {
+fn fmt_value(key: &VKey, dtype: &str, col: &TypedCol) -> String {
     match (key, dtype) {
         (VKey::I(v), "date") => iso_date(*v),
-        (VKey::I(v), "datetime") => iso_datetime(*v),
+        (VKey::I(v), "datetime") => match col {
+            TypedCol::Datetime { unit, .. } => crate::dateutil::iso_timestamp(*v, *unit),
+            _ => iso_datetime(*v),
+        },
         _ => key.display(),
     }
 }
@@ -172,7 +175,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                     "free_text"
                 }
             }
-            TypedCol::I64 { .. } | TypedCol::F64 { .. } => {
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
                 let likely_cat = (distinct <= 12 && n_nonnull >= 30)
                     || (distinct_ratio <= 0.02 && distinct <= 100 && n_nonnull >= 100);
                 if likely_cat {
@@ -196,6 +199,10 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
 
     match col {
         TypedCol::I64 { vals } => {
+            let f: Vec<f64> = vals.iter().flatten().map(|v| *v as f64).collect();
+            numeric_stats = Some(numeric_stats_f64(f, true));
+        }
+        TypedCol::U64 { vals } => {
             let f: Vec<f64> = vals.iter().flatten().map(|v| *v as f64).collect();
             numeric_stats = Some(numeric_stats_f64(f, true));
         }
@@ -245,17 +252,20 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                 modal_interval_days: None, // filled by the date pass
             });
         }
-        TypedCol::Datetime { vals } => {
+        TypedCol::Datetime { vals, unit } => {
             let ds: Vec<i64> = vals.iter().flatten().copied().collect();
             let bounds = [ds.iter().min().copied(), ds.iter().max().copied()];
             let ds: Vec<i64> = bounds.into_iter().flatten().collect();
             temporal_stats = Some(TemporalStats {
-                min: ds.first().map(|v| iso_datetime(*v)),
-                max: ds.last().map(|v| iso_datetime(*v)),
-                span_days: ds
+                min: ds
                     .first()
-                    .zip(ds.last())
-                    .map(|(a, b)| (b - a).div_euclid(86_400_000_000)),
+                    .map(|v| crate::dateutil::iso_timestamp(*v, *unit)),
+                max: ds.last().map(|v| crate::dateutil::iso_timestamp(*v, *unit)),
+                span_days: ds.first().zip(ds.last()).map(|(a, b)| {
+                    (((*b as i128) - (*a as i128))
+                        .div_euclid(86_400 * crate::dateutil::ticks_per_second(*unit) as i128))
+                        as i64
+                }),
                 modal_interval_days: None,
             });
         }
@@ -268,7 +278,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         .iter()
         .take(5)
         .map(|(k, c)| ValueCount {
-            value: fmt_value(k, dtype),
+            value: fmt_value(k, dtype, col),
             count: *c,
             share: *c as f64 / n_nonnull.max(1) as f64,
         })
@@ -363,7 +373,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         ));
         action_hints.push("drop_candidate".into());
     } else if role == "constant" {
-        let val = counts.top.first().map(|(k, _)| fmt_value(k, dtype));
+        let val = counts.top.first().map(|(k, _)| fmt_value(k, dtype, col));
         findings.push(finding(
             Pattern::ValueConcentration,
             &[name],
@@ -394,9 +404,9 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                         "column {} is nearly constant: {} '{}' vs {} '{}'",
                         name,
                         pct(c.top1_share.unwrap()),
-                        fmt_value(&top.0, dtype),
+                        fmt_value(&top.0, dtype, col),
                         counts.top[1].1,
-                        fmt_value(&second.0, dtype)
+                        fmt_value(&second.0, dtype, col)
                     ),
                     0.45,
                     BTreeMap::from([
@@ -410,14 +420,19 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     }
 
     // likely categorical (numeric)
-    if role == "categorical" && matches!(col, TypedCol::I64 { .. } | TypedCol::F64 { .. }) {
+    if role == "categorical"
+        && matches!(
+            col,
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+        )
+    {
         action_hints.push("treat_as_categorical".into());
         let mut ev = BTreeMap::from([
             ("distinct".into(), json!(distinct)),
             ("distinct_ratio".into(), json!(distinct_ratio)),
         ]);
         if let Some((k, c)) = counts.top.first() {
-            ev.insert("top_value".into(), json!(fmt_value(k, dtype)));
+            ev.insert("top_value".into(), json!(fmt_value(k, dtype, col)));
             ev.insert("top_count".into(), json!(c));
         }
         findings.push(finding(
@@ -445,7 +460,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                             "column {} is highly concentrated: {} '{}' (effective cardinality {:.2})",
                             name,
                             pct(t1),
-                            fmt_value(&top.0, dtype),
+                            fmt_value(&top.0, dtype, col),
                             c.effective_cardinality
                         ),
                         0.52 + 0.3 * t1,

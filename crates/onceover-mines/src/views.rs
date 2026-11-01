@@ -188,6 +188,13 @@ fn extract_columns(
                     .collect();
                 Some(standardize(name.clone(), raw))
             }
+            TypedCol::U64 { vals } => {
+                let raw: Vec<Option<f64>> = sample
+                    .iter()
+                    .map(|&r| vals.at(r).map(|v| v as f64))
+                    .collect();
+                Some(standardize(name.clone(), raw))
+            }
             TypedCol::F64 { vals } => {
                 let raw: Vec<Option<f64>> = sample.iter().map(|&r| vals.at(r)).collect();
                 Some(standardize(name.clone(), raw))
@@ -199,7 +206,7 @@ fn extract_columns(
                     .collect();
                 Some(standardize(name.clone(), raw))
             }
-            TypedCol::Datetime { vals } => {
+            TypedCol::Datetime { vals, .. } => {
                 let raw: Vec<Option<f64>> = sample
                     .iter()
                     .map(|&r| vals.get(r).copied().flatten().map(|v| v as f64))
@@ -280,8 +287,19 @@ fn screen_codes(col: &ViewCol, search_pos: &[usize]) -> Vec<Option<u32>> {
             present.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
             let mut out: Vec<Option<u32>> = vec![None; search_pos.len()];
             let n = present.len().max(1);
-            for (rank, (_, k)) in present.iter().enumerate() {
-                out[*k] = Some((rank * SCREEN_BINS / n) as u32);
+            let mut start = 0;
+            while start < present.len() {
+                let mut end = start + 1;
+                while end < present.len() && present[end].0 == present[start].0 {
+                    end += 1;
+                }
+                // Equal values must carry the same code. Splitting a tie
+                // manufactures dependence on row position, even for constants.
+                let code = (start * SCREEN_BINS / n) as u32;
+                for &(_, k) in &present[start..end] {
+                    out[k] = Some(code);
+                }
+                start = end;
             }
             out
         }

@@ -1,53 +1,116 @@
 # Reading a report
 
-A worked pass over one real report: the corpus's thyroid table
-(3,772 patients x 32 columns, `benchmarks/corpus/data/gritbot/thyroid/`),
-profiled at the standard budget. 68 findings, selected from 82
-candidates (the report's `selection` block keeps the counts).
+A finding is useful when you can connect its claim to the rows and
+comparison that produced it. This walkthrough uses the bundled thyroid
+fixture: 3,772 rows and 32 columns, profiled with onceover 0.1.3 at the
+standard budget. It illustrates mappings, conditional rules, and unusual
+observations without treating any of them as an automatic correction.
 
-## Start with the overview and coverage
+Run the example from the repository root:
 
-`overview.headline` gives the shape and the biggest categories.
-`coverage` says what actually ran: on this table every pass ran,
-some sampled. If a category you expected is absent, coverage tells
-you whether the pass ran and found nothing, was capped, or was
-skipped — three different conclusions. Do not read an absent
-category as "nothing there" until coverage says the pass ran.
+```python
+import polars as pl
+import onceover
 
-## Findings carry their evidence
+df = pl.read_csv(
+    "benchmarks/corpus/data/gritbot/thyroid/data.csv",
+    infer_schema_length=None,
+)
+report = onceover.profile(df)
+print(report.to_digest(4_000))
+print(report.data["selection"])
+```
 
-Two examples from this report:
+The recorded report selects 100 findings from 117 candidates and 102
+distinct statements. Those counts describe this package version and
+fixture. The code prints the counts for the installed version.
 
-- A functional dependency:
-  "tsh → tsh_measured (tsh_measured is a function of tsh;
-  0 violations in 3403 rows)". The claim states the relation and
-  its support; the evidence entry names the detector and whether
-  the count is over the full table or a sample. 3,403 is not
-  3,772: the relation is evaluated where both columns are present,
-  and the scope block says so.
-- A conditional rule:
-  "When fti_measured = false, t4u_measured = false holds in 85 of
-  85 matching diagnostic rows (100.00%; baseline 11.24%)".
-  Rules are validated on a diagnostic holdout, so the denominator
-  is the holdout's matching rows, and the baseline is the target's
-  overall rate — the lift over baseline is the point.
+## Read coverage alongside the headline
 
-## Rank is a selection device, not a verdict
+`overview.headline` gives the table's shape and a short result summary.
+`coverage` records completed, sampled, capped, and skipped passes. The
+experimental views detector is disabled by default; the drift detector
+requires a declared time axis. A method absent from the findings may have
+found no eligible pattern, reached a search limit, or not run at all.
 
-Findings are ranked by `interestingness` and the report is capped
-(100 at the standard budget in these runs). Three corpus tables
-saturate the cap (see the CrossCat write-up), so a missing finding
-can mean "ranked below the cap" as well as "not detected". The
-`selection` counts (candidates vs selected) tell you which regime
-you are in.
+Use the detail and each evidence record's `scope.rows_evaluated` and
+`scope.sampling` to determine which rows support a particular result.
+Pass-level status is not a substitute for that finding-specific scope.
 
-## What absence looked like here
+## Read a conditional rule's evaluated rate
 
-This table's documented anomalies (a 455-year-old patient; two
-pregnant patients in their seventies) produce *no* finding: the
-profiler found the table's structures (assay missingness FDs,
-concentration, rules) but does not isolate surprising cases inside
-them. That gap is measured, with tripwire expectations, in the
-benchmark corpus — see `docs/benchmarks/2026-10-28-initial-corpus.md`.
-Reading a report well includes knowing which kinds of things the
-current detectors cannot yet say.
+One selected rule says that `t4u_measured` is false when `fti_measured` is
+false. Its diagnostic recount succeeds in 85 of 85 matching rows, against
+a baseline outcome rate of 11.24%. Retrieve its evaluator record rather
+than taking whichever evidence entry happens to appear first:
+
+```python
+rule = next(
+    f for f in report.select(category="conditional_rules")
+    if f["specification"]["outcome"]["column"] == "t4u_measured"
+    and any(p["column"] == "fti_measured"
+            for p in f["specification"]["conditions"])
+)
+evaluated = next(
+    e for e in rule["evidence"]
+    if e["method"]["detector"] == "rule_evaluator"
+)
+print(rule["claim"])
+print(evaluated["scope"])
+print(evaluated["validation"])
+print(evaluated["metrics"])
+```
+
+Association mining and PRISM contributed discovery evidence for this rule.
+Their numbers describe different stages. The reported rate uses the common
+`rule_evaluator` counts: `joint_count`, `antecedent_count`,
+`conditional_rate`, `baseline_rate`, and `lift`. The diagnostic partition
+may have participated in discovery and selection; its rate is not a final
+independent estimate for future records.
+
+## Inspect the unusual rows
+
+The numeric surprise detector identifies an age of 455, separated from a
+remaining maximum of 94. It also finds an age of 75 within the
+`pregnant = true` subset, whose other evaluated ages stop at 42. The
+subset result would be easy to overlook in the full column.
+
+```python
+for finding in report.select(type="extreme_value", column="age"):
+    print(finding["claim"])
+    for evidence in finding["evidence"]:
+        print(evidence["metrics"])
+```
+
+`extreme_rows` identifies the original row indices. `extreme_values`,
+`bulk_edge`, and `central_spread_p90_p10` show the values and reference
+spread behind the isolation test. These are statistical discrepancies to
+inspect in the source, not clinical conclusions or permission to delete
+records. The detector also reports categorical values that break a nearly
+universal pattern within a context; see the
+[extreme-value chapter](book/methodology/extreme_values.ipynb).
+
+## Separate mappings from predictions
+
+A functional dependency checks whether equal inputs map to equal outputs
+on the evaluated complete rows. Its violation count has a different
+meaning from a model's holdout accuracy. A value can be measured on fewer
+than 3,772 rows because the comparison excludes missing inputs or targets.
+
+For prediction, read the inputs, baseline, score, train/evaluation counts,
+and whether validation helped select the result. For a mapping, read its
+comparison rule, sample scope, and violations. The
+[evidence chapter](book/methodology/evidence.ipynb) works through those fields.
+
+## Use rank to navigate
+
+`interestingness` orders the report; it is not a probability of correctness.
+This report reaches the default 100-finding limit, so some discovered
+statements are omitted. `selection` distinguishes candidate generation,
+verification, consolidation, and final selection. A missing result alone
+cannot establish independence or absence of a data-quality problem.
+
+The [capability guide](book/usage/capabilities.ipynb) helps choose a method;
+[coverage](book/usage/coverage.ipynb) explains its work limits; the
+[API reference](book/usage/api.ipynb) covers selection, lookup, comparison,
+and serialization.

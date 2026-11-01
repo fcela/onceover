@@ -104,6 +104,11 @@ fn level_counts(col: &TypedCol) -> BTreeMap<String, usize> {
                 bump(v.map(|x| x.to_string()));
             }
         }
+        TypedCol::U64 { vals } => {
+            for v in vals.iter() {
+                bump(v.map(|x| x.to_string()));
+            }
+        }
         TypedCol::F64 { vals } => {
             for v in vals.iter() {
                 bump(v.map(|x| x.to_string()));

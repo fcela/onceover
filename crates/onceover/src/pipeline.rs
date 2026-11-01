@@ -152,6 +152,17 @@ fn profile_inner(
         .collect();
 
     let mut findings: Vec<Finding> = Vec::new();
+    let sentinel_candidates: Vec<usize> = cards
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            c.counts
+                .top
+                .first()
+                .is_some_and(|(_, count)| *count >= onceover_deps::sentinels::MIN_OCCURRENCES)
+        })
+        .map(|(i, _)| i)
+        .collect();
     let mut columns: BTreeMap<String, ColumnCard> = BTreeMap::new();
     for c in cards {
         columns.insert(c.card.name.clone(), c.card.clone());
@@ -566,7 +577,8 @@ fn profile_inner(
         deadline_hit = true;
     }
     if !deadline_hit && enabled("sentinels") {
-        let sent = onceover_deps::sentinel_values(&table);
+        let sent =
+            onceover_deps::sentinels::sentinel_values_for_columns(&table, &sentinel_candidates);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
@@ -579,7 +591,9 @@ fn profile_inner(
                     .iter()
                     .filter(|c| matches!(
                         c,
-                        onceover_core::TypedCol::F64 { .. } | onceover_core::TypedCol::I64 { .. }
+                        onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::I64 { .. }
+                            | onceover_core::TypedCol::U64 { .. }
                     ))
                     .count()
             )),
@@ -796,8 +810,11 @@ fn profile_inner(
                         // as identifiers in v0.1 cards. Keep those eligible here.
                         (matches!(c.role.as_str(), "constant" | "all_null")
                             || (c.role == "identifier"
-                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
-                                    || id_name)))
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
                             .then_some(i)
                     })
                     .collect();
@@ -842,8 +859,11 @@ fn profile_inner(
                         // as identifiers in v0.1 cards. Keep those eligible here.
                         (matches!(c.role.as_str(), "constant" | "all_null")
                             || (c.role == "identifier"
-                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
-                                    || id_name)))
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
                             .then_some(i)
                     })
                     .collect();
@@ -873,8 +893,11 @@ fn profile_inner(
                         // as identifiers in v0.1 cards. Keep those eligible here.
                         (matches!(c.role.as_str(), "constant" | "all_null")
                             || (c.role == "identifier"
-                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
-                                    || id_name)))
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
                             .then_some(i)
                     })
                     .collect();
@@ -906,8 +929,11 @@ fn profile_inner(
                             name == "id" || name.ends_with("_id") || name.ends_with("_key");
                         (matches!(c.role.as_str(), "constant" | "all_null")
                             || (c.role == "identifier"
-                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
-                                    || id_name)))
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
                             .then_some(i)
                     })
                     .collect();
@@ -939,8 +965,11 @@ fn profile_inner(
                             name == "id" || name.ends_with("_id") || name.ends_with("_key");
                         (matches!(c.role.as_str(), "constant" | "all_null")
                             || (c.role == "identifier"
-                                && (matches!(table.cols[i], onceover_core::TypedCol::I64 { .. })
-                                    || id_name)))
+                                && (matches!(
+                                    table.cols[i],
+                                    onceover_core::TypedCol::I64 { .. }
+                                        | onceover_core::TypedCol::U64 { .. }
+                                ) || id_name)))
                             .then_some(i)
                     })
                     .collect();
@@ -1021,6 +1050,7 @@ fn profile_inner(
                         matches!(
                             col,
                             onceover_core::TypedCol::I64 { .. }
+                                | onceover_core::TypedCol::U64 { .. }
                                 | onceover_core::TypedCol::F64 { .. }
                         )
                     })
@@ -1422,8 +1452,8 @@ fn keys_pk(findings: &[Finding]) -> Option<String> {
 /// Materialize the pivoted wide form of a verified long-format
 /// frame: one row per index tuple (first-appearance order), the
 /// index columns with their original dtypes (a take of their
-/// first-occurrence rows), and one f64 column per attribute level
-/// holding the measure. None when a level name collides with an
+/// first-occurrence rows), and one column per attribute level holding
+/// the measure with its original dtype. None when a level name collides with an
 /// index column or the measure is not numeric.
 fn build_wide_frame(
     df: &DataFrame,
@@ -1444,28 +1474,24 @@ fn build_wide_frame(
         .map(|n| table.names.iter().position(|x| x == n))
         .collect();
     let index_idx = index_idx?;
-    let measure: Vec<Option<f64>> = match &table.cols[measure_idx] {
-        onceover_core::TypedCol::F64 { vals } => vals.iter().map(|v| v.copied()).collect(),
-        onceover_core::TypedCol::I64 { vals } => {
-            vals.iter().map(|v| v.map(|x| *x as f64)).collect()
-        }
-        _ => return None,
-    };
+    if !table.cols[measure_idx].is_numeric() {
+        return None;
+    }
+    let measure = df.columns()[measure_idx].as_materialized_series();
     let level_pos: HashMap<&str, usize> = spec
         .levels
         .iter()
         .enumerate()
         .map(|(i, l)| (l.as_str(), i))
         .collect();
-    let mut row_of: HashMap<String, usize> = HashMap::new();
+    let mut row_of: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut first_rows: Vec<u32> = Vec::new();
-    let mut cells: Vec<Vec<Option<f64>>> = Vec::new();
-    for (r, m) in measure.iter().enumerate() {
-        let key = index_idx
-            .iter()
-            .map(|&i| table.cols[i].render_cell(r))
-            .collect::<Vec<_>>()
-            .join("\u{1}");
+    let mut cells: Vec<Vec<Option<u32>>> = Vec::new();
+    for r in 0..table.n {
+        let mut key = Vec::new();
+        for &i in &index_idx {
+            onceover_deps::hashutil::encode_value(&table.cols[i], r, &mut key);
+        }
         let w = *row_of.entry(key).or_insert_with(|| {
             first_rows.push(r as u32);
             cells.push(vec![None; spec.levels.len()]);
@@ -1473,7 +1499,7 @@ fn build_wide_frame(
         });
         let level = table.cols[attr_idx].render_cell(r);
         if let Some(&lp) = level_pos.get(level.as_str()) {
-            cells[w][lp] = *m;
+            cells[w][lp] = Some(r as u32);
         }
     }
     let take_idx = IdxCa::from_vec("".into(), first_rows);
@@ -1489,8 +1515,10 @@ fn build_wide_frame(
         columns.push(s.into_column());
     }
     for (li, level) in spec.levels.iter().enumerate() {
-        let col: Vec<Option<f64>> = cells.iter().map(|row| row[li]).collect();
-        columns.push(Series::new(level.into(), col).into_column());
+        let indices = IdxCa::from_iter_options("".into(), cells.iter().map(|row| row[li]));
+        let mut col = measure.take(&indices).ok()?;
+        col.rename(level.into());
+        columns.push(col.into_column());
     }
     DataFrame::new_infer_height(columns).ok()
 }
@@ -1501,14 +1529,16 @@ fn dup_examples(table: &TypedTable, i: usize, c: &CardOut) -> Vec<String> {
         .iter()
         .filter(|(_, count)| *count >= 2)
         .take(3)
-        .map(|(k, _)| display_key(k, &table.dtypes[i]))
+        .map(|(k, _)| display_key(k, &table.cols[i]))
         .collect()
 }
 
-fn display_key(k: &VKey, dtype: &str) -> String {
-    match (k, dtype) {
-        (VKey::I(v), "date") => onceover_core::dateutil::iso_date(*v),
-        (VKey::I(v), "datetime") => onceover_core::dateutil::iso_datetime(*v),
+fn display_key(k: &VKey, col: &onceover_core::TypedCol) -> String {
+    match (k, col) {
+        (VKey::I(v), onceover_core::TypedCol::Date { .. }) => onceover_core::dateutil::iso_date(*v),
+        (VKey::I(v), onceover_core::TypedCol::Datetime { unit, .. }) => {
+            onceover_core::dateutil::iso_timestamp(*v, *unit)
+        }
         _ => k.display(),
     }
 }

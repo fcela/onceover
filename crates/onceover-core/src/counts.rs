@@ -15,6 +15,7 @@ use crate::typed::TypedCol;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum VKey {
     I(i64),
+    U(u64),
     /// f64 bit pattern (NaN never stored; -0.0 normalized upstream).
     F(u64),
     S(Box<str>),
@@ -26,6 +27,7 @@ impl VKey {
     pub fn display(&self) -> String {
         match self {
             VKey::I(v) => v.to_string(),
+            VKey::U(v) => v.to_string(),
             VKey::F(bits) => format_f64(f64::from_bits(*bits)),
             VKey::S(s) => s.to_string(),
             VKey::B(b) => {
@@ -61,6 +63,7 @@ impl Ord for VKey {
         use std::cmp::Ordering::*;
         match (self, other) {
             (VKey::I(a), VKey::I(b)) => a.cmp(b),
+            (VKey::U(a), VKey::U(b)) => a.cmp(b),
             (VKey::F(a), VKey::F(b)) => {
                 // Order by value (both non-NaN; -0 normalized).
                 f64::from_bits(*a)
@@ -78,6 +81,7 @@ impl Ord for VKey {
 fn discriminant(v: &VKey) -> u8 {
     match v {
         VKey::I(_) => 0,
+        VKey::U(_) => 4,
         VKey::F(_) => 1,
         VKey::S(_) => 2,
         VKey::B(_) => 3,
@@ -107,6 +111,7 @@ const MAX_TOP: usize = 64;
 pub fn build_counts(col: &TypedCol, hash_limit: usize) -> ColCounts {
     match col {
         TypedCol::I64 { vals } => count_values(vals.iter().flatten().copied(), hash_limit, VKey::I),
+        TypedCol::U64 { vals } => count_values(vals.iter().flatten().copied(), hash_limit, VKey::U),
         TypedCol::F64 { vals } => count_values(
             vals.iter().flatten().map(|v| v.to_bits()),
             hash_limit,
@@ -117,7 +122,7 @@ pub fn build_counts(col: &TypedCol, hash_limit: usize) -> ColCounts {
             hash_limit,
             VKey::I,
         ),
-        TypedCol::Datetime { vals } => {
+        TypedCol::Datetime { vals, .. } => {
             count_values(vals.iter().flatten().copied(), hash_limit, VKey::I)
         }
         TypedCol::Bool { vals } => {

@@ -19,9 +19,10 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
         }
         let is_sorted = match col {
             TypedCol::I64 { vals } => check_sorted(vals.iter().flatten().copied()),
+            TypedCol::U64 { vals } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::F64 { vals } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::Date { vals } => check_sorted(vals.iter().flatten().copied()),
-            TypedCol::Datetime { vals } => check_sorted(vals.iter().flatten().copied()),
+            TypedCol::Datetime { vals, .. } => check_sorted(vals.iter().flatten().copied()),
             _ => continue,
         };
         if let Some(strictly) = is_sorted {
@@ -65,6 +66,13 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
                         .filter_map(|(r, v)| v.map(|x| (r, *x as i128)))
                         .collect::<Vec<_>>(),
                 ),
+                TypedCol::U64 { vals } => backfill_scan(
+                    &vals
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(r, v)| v.map(|x| (r, *x as i128)))
+                        .collect::<Vec<_>>(),
+                ),
                 TypedCol::F64 { vals } => backfill_scan(
                     &vals
                         .iter()
@@ -79,7 +87,7 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
                         .filter_map(|(r, v)| (*v).map(|x| (r, x as i128)))
                         .collect::<Vec<_>>(),
                 ),
-                TypedCol::Datetime { vals } => backfill_scan(
+                TypedCol::Datetime { vals, .. } => backfill_scan(
                     &vals
                         .iter()
                         .enumerate()

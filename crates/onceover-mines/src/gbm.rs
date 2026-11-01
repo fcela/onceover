@@ -297,6 +297,7 @@ fn class_str(col: &TypedCol, r: usize) -> Option<String> {
         TypedCol::StrOwned { vals } => vals[r].clone(),
         TypedCol::Bool { vals } => vals[r].map(|b| if b { "true".into() } else { "false".into() }),
         TypedCol::I64 { vals } => vals.at(r).map(|v| v.to_string()),
+        TypedCol::U64 { vals } => vals.at(r).map(|v| v.to_string()),
         TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_string()),
         _ => None,
     }
@@ -310,13 +311,14 @@ fn prepare_target(
 ) -> Option<TargetKind> {
     let col = &table.cols[ci];
     match col {
-        TypedCol::I64 { .. } | TypedCol::F64 { .. } => {
+        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
             // Target eligibility uses the same bounded row sample as fitting;
             // do not recount millions of full-column values for every model.
             let mut distinct = std::collections::BTreeSet::new();
             for &r in &enc.rows {
                 let value = match col {
                     TypedCol::I64 { vals } => vals.at(r as usize).map(|v| v as f64),
+                    TypedCol::U64 { vals } => vals.at(r as usize).map(|v| v as f64),
                     TypedCol::F64 { vals } => vals.at(r as usize),
                     _ => None,
                 };
@@ -334,6 +336,7 @@ fn prepare_target(
                 for (j, y) in ys.iter_mut().enumerate() {
                     let v = match col {
                         TypedCol::I64 { vals } => vals.at(enc.rows[j] as usize).map(|x| x as f32),
+                        TypedCol::U64 { vals } => vals.at(enc.rows[j] as usize).map(|x| x as f32),
                         TypedCol::F64 { vals } => vals.at(enc.rows[j] as usize).map(|x| x as f32),
                         _ => None,
                     };

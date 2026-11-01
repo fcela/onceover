@@ -636,7 +636,9 @@ pub fn multiterm_identities(
         .filter(|(_, col)| {
             matches!(
                 col,
-                onceover_core::TypedCol::I64 { .. } | onceover_core::TypedCol::F64 { .. }
+                onceover_core::TypedCol::I64 { .. }
+                    | onceover_core::TypedCol::U64 { .. }
+                    | onceover_core::TypedCol::F64 { .. }
             )
         })
         .map(|(idx, _)| idx)
