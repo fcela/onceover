@@ -5,8 +5,8 @@ use std::time::Duration;
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
     AssociationConfig, BreaksConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
-    HotspotConfig, PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig,
-    ViewsConfig,
+    HotspotConfig, PartitionsConfig, PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig,
+    SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,6 +97,7 @@ pub struct TierConfig {
     pub prism: PrismConfig,
     pub regimes: RegimesConfig,
     pub breaks: BreaksConfig,
+    pub partitions: PartitionsConfig,
     pub surprises: SurpriseConfig,
     pub disc: DiscConfig,
     pub drift: DriftConfig,
@@ -132,6 +133,7 @@ impl TierConfig {
                 breaks: BreaksConfig::default(),
                 surprises: SurpriseConfig::default(),
                 disc: DiscConfig::disabled(),
+                partitions: PartitionsConfig::disabled(),
                 drift: DriftConfig::disabled(),
                 association: AssociationConfig::default(),
                 hotspots: HotspotConfig {
@@ -177,6 +179,7 @@ impl TierConfig {
                 hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
                 disc: DiscConfig::default(),
+                partitions: PartitionsConfig::default(),
                 drift: DriftConfig::default(),
                 dep_pair_cap: 496,
                 ident_pair_cap: 100,
@@ -239,6 +242,15 @@ impl TierConfig {
                 disc: DiscConfig {
                     row_cap: 50_000,
                     max_per_target: 5,
+                    ..Default::default()
+                },
+                partitions: PartitionsConfig {
+                    row_cap: 100_000,
+                    max_depth: 4,
+                    max_leaves: 12,
+                    max_responses: 512,
+                    max_findings: 64,
+                    max_levels: 64,
                     ..Default::default()
                 },
                 drift: DriftConfig {

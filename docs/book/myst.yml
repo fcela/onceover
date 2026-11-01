@@ -46,6 +46,7 @@ project:
         - file: methodology/hotspots.ipynb
         - file: methodology/local_linear_regimes.ipynb
         - file: methodology/temporal_analysis.ipynb
+        - file: methodology/ordered_partitions.ipynb
         - file: methodology/extreme_values.ipynb
         - file: methodology/digit_fingerprints.ipynb
         - file: methodology/step_discontinuities.ipynb

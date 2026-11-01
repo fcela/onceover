@@ -403,3 +403,37 @@ fn report_schema_roundtrips_and_renders() {
     assert!(f["evidence"].is_array());
     assert!(report.to_markdown().contains("conditional_rules"));
 }
+
+#[test]
+fn ordered_partition_finding_validates_and_survives_selection() {
+    // Regression: the Changes validation allowlist is a hard-coded
+    // set of type strings; a new Changes type that is missing from
+    // it is silently dropped by selection.
+    let finding = Finding::new(
+        Pattern::OrderedPartition,
+        BTreeMap::from([
+            ("y".into(), json!("nv_unemployment_rate")),
+            ("time_column".into(), json!("date")),
+            ("model".into(), json!("level + linear trend")),
+        ]),
+        "nv_unemployment_rate follows 3 level+trend regimes along date".into(),
+        EvidenceBasis::Measured,
+        0.8,
+        BTreeMap::from([
+            ("response".into(), json!("nv_unemployment_rate")),
+            ("relative_gain".into(), json!(0.62)),
+            ("n".into(), json!(609)),
+        ]),
+        None,
+        Method::new("ordered_partitions", "mob_level_trend", "test"),
+    );
+    assert_eq!(finding.finding_type.as_deref(), Some("ordered_partition"));
+    assert_eq!(finding.category, Category::Changes);
+    assert!(finding.validate().is_ok(), "{:?}", finding.validate());
+    let selected = finalize_ledger(vec![finding]);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(
+        selected[0].finding_type.as_deref(),
+        Some("ordered_partition")
+    );
+}
