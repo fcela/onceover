@@ -319,44 +319,24 @@
    "license": "CC BY 4.0",
    "source": "UCI Bank Marketing (id 222)",
    "dir": "data/business/bank-marketing",
+   "file": "bank-marketing_uci-222_bank-full.csv",
    "budget": "standard",
    "expectations": [
     {
      "kind": "finding",
      "category": "conditional_rules",
      "columns_all": [
-      "pdays",
-      "poutcome"
+      "days_since_previous_campaign_contact",
+      "previous_campaign_outcome"
      ],
-     "note": "Never-contacted structure: pdays = -1 determines missing poutcome."
+     "expect": "known_miss",
+     "note": "Never-contacted structure: days_since_previous_campaign_contact = -1 on 36,954 rows, previous_campaign_outcome missing on 36,959, the two sets differing on 5 rows. On the file's original string form (missing marker kept as the literal 'NaN') a conditional rule reported this exactly; on the format-standard file (marker decoded to null) no detector reports it - measured in the standard profile, 2026-11-01. Tripwire: if a missingness-aware pass starts reporting it, this expectation fails and the case is promoted."
     },
     {
      "kind": "finding",
      "category": "formats",
      "min": 1,
-     "note": "Format findings fire on this file (e.g. poutcome's value-length mix)."
-    },
-    {
-     "kind": "finding",
-     "category": "conditional_rules",
-     "type": "if_then",
-     "columns_all": [
-      "contact",
-      "month"
-     ],
-     "expect": "found",
-     "note": "Campaign-era artifact: when month = jun, contact = \"NaN\" holds in 84.67% of matching diagnostic rows against a 29.05% baseline (measured in the standard profile, 2026-11-01)."
-    },
-    {
-     "kind": "finding",
-     "category": "concentration",
-     "type": "hotspot",
-     "columns_all": [
-      "contact",
-      "month"
-     ],
-     "expect": "found",
-     "note": "Cell (contact = 'NaN', month = 'jun') holds about 10% of scanned rows against roughly a third of that expected under independence (measured in the standard profile, 2026-11-01)."
+     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass)."
     },
     {
      "kind": "documented_case",
@@ -367,9 +347,9 @@
    ],
    "notes": [
     "Known-answer end of the business pack: heavily studied table, findings should be the documented structures.",
-    "The literal string \"NaN\" is this file's missing-value marker: contact 28.8% (13,020 rows), poutcome 81.7% (36,959), education 4.1% (1,857); it is also a job level. Kept as served (see prepare.py) because the never-contacted structure is only visible to detectors with the marker present."
+    "Restandardized 2026-11-01 under the corpus format standard: descriptive file name, fully descriptive column names (pdays -> days_since_previous_campaign_contact, poutcome -> previous_campaign_outcome, ...), and the file's missing-value marker - the literal string \"NaN\": contact 28.8% (13,020 rows), previous_campaign_outcome 81.7% (36,959), education 4.1% (1,857), also a job level - decoded to null. Two expectations that were artifacts of the string form (the month=jun -> contact='NaN' rule and the matching hotspot) were retired with the decoding; the never-contacted rule is now a known-miss tripwire."
    ],
-   "sha256": "87c043238d3860e1d6989618092a87db25cbc2694373dc5b4d4a08410da24c99",
+   "sha256": "7bd897bc748923c81b5c424f97b2e7ac6cbe25c897fc7e6e1143b2554b847fde",
    "rows": 45211
   },
   {
@@ -380,6 +360,7 @@
    "license": "CC BY 4.0",
    "source": "UCI Taiwanese Bankruptcy Prediction (id 572); Taiwan Economic Journal 1999-2009",
    "dir": "data/business/taiwanese-bankruptcy",
+   "file": "taiwanese-bankruptcy_uci-572.csv",
    "budget": "standard",
    "expectations": [
     {
@@ -425,8 +406,154 @@
    "notes": [
     "Realistic-tier business table: 95 engineered ratios with documented near-duplicate families (ROA (A)/(B)/(C) correlate 0.94-0.99) and a rare binary target (220 bankrupt, 3.2%)."
    ],
-   "sha256": "4d23a7258d425f062cd0add30e52e171b819448d7b3be9ed63dc3d7d168e3ca3",
+   "sha256": "4e3eb5527e9612380e64e1fce1fea77bdf6c3aae6864cf828acc99bf4aaf8579",
    "rows": 6819
+  },
+  {
+   "id": "absenteeism-at-work",
+   "pack": "business",
+   "title": "Absenteeism at Work (740 absence records, 36 employees)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Absenteeism at Work (id 445); courier company in Brazil, July 2007 to July 2010",
+   "dir": "data/business/absenteeism-at-work",
+   "file": "absenteeism-at-work_uci-445.csv",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "education",
+      "employee_id"
+     ],
+     "expect": "found",
+     "note": "One record per absence, person attributes repeated per employee: employee_id -> education holds on 99.86% of rows (1 violation in 740)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "employee_id",
+      "social_drinker"
+     ],
+     "expect": "found",
+     "note": "employee_id -> social_drinker holds on 99.86% of rows (1 violation in 740)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "distance_from_residence_to_work_km",
+      "employee_id"
+     ],
+     "expect": "found",
+     "note": "employee_id -> distance_from_residence_to_work_km holds on 99.86% of rows (1 violation in 740)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Per-employee attribute constancy (dataset structure)",
+     "status": "found",
+     "note": "740 absence records over 36 employees. The functional pass reports employee_id determining age, body_mass_index, distance, education, height, number_of_children, service_time, social_drinker and weight, each at 99.86% (exactly 1 violating row in 740, measured in the standard profile, 2026-11-01)."
+    }
+   ],
+   "notes": [
+    "First dataset bundled under the corpus format standard: descriptive file name, fully descriptive column names, and every documented code mapped to its natural label (reason for absence uses the page's ICD category names; codes outside the documented lists are labelled 'not recorded (code 0 in source)' - 43 rows for reason, 3 for month)."
+   ],
+   "sha256": "be7a095877d4a85c78d872dcadead58a5cede1ce14ee4730aefc7f40830fa4d1",
+   "rows": 740
+  },
+  {
+   "id": "south-german-credit",
+   "pack": "business",
+   "title": "South German Credit (1,000 credits, 1973-1975)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI South German Credit (id 522); corrected successor to Statlog German Credit (Groemping 2019)",
+   "dir": "data/business/south-german-credit",
+   "file": "south-german-credit_uci-522.csv",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_all": [
+      "foreign_worker"
+     ],
+     "expect": "found",
+     "note": "96.3% of the sample is foreign_worker = no (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Bad-credit rate is the stratified sample composition (dataset page)",
+     "status": "found",
+     "note": "700 good / 300 bad credits: the page states bad credits are heavily oversampled, so the 30% bad rate is the sample design, not a population rate. Counts verified in the bundled file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "personal_status_sex conflates sex and marital status (codetable)",
+     "status": "found",
+     "note": "Code 2 covers both female non-single and male single debtors; sex cannot be recovered from this variable. The prepared file carries the codetable's own conflated label for that level."
+    }
+   ],
+   "notes": [
+    "Bundled under the corpus format standard: the served .asc file (German abbreviations) converted to CSV, columns renamed to the page's descriptive variable names, categorical codes mapped to the dataset's codetable labels.",
+    "amount is an unknown monotonic transformation of the original values per the dataset page, not observed DM amounts."
+   ],
+   "sha256": "0cfb8dc738a6af597f52f6c8dcac10236819b33d042aa541b0f8bca9b2a06671",
+   "rows": 1000
+  },
+  {
+   "id": "incident-event-log",
+   "pack": "business",
+   "title": "Incident Management Process Enriched Event Log (141,712 events, 24,918 incidents)",
+   "mode": "test-only",
+   "skip_reason": "prepared file is 44.6 MB, above the API publish limit; commit servicenow-incident-event-log_uci-498.csv from a local clone (prepare.py regenerates it) to make this entry bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Incident Management Process Enriched Event Log (id 498); ServiceNow incident log, anonymized",
+   "dir": "data/business/incident-event-log",
+   "file": "servicenow-incident-event-log_uci-498.csv",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "impact",
+      "priority",
+      "urgency"
+     ],
+     "expect": "found",
+     "note": "impact, urgency -> priority holds with 0 violations in 141,712 rows: the ServiceNow priority matrix, recovered exactly by the functional pass (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_all": [
+      "impact"
+     ],
+     "expect": "found",
+     "note": "impact is 94.8% Medium (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Priority is calculated from impact and urgency (dataset page)",
+     "status": "found",
+     "note": "The page documents priority as calculated from impact and urgency. Measured: 8 observed (impact, urgency) combinations, exactly one priority each, 0 violations in 141,712 rows."
+    }
+   ],
+   "notes": [
+    "Bundled under the corpus format standard: ServiceNow-internal column names made descriptive, the source's '?' missing symbol decoded to null (18 columns, up to 99.98% of rows), timestamps normalized from day/month/year to ISO 8601, numeric prefixes stripped from impact/urgency/priority.",
+    "incident_state carries the eight lifecycle levels plus a residual code '-100' on 5 rows. subcategory does not determine category: 49 subcategories appear under more than one category (measured)."
+   ],
+   "sha256": "95256a6af24e51b578503daeb13cc38a770756e3a3d89a8bdc2b0c96c6194648",
+   "rows": 141712
   },
   {
    "id": "olist",
