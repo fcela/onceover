@@ -335,13 +335,98 @@
      "category": "formats",
      "min": 1,
      "note": "Format findings fire on this file (e.g. poutcome's value-length mix)."
+    },
+    {
+     "kind": "finding",
+     "category": "conditional_rules",
+     "type": "if_then",
+     "columns_all": [
+      "contact",
+      "month"
+     ],
+     "expect": "found",
+     "note": "Campaign-era artifact: when month = jun, contact = \"NaN\" holds in 84.67% of matching diagnostic rows against a 29.05% baseline (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "hotspot",
+     "columns_all": [
+      "contact",
+      "month"
+     ],
+     "expect": "found",
+     "note": "Cell (contact = 'NaN', month = 'jun') holds about 10% of scanned rows against roughly a third of that expected under independence (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Subscription-rate structure (target column)",
+     "status": "found",
+     "note": "Overall subscription rate 11.7%. By previous-campaign outcome: success 64.7% (n = 1,511) vs failure 12.6%, other 16.7%, never-contacted 9.2% (n = 36,959). By month: mar 52.0% (n = 477) and dec 46.7% (n = 214) against may 6.7% (n = 13,766). Rates measured with Polars on the bundled file, 2026-11-01; recorded as documentation because the standard-budget run carries no target."
     }
    ],
    "notes": [
-    "Known-answer end of the business pack: heavily studied table, findings should be the documented structures."
+    "Known-answer end of the business pack: heavily studied table, findings should be the documented structures.",
+    "The literal string \"NaN\" is this file's missing-value marker: contact 28.8% (13,020 rows), poutcome 81.7% (36,959), education 4.1% (1,857); it is also a job level. Kept as served (see prepare.py) because the never-contacted structure is only visible to detectors with the marker present."
    ],
    "sha256": "87c043238d3860e1d6989618092a87db25cbc2694373dc5b4d4a08410da24c99",
    "rows": 45211
+  },
+  {
+   "id": "taiwanese-bankruptcy",
+   "pack": "business",
+   "title": "Taiwanese Bankruptcy Prediction (6,819 companies, 95 ratios)",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Taiwanese Bankruptcy Prediction (id 572); Taiwan Economic Journal 1999-2009",
+   "dir": "data/business/taiwanese-bankruptcy",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "Debt ratio %",
+      "Net worth/Assets"
+     ],
+     "expect": "found",
+     "note": "Accounting identity: Net worth/Assets = -1.000000 * Debt ratio % + 1.000000 within tolerance on all 6,819 rows (verified independently: the two columns sum to 1.0 at float precision)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "Current Liabilities/Equity",
+      "Current Liability to Equity"
+     ],
+     "expect": "found",
+     "note": "The same ratio carried twice under two names: Current Liability to Equity = 1.000000 * Current Liabilities/Equity on all rows."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "Current Liabilities/Liability",
+      "Current Liability to Liability"
+     ],
+     "expect": "found",
+     "note": "The same ratio carried twice under two names: Current Liability to Liability = 1.000000 * Current Liabilities/Liability on all rows."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Liability-Assets Flag definition (dataset variable list)",
+     "status": "found",
+     "note": "The flag is documented as 1 when total liability exceeds total assets. It agrees with Debt ratio % >= 1 on 99.90% of rows (7 disagreements in 6,819, measured with Polars); no finding isolates the flag's semantics, so the case is recorded, not expected as a finding."
+    }
+   ],
+   "notes": [
+    "Realistic-tier business table: 95 engineered ratios with documented near-duplicate families (ROA (A)/(B)/(C) correlate 0.94-0.99) and a rare binary target (220 bankrupt, 3.2%)."
+   ],
+   "sha256": "4d23a7258d425f062cd0add30e52e171b819448d7b3be9ed63dc3d7d168e3ca3",
+   "rows": 6819
   },
   {
    "id": "olist",
