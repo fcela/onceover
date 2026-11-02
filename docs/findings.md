@@ -440,7 +440,11 @@ declared time axis. It engages only when the caller passes
 `hints={"time": "<column>"}`; without a declared axis it records coverage
 and emits nothing. The time column's rows are cut into contiguous periods
 of roughly equal row counts (at most 8 at standard, 12 at deep; a period
-needs at least 100 rows). For each numeric target column other than the
+needs at least 100 rows). Like the other model-based passes, it works on
+the shared encoded row sample (20,000 rows at standard, 50,000 at deep):
+on larger frames the periods are cut over the sample, the period row
+counts in the evidence are sample counts, and the coverage detail states
+the sample size. For each numeric target column other than the
 time column itself, the screen's gradient-boosting model is fitted on the
 earliest period's rows, with the time column withheld from the predictor
 set — a model that splits on the time axis routes every later period to

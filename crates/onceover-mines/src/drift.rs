@@ -317,7 +317,14 @@ pub fn profile_drift(
     let Some(time_ci) = table.names.iter().position(|n| n == time_name) else {
         return (Vec::new(), format!("time column '{time_name}' not found"));
     };
-    let keys = time_keys(table, time_ci);
+    // Work in encoded space throughout: position `j` stands for
+    // original row `enc.rows[j]`, the coordinate system
+    // `EncodedMatrix::bins` and `FittedGbm::present` use. Periods,
+    // row sets, and packed rows are all encoded positions. Mixing
+    // original row ids in indexes the bins out of bounds on any frame
+    // larger than the encode row cap (issue #95).
+    let keys_full = time_keys(table, time_ci);
+    let keys: Vec<f64> = enc.rows.iter().map(|&r| keys_full[r as usize]).collect();
     let (periods, order) = build_periods(&keys, cfg.max_periods, cfg.min_period_rows);
     if periods.len() < 2 {
         return (Vec::new(), "fewer than two usable periods".into());
@@ -338,7 +345,8 @@ pub fn profile_drift(
         .collect();
     let mut findings = Vec::new();
     for &ci in &targets {
-        let ys = column_f64(table, ci);
+        let ys_full = column_f64(table, ci);
+        let ys: Vec<f64> = enc.rows.iter().map(|&r| ys_full[r as usize]).collect();
         let present_in = |p: usize| -> Vec<u32> {
             let (s, e) = periods[p];
             order[s..e]
@@ -466,6 +474,14 @@ pub fn profile_drift(
             targets.len()
         )
     };
+    let note = if enc.n < table.n {
+        format!(
+            "{note}; scored on the encoded sample of {} of {} rows",
+            enc.n, table.n
+        )
+    } else {
+        note
+    };
     (findings, note)
 }
 
@@ -477,12 +493,16 @@ mod tests {
     use polars::df;
 
     fn shifted_frame(shift: bool) -> (Vec<Finding>, String) {
+        shifted_frame_n(shift, 4000)
+    }
+
+    fn shifted_frame_n(shift: bool, n: i64) -> (Vec<Finding>, String) {
         let mut t: Vec<Option<i64>> = Vec::new();
         let mut x: Vec<Option<f64>> = Vec::new();
         let mut y: Vec<Option<f64>> = Vec::new();
         let mut rng = Lcg(99);
-        for i in 0..4000i64 {
-            let xv = rng.next_f64() * 2.0 - 1.0 + if shift && i >= 2000 { 2.0 } else { 0.0 };
+        for i in 0..n {
+            let xv = rng.next_f64() * 2.0 - 1.0 + if shift && i >= n / 2 { 2.0 } else { 0.0 };
             t.push(Some(i));
             x.push(Some(xv));
             y.push(Some(xv + 0.05 * rng.next_f64()));
@@ -498,6 +518,34 @@ mod tests {
             &ScreenConfig::default(),
             &DriftConfig::default(),
         )
+    }
+
+    #[test]
+    fn over_cap_frame_detects_shift_without_panicking() {
+        // 30,000 rows against the encode default row cap of 20,000:
+        // encoded positions and original row ids diverge, the regime
+        // of the issue #95 panic (a period row id past the cap
+        // indexed the encoded bins directly).
+        let (findings, _) = shifted_frame_n(true, 30_000);
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.finding_type.as_deref() == Some("distribution_shift")),
+            "expected a drift finding, got {} findings",
+            findings.len()
+        );
+    }
+
+    #[test]
+    fn over_cap_frame_stable_is_quiet() {
+        let (findings, _) = shifted_frame_n(false, 30_000);
+        assert!(
+            findings
+                .iter()
+                .all(|f| f.finding_type.as_deref() != Some("distribution_shift")),
+            "expected no drift finding, got {} findings",
+            findings.len()
+        );
     }
 
     #[test]

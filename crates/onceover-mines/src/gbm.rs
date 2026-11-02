@@ -967,6 +967,10 @@ pub fn fit_gbm_model(
 /// shortlist and boosting are otherwise identical, so the retained
 /// ensemble is the model the screen would have fit on that row
 /// subset alone.
+/// Fit a target's screen model on a restricted row set. `restrict`
+/// holds encoded positions — the coordinate system of
+/// `EncodedMatrix::bins` and of the returned `FittedGbm::present` —
+/// not original table row ids.
 pub fn fit_gbm_model_restricted(
     table: &TypedTable,
     enc: &EncodedMatrix,
