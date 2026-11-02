@@ -132,3 +132,36 @@ pass's work budget and flipped coverage to capped; with the
 bounded screen the corpus profile reports ran_exact, selects 64
 of 5,006 columns by dependence, and takes 12.6 s (the unbounded
 run took 44.5 s in the same harness). Corpus: 16/16 datasets ok.
+
+### Closeout (2026-11-02)
+
+The sweep behind the 256 choice, with both sides of the trade at
+every cap. Recovered counts both-viewed pairs at depprob >= 0.5
+placed in the same view; below-0.5 joins are same-view pairs Lace
+scores under 0.5. The reachable pool is 360 at every cap (351
+under the old first-64 selection, which recovered 7):
+
+| Merge attempts | Recovered | Below-0.5 joins | Same-view pairs |
+|---------------:|----------:|----------------:|---------------:|
+| 64 | 19 | 9 | 28 |
+| 128 | 23 | 10 | 33 |
+| 256 | 27 | 11 | 38 |
+| 512 | 28 | 13 | 41 |
+
+128 -> 256 buys four recovered pairs for one more below-0.5 join;
+256 -> 512 buys one recovered pair for two more. 256 stands as
+the default (`tried_merges_cap` in `ViewsConfig`).
+
+Two residuals stay on record:
+
+- `paws` is in the dropped list at every cap in the sweep. Its
+  sample association on 50 rows is weak even though Lace's
+  posterior for `paws` ~ `claws` is 1.000, so the pre-screen ranks
+  it below the cut. That is a limitation of screening on a small
+  sample, recorded here and in the design doc's evaluation notes,
+  not a defect in the merge step.
+- The dropped-column count does not reconcile between the two
+  records: the sweep scoring lists 21 dropped names at every cap,
+  while the corpus registry note for this table says 22 dropped
+  columns. The difference is unexplained; neither record has been
+  adjusted to match the other.
