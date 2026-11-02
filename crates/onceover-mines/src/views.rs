@@ -32,7 +32,12 @@ pub struct ViewsConfig {
     pub max_columns: usize,
     /// Maximum clusters per view.
     pub max_clusters: usize,
-    /// Maximum merge attempts in the merge loop.
+    /// Maximum merge attempts in the merge loop. The default 256 is
+    /// the measured knee of the issue #73 sweep on the Lace Animals
+    /// table (recovered Lace pairs / same-view joins Lace scores
+    /// below 0.5, at 64 / 128 / 256 / 512 attempts: 19/9, 23/10,
+    /// 27/11, 28/13); see
+    /// docs/benchmarks/2026-10-30-lace-head-to-head.md.
     pub tried_merges_cap: usize,
     /// Maximum categorical levels kept before pooling the tail.
     pub nominal_max_levels: usize,
