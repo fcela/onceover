@@ -34,7 +34,12 @@ A report is a JSON-shaped object (contract:
 
 - **Findings** — ranked statements. Every finding carries an
   `id`, a `category`, and a `type` (always present; the pair is
-  the reliable key for filtering and grouping). `claim` is the
+  the reliable key for filtering and grouping). Every finding also
+  carries `facets` — its properties as fields (`scope`, `object`,
+  `evidence`, `conditionality`, `temporality`, `status`, and
+  `quality_dimension` on data-quality findings); the category is
+  derived from the facets by a fixed table, so filtering on either
+  agrees. `claim` is the
   human-readable statement; treat it as a hypothesis with
   evidence attached, not a conclusion.
 - **Evidence** — each finding carries evidence blocks with a
@@ -63,7 +68,10 @@ A report is a JSON-shaped object (contract:
 report.finding("<id>")                       # one finding or None
 report.select(category="dependencies")       # filters compose:
 report.select(type="functional", column="x") # category, type,
-                                             # column, target
+                                             # column, target,
+                                             # and facet fields
+                                             # (object=, status=,
+                                             # conditionality=, ...)
 report.to_digest(budget_chars=8_000)                # rollup for triage
 report.to_json()                             # full report
 report.to_json(max_chars=12_000)             # budgeted view; a

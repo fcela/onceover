@@ -176,6 +176,73 @@
       ],
       "type": "object"
     },
+    "facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "enum": [
+            "column",
+            "columns",
+            "rows",
+            "sequence",
+            "frame"
+          ]
+        },
+        "object": {
+          "enum": [
+            "distribution",
+            "relation",
+            "structure",
+            "temporal_behaviour",
+            "role"
+          ]
+        },
+        "evidence": {
+          "enum": [
+            "exact",
+            "approximate",
+            "model_based",
+            "inferred"
+          ]
+        },
+        "conditionality": {
+          "enum": [
+            "unconditional",
+            "value_conditioned",
+            "segment_conditioned"
+          ]
+        },
+        "temporality": {
+          "enum": [
+            "atemporal",
+            "ordered",
+            "change_across_segments"
+          ]
+        },
+        "quality_dimension": {
+          "enum": [
+            "completeness",
+            "uniqueness",
+            "validity"
+          ]
+        },
+        "status": {
+          "enum": [
+            "regularity",
+            "deviation"
+          ]
+        }
+      },
+      "required": [
+        "scope",
+        "object",
+        "evidence",
+        "conditionality",
+        "temporality",
+        "status"
+      ]
+    },
     "finding": {
       "additionalProperties": false,
       "properties": {
@@ -232,11 +299,15 @@
         "type": {
           "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation; dependencies: functional | predictive; conditional_rules: if_then; associations: statistical | period_association; gaps: gap | sequence_gap | missing_combinations; intervals: interval_variation | extreme_value | categorical_outlier; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition.",
           "type": "string"
+        },
+        "facets": {
+          "$ref": "#/$defs/facets"
         }
       },
       "required": [
         "id",
         "category",
+        "facets",
         "type",
         "subject",
         "specification",
@@ -736,7 +807,7 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.2"
+      "const": "0.3"
     },
     "selection": {
       "$ref": "#/$defs/selection"
@@ -751,6 +822,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.2)",
+  "title": "onceover profile report (schema_version 0.3)",
   "type": "object"
 }

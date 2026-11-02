@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.2"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.3"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -14,7 +14,7 @@ in `findings.md`.
 
 | key | content |
 |---|---|
-| `schema_version` | string, e.g. `"0.2"` |
+| `schema_version` | string, e.g. `"0.3"` |
 | `overview` | `n_rows`, `n_columns`, `headline` (one-line summary), `dtype_counts`, `role_counts`, `top_findings` (top five claim strings) |
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
@@ -28,6 +28,7 @@ in `findings.md`.
 |---|---|
 | `id` | stable finding id within the report |
 | `category` | one of `dependencies`, `conditional_rules`, `concentration`, `gaps`, `changes`, `associations`, `uniqueness`, `duplicates`, `formats`, `missingness`, `intervals`, `column_roles`, `ordering` |
+| `facets` | the finding's properties as fields: `scope` (`column`, `columns`, `rows`, `sequence`, `frame`), `object` (`distribution`, `relation`, `structure`, `temporal_behaviour`, `role`), `evidence` (`exact`, `approximate`, `model_based`, `inferred`), `conditionality` (`unconditional`, `value_conditioned`, `segment_conditioned`), `temporality` (`atemporal`, `ordered`, `change_across_segments`), `status` (`regularity`, `deviation`), and `quality_dimension` (`completeness`, `uniqueness`, `validity`; only on data-quality findings). The category is derived from the facets by the fixed table in `docs/taxonomy-v1-design.md`; the per-type assignment is tabulated in `docs/findings.md` |
 | `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the views pass (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation` (formats); `functional`, `predictive` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association` (associations); `gap`, `sequence_gap`, `missing_combinations` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier` (intervals); `column_ordering` (ordering); `residual_level`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `distribution_shift`, `ordered_partition` (changes) |
 | `subject` | what the finding is about: `columns` (list), usually `target` and/or `inputs`, `unit` |
 | `specification` | the pattern instance: a `definition` (e.g. comparison mode) and, for typed patterns, a `form` (`value_mapping`, `sum`, `linear_combination`, `piecewise_linear`, ...) |

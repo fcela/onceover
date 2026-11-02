@@ -18,7 +18,7 @@ pub use ledger::{
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
-pub const SCHEMA_VERSION: &str = "0.2";
+pub const SCHEMA_VERSION: &str = "0.3";
 
 /// Statistics for numeric columns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

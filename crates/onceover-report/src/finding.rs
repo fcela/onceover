@@ -366,10 +366,534 @@ impl Evidence {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    Column,
+    Columns,
+    Rows,
+    Sequence,
+    Frame,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Object {
+    Distribution,
+    Relation,
+    Structure,
+    TemporalBehaviour,
+    Role,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceKind {
+    Exact,
+    Approximate,
+    ModelBased,
+    Inferred,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Conditionality {
+    Unconditional,
+    ValueConditioned,
+    SegmentConditioned,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Temporality {
+    Atemporal,
+    Ordered,
+    ChangeAcrossSegments,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityDimension {
+    Completeness,
+    Uniqueness,
+    Validity,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Regularity,
+    Deviation,
+}
+
+/// The finding's properties, stated as fields: what the statement
+/// ranges over, what kind of statement it is, how it is supported,
+/// whether it carries a condition, the role of order, the data-quality
+/// dimension when it is a quality statement, and whether it reports a
+/// structure that holds or a departure from an expectation. The
+/// category is derived from the facets by `derive_category`; the
+/// design and the derivation table live in
+/// docs/taxonomy-v1-design.md.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Facets {
+    pub scope: Scope,
+    pub object: Object,
+    pub evidence: EvidenceKind,
+    pub conditionality: Conditionality,
+    pub temporality: Temporality,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_dimension: Option<QualityDimension>,
+    pub status: Status,
+}
+impl Facets {
+    /// Placeholder for findings deserialized from pre-0.3 reports,
+    /// which carry no facets. Validation rejects the placeholder
+    /// combination for any stated category, so an old report is never
+    /// silently treated as faceted.
+    pub fn unspecified() -> Self {
+        Self {
+            scope: Scope::Column,
+            object: Object::Distribution,
+            evidence: EvidenceKind::Exact,
+            conditionality: Conditionality::Unconditional,
+            temporality: Temporality::Atemporal,
+            quality_dimension: None,
+            status: Status::Regularity,
+        }
+    }
+
+    /// The category these facets derive, per the ordered table in
+    /// docs/taxonomy-v1-design.md. `directed` states whether the
+    /// relation names a target (the subject's target or the
+    /// specification's outcome).
+    pub fn derive_category(&self, directed: bool) -> Category {
+        use Conditionality as C;
+        use EvidenceKind as E;
+        use Object as O;
+        use QualityDimension as Q;
+        use Status as S;
+        use Temporality as T;
+        match self.quality_dimension {
+            Some(Q::Completeness) => {
+                return if self.object == O::Distribution {
+                    Category::Missingness
+                } else {
+                    Category::Gaps
+                };
+            }
+            Some(Q::Uniqueness) => {
+                return if self.status == S::Regularity {
+                    Category::Uniqueness
+                } else {
+                    Category::Duplicates
+                };
+            }
+            Some(Q::Validity) => return Category::Formats,
+            None => {}
+        }
+        if self.object == O::Role {
+            return Category::ColumnRoles;
+        }
+        if self.object == O::Relation && self.conditionality == C::ValueConditioned {
+            return Category::ConditionalRules;
+        }
+        if self.temporality == T::ChangeAcrossSegments && self.object != O::Relation {
+            return Category::Changes;
+        }
+        if self.object == O::Relation {
+            if self.status == S::Deviation {
+                return Category::Changes;
+            }
+            if directed {
+                return Category::Dependencies;
+            }
+            return if self.evidence == E::Exact {
+                Category::ColumnRoles
+            } else {
+                Category::Associations
+            };
+        }
+        if self.object == O::TemporalBehaviour {
+            return Category::Changes;
+        }
+        if self.object == O::Distribution {
+            if self.temporality == T::Ordered || self.status == S::Deviation {
+                return Category::Intervals;
+            }
+            return Category::Concentration;
+        }
+        // Object::Structure
+        if self.temporality == T::Ordered {
+            Category::Ordering
+        } else {
+            Category::Gaps
+        }
+    }
+
+    /// Facets for a built-in pattern, refined by the finding's own
+    /// record where the record decides a field: violation counts for
+    /// dependencies and rules, the subset condition for extreme
+    /// values, the subject's width for uniqueness.
+    pub fn for_pattern(
+        pattern: Pattern,
+        spec: &Specification,
+        metrics: &Details,
+        subject: &Subject,
+    ) -> Self {
+        use Conditionality as C;
+        use EvidenceKind as E;
+        use Object as O;
+        use QualityDimension as Q;
+        use Scope as Sc;
+        use Status as S;
+        use Temporality as T;
+        let violations = metrics
+            .get("violations")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let exact_or_approx = if violations == 0 {
+            E::Exact
+        } else {
+            E::Approximate
+        };
+        let (scope, object, evidence, conditionality, temporality, quality, status) = match pattern
+        {
+            Pattern::MissingValues | Pattern::SentinelValues => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Completeness),
+                S::Deviation,
+            ),
+            Pattern::ValueConcentration => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::Hotspot => (
+                Sc::Columns,
+                O::Distribution,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::CategoricalRole | Pattern::IdentifierRole => (
+                Sc::Column,
+                O::Role,
+                E::Inferred,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::Uniqueness => (
+                if subject.columns.len() > 1 {
+                    Sc::Columns
+                } else {
+                    Sc::Column
+                },
+                O::Relation,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Uniqueness),
+                S::Regularity,
+            ),
+            Pattern::Duplicates => (
+                Sc::Rows,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Uniqueness),
+                S::Deviation,
+            ),
+            Pattern::FormatVariation => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Validity),
+                S::Deviation,
+            ),
+            Pattern::Heaping | Pattern::DigitPreference | Pattern::BenfordDeviation => (
+                Sc::Column,
+                O::Distribution,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Validity),
+                S::Deviation,
+            ),
+            Pattern::FunctionalDependency => (
+                Sc::Columns,
+                O::Relation,
+                exact_or_approx,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::AffineDependency | Pattern::ArithmeticIdentity => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::PredictiveDependency => (
+                Sc::Columns,
+                O::Relation,
+                E::ModelBased,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::PiecewiseDependency => (
+                Sc::Columns,
+                O::Relation,
+                E::ModelBased,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::ConditionalRule => (
+                Sc::Columns,
+                O::Relation,
+                exact_or_approx,
+                C::ValueConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::StatisticalAssociation => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::PeriodAssociation => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::SegmentConditioned,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+            Pattern::Gap | Pattern::SequenceGap => (
+                Sc::Sequence,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                Some(Q::Completeness),
+                S::Deviation,
+            ),
+            Pattern::MissingCombinations => (
+                Sc::Columns,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Completeness),
+                S::Deviation,
+            ),
+            Pattern::IntervalVariation => (
+                Sc::Sequence,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Deviation,
+            ),
+            Pattern::ColumnOrdering => (
+                Sc::Column,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
+            Pattern::ResidualShift
+            | Pattern::LevelShift
+            | Pattern::TrendChange
+            | Pattern::VarianceChange => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::ModelBased,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+            Pattern::LongFormat => (
+                Sc::Frame,
+                O::Role,
+                E::Inferred,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::ExtremeValue => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                if spec.definition.contains_key("condition_column") {
+                    C::ValueConditioned
+                } else {
+                    C::Unconditional
+                },
+                T::Atemporal,
+                None,
+                S::Deviation,
+            ),
+            Pattern::CategoricalOutlier => (
+                Sc::Columns,
+                O::Distribution,
+                E::Approximate,
+                C::ValueConditioned,
+                T::Atemporal,
+                None,
+                S::Deviation,
+            ),
+            Pattern::TransientExcursion => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::Approximate,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Deviation,
+            ),
+            Pattern::StepDiscontinuity => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Deviation,
+            ),
+            Pattern::DuplicateEncoding => (
+                Sc::Columns,
+                O::Relation,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::DistributionShift => (
+                Sc::Columns,
+                O::Distribution,
+                E::ModelBased,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+            Pattern::OrderedPartition => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::ModelBased,
+                C::SegmentConditioned,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+        };
+        Self {
+            scope,
+            object,
+            evidence,
+            conditionality,
+            temporality,
+            quality_dimension: quality,
+            status,
+        }
+    }
+
+    /// Facets for a finding stated through `from_statement`, mapped
+    /// from its category and type (and the specification's form where
+    /// the type covers several patterns). The stated category is
+    /// checked against the derivation in `validate`.
+    pub fn for_statement(
+        category: Category,
+        finding_type: Option<&str>,
+        spec: &Specification,
+        metrics: &Details,
+        subject: &Subject,
+    ) -> Self {
+        let pattern = match (category, finding_type) {
+            (Category::Missingness, Some("sentinel_values")) => Pattern::SentinelValues,
+            (Category::Missingness, _) => Pattern::MissingValues,
+            (Category::Concentration, Some("hotspot")) => Pattern::Hotspot,
+            (Category::Concentration, _) => Pattern::ValueConcentration,
+            (Category::ColumnRoles, Some("identifier_role")) => Pattern::IdentifierRole,
+            (Category::ColumnRoles, Some("long_format")) => Pattern::LongFormat,
+            (Category::ColumnRoles, Some("duplicate_encoding")) => Pattern::DuplicateEncoding,
+            (Category::ColumnRoles, _) => Pattern::CategoricalRole,
+            (Category::Uniqueness, _) => Pattern::Uniqueness,
+            (Category::Duplicates, _) => Pattern::Duplicates,
+            (Category::Formats, Some("heaping")) => Pattern::Heaping,
+            (Category::Formats, Some("digit_preference")) => Pattern::DigitPreference,
+            (Category::Formats, Some("benford_deviation")) => Pattern::BenfordDeviation,
+            (Category::Formats, _) => Pattern::FormatVariation,
+            (Category::Dependencies, Some("predictive")) => {
+                if spec.form.as_deref() == Some("piecewise_linear") {
+                    Pattern::PiecewiseDependency
+                } else {
+                    Pattern::PredictiveDependency
+                }
+            }
+            (Category::Dependencies, _) => match spec.form.as_deref() {
+                Some("affine") => Pattern::AffineDependency,
+                Some(_) => Pattern::ArithmeticIdentity,
+                None => Pattern::FunctionalDependency,
+            },
+            (Category::ConditionalRules, _) => Pattern::ConditionalRule,
+            (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
+            (Category::Associations, _) => Pattern::StatisticalAssociation,
+            (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
+            (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
+            (Category::Gaps, _) => Pattern::Gap,
+            (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
+            (Category::Intervals, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
+            (Category::Intervals, _) => Pattern::IntervalVariation,
+            (Category::Ordering, _) => Pattern::ColumnOrdering,
+            (Category::Changes, Some("level_shift")) => Pattern::LevelShift,
+            (Category::Changes, Some("trend_change")) => Pattern::TrendChange,
+            (Category::Changes, Some("variance_change")) => Pattern::VarianceChange,
+            (Category::Changes, Some("transient_excursion")) => Pattern::TransientExcursion,
+            (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
+            (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
+            (Category::Changes, Some("ordered_partition")) => Pattern::OrderedPartition,
+            (Category::Changes, _) => Pattern::ResidualShift,
+        };
+        Self::for_pattern(pattern, spec, metrics, subject)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Finding {
     pub id: String,
     pub category: Category,
+    #[serde(default = "Facets::unspecified")]
+    pub facets: Facets,
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub finding_type: Option<String>,
     pub subject: Subject,
@@ -755,6 +1279,7 @@ impl Finding {
             basis
         };
         let evidence = Evidence::new(method, basis, metrics);
+        let facets = Facets::for_pattern(pattern, &spec, &evidence.metrics, &subject);
         Self::from_statement(
             pattern.category(),
             Some(pattern.subtype().to_owned()),
@@ -765,6 +1290,7 @@ impl Finding {
             score,
             interpretation,
         )
+        .with_facets(facets)
     }
     #[allow(clippy::too_many_arguments)]
     pub fn from_statement(
@@ -777,9 +1303,17 @@ impl Finding {
         score: f64,
         interpretation: Option<String>,
     ) -> Self {
+        let facets = Facets::for_statement(
+            category,
+            finding_type.as_deref(),
+            &specification,
+            &evidence.metrics,
+            &subject,
+        );
         Self {
             id: String::new(),
             category,
+            facets,
             finding_type,
             subject,
             specification,
@@ -789,6 +1323,10 @@ impl Finding {
             detector_interestingness: None,
             interpretation,
         }
+    }
+    pub fn with_facets(mut self, facets: Facets) -> Self {
+        self.facets = facets;
+        self
     }
     pub fn with_rule(mut self, mut conditions: Vec<Predicate>, outcome: Predicate) -> Self {
         for p in &mut conditions {
@@ -814,6 +1352,10 @@ impl Finding {
         self.category == category && subtype.is_none_or(|t| self.finding_type.as_deref() == Some(t))
     }
     pub fn validate(&self) -> Result<(), String> {
+        let directed = self.subject.target.is_some() || self.specification.outcome.is_some();
+        if self.facets.derive_category(directed) != self.category {
+            return Err("the finding's facets derive a different category than it states".into());
+        }
         if self.evidence.is_empty() {
             return Err("a finding must carry evidence".into());
         }

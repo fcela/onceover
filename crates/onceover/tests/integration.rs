@@ -116,7 +116,7 @@ fn planted_table(n: usize) -> DataFrame {
 fn recovers_planted_structure_with_semantic_categories() {
     let df = planted_table(4000);
     let report = profile(&df, &ProfileConfig::default());
-    assert_eq!(report.schema_version, "0.2");
+    assert_eq!(report.schema_version, "0.3");
     assert!(report
         .findings
         .iter()
