@@ -47,8 +47,11 @@ bindings (`python/onceover/`, PyO3/maturin).
   `report.finding(id)` returns one finding by its stable id (or
   None); `report.select(category=, type=, column=, target=)`
   returns the findings matching every given filter, in report
-  order. Every finding carries a `type`; the (category, type)
-  values are listed in `docs/report-schema.md`.
+  order. Every finding carries a `type` and a `facets` object; the
+  (category, type) values and the facet vocabularies are listed in
+  `docs/report-schema.md`, the per-type facet assignment in
+  `docs/findings.md`, and the derivation table in
+  `docs/taxonomy-v1-design.md`.
 - `report.to_digest(chars)` renders a context-budgeted digest
   (header + rollup groups + a stated omission count when the
   budget truncates). Reach for it when the full JSON will not fit

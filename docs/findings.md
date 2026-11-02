@@ -1,9 +1,11 @@
-# Finding schema 0.2
+# Finding schema 0.3
 
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.2 replaces schema 0.1 and is used by package version 0.1.3.
+Schema 0.3 adds a `facets` object to every finding (see "Facets" below); the
+category and type values are unchanged from schema 0.2, which replaced
+schema 0.1. Schema 0.3 is used by package version 0.1.3.
 
 ## Categories and statement definitions
 
@@ -89,6 +91,59 @@ an integer-sequence detector can use the same category with a declared increment
 How that reference was obtained belongs in evidence. Duplicate statements specify
 whether rows, values, tuples, or columns were compared and which matching rule
 was used. Missing values comparing equal is an explicit policy.
+
+## Facets
+
+Every finding carries a `facets` object stating the finding's
+properties as fields, in addition to its category and type. The
+category is derived from the facets by a fixed table (checked by
+`Finding::validate` and by the test suite for every pattern), so the
+two never silently disagree. The design and the full derivation table
+are in `docs/taxonomy-v1-design.md`.
+
+| Field | Values |
+|---|---|
+| `scope` | `column`, `columns`, `rows`, `sequence`, `frame` — what the statement ranges over |
+| `object` | `distribution`, `relation`, `structure`, `temporal_behaviour`, `role` — what kind of statement it is |
+| `evidence` | `exact` (no exceptions in the evaluated rows), `approximate` (a measured rate or a tolerance), `model_based` (a fitted model), `inferred` (an interpretation) |
+| `conditionality` | `unconditional`, `value_conditioned` (a condition on column values), `segment_conditioned` (different behaviour in different segments) |
+| `temporality` | `atemporal`, `ordered` (about an ordering), `change_across_segments` (compares segments of an ordering) |
+| `quality_dimension` | `completeness`, `uniqueness`, or `validity`, present only on data-quality findings |
+| `status` | `regularity` (a structure that holds) or `deviation` (a departure from an expectation) |
+
+Facets by finding type (a dash is an absent `quality_dimension`):
+
+| Type | Scope | Object | Evidence | Conditionality | Temporality | Quality | Status |
+|---|---|---|---|---|---|---|---|
+| `missing_values`, `sentinel_values` | column | distribution | exact | unconditional | atemporal | completeness | deviation |
+| `value_concentration` | column | distribution | exact | unconditional | atemporal | — | regularity |
+| `hotspot` | columns | distribution | approximate | unconditional | atemporal | — | regularity |
+| `categorical_role`, `identifier_role` | column | role | inferred | unconditional | atemporal | — | regularity |
+| `long_format` | frame | role | inferred | unconditional | atemporal | — | regularity |
+| `duplicate_encoding` | columns | relation | exact | unconditional | atemporal | — | regularity |
+| `uniqueness` | column or columns | relation | exact | unconditional | atemporal | uniqueness | regularity |
+| `duplicate_rows` | rows | structure | exact | unconditional | atemporal | uniqueness | deviation |
+| `format_variation` | column | distribution | exact | unconditional | atemporal | validity | deviation |
+| `heaping`, `digit_preference`, `benford_deviation` | column | distribution | approximate | unconditional | atemporal | validity | deviation |
+| `functional` | columns | relation | exact, or approximate when the mapping has violations | unconditional | atemporal | — | regularity |
+| `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
+| `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
+| `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
+| `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
+| `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
+| `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
+| `interval_variation` | sequence | distribution | exact | unconditional | ordered | — | deviation |
+| `extreme_value` | column | distribution | exact | unconditional; `value_conditioned` within a categorical subset | atemporal | — | deviation |
+| `categorical_outlier` | columns | distribution | approximate | value_conditioned | atemporal | — | deviation |
+| `column_ordering` | column | structure | exact | unconditional | ordered | — | regularity |
+| `residual_level`, `level_shift`, `trend_change`, `variance_change` | sequence | temporal_behaviour | model_based | unconditional | change_across_segments | — | regularity |
+| `transient_excursion` | sequence | temporal_behaviour | approximate | unconditional | change_across_segments | — | deviation |
+| `step_discontinuity` | columns | relation | approximate | unconditional | atemporal | — | deviation |
+| `distribution_shift` | columns | distribution | model_based | unconditional | change_across_segments | — | regularity |
+| `ordered_partition` | sequence | temporal_behaviour | model_based | segment_conditioned | change_across_segments | — | regularity |
+
+Consumers can filter on facets with `report.select(...)` (one keyword
+per facet) and read them as columns of `report.findings_frame()`.
 
 ## Selection and ranking
 
@@ -484,5 +539,5 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `variance_change` | `changes/variance_change` |
 | `transient_excursion` | `changes/transient_excursion` |
 
-The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.2; CI
+The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.3; CI
 executes it against the installed wheel.

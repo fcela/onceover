@@ -437,3 +437,93 @@ fn ordered_partition_finding_validates_and_survives_selection() {
         Some("ordered_partition")
     );
 }
+
+#[test]
+fn facets_derive_the_stated_category_for_every_pattern() {
+    use crate::finding::Pattern::*;
+    let patterns = [
+        MissingValues,
+        SentinelValues,
+        ValueConcentration,
+        Hotspot,
+        CategoricalRole,
+        IdentifierRole,
+        Uniqueness,
+        Duplicates,
+        FormatVariation,
+        Heaping,
+        DigitPreference,
+        BenfordDeviation,
+        FunctionalDependency,
+        AffineDependency,
+        ArithmeticIdentity,
+        PredictiveDependency,
+        PiecewiseDependency,
+        ConditionalRule,
+        StatisticalAssociation,
+        PeriodAssociation,
+        Gap,
+        SequenceGap,
+        MissingCombinations,
+        IntervalVariation,
+        ColumnOrdering,
+        ResidualShift,
+        LevelShift,
+        TrendChange,
+        VarianceChange,
+        LongFormat,
+        ExtremeValue,
+        CategoricalOutlier,
+        TransientExcursion,
+        StepDiscontinuity,
+        DuplicateEncoding,
+        DistributionShift,
+        OrderedPartition,
+    ];
+    for pattern in patterns {
+        let directed = matches!(
+            pattern,
+            FunctionalDependency
+                | AffineDependency
+                | ArithmeticIdentity
+                | PredictiveDependency
+                | PiecewiseDependency
+                | ConditionalRule
+        );
+        let subject = Subject::columns(["a".to_string(), "b".to_string()]);
+        let facets = Facets::for_pattern(
+            pattern,
+            &Specification::default(),
+            &Details::new(),
+            &subject,
+        );
+        assert_eq!(
+            facets.derive_category(directed),
+            pattern.category(),
+            "pattern {pattern:?}"
+        );
+    }
+}
+
+#[test]
+fn conditional_rule_and_dependency_differ_only_in_conditionality() {
+    let subject = Subject::columns(["a".to_string(), "b".to_string()]);
+    let fd = Facets::for_pattern(
+        Pattern::FunctionalDependency,
+        &Specification::default(),
+        &Details::new(),
+        &subject,
+    );
+    let rule = Facets::for_pattern(
+        Pattern::ConditionalRule,
+        &Specification::default(),
+        &Details::new(),
+        &subject,
+    );
+    assert_eq!(fd.scope, rule.scope);
+    assert_eq!(fd.object, rule.object);
+    assert_eq!(fd.evidence, rule.evidence);
+    assert_eq!(fd.temporality, rule.temporality);
+    assert_eq!(fd.status, rule.status);
+    assert_ne!(fd.conditionality, rule.conditionality);
+}

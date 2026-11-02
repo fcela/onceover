@@ -11,7 +11,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.2"
+_SCHEMA_VERSION = "0.3"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -157,18 +157,50 @@ class ProfileReport:
                 return f
         return None
 
-    def select(self, category=None, type=None, column=None, target=None) -> list:
+    def select(
+        self,
+        category=None,
+        type=None,
+        column=None,
+        target=None,
+        scope=None,
+        object=None,
+        evidence=None,
+        conditionality=None,
+        temporality=None,
+        quality_dimension=None,
+        status=None,
+    ) -> list:
         """Findings matching every given filter, in report order.
 
         `category` and `type` match the finding's fields exactly;
         `column` matches membership in the finding's subject columns;
-        `target` matches the subject target. With no filters, returns
-        all findings. The dicts are the live report entries."""
+        `target` matches the subject target. The remaining arguments
+        match the finding's facets exactly (`scope`, `object`,
+        `evidence`, `conditionality`, `temporality`,
+        `quality_dimension`, `status`); a facet filter never matches a
+        finding that does not carry the facet. With no filters,
+        returns all findings. The dicts are the live report entries."""
+        facet_filters = {
+            "scope": scope,
+            "object": object,
+            "evidence": evidence,
+            "conditionality": conditionality,
+            "temporality": temporality,
+            "quality_dimension": quality_dimension,
+            "status": status,
+        }
         out = []
         for f in self.findings:
             if category is not None and f.get("category") != category:
                 continue
             if type is not None and f.get("type") != type:
+                continue
+            facets = f.get("facets") or {}
+            if any(
+                want is not None and facets.get(name) != want
+                for name, want in facet_filters.items()
+            ):
                 continue
             subject = f.get("subject") or {}
             if column is not None and column not in (subject.get("columns") or []):
@@ -242,7 +274,9 @@ class ProfileReport:
         """The findings ledger as a Polars DataFrame, one row per finding.
 
         Columns: id, category, type, columns, inputs, target,
-        interestingness, claim, n_evidence, basis — plus
+        interestingness, claim, n_evidence, basis, and the facet
+        columns scope, object, evidence_kind, conditionality,
+        temporality, quality_dimension, status — plus
         detector_interestingness when the report carries it. Rows are in
         report order (highest interestingness first). The full evidence
         records stay in `.findings` / `.data`; this frame is the
@@ -256,10 +290,18 @@ class ProfileReport:
         for f in findings:
             subject = f.get("subject") or {}
             evidence = f.get("evidence") or []
+            facets = f.get("facets") or {}
             row = {
                 "id": f.get("id"),
                 "category": f.get("category"),
                 "type": f.get("type"),
+                "scope": facets.get("scope"),
+                "object": facets.get("object"),
+                "evidence_kind": facets.get("evidence"),
+                "conditionality": facets.get("conditionality"),
+                "temporality": facets.get("temporality"),
+                "quality_dimension": facets.get("quality_dimension"),
+                "status": facets.get("status"),
                 "columns": list(subject.get("columns") or []),
                 "inputs": list(subject.get("inputs") or []),
                 "target": subject.get("target"),
@@ -276,6 +318,13 @@ class ProfileReport:
                 "id": pl.String,
                 "category": pl.String,
                 "type": pl.String,
+                "scope": pl.String,
+                "object": pl.String,
+                "evidence_kind": pl.String,
+                "conditionality": pl.String,
+                "temporality": pl.String,
+                "quality_dimension": pl.String,
+                "status": pl.String,
                 "columns": pl.List(pl.String),
                 "inputs": pl.List(pl.String),
                 "target": pl.String,
