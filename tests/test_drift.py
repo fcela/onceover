@@ -65,3 +65,23 @@ def test_unrelated_column_shift_is_quiet():
     targets = {f["subject"]["columns"][0] for f in out}
     assert "y" not in targets
     assert "x" not in targets
+
+
+def test_long_frame_over_encode_cap_profiles():
+    # Issue #95: a long panel past the 20,000-row encode cap panicked
+    # in the drift pass with a time hint — period row sets carried
+    # original row ids into the sampled encoded matrix. 5,000 clients
+    # x 6 months = 30,000 rows.
+    rng = random.Random(3)
+    ids, months, xs, ys = [], [], [], []
+    for c in range(5000):
+        base = rng.uniform(-1, 1)
+        for m in range(6):
+            ids.append(c)
+            months.append(m)
+            xv = base + (0.5 if m >= 3 else 0.0)
+            xs.append(xv)
+            ys.append(xv + rng.uniform(-0.05, 0.05))
+    df = pl.DataFrame({"client": ids, "month": months, "x": xs, "y": ys})
+    r = onceover.profile(df, budget="standard", detectors=["drift"], hints={"time": "month"})
+    assert r.data["coverage"]["drift"]["status"] != "error"
