@@ -115,7 +115,26 @@ fn planted_table(n: usize) -> DataFrame {
 #[test]
 fn recovers_planted_structure_with_semantic_categories() {
     let df = planted_table(4000);
-    let report = profile(&df, &ProfileConfig::default());
+    // The planted calendar gap is the opt-in dates detector's subject;
+    // the rest of the planted structure belongs to the default set.
+    let mut detectors: std::collections::BTreeSet<String> = onceover::builtin_detectors()
+        .into_iter()
+        .filter(|d| {
+            matches!(
+                d.activation,
+                onceover::Activation::Default | onceover::Activation::HintGated
+            )
+        })
+        .map(|d| d.id)
+        .collect();
+    detectors.insert("dates".into());
+    let report = profile(
+        &df,
+        &ProfileConfig {
+            detectors: Some(detectors),
+            ..Default::default()
+        },
+    );
     assert_eq!(report.schema_version, "0.3");
     assert!(report
         .findings

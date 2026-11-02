@@ -527,3 +527,62 @@ fn conditional_rule_and_dependency_differ_only_in_conditionality() {
     assert_eq!(fd.status, rule.status);
     assert_ne!(fd.conditionality, rule.conditionality);
 }
+
+fn fd_on(lhs: &str, rhs: &str, detector_score: f64) -> Finding {
+    Finding::new(
+        Pattern::FunctionalDependency,
+        BTreeMap::from([("lhs".into(), json!([lhs])), ("rhs".into(), json!(rhs))]),
+        format!("{lhs} → {rhs}"),
+        EvidenceBasis::Measured,
+        detector_score,
+        BTreeMap::from([
+            ("violations".into(), json!(0)),
+            ("n_used".into(), json!(100)),
+        ]),
+        None,
+        Method::new("functional_dependencies", "value_mapping", "test"),
+    )
+}
+
+#[test]
+fn per_detector_cap_limits_and_counts_statements() {
+    // Four distinct functional dependencies plus one key finding;
+    // a cap of 2 on functional_dependencies selects the two
+    // highest-ranked and counts the other two as capped. The key
+    // finding's detector is uncapped and is always selected.
+    let findings = vec![
+        fd_on("a", "w", 0.95),
+        fd_on("b", "x", 0.90),
+        fd_on("c", "y", 0.85),
+        fd_on("d", "z", 0.80),
+        key_finding(None),
+    ];
+    let policy = SelectionPolicy {
+        max_findings_per_detector: BTreeMap::from([("functional_dependencies".to_string(), 2)]),
+        ..Default::default()
+    };
+    let (selected, capped) = select_findings_counted(findings, &policy);
+    assert_eq!(selected.len(), 3);
+    assert_eq!(
+        selected
+            .iter()
+            .filter(|f| f.category == Category::Dependencies)
+            .count(),
+        2
+    );
+    assert_eq!(capped.get("functional_dependencies"), Some(&2));
+    assert_eq!(capped.len(), 1);
+}
+
+#[test]
+fn default_policy_caps_the_two_char_heavy_detectors() {
+    let policy = SelectionPolicy::default();
+    assert_eq!(
+        policy
+            .max_findings_per_detector
+            .get("functional_dependencies"),
+        Some(&25)
+    );
+    assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
+    assert_eq!(policy.max_findings_per_detector.len(), 2);
+}

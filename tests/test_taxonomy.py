@@ -57,7 +57,7 @@ def test_gap_statement_records_the_reference():
     import datetime as dt
     days=[dt.date(2024,1,1)+dt.timedelta(days=i) for i in range(100)]
     days=[d for d in days if d.weekday()<5 and d!=dt.date(2024,2,7)]
-    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick')
+    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['dates'])
     gap=select(report,'gaps')[0]
     definition=gap['specification']['definition']
     assert definition['domain']=='temporal'
@@ -104,7 +104,7 @@ def test_gap_counts_exclude_observed_endpoints(cadence, removed, expected):
     import datetime as dt
     start=dt.date(2024,1,1)
     days=[start+dt.timedelta(days=cadence*i) for i in range(40) if i not in removed]
-    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick')
+    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['dates'])
     gap=select(report,'gaps')[0]
     assert metrics(gap,contains='missing')['missing']==expected
     assert gap['specification']['definition']['reference']['cadence_days']==cadence

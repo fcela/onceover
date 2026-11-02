@@ -63,7 +63,11 @@ def test_long_format_encoding_fd_is_demoted():
         indicator.append("inflation")
         value.append(2.0 + (e % 8) * 0.5)
     df = pl.DataFrame({"entity": entity, "indicator": indicator, "value": value})
-    report = onceover.profile(df)
+    # The demotion is the pivot detector's verification of the FD, so
+    # the run is the default set plus the opt-in pivot detector.
+    from _findings import default_plus
+
+    report = onceover.profile(df, detectors=default_plus("pivot"))
     assert any(f.get("type") == "pivot" or "long format" in f["claim"] for f in report.findings)
     fds = [
         f for f in report.findings

@@ -14,7 +14,7 @@ use onceover_mines::{
     profile_regimes, profile_surprises, profile_target_shapes, screen_predictability,
 };
 use onceover_report::{
-    group_findings, select_findings, Category, ColumnCard, Finding, Overview, PassInfo,
+    group_findings, select_findings_counted, Category, ColumnCard, Finding, Overview, PassInfo,
     ProfileReport, Sampling, SCHEMA_VERSION,
 };
 use polars::prelude::DataFrame;
@@ -64,6 +64,11 @@ fn profile_inner(
     }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
+    let activations: BTreeMap<String, crate::detectors::Activation> =
+        crate::detectors::builtin_detectors()
+            .into_iter()
+            .map(|d| (d.id, d.activation))
+            .collect();
     let mut shared_encoding = None;
     let start = Instant::now();
     let mut tier = TierConfig::for_budget(cfg.budget);
@@ -1404,8 +1409,10 @@ fn profile_inner(
     for (id, pass) in [
         ("row_duplicates", "row_duplicates"),
         ("keys", "keys"),
+        ("pivot", "pivot"),
         ("functional_dependencies", "functional_dependencies"),
         ("sortedness", "sortedness"),
+        ("granularity", "granularity"),
         ("dates", "dates"),
         ("gbm", "predictability_screen"),
         ("decision_tables", "decision_tables"),
@@ -1416,18 +1423,33 @@ fn profile_inner(
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
         ("identities", "arithmetic_identities"),
+        ("period_associations", "period_associations"),
         ("views", "views"),
         ("target_shapes", "target_shapes"),
         ("drift", "drift"),
     ] {
         if !enabled(id) {
-            stamp_insert(
-                &mut coverage,
-                &mut last_mark,
-                timing_on,
-                pass.into(),
-                PassInfo::skipped("detector not enabled"),
-            );
+            // A pass that did not run says why. Opt-in detectors are
+            // named as such (an existing entry, e.g. a deadline skip,
+            // is more specific and is kept).
+            if !coverage.contains_key(pass) {
+                let detail = match activations.get(id) {
+                    Some(crate::detectors::Activation::OptIn) => format!(
+                        "opt-in detector; not in the default set — request it with detectors=[\"{id}\"]"
+                    ),
+                    Some(crate::detectors::Activation::TargetGated) => {
+                        "runs when a target is designated, or when explicitly selected together with a target".to_string()
+                    }
+                    _ => "detector not enabled".to_string(),
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    pass.into(),
+                    PassInfo::skipped(detail),
+                );
+            }
         } else if !selected(id) {
             if let Some(info) = coverage.get_mut(pass) {
                 info.detail
@@ -1435,7 +1457,30 @@ fn profile_inner(
             }
         }
     }
-    let findings = select_findings(findings, &cfg.selection);
+    let (findings, capped) = select_findings_counted(findings, &cfg.selection);
+    if !capped.is_empty() {
+        // Per-detector report caps are disclosed with counts, never
+        // applied silently (the demote-never-suppress rule).
+        let parts: Vec<String> = capped
+            .iter()
+            .map(|(detector, n)| {
+                let cap = cfg
+                    .selection
+                    .max_findings_per_detector
+                    .get(detector)
+                    .copied()
+                    .unwrap_or(0);
+                format!("{detector}: {n} statement(s) past the per-detector report cap of {cap} not selected")
+            })
+            .collect();
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "selection".into(),
+            PassInfo::capped(parts.join("; ")),
+        );
+    }
     let groups = group_findings(&findings);
     let selection = onceover_report::SelectionSummary {
         candidates: candidate_count,

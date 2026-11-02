@@ -3,6 +3,7 @@
 import polars as pl
 
 import onceover
+from _findings import default_plus
 
 
 def _panel() -> pl.DataFrame:
@@ -29,7 +30,7 @@ def _tagged(f) -> bool:
 
 
 def test_wide_form_findings_are_tagged_and_present():
-    report = onceover.profile(_panel())
+    report = onceover.profile(_panel(), detectors=default_plus("pivot"))
     cov = report.data["coverage"]["pivot_profile"]
     assert cov["status"] == "ran_exact"
     # The planted gdp/life association exists only in the wide form.
@@ -44,6 +45,6 @@ def test_wide_form_findings_are_tagged_and_present():
 
 
 def test_quick_budget_skips_wide_profile():
-    report = onceover.profile(_panel(), budget="quick")
+    report = onceover.profile(_panel(), budget="quick", detectors=default_plus("pivot"))
     assert report.data["coverage"]["pivot_profile"]["status"] == "not_applicable"
     assert not any(_tagged(f) for f in report.findings)

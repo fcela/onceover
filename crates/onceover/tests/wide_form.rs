@@ -40,6 +40,26 @@ fn melted_panel() -> DataFrame {
     .unwrap()
 }
 
+/// The default set plus the opt-in pivot detector, whose wide-form
+/// recursion is this module's subject.
+fn default_plus_pivot() -> ProfileConfig {
+    let mut detectors: std::collections::BTreeSet<String> = onceover::builtin_detectors()
+        .into_iter()
+        .filter(|d| {
+            matches!(
+                d.activation,
+                onceover::Activation::Default | onceover::Activation::HintGated
+            )
+        })
+        .map(|d| d.id)
+        .collect();
+    detectors.insert("pivot".into());
+    ProfileConfig {
+        detectors: Some(detectors),
+        ..Default::default()
+    }
+}
+
 fn tagged(f: &onceover::Finding) -> bool {
     f.evidence
         .iter()
@@ -48,7 +68,7 @@ fn tagged(f: &onceover::Finding) -> bool {
 
 #[test]
 fn wide_form_findings_are_merged_and_tagged() {
-    let report = profile(&melted_panel(), &ProfileConfig::default());
+    let report = profile(&melted_panel(), &default_plus_pivot());
     let cov = report
         .coverage
         .get("pivot_profile")
@@ -72,7 +92,7 @@ fn wide_form_findings_are_merged_and_tagged() {
 
 #[test]
 fn encoding_artifacts_carry_the_layout_demotion() {
-    let report = profile(&melted_panel(), &ProfileConfig::default());
+    let report = profile(&melted_panel(), &default_plus_pivot());
     let demoted = |f: &onceover::Finding| {
         f.evidence.iter().any(|e| {
             e.metrics.get("triviality").and_then(|v| v.as_str()) == Some("long_format_encoding")
@@ -107,7 +127,7 @@ fn encoding_artifacts_carry_the_layout_demotion() {
 fn quick_budget_does_not_profile_the_wide_form() {
     let cfg = ProfileConfig {
         budget: Budget::Quick,
-        ..Default::default()
+        ..default_plus_pivot()
     };
     let report = profile(&melted_panel(), &cfg);
     let cov = report
