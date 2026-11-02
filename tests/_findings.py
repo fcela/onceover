@@ -1,6 +1,24 @@
 """Queries against the public statement/evidence schema."""
 
 
+def default_plus(*extra: str) -> list[str]:
+    """The default detector set plus explicitly requested detectors.
+
+    For tests whose subject is an opt-in detector's interaction with
+    the default passes (the wide-form recursion, the long-format FD
+    demotion): the detector under test is named, the rest of the
+    default set comes from the registry so the list tracks it.
+    """
+    import onceover
+
+    ids = [
+        d["id"]
+        for d in onceover.available_detectors()
+        if d["activation"] in ("default", "hint_gated")
+    ]
+    return ids + [e for e in extra if e not in ids]
+
+
 def select(report, category, *, subtype=None, form=None, target=None, inputs=None, column=None):
     return [f for f in report.findings
             if f['category'] == category

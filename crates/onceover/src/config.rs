@@ -42,7 +42,8 @@ impl Budget {
 #[derive(Clone, Debug)]
 pub struct ProfileConfig {
     pub budget: Budget,
-    /// Explicit detector IDs; None selects all built-ins. Dependencies run as resources.
+    /// Explicit detector IDs; None selects the default set (detectors
+    /// whose activation is Default or HintGated). Dependencies run as resources.
     pub detectors: Option<std::collections::BTreeSet<String>>,
     pub selection: onceover_report::SelectionPolicy,
     pub deadline: Option<Duration>,
@@ -178,7 +179,19 @@ impl TierConfig {
                 },
                 hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
-                disc: DiscConfig::default(),
+                // The discontinuity screen is the measured runtime
+                // outlier (2026-11-02 battery: 0.43 s median marginal,
+                // +83.0 s excess, concentrated on wide tables). At the
+                // standard tier the diagonal scan — the dominant cost
+                // on wide tables — considers the 6 strongest axes per
+                // target instead of 10 (15 column pairs instead of
+                // 45); the deep tier keeps the full search. Tables
+                // with at most `all_pairs_max_cols` axes are
+                // unaffected: they already scan every pair.
+                disc: DiscConfig {
+                    fallback_top_axes: 6,
+                    ..Default::default()
+                },
                 partitions: PartitionsConfig::default(),
                 drift: DriftConfig::default(),
                 dep_pair_cap: 496,
@@ -239,6 +252,9 @@ impl TierConfig {
                     },
                     ..Default::default()
                 },
+                // Deep keeps the full discontinuity search (the
+                // default 10 fallback axes per target) on more rows;
+                // only the standard tier caps the diagonal scan.
                 disc: DiscConfig {
                     row_cap: 50_000,
                     max_per_target: 5,

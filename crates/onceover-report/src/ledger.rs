@@ -38,6 +38,16 @@ pub struct SelectionPolicy {
     pub max_rules: usize,
     pub rules_per_outcome: usize,
     pub predictive_findings_per_target: usize,
+    /// Per-detector caps on selected statements, attributed by the
+    /// detector of a statement's first evidence record. The two
+    /// defaults bound the report's context cost where the 2026-11-02
+    /// battery measured it: functional_dependencies and gbm together
+    /// produced ~41% of all report characters (550,443 and 467,098 of
+    /// 2,479,798). A statement past its detector's cap is not
+    /// selected; the counts of capped statements are returned by
+    /// `select_findings_counted` and reported in coverage, so a cap
+    /// is never silent. Detectors absent from the map are uncapped.
+    pub max_findings_per_detector: BTreeMap<String, usize>,
 }
 impl Default for SelectionPolicy {
     fn default() -> Self {
@@ -50,6 +60,10 @@ impl Default for SelectionPolicy {
             max_rules: 20,
             rules_per_outcome: 2,
             predictive_findings_per_target: 3,
+            max_findings_per_detector: BTreeMap::from([
+                ("functional_dependencies".to_string(), 25),
+                ("gbm".to_string(), 20),
+            ]),
         }
     }
 }
@@ -149,6 +163,17 @@ pub fn finalize_ledger(findings: Vec<Finding>) -> Vec<Finding> {
 }
 
 pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<Finding> {
+    select_findings_counted(findings, policy).0
+}
+
+/// Selection, additionally returning how many statements each
+/// per-detector cap in the policy turned away (detector -> count).
+/// Callers that assemble a report surface these counts in coverage
+/// so the caps are disclosed, never silent.
+pub fn select_findings_counted(
+    findings: Vec<Finding>,
+    policy: &SelectionPolicy,
+) -> (Vec<Finding>, BTreeMap<String, usize>) {
     let mut statements = BTreeMap::<String, Finding>::new();
     let mut detector_scores = BTreeMap::<String, f64>::new();
     for mut finding in findings {
@@ -257,6 +282,8 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
     let mut rules = 0;
     let mut outcomes = BTreeMap::<String, usize>::new();
     let mut targets = BTreeMap::<String, usize>::new();
+    let mut per_detector = BTreeMap::<String, usize>::new();
+    let mut capped = BTreeMap::<String, usize>::new();
     for mut f in ranked {
         if selected.len() >= policy.max_findings {
             break;
@@ -281,6 +308,21 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
             }
             *count += 1;
         }
+        // Per-detector report caps: a statement is attributed to the
+        // detector of its first evidence record (evidence was sorted
+        // above, so the attribution is deterministic). Statements
+        // past the cap are counted, not silently dropped: the caller
+        // reports the counts in coverage.
+        if let Some(detector) = f.evidence.first().map(|e| e.method.detector.clone()) {
+            if let Some(&cap) = policy.max_findings_per_detector.get(&detector) {
+                let count = per_detector.entry(detector.clone()).or_default();
+                if *count >= cap {
+                    *capped.entry(detector).or_default() += 1;
+                    continue;
+                }
+                *count += 1;
+            }
+        }
         // IDs depend on the statement, never its rank or detector enumeration.
         let mut hash = 0xcbf29ce484222325u64;
         for byte in f.canonical_key().bytes() {
@@ -289,7 +331,7 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
         f.id = format!("{}-{hash:016x}", f.category.as_str());
         selected.push(f);
     }
-    selected
+    (selected, capped)
 }
 
 /// A connected view over selected findings; this does not assert redundancy.

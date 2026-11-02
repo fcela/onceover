@@ -120,7 +120,12 @@ def test_pivot_rules_keep_their_wide_population_and_validation():
     })
     long = wide.unpivot(index="entity", variable_name="indicator", value_name="value")
     direct = onceover.profile(wide, max_findings=500, max_rules=100)
-    pivoted = onceover.profile(long, max_findings=500, max_rules=100)
+    # The wide-form comparison is the opt-in pivot detector's recursion.
+    from _findings import default_plus
+
+    pivoted = onceover.profile(
+        long, max_findings=500, max_rules=100, detectors=default_plus("pivot")
+    )
     expected = {f["id"] for f in direct.select(category="conditional_rules")}
     rules = pivoted.select(category="conditional_rules")
     assert len(expected) == 4
@@ -139,7 +144,10 @@ def test_pivot_preserves_unsigned_measure_identity():
         "b": pl.Series([2**63 + 600 + i % 300 for i in range(n)], dtype=pl.UInt64),
     })
     long = wide.unpivot(index="entity", variable_name="indicator", value_name="value")
-    report = onceover.profile(long, max_findings=500)
+    # The wide-form identity is the opt-in pivot detector's recursion.
+    from _findings import default_plus
+
+    report = onceover.profile(long, max_findings=500, detectors=default_plus("pivot"))
     assert any(f["subject"]["inputs"] == ["a"]
                and any(e["metrics"].get("source_form") == "pivoted wide form"
                        and e["metrics"].get("lhs_distinct") == 300 for e in f["evidence"])

@@ -43,9 +43,16 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set, which excludes
-        the experimental "views" pass. Required detectors can run as resources
-        without contributing their own findings.
+        Detector IDs to select; None selects the default set (22 of the
+        29 registered detectors). Excluded unless requested: the opt-in
+        detectors "views" (experimental), "dates", "pivot",
+        "period_associations", "drift" and "granularity" — each records
+        a skipped coverage entry in default runs — and "target_shapes",
+        which runs when a target is designated. "expectations" is in
+        the default set but engages only when `hints` are declared.
+        Required detectors can run as resources without contributing
+        their own findings. `available_detectors()` reports each
+        detector's activation.
     max_findings, max_rules : int
         Report-wide selection limits, applied across all contributing methods.
     hints : dict, optional
@@ -88,7 +95,11 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
 
 def available_detectors():
-    """Available detector IDs, produced categories, and resource dependencies."""
+    """Available detector IDs, produced categories, resource dependencies,
+    and activation: "default" (runs in the default set), "opt_in" (runs
+    only when explicitly selected), "hint_gated" (default set, engages
+    only on declared hints), or "target_gated" (runs when a target is
+    designated)."""
     from onceover._native import available_detectors as _available
     return _json.loads(_available())
 

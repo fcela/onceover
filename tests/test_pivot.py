@@ -29,7 +29,7 @@ def skinny_panel() -> pl.DataFrame:
 
 def test_skinny_panel_reports_pivot_and_recipe_works():
     df = skinny_panel()
-    report = onceover.profile(df, budget="standard")
+    report = onceover.profile(df, budget="standard", detectors=["pivot"])
     hits = select(report, "column_roles", form="pivot")
     assert len(hits) == 1
     spec = hits[0]["specification"]["definition"]
@@ -59,7 +59,7 @@ def test_wide_frame_has_no_pivot_finding():
     wide = skinny_panel().pivot(
         on="indicator", index=["entity", "year", "region"], values="value"
     )
-    report = onceover.profile(wide, budget="standard")
+    report = onceover.profile(wide, budget="standard", detectors=["pivot"])
     assert select(report, "column_roles", form="pivot") == []
 
 

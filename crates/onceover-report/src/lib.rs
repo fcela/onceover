@@ -14,7 +14,8 @@ mod ledger;
 pub use finding::*;
 pub use hints::{Cadence, ProfileHints};
 pub use ledger::{
-    finalize_ledger, group_findings, select_findings, SelectionPolicy, SelectionSummary,
+    finalize_ledger, group_findings, select_findings, select_findings_counted, SelectionPolicy,
+    SelectionSummary,
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.

@@ -110,12 +110,16 @@ Passing a bare string where a list is expected raises
 ## Detectors and targeting
 
 `onceover.available_detectors()` lists the detector set with the
-categories each produces (also frozen in
-`docs/capability-manifest.json`). `detectors=[...]` restricts a
-run to named detectors; the default set excludes the
-experimental `views` pass. Passing `target="y"` additionally
-enables the opt-in target-aware shape pass. The full category
-and type reference is `docs/findings.md`.
+categories each produces and each detector's activation (also
+frozen in `docs/capability-manifest.json`). `detectors=[...]`
+restricts a run to named detectors. The default set has 22 of
+the 29 registered detectors: `views` (experimental), `dates`,
+`pivot`, `period_associations`, `drift`, and `granularity` are
+opt-in and run only when named — a default run records each as
+skipped in coverage, naming it opt-in. `expectations` is in the
+default set but engages only on declared hints. Passing
+`target="y"` additionally enables the target-gated shape pass.
+The full category and type reference is `docs/findings.md`.
 
 ## Empty and partial results
 

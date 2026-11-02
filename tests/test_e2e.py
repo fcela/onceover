@@ -71,8 +71,10 @@ def test_profile_returns_report():
 
 
 def test_planted_structure_recovered():
-    from _findings import select
-    report=onceover.profile(planted_df(6000))
+    from _findings import default_plus, select
+    # The planted calendar gap is the opt-in dates detector's subject;
+    # the rest of the planted structure belongs to the default set.
+    report=onceover.profile(planted_df(6000),detectors=default_plus("dates"))
     assert select(report,"uniqueness",column="order_id")
     assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="region_name")
     assert select(report,"gaps",column="event_date")

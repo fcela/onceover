@@ -11,70 +11,80 @@
     "column_roles",
     "formats"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "row_duplicates",
    "categories": [
     "duplicates"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "keys",
    "categories": [
     "uniqueness"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "pivot",
    "categories": [
     "column_roles"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "opt_in"
   },
   {
    "id": "functional_dependencies",
    "categories": [
     "dependencies"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "duplicate_encodings",
    "categories": [
     "column_roles"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "sortedness",
    "categories": [
     "ordering"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "granularity",
    "categories": [
     "formats"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "opt_in"
   },
   {
    "id": "sentinels",
    "categories": [
     "missingness"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "digits",
    "categories": [
     "formats"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "dates",
@@ -82,7 +92,8 @@
     "gaps",
     "intervals"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "opt_in"
   },
   {
    "id": "expectations",
@@ -90,14 +101,16 @@
     "gaps",
     "ordering"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "hint_gated"
   },
   {
    "id": "gbm",
    "categories": [
     "dependencies"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "decision_tables",
@@ -106,7 +119,8 @@
    ],
    "requires": [
     "gbm"
-   ]
+   ],
+   "activation": "default"
   },
   {
    "id": "prism",
@@ -115,7 +129,8 @@
    ],
    "requires": [
     "gbm"
-   ]
+   ],
+   "activation": "default"
   },
   {
    "id": "regimes",
@@ -125,7 +140,8 @@
    ],
    "requires": [
     "gbm"
-   ]
+   ],
+   "activation": "default"
   },
   {
    "id": "interactions",
@@ -134,42 +150,48 @@
    ],
    "requires": [
     "gbm"
-   ]
+   ],
+   "activation": "default"
   },
   {
    "id": "target_shapes",
    "categories": [
     "dependencies"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "target_gated"
   },
   {
    "id": "breaks",
    "categories": [
     "changes"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "ordered_partitions",
    "categories": [
     "changes"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "surprises",
    "categories": [
     "intervals"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "discontinuities",
    "categories": [
     "changes"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "drift",
@@ -178,28 +200,32 @@
    ],
    "requires": [
     "gbm"
-   ]
+   ],
+   "activation": "opt_in"
   },
   {
    "id": "association_rules",
    "categories": [
     "conditional_rules"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "hotspots",
    "categories": [
     "concentration"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "numeric_dependence",
    "categories": [
     "associations"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "default"
   },
   {
    "id": "identities",
@@ -208,7 +234,8 @@
    ],
    "requires": [
     "numeric_dependence"
-   ]
+   ],
+   "activation": "default"
   },
   {
    "id": "period_associations",
@@ -217,7 +244,8 @@
    ],
    "requires": [
     "numeric_dependence"
-   ]
+   ],
+   "activation": "opt_in"
   },
   {
    "id": "views",
@@ -226,7 +254,8 @@
     "changes",
     "concentration"
    ],
-   "requires": []
+   "requires": [],
+   "activation": "opt_in"
   }
  ]
 }

@@ -71,6 +71,16 @@
      "ref": "GritBot data:2215 / test:373",
      "status": "missed",
      "note": "Assay-combination cases (TSH 8.5 in a treated subset; T3 7.6 in a low-TSH subset). GritBot itself marked these as needing expert judgement."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "tt4"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -110,6 +120,16 @@
      "ref": "GritBot abalone (23 cases)",
      "status": "partial",
      "note": "RuleQuest: most of the 23 violate physical constraints (part weight > whole weight; length < diameter). The profiler finds the measurement web as predictive dependencies but isolates none of the violating rows."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "shucked_weight"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -343,6 +363,16 @@
      "ref": "Subscription-rate structure (target column)",
      "status": "found",
      "note": "Overall subscription rate 11.7%. By previous-campaign outcome: success 64.7% (n = 1,511) vs failure 12.6%, other 16.7%, never-contacted 9.2% (n = 36,959). By month: mar 52.0% (n = 477) and dec 46.7% (n = 214) against may 6.7% (n = 13,766). Rates measured with Polars on the bundled file, 2026-11-01; recorded as documentation because the standard-budget run carries no target."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "contacts_before_this_campaign"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -401,6 +431,16 @@
      "ref": "Liability-Assets Flag definition (dataset variable list)",
      "status": "found",
      "note": "The flag is documented as 1 when total liability exceeds total assets. It agrees with Debt ratio % >= 1 on 99.90% of rows (7 disagreements in 6,819, measured with Polars); no finding isolates the flag's semantics, so the case is recorded, not expected as a finding."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "Current Asset Turnover Rate"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 28 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -458,6 +498,16 @@
      "ref": "Per-employee attribute constancy (dataset structure)",
      "status": "found",
      "note": "740 absence records over 36 employees. The functional pass reports employee_id determining age, body_mass_index, distance, education, height, number_of_children, service_time, social_drinker and weight, each at 99.86% (exactly 1 violating row in 740, measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "distance_from_residence_to_work_km"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 31 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -698,6 +748,16 @@
      "ref": "comment empty on all 31,465 rows",
      "status": "missed",
      "note": "A fully empty column; no finding reports the dead column in the first run."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "customer_id"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 26 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -751,6 +811,16 @@
      "ref": "Restatements (EDGAR-wide behavior)",
      "status": "missed",
      "note": "Amended filings restate values for the same period; the bundled table keeps them all (11,543 rows) and no current finding groups them."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "value"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -857,6 +927,16 @@
      "detector": "views",
      "status": "ran_exact",
      "note": "64 columns: exactly at the views cap."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "RNS_REQ"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 1 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -879,7 +959,8 @@
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "views",
+    "discontinuities"
    ],
    "sha256": "e4a06c113f68a4b5411740110fa16181773191aa406be07130dd236a64b59e3d",
    "rows": 307
@@ -1109,6 +1190,16 @@
      "detector": "views",
      "status": "ran_exact",
      "note": "The views pass runs on all 21 columns: 18 views, 2 multi-column ({Class_of_Orbit, Perigee_km, Period_minutes} and {Inclination_radians, longitude_radians_of_geo}) in the first run. The partition itself is compared against Lace in the head-to-head note, not pinned here - it is a greedy point estimate and may move as the pass improves."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "step_discontinuity",
+     "expect": "found",
+     "columns_any": [
+      "Launch_Mass_kg"
+     ],
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 15 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
     }
    ],
    "notes": [
@@ -1131,7 +1222,8 @@
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "views",
+    "discontinuities"
    ],
    "sha256": "239eb10a605df2e83101b2732ebee1459c56d96d498b0327be95b5ccc73c6d17",
    "rows": 1164

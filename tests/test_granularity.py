@@ -27,7 +27,7 @@ def _granularity_hits(report) -> list:
 
 
 def test_rounding_change_is_reported_at_the_seam():
-    report = onceover.profile(_series(round_from=1000))
+    report = onceover.profile(_series(round_from=1000), detectors=["granularity"])
     hits = _granularity_hits(report)
     assert len(hits) == 1
     metrics = hits[0]["evidence"][0]["metrics"]
@@ -38,9 +38,15 @@ def test_rounding_change_is_reported_at_the_seam():
 
 
 def test_single_regime_columns_do_not_fire():
-    assert _granularity_hits(onceover.profile(_series(round_from=None))) == []
-    assert _granularity_hits(onceover.profile(_series(round_from=0))) == []
+    assert _granularity_hits(
+        onceover.profile(_series(round_from=None), detectors=["granularity"])
+    ) == []
+    assert _granularity_hits(
+        onceover.profile(_series(round_from=0), detectors=["granularity"])
+    ) == []
 
 
 def test_short_columns_do_not_fire():
-    assert _granularity_hits(onceover.profile(_series(round_from=100, n=300))) == []
+    assert _granularity_hits(
+        onceover.profile(_series(round_from=100, n=300), detectors=["granularity"])
+    ) == []

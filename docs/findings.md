@@ -340,7 +340,14 @@ and evaluation participates in selection. It is not an independent confirmation
 sample and has no multiple-testing guarantee.
 
 Selection defaults to at most 100 findings, 20 conditional rules, two rules per
-outcome, and three predictive findings per target. Rule evaluation requires at
+outcome, and three predictive findings per target. Two per-detector caps bound
+the report's context cost: at most 25 selected statements attributed to
+`functional_dependencies` and 20 attributed to `gbm`, where a statement is
+attributed to the detector of its first evidence record. The 2026-11-02
+battery measured those two detectors producing about 41% of all report
+characters (550,443 and 467,098 of 2,479,798). A cap is never silent: when one
+binds, coverage gains a `selection` entry with status `capped` stating how
+many statements per detector were not selected. Rule evaluation requires at
 least 30 eligible rows, 30 antecedent matches and 20 joint matches; the conditional
 rate must exceed baseline and have at least 0.02 absolute improvement or lift
 1.5. Rust `SelectionPolicy` configures these limits. Python exposes
@@ -406,10 +413,19 @@ onceover.available_detectors()
 report = onceover.profile(df, detectors=["prism", "association_rules"], max_rules=10)
 ```
 
-Each registry entry lists its ID, produced categories, and resource dependencies.
-Required detectors may execute to supply shared target descriptions without
-contributing their own findings. An empty selection still returns column
-summaries and coverage but no detector findings.
+Each registry entry lists its ID, produced categories, resource dependencies,
+and activation. The default set has 22 of the 29 registered detectors. Six are
+opt-in and run only when named in `detectors`: `views` (experimental), and
+`dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
+2026-11-02 detector battery measured those five producing no findings in 40
+runs over 20 datasets, so a default run no longer spends time or report space
+on them; it records each as skipped in coverage, naming it opt-in (the
+benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
+`expectations` is in the default set but hint-gated: it engages only on
+declared hints. `target_shapes` is target-gated: it runs when a target is
+designated. Required detectors may execute to supply shared target
+descriptions without contributing their own findings. An empty selection
+still returns column summaries and coverage but no detector findings.
 
 The `discontinuities` detector (standard and deep budgets) scans for
 cross-sectional step jumps: for each numeric target column, step
@@ -433,10 +449,18 @@ strength, the axis step is reported unless the diagonal's |z| is at
 least 1.5x the axis step's. Evidence carries `kind`
 (`axis` or `diagonal`), `threshold` (original units for axis findings,
 standardized for diagonal, with `direction_deg`), `jump`, `se`, `z`,
-`t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`.
+`t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`. The
+2026-11-02 battery measured this detector as the runtime outlier (0.43 s
+median marginal cost, +83.0 s of excess across 20 datasets), with the
+cost concentrated in the diagonal scan on wide tables. At the standard
+budget the diagonal scan therefore considers the 6 strongest axes per
+target on wide tables — 15 column pairs instead of 45; the deep budget
+keeps the full 10-axis search. Tables with at most 20 numeric axes
+always scan every pair and are unaffected.
 
 The `drift` detector (standard and deep budgets) compares periods of a
-declared time axis. It engages only when the caller passes
+declared time axis. It is opt-in: select it explicitly with
+`detectors=["drift", ...]`. It engages only when the caller passes
 `hints={"time": "<column>"}`; without a declared axis it records coverage
 and emits nothing. The time column's rows are cut into contiguous periods
 of roughly equal row counts (at most 8 at standard, 12 at deep; a period

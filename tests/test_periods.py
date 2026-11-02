@@ -33,7 +33,7 @@ def period_findings(report):
 
 def test_sign_flip_across_years_is_reported():
     df = flip_frame()
-    report = onceover.profile(df, budget="standard")
+    report = onceover.profile(df, budget="standard", detectors=["period_associations"])
     hits = period_findings(report)
     assert len(hits) == 1
     f = hits[0]
@@ -65,7 +65,9 @@ def test_stable_relationship_is_not_flagged():
                     "y": 2.0 * i + (i % 3),
                 }
             )
-    report = onceover.profile(pl.DataFrame(rows), budget="standard")
+    report = onceover.profile(
+        pl.DataFrame(rows), budget="standard", detectors=["period_associations"]
+    )
     assert period_findings(report) == []
 
 
@@ -74,7 +76,9 @@ def test_integer_year_column_defines_periods():
     for year, sign in ((2019, 1.0), (2020, -1.0)):
         for i in range(200):
             rows.append({"year": year, "x": float(i), "y": sign * float(i)})
-    report = onceover.profile(pl.DataFrame(rows), budget="standard")
+    report = onceover.profile(
+        pl.DataFrame(rows), budget="standard", detectors=["period_associations"]
+    )
     hits = period_findings(report)
     assert len(hits) == 1
     definition = hits[0]["specification"]["definition"]
