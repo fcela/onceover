@@ -38,7 +38,13 @@ EXAMPLE = ROOT / "notebooks" / "onceover_example.py"
 
 
 def _profile_call_lines():
-    nb = json.loads(NOTEBOOK.read_text())
+    # Notebook JSON is UTF-8 by spec; pin the encoding rather than
+    # inheriting the locale default. On Windows that default is cp1252,
+    # which cannot decode the box-drawing characters in this notebook's
+    # stored table output (U+2510 encodes with byte 0x90, undefined in
+    # cp1252) — read_text() raised UnicodeDecodeError there and failed
+    # the windows-x86_64 wheel job's test step.
+    nb = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
     lines = []
     for cell in nb["cells"]:
         if cell["cell_type"] != "code":
