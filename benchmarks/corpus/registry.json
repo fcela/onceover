@@ -1338,6 +1338,103 @@
     "Suite-level tracking entry; members are admitted per-dataset under the license gate."
    ],
    "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "metro-interstate-traffic",
+   "pack": "anomaly",
+   "title": "Metro Interstate Traffic Volume: hourly I-94 demand with weather",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Metro Interstate Traffic Volume (id 492), DOI 10.24432/C5X60B",
+   "dir": "data/anomaly/metro-interstate-traffic",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "weather_main",
+     "note": "weather_description determines weather_main exactly (38 descriptions onto 11 mains, 0 violations in 48,204 rows). Verified independently in the 2026-11-03 case study."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "snow_1h",
+     "note": "(temp, weather_main) -> snow_1h holds on 99.91% of rows (44 violations). Violation count verified independently in the case study."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "holiday"
+     ],
+     "note": "holiday is the literal string 'None' on 99.87% of rows (12 labels); the concentration itself is expected."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "snow_1h"
+     ],
+     "note": "snow_1h is 0 on 99.87% of rows."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "rain_1h"
+     ],
+     "note": "rain_1h is 0 on 92.81% of rows."
+    },
+    {
+     "kind": "finding",
+     "category": "missingness",
+     "type": "sentinel_values",
+     "columns_any": [
+      "rain_1h"
+     ],
+     "note": "rain_1h = 0.3 on 121 rows reads as a probable sentinel; 97 of the 121 sit inside rows 13039-23670. Reproduced exactly in the case study."
+    },
+    {
+     "kind": "finding",
+     "category": "duplicates",
+     "type": "duplicate_rows",
+     "note": "17 exact duplicate rows in the first run (distinct from the duplicate timestamps below, which no finding reports)."
+    },
+    {
+     "kind": "max_findings",
+     "value": 40,
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Duplicate timestamps (40,575 distinct date_time values in 48,204 rows; 7,629 rows repeat an hour)",
+     "status": "missed",
+     "note": "No finding or coverage entry reports that the timestamp repeats; keys coverage reads '0 single-column unique, 0 composite'. Counts verified on the prepared file. This is the frame-model near-key case (target account, 2026-11-03)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Hourly grid gaps (11,976 of 52,551 hours in the span, 22.8%, have no row)",
+     "status": "missed",
+     "note": "No statement of span, frequency, or completeness; breaks and ordered_partitions decline because date_time loads as a string. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "temp = 0.0 K on ten rows (2014-01-31 to 2014-02-02)",
+     "status": "missed",
+     "note": "Physically impossible Kelvin readings, evidently a sensor artifact in the source; no finding isolates them (the value appears only as the column card's minimum)."
+    }
+   ],
+   "notes": [
+    "Real-world hourly demand stream alongside the NAB streams, bundled without published anomaly labels: expectations pin observed behaviour and three documented misses rather than label coverage.",
+    "Prepared byte-identical to the published CSV (decompression only): duplicate timestamps and grid gaps are kept as served. Profiled as an unseen case study before bundling (2026-11-03); the case study and the target account live in the project research notes."
+   ],
+   "sha256": "749c90d720360a4215bb15345526073c079ba4cc95e3fa558796d083f85fce9e",
+   "rows": 48204
   }
  ]
 }
