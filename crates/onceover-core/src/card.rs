@@ -507,6 +507,11 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         name: name.to_string(),
         dtype: dtype.to_string(),
         role,
+        // Semantic roles are assigned by the frame model in the
+        // pipeline, which has the cross-column view; the card pass
+        // itself leaves them unset.
+        semantic_role: None,
+        semantic_role_evidence: None,
         n,
         null_count,
         null_fraction,

@@ -618,6 +618,7 @@ fn minimal_hits(hits: Vec<MultitermHit>) -> Vec<MultitermHit> {
 pub fn multiterm_identities(
     table: &onceover_core::TypedTable,
     multiterm_cap: usize,
+    excluded_targets: &[usize],
 ) -> (Vec<Finding>, String) {
     if multiterm_cap == 0 {
         return (
@@ -659,7 +660,12 @@ pub fn multiterm_identities(
     let mut hits: Vec<MultitermHit> = Vec::new();
     let mut screened: usize = 0;
 
+    // Frame-role scaffolding is excluded as an identity target (the
+    // terms offered to explain other columns are unchanged).
     for &t in &numeric_cols {
+        if excluded_targets.contains(&t) {
+            continue;
+        }
         let others: Vec<usize> = numeric_cols.iter().copied().filter(|&c| c != t).collect();
 
         // Pairs.
@@ -871,16 +877,21 @@ pub fn multiterm_identities(
     (out, coverage)
 }
 
-/// Build identity findings from strong pairs.
+/// Build identity findings from strong pairs. A pair whose fitted
+/// target (the pair's second column) is frame-role scaffolding is
+/// skipped: an identity *on* a counter or timestamp part restates
+/// the frame's construction.
 pub fn identities(
     table: &onceover_core::TypedTable,
     deps: &[PairDep],
     pair_cap: usize,
+    excluded_targets: &[usize],
 ) -> (Vec<Finding>, String) {
     use rayon::prelude::*;
 
     let candidates: Vec<&PairDep> = deps
         .iter()
+        .filter(|d| !excluded_targets.contains(&d.b))
         .filter(|d| {
             d.pearson.map(|v| v.abs() >= 0.8).unwrap_or(false)
                 || d.xi_ab.map(|v| v >= 0.9).unwrap_or(false)
@@ -1143,11 +1154,42 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings
             .iter()
             .any(|f| f.specification.form == Some("sum".into())
                 && f.subject.target == Some("c".into())));
+    }
+
+    #[test]
+    fn excluded_target_gets_no_identity() {
+        // Same fixture as weak_summand_found_via_enumeration, with the
+        // sum's target (column index 2) excluded: no identity may be
+        // reported on it, while it remains usable as a term.
+        let n = 200;
+        let a: Vec<f64> = (0..n).map(|i| (i % 10) as f64 * 0.1).collect();
+        let b: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let c: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x + y).collect();
+        let table = TypedTable {
+            n,
+            names: vec!["a".into(), "b".into(), "c".into()],
+            dtypes: vec!["float64".into(); 3],
+            cols: vec![
+                onceover_core::TypedCol::F64 {
+                    vals: a.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                onceover_core::TypedCol::F64 {
+                    vals: c.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+            ],
+        };
+        let (findings, _) = multiterm_identities(&table, 2000, &[2]);
+        assert!(findings
+            .iter()
+            .all(|f| f.subject.target.as_deref() != Some("c")));
     }
 
     #[test]
@@ -1172,7 +1214,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, coverage) = multiterm_identities(&table, 0);
+        let (findings, coverage) = multiterm_identities(&table, 0, &[]);
         assert!(findings.is_empty());
         assert_eq!(
             coverage,
@@ -1202,8 +1244,8 @@ mod tests {
                 },
             ],
         };
-        let (f1, cov1) = multiterm_identities(&table, 1);
-        let (f2, _) = multiterm_identities(&table, 1);
+        let (f1, cov1) = multiterm_identities(&table, 1, &[]);
+        let (f2, _) = multiterm_identities(&table, 1, &[]);
         let claims1: Vec<String> = f1.iter().map(|f| f.claim.clone()).collect();
         let claims2: Vec<String> = f2.iter().map(|f| f.claim.clone()).collect();
         assert_eq!(claims1, claims2);
@@ -1232,7 +1274,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let c_findings: Vec<&Finding> = findings
             .iter()
             .filter(|f| f.subject.target == Some("c".into()))
@@ -1264,7 +1306,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings
             .iter()
             .any(|f| f.subject.target == Some("c".into()) && f.claim.contains("1 violation")));
@@ -1300,7 +1342,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings.is_empty(), "{findings:?}");
     }
 
@@ -1333,7 +1375,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let y_findings: Vec<&Finding> = findings
             .iter()
             .filter(|f| f.subject.target == Some("y".into()))
@@ -1372,7 +1414,7 @@ mod tests {
                 },
             ],
         };
-        let (findings, _) = multiterm_identities(&table, 2000);
+        let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let y_findings: Vec<&Finding> = findings
             .iter()
             .filter(|f| f.subject.target == Some("y".into()))

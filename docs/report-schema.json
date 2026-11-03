@@ -96,6 +96,20 @@
             "$ref": "#/$defs/valueCount"
           },
           "type": "array"
+        },
+        "semantic_role": {
+          "enum": [
+            "identifier",
+            "index",
+            "timestamp",
+            "timestamp_part",
+            "dimension",
+            "measure",
+            "text"
+          ]
+        },
+        "semantic_role_evidence": {
+          "type": "string"
         }
       },
       "required": [
@@ -772,6 +786,116 @@
         "share"
       ],
       "type": "object"
+    },
+    "frameInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameColumnRole"
+          }
+        },
+        "axis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/frameAxis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "roles"
+      ]
+    },
+    "frameColumnRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "enum": [
+                "identifier",
+                "index",
+                "timestamp",
+                "timestamp_part",
+                "dimension",
+                "measure",
+                "text"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "role",
+        "evidence"
+      ]
+    },
+    "frameAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "hint",
+            "native",
+            "string_parse",
+            "timestamp_parts",
+            "year_candidate"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "declared",
+            "inferred",
+            "low"
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "description",
+        "confidence"
+      ]
     }
   },
   "$id": "docs/report-schema.json",
@@ -807,10 +931,13 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.3"
+      "const": "0.4"
     },
     "selection": {
       "$ref": "#/$defs/selection"
+    },
+    "frame": {
+      "$ref": "#/$defs/frameInfo"
     }
   },
   "required": [
@@ -822,6 +949,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.3)",
+  "title": "onceover profile report (schema_version 0.4)",
   "type": "object"
 }

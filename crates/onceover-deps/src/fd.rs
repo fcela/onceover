@@ -445,7 +445,12 @@ fn fd_finding(
 }
 
 /// Discover FDs, AFDs and UCCs.
-pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOutcome {
+pub fn discover(
+    table: &TypedTable,
+    info: &[ColInfo],
+    cfg: &FdConfig,
+    excluded_targets: &[usize],
+) -> DepsOutcome {
     let mut out = DepsOutcome::default();
     let n = table.n;
     if n < 30 || info.is_empty() {
@@ -482,7 +487,15 @@ pub fn discover(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig) -> DepsOut
     // Broad screening considers every eligible determinant and target.
     // Per-target shortlists keep lattice search tractable on wide tables and
     // keep local bit masks below 64 slots, irrespective of input width.
-    let rhs_pool = eligible.clone();
+    // Frame-role scaffolding (index, identifier, timestamp, assembled
+    // parts) is excluded as a target: dependencies *on* a counter or a
+    // calendar part restate the frame's construction, not the data.
+    // Determinants are unchanged.
+    let rhs_pool: Vec<usize> = eligible
+        .iter()
+        .copied()
+        .filter(|i| !excluded_targets.contains(i))
+        .collect();
     let n_eligible_rhs = rhs_pool.len();
     let rows = subsample_rows(n, cfg.row_cap);
     let sampled = rows.len() < n;
@@ -956,6 +969,38 @@ mod tests {
     }
 
     #[test]
+    fn excluded_targets_get_no_dependencies() {
+        // counter -> part is exact; with the part excluded as a
+        // target, no finding or exact FD may name it as the RHS.
+        let mut counter: Vec<Option<i64>> = Vec::new();
+        let mut part: Vec<Option<i64>> = Vec::new();
+        let mut val: Vec<Option<f64>> = Vec::new();
+        for i in 0..200i64 {
+            counter.push(Some(i % 100));
+            part.push(Some((i % 100) % 12));
+            val.push(Some((i % 5) as f64));
+        }
+        let df = df! {
+            "counter" => counter,
+            "part" => part,
+            "val" => val,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let info = info_for(&table);
+        let part_idx = table.names.iter().position(|n| n == "part").unwrap();
+        let out = discover(&table, &info, &FdConfig::default(), &[part_idx]);
+        assert!(out.exact_fds.iter().all(|(_, rhs)| *rhs != part_idx));
+        assert!(out
+            .findings
+            .iter()
+            .all(|f| f.subject.target.as_deref() != Some("part")));
+        // Unexcluded, the same dependency is found.
+        let out = discover(&table, &info, &FdConfig::default(), &[]);
+        assert!(out.exact_fds.iter().any(|(_, rhs)| *rhs == part_idx));
+    }
+
+    #[test]
     fn finds_exact_and_approximate_fds() {
         // region -> region_name exact; region -> manager with 2 violations.
         let mut region: Vec<Option<i64>> = Vec::new();
@@ -980,7 +1025,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let info = info_for(&table);
-        let out = discover(&table, &info, &FdConfig::default());
+        let out = discover(&table, &info, &FdConfig::default(), &[]);
         let exact: Vec<_> = out
             .findings
             .iter()
@@ -1037,7 +1082,7 @@ mod tests {
         }
         .unwrap();
         let table = extract(&df);
-        let out = discover(&table, &info_for(&table), &FdConfig::default());
+        let out = discover(&table, &info_for(&table), &FdConfig::default(), &[]);
         assert!(
             out.exact_fds.contains(&(vec![1, 0], 2)) || out.exact_fds.contains(&(vec![0, 1], 2))
         );
@@ -1069,7 +1114,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let info = info_for(&table);
-        let out = discover(&table, &info, &FdConfig::default());
+        let out = discover(&table, &info, &FdConfig::default(), &[]);
         assert!(out.composite_uccs.iter().any(|u| u.len() == 2));
         assert!(out.single_unique.is_empty());
     }

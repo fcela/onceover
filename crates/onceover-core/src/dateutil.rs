@@ -75,6 +75,21 @@ pub fn iso_datetime(us: i64) -> String {
     format!("{} {:02}:{:02}:{:02}", iso_date(days), h, mi, s)
 }
 
+/// Convert (year, month, day) to days since 1970-01-01: the exact
+/// inverse of [`civil_from_days`] (Hinnant's days-from-civil). The
+/// result is meaningful for any input, but only round-trips for
+/// valid calendar dates — callers validating untrusted parts check
+/// the round-trip.
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = if m > 2 { m - 3 } else { m + 9 }; // [0, 11]
+    let doy = (153 * mp + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
+}
+
 /// Weekday of days-since-epoch: 0=Sunday .. 6=Saturday.
 pub fn weekday(days: i64) -> u32 {
     (days + 4).rem_euclid(7) as u32
@@ -96,6 +111,23 @@ mod tests {
         assert_eq!(iso_date(19_723), "2024-01-01");
         assert!(!is_weekend(4)); // 1970-01-01 Thu
         assert!(is_weekend(3)); // 1970-01-03 Sat
+    }
+
+    #[test]
+    fn days_from_civil_round_trips() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(2024, 1, 1), 19_723);
+        assert_eq!(
+            days_from_civil(2000, 2, 29),
+            days_from_civil(2000, 3, 1) - 1
+        );
+        for days in [-719_468, -1, 0, 1, 19_723, 20_000, 47_000] {
+            let (y, m, d) = civil_from_days(days);
+            assert_eq!(days_from_civil(y, m as i64, d as i64), days);
+        }
+        // An invalid date does not round-trip: Feb 30 lands on Mar 1/2.
+        let feb30 = days_from_civil(2023, 2, 30);
+        assert_ne!(civil_from_days(feb30), (2023, 2, 30));
     }
 
     #[test]

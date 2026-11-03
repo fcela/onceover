@@ -60,7 +60,11 @@ fn holdout(row: u32) -> bool {
     x.is_multiple_of(5)
 }
 
-pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<Finding>, String) {
+pub fn association_rules(
+    enc: &EncodedMatrix,
+    cfg: &AssociationConfig,
+    excluded_targets: &[usize],
+) -> (Vec<Finding>, String) {
     if cfg.min_support == 0
         || !cfg.min_lift.is_finite()
         || cfg.min_lift <= 0.0
@@ -167,6 +171,11 @@ pub fn association_rules(enc: &EncodedMatrix, cfg: &AssociationConfig) -> (Vec<F
                                 hold_b[bc],
                             )
                         };
+                        // Frame-role scaffolding is excluded as a
+                        // rule consequent; it may still antecede.
+                        if excluded_targets.contains(&enc.feat_cols[rhs]) {
+                            continue;
+                        }
                         let (tc, tl) = (
                             jl as f64 / lc as f64,
                             jl as f64 * tr_n as f64 / (lc as f64 * rc as f64),
@@ -314,11 +323,34 @@ mod tests {
             vec![a, b, numeric],
             vec!["a", "b", "numeric"],
         );
-        let (f, _) = association_rules(&enc, &cfg());
+        let (f, _) = association_rules(&enc, &cfg(), &[]);
         assert!(!f.is_empty());
         assert!(f
             .iter()
             .any(|x| x.subject.inputs == ["a"] && x.subject.target.as_deref() == Some("b")));
+    }
+    #[test]
+    fn excluded_column_is_never_a_rule_consequent() {
+        let n = 1500;
+        let a = (0..n)
+            .map(|i| if i % 2 == 0 { 0 } else { 1 })
+            .collect::<Vec<_>>();
+        let b = (0..n)
+            .map(|i| if i % 2 == 0 { 1 } else { 0 })
+            .collect::<Vec<_>>();
+        let enc = matrix(
+            n,
+            vec![true, true, false],
+            vec![a, b, vec![0; n]],
+            vec!["a", "b", "numeric"],
+        );
+        // Column 1 ("b") excluded as a target: the a -> b direction
+        // disappears; b remains usable as an antecedent for a.
+        let (f, _) = association_rules(&enc, &cfg(), &[1]);
+        assert!(f.iter().all(|x| x.subject.target.as_deref() != Some("b")));
+        assert!(f
+            .iter()
+            .any(|x| x.subject.inputs == ["b"] && x.subject.target.as_deref() == Some("a")));
     }
     #[test]
     fn missing_values_are_excluded_from_pair_denominator_and_order_is_deterministic() {
@@ -351,8 +383,8 @@ mod tests {
             vec![a, b, vec![0; n]],
             vec!["a", "b", "numeric"],
         );
-        let (x, _) = association_rules(&enc, &cfg());
-        let (y, _) = association_rules(&enc, &cfg());
+        let (x, _) = association_rules(&enc, &cfg(), &[]);
+        let (y, _) = association_rules(&enc, &cfg(), &[]);
         assert_eq!(x, y);
         assert!(!x.is_empty());
         assert!(
@@ -368,7 +400,7 @@ mod tests {
             vec![vec![0; 100]; 3],
             vec!["x", "y", "z"],
         );
-        assert!(association_rules(&enc, &cfg()).0.is_empty());
+        assert!(association_rules(&enc, &cfg(), &[]).0.is_empty());
     }
 
     #[test]
@@ -384,7 +416,7 @@ mod tests {
             vec![a, b, vec![0; n]],
             vec!["a", "b", "numeric"],
         );
-        assert!(association_rules(&enc, &cfg()).0.is_empty());
+        assert!(association_rules(&enc, &cfg(), &[]).0.is_empty());
     }
 
     #[test]
@@ -397,16 +429,16 @@ mod tests {
         );
         let mut bad = cfg();
         bad.min_support = 0;
-        let (findings, coverage) = association_rules(&enc, &bad);
+        let (findings, coverage) = association_rules(&enc, &bad, &[]);
         assert!(findings.is_empty());
         assert!(coverage.contains("invalid association config"));
 
         let mut bad = cfg();
         bad.min_lift = f64::NAN;
-        assert!(association_rules(&enc, &bad).0.is_empty());
+        assert!(association_rules(&enc, &bad, &[]).0.is_empty());
 
         let mut bad = cfg();
         bad.min_confidence = f64::NAN;
-        assert!(association_rules(&enc, &bad).0.is_empty());
+        assert!(association_rules(&enc, &bad, &[]).0.is_empty());
     }
 }

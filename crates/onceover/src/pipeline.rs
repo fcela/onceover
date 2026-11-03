@@ -21,6 +21,7 @@ use polars::prelude::DataFrame;
 use serde_json::json;
 
 use crate::config::{Budget, ProfileConfig, TierConfig};
+use crate::frame::{analyze_frame, build_temporal_df, CardFacts};
 
 /// Profile a DataFrame. Returns the complete, deterministic report.
 pub fn profile(df: &DataFrame, cfg: &ProfileConfig) -> ProfileReport {
@@ -168,6 +169,16 @@ fn profile_inner(
         })
         .map(|(i, _)| i)
         .collect();
+    let card_facts: Vec<CardFacts> = cards
+        .iter()
+        .map(|c| CardFacts {
+            card_role: c.card.role.clone(),
+            distinct: c.card.distinct,
+            null_count: c.card.null_count,
+            numeric_min: c.card.numeric_stats.as_ref().and_then(|s| s.min),
+            numeric_max: c.card.numeric_stats.as_ref().and_then(|s| s.max),
+        })
+        .collect();
     let mut columns: BTreeMap<String, ColumnCard> = BTreeMap::new();
     for c in cards {
         columns.insert(c.card.name.clone(), c.card.clone());
@@ -175,6 +186,55 @@ fn profile_inner(
             findings.extend(c.findings);
         }
     }
+
+    // ---------- frame model: semantic roles + assembled axis ----------
+    // Computed before any detector runs. Detectors consume it two
+    // ways: scaffolding columns (index / identifier / timestamp, and
+    // the parts of an assembled axis) are excluded as targets, and
+    // the temporal passes receive the assembled axis — materialized
+    // as a real date/datetime column in a cloned frame when the axis
+    // comes from strings or parts, so their existing axis selection
+    // finds it. Column indices are preserved by the materialization
+    // (the axis replaces its source column in place).
+    let frame = analyze_frame(&table, &card_facts, cfg.hints.as_ref());
+    for (i, name) in table.names.iter().enumerate() {
+        if let Some(card) = columns.get_mut(name) {
+            card.semantic_role = frame.roles[i].clone();
+            if frame.roles[i].is_some() {
+                card.semantic_role_evidence = Some(frame.info.roles[i].evidence.clone());
+            }
+        }
+    }
+    let temporal_df = build_temporal_df(df, &frame);
+    let temporal_table = temporal_df.as_ref().map(|d| extract(d));
+    let ttable: &TypedTable = temporal_table.as_ref().unwrap_or(&table);
+    let frame_time_hint: Option<&str> = frame.axis_name.as_deref();
+    let scaffold_excluded: Vec<usize> = (0..table.cols.len())
+        .filter(|&i| {
+            matches!(info[i].role.as_str(), "constant" | "all_null")
+                || matches!(
+                    frame.roles[i].as_deref(),
+                    Some("index") | Some("identifier") | Some("timestamp")
+                )
+                || (frame.axis_source.as_deref() == Some("timestamp_parts")
+                    && frame.axis_parts.contains(&table.names[i]))
+        })
+        .collect();
+    let exclusion_note = if scaffold_excluded.is_empty() {
+        String::new()
+    } else {
+        let parts: Vec<String> = scaffold_excluded
+            .iter()
+            .map(|&i| {
+                format!(
+                    "{} ({})",
+                    table.names[i],
+                    frame.roles[i].as_deref().unwrap_or(info[i].role.as_str())
+                )
+            })
+            .collect();
+        format!("; frame-role target exclusions: {}", parts.join(", "))
+    };
 
     // ---------- duplicate rows ----------
     if check_deadline(&mut coverage, "row_duplicates") {
@@ -317,13 +377,13 @@ fn profile_inner(
             if deadline_hit {
                 (DepsOutcome::default(), Vec::new())
             } else {
-                let d = discover(&table, &info, &tier.fd);
+                let d = discover(&table, &info, &tier.fd, &scaffold_excluded);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "functional_dependencies".into(),
-                    PassInfo::capped(d.coverage.clone()),
+                    PassInfo::capped(format!("{}{}", d.coverage, exclusion_note)),
                 );
                 let k = analyze_keys(&info, &d);
                 let mut d = d;
@@ -635,7 +695,7 @@ fn profile_inner(
             .as_ref()
             .map(|h| onceover_mines::expectations::declared_temporal_columns(&table, h))
             .unwrap_or_default();
-        let d = analyze_temporal(&table, &declared_skip);
+        let d = analyze_temporal(ttable, &declared_skip);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
@@ -699,7 +759,7 @@ fn profile_inner(
             );
 
             let screen = if enabled("gbm") {
-                screen_predictability(&table, &enc, &tier.screen)
+                screen_predictability(&table, &enc, &tier.screen, &scaffold_excluded)
             } else {
                 onceover_mines::ScreenOutcome {
                     findings: Vec::new(),
@@ -804,33 +864,17 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("regimes") {
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = c.name.to_ascii_lowercase();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        // Cardinality alone labels unique real-valued measurements
-                        // as identifiers in v0.1 cards. Keep those eligible here.
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
+                // Target exclusions come from the frame model:
+                // scaffolding columns are not regime targets.
+                let excluded: &[usize] = &scaffold_excluded;
                 let (f, cov) =
-                    profile_regimes(&table, &enc, &screen.results, &excluded, &tier.regimes);
+                    profile_regimes(&table, &enc, &screen.results, excluded, &tier.regimes);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "regimes".into(),
-                    PassInfo::sampled(cov),
+                    PassInfo::sampled(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
             }
@@ -853,27 +897,18 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("breaks") {
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = c.name.to_ascii_lowercase();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        // Cardinality alone labels unique real-valued measurements
-                        // as identifiers in v0.1 cards. Keep those eligible here.
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
-                let time_hint = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
-                let (f, cov) = profile_breaks(&table, &excluded, &tier.breaks, time_hint);
+                // The frame model's axis (assembled where needed) is
+                // the pass's time hint; scaffolding columns are
+                // excluded as series.
+                let excluded: &[usize] = &scaffold_excluded;
+                let time_hint =
+                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref()));
+                let (f, cov) = profile_breaks(ttable, excluded, &tier.breaks, time_hint);
+                let cov = if cov.ends_with("skipped") {
+                    cov
+                } else {
+                    format!("{cov}{exclusion_note}")
+                };
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
@@ -887,34 +922,23 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("ordered_partitions") {
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = c.name.to_ascii_lowercase();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
-                let time_hint = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
+                let excluded: &[usize] = &scaffold_excluded;
+                let time_hint =
+                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref()));
                 let out = onceover_mines::ordered_partitions(
-                    &table,
-                    &excluded,
+                    ttable,
+                    excluded,
                     &tier.partitions,
                     time_hint,
                 );
                 let info2 = match out.status {
                     onceover_mines::PartitionsStatus::NotApplicable(d) => PassInfo::na(d),
-                    onceover_mines::PartitionsStatus::Ran(d) => PassInfo::ran(d),
-                    onceover_mines::PartitionsStatus::Capped(d) => PassInfo::capped(d),
+                    onceover_mines::PartitionsStatus::Ran(d) => {
+                        PassInfo::ran(format!("{d}{exclusion_note}"))
+                    }
+                    onceover_mines::PartitionsStatus::Capped(d) => {
+                        PassInfo::capped(format!("{d}{exclusion_note}"))
+                    }
                 };
                 stamp_insert(
                     &mut coverage,
@@ -929,32 +953,14 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("surprises") {
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = c.name.to_ascii_lowercase();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        // Cardinality alone labels unique real-valued measurements
-                        // as identifiers in v0.1 cards. Keep those eligible here.
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
-                let (f, cov) = profile_surprises(&table, &excluded, &tier.surprises);
+                let excluded: &[usize] = &scaffold_excluded;
+                let (f, cov) = profile_surprises(&table, excluded, &tier.surprises);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "surprises".into(),
-                    PassInfo::ran(cov),
+                    PassInfo::ran(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
             }
@@ -962,35 +968,20 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("discontinuities") {
-                // Mirror the breaks pass's carve-out: cardinality alone
-                // labels unique real-valued measurements as identifiers;
-                // those are exactly the columns this screen exists for.
-                // Exclude identifier-role columns only when they are
-                // integer-typed or id-named.
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = table.names[i].as_str();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
-                let (f, cov) = profile_discontinuities(&table, &excluded, &tier.disc);
+                // The screen's targets and axes both come from its
+                // numeric pool, so the frame-role exclusions remove
+                // scaffolding from both roles at once. Semantic
+                // identifier never fires on float columns, so unique
+                // real-valued measurements stay eligible — the
+                // behaviour the old card-role carve-out protected.
+                let excluded: &[usize] = &scaffold_excluded;
+                let (f, cov) = profile_discontinuities(&table, excluded, &tier.disc);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "discontinuities".into(),
-                    PassInfo::ran(cov),
+                    PassInfo::ran(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
             }
@@ -998,34 +989,25 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("drift") {
-                // Same carve-out as the discontinuities pass: cardinality
-                // alone labels unique real-valued measurements as
-                // identifiers, and those are exactly the numeric targets
-                // this pass exists to score. Exclude identifier-role
-                // columns only when integer-typed or id-named.
-                let excluded: Vec<usize> = info
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, c)| {
-                        let name = table.names[i].as_str();
-                        let id_name =
-                            name == "id" || name.ends_with("_id") || name.ends_with("_key");
-                        (matches!(c.role.as_str(), "constant" | "all_null")
-                            || (c.role == "identifier"
-                                && (matches!(
-                                    table.cols[i],
-                                    onceover_core::TypedCol::I64 { .. }
-                                        | onceover_core::TypedCol::U64 { .. }
-                                ) || id_name)))
-                            .then_some(i)
-                    })
-                    .collect();
-                let time_column = cfg.hints.as_ref().and_then(|h| h.time.as_deref());
+                // The time column is the declared hint when given,
+                // else the frame model's assembled axis (the pass
+                // receives the materialized table, so an assembled
+                // axis name resolves). The encoding stays the
+                // original table's: the axis column is excluded from
+                // targets and predictors by index inside the pass,
+                // and every other column is unchanged by the
+                // materialization.
+                let excluded: &[usize] = &scaffold_excluded;
+                let time_column = cfg
+                    .hints
+                    .as_ref()
+                    .and_then(|h| h.time.as_deref())
+                    .or(frame_time_hint);
                 let (f, cov) = profile_drift(
-                    &table,
+                    ttable,
                     &enc,
                     time_column,
-                    &excluded,
+                    excluded,
                     &tier.screen,
                     &tier.drift,
                 );
@@ -1034,7 +1016,7 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "drift".into(),
-                    PassInfo::ran(cov),
+                    PassInfo::ran(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
             }
@@ -1048,13 +1030,13 @@ fn profile_inner(
                     PassInfo::skipped("deadline reached"),
                 );
             } else if enabled("association_rules") {
-                let (f, cov) = association_rules(&enc, &tier.association);
+                let (f, cov) = association_rules(&enc, &tier.association, &scaffold_excluded);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "association_rules".into(),
-                    PassInfo::sampled(cov),
+                    PassInfo::sampled(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
             }
@@ -1089,6 +1071,7 @@ fn profile_inner(
                     &table,
                     tier.dep_pair_cap,
                     tier.encode.row_cap,
+                    &scaffold_excluded,
                 );
                 let numeric = table
                     .cols
@@ -1121,19 +1104,20 @@ fn profile_inner(
                 findings.extend(dep_findings);
 
                 if tier.ident_pair_cap > 0 && enabled("identities") {
-                    let (id_f, id_cov) = identities(&table, &deps_pair, tier.ident_pair_cap);
+                    let (id_f, id_cov) =
+                        identities(&table, &deps_pair, tier.ident_pair_cap, &scaffold_excluded);
                     stamp_insert(
                         &mut coverage,
                         &mut last_mark,
                         timing_on,
                         "arithmetic_identities".into(),
-                        PassInfo::ran(id_cov),
+                        PassInfo::ran(format!("{id_cov}{exclusion_note}")),
                     );
                     findings.extend(id_f);
                 }
                 if enabled("period_associations") {
                     let out = onceover_mines::period_associations(
-                        &table,
+                        ttable,
                         &deps_pair,
                         tier.encode.row_cap,
                     );
@@ -1153,14 +1137,17 @@ fn profile_inner(
                 }
 
                 if tier.ident_multiterm_cap > 0 && enabled("identities") {
-                    let (mt_f, mt_cov) =
-                        onceover_mines::multiterm_identities(&table, tier.ident_multiterm_cap);
+                    let (mt_f, mt_cov) = onceover_mines::multiterm_identities(
+                        &table,
+                        tier.ident_multiterm_cap,
+                        &scaffold_excluded,
+                    );
                     stamp_insert(
                         &mut coverage,
                         &mut last_mark,
                         timing_on,
                         "multiterm_identities".into(),
-                        PassInfo::ran(mt_cov),
+                        PassInfo::ran(format!("{mt_cov}{exclusion_note}")),
                     );
                     findings.extend(mt_f);
                 }
@@ -1504,6 +1491,7 @@ fn profile_inner(
 
     ProfileReport {
         schema_version: SCHEMA_VERSION.into(),
+        frame: Some(frame.info),
         overview,
         columns,
         findings,
