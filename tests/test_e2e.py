@@ -134,4 +134,8 @@ def test_markdown_and_save(tmp_path):
     assert '# onceover report' in report.to_markdown()
     p=tmp_path/'report.json'
     report.save(str(p))
-    assert json.loads(p.read_text())['schema_version']=='0.4'
+    # The saved report is UTF-8 JSON; pin the encoding rather than
+    # inheriting the locale default (cp1252 on Windows), which decodes
+    # today's finding messages only by luck — the same latent pattern
+    # as the notebook contract test's read.
+    assert json.loads(p.read_text(encoding='utf-8'))['schema_version']=='0.4'
