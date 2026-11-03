@@ -65,6 +65,7 @@ project:
         - file: appendix/directions.ipynb
         - file: appendix/report_contract.ipynb
         - file: appendix/glossary.ipynb
+        - file: appendix/foundation_models.ipynb
 site:
   template: book-theme
   options:
