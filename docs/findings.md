@@ -572,4 +572,7 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `transient_excursion` | `changes/transient_excursion` |
 
 The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.4; CI
-executes it against the installed wheel.
+executes it against the installed wheel. The notebook profiles with the
+default set plus the opt-in `dates` detector (its calendar-completeness
+results report the date-gap finding); the selection is shared with the
+test suite as `notebook_detectors()` in `notebooks/onceover_example.py`.
