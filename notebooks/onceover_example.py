@@ -2,6 +2,8 @@
 
 The fixtures specify known relationships and independent controls. Formatting
 functions read returned evidence; profiling calls remain in the notebook.
+The detector selection for those calls is defined here
+(:func:`notebook_detectors`) so the test suite can pin it.
 """
 
 import datetime as dt
@@ -65,6 +67,26 @@ def orders_fixture(n=8000, seed=2024):
         "control": [rng.random() for _ in range(n)],
         "status_code": [rng.randrange(1, 6) for _ in range(n)],
     })
+
+
+def notebook_detectors():
+    """Detector selection for the example notebook's profiles.
+
+    The default set plus the opt-in ``dates`` pass. The notebook's
+    calendar-completeness results (the "Calendar completeness" row of
+    Table 1 and section 4) report the date-gap finding, which only the
+    ``dates`` detector produces; that detector has been opt-in since
+    the 2026-11-02 detector battery
+    (docs/benchmarks/2026-11-02-detector-opt-in.md), so a bare
+    ``profile()`` call no longer yields the finding. The selection is
+    derived from the registry, so it tracks the default set as that
+    set evolves; only ``dates`` is named explicitly.
+    """
+    import onceover
+
+    ids = [d["id"] for d in onceover.available_detectors()
+           if d["activation"] in ("default", "hint_gated")]
+    return ids + ["dates"]
 
 
 def find(report, category, *, subtype=None, form=None, column=None, inputs=None, target=None):
