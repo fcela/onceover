@@ -101,6 +101,10 @@ report = onceover.profile(df, hints={
                                     # weekly | monthly | day count
     "dimensions": ["region"],
     "measures": ["revenue"],
+    "roles": {"row_no": "index"},   # semantic role override:
+                                    # identifier | index | timestamp |
+                                    # timestamp_part | dimension |
+                                    # measure | text
 })
 ```
 

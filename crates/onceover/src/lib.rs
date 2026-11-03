@@ -8,6 +8,7 @@
 
 pub mod config;
 pub mod detectors;
+pub mod frame;
 pub mod pipeline;
 mod rules;
 pub use detectors::{builtin_detectors, Activation, Detector, DetectorContext, DetectorDescriptor};

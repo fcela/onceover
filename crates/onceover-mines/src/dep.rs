@@ -199,16 +199,24 @@ pub fn screen(
     table: &onceover_core::TypedTable,
     pair_cap: usize,
 ) -> (Vec<PairDep>, Vec<Finding>, String) {
-    screen_sampled(table, pair_cap, 20_000)
+    screen_sampled(table, pair_cap, 20_000, &[])
 }
 
 pub fn screen_sampled(
     table: &onceover_core::TypedTable,
     pair_cap: usize,
     row_cap: usize,
+    excluded: &[usize],
 ) -> (Vec<PairDep>, Vec<Finding>, String) {
     use rayon::prelude::*;
 
+    // Frame-role scaffolding stays in the pair universe (the pairs
+    // feed the identities and period passes, whose own targeting
+    // rules apply), but a dependence *finding* about a pair that
+    // involves a scaffolding column is a statement about the
+    // frame's construction, not about the data: findings are
+    // filtered at emission below, and the filter is recorded in
+    // coverage.
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| {
             matches!(
@@ -359,9 +367,11 @@ pub fn screen_sampled(
         })
         .collect();
 
-    // Findings: only strong pairs.
+    // Findings: only strong pairs, and never a pair involving a
+    // frame-role scaffolding column.
     let mut dep_findings: Vec<(usize, Finding)> = deps
         .iter()
+        .filter(|d| !excluded.contains(&d.a) && !excluded.contains(&d.b))
         .filter(|d| d.n >= 30)
         .filter(|d| {
             let s = d.max_signal();
@@ -384,7 +394,7 @@ pub fn screen_sampled(
     let findings: Vec<Finding> = dep_findings.into_iter().map(|(_, f)| f).collect();
 
     let n_links = deps.iter().filter(|d| d.max_signal() >= 0.98).count();
-    let coverage = format!(
+    let mut coverage = format!(
         "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong, {} redundancy links",
         pair_list.len(),
         total_pairs,
@@ -393,6 +403,23 @@ pub fn screen_sampled(
         findings.len(),
         n_links,
     );
+    let excluded_numeric: Vec<&str> = excluded
+        .iter()
+        .filter(|&&i| {
+            matches!(
+                table.cols[i],
+                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            )
+        })
+        .map(|&i| table.names[i].as_str())
+        .collect();
+    if !excluded_numeric.is_empty() {
+        coverage.push_str(&format!(
+            "; dependence findings involving {} column(s) withheld by frame role: {}",
+            excluded_numeric.len(),
+            excluded_numeric.join(", ")
+        ));
+    }
 
     (deps, findings, coverage)
 }

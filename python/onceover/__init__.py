@@ -11,7 +11,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.3"
+_SCHEMA_VERSION = "0.4"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -62,7 +62,10 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         ``order_by`` (columns rows are ordered by), ``no_gaps`` (columns
         expected to form a complete sequence), ``cadence`` (per-column:
         "daily", "business_day", "weekly", "monthly", or a day/step
-        count), ``dimensions`` and ``measures`` (panel structure).
+        count), ``dimensions`` and ``measures`` (panel structure), and
+        ``roles`` (per-column semantic role override for the frame
+        model: one of "identifier", "index", "timestamp",
+        "timestamp_part", "dimension", "measure", "text").
         Unknown columns or unusable types are reported in the pass
         coverage, not raised.
     target : str, optional

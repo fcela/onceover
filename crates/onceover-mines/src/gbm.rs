@@ -387,8 +387,21 @@ fn cat_target(col: &TypedCol, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Option
 
 // ---------- screening ----------
 
-pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> ScreenOutcome {
-    let eligible_targets: Vec<usize> = enc.feat_cols.clone();
+pub fn screen(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    cfg: &ScreenConfig,
+    excluded_targets: &[usize],
+) -> ScreenOutcome {
+    // Frame-role exclusions remove scaffolding columns (index,
+    // identifier, timestamp parts) from the target set; they remain
+    // in the predictor pool, and the exclusion is stated in coverage.
+    let eligible_targets: Vec<usize> = enc
+        .feat_cols
+        .iter()
+        .copied()
+        .filter(|i| !excluded_targets.contains(i))
+        .collect();
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
@@ -478,7 +491,7 @@ pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Sc
         ));
     }
 
-    let coverage = format!(
+    let mut coverage = format!(
         "{} target columns considered over {} encoded rows / {} features; {} predictable; predictors shortlisted from all features on training rows (max {} predictors / {} fitting rows per target)",
         eligible_targets.len(),
         enc.n,
@@ -492,6 +505,18 @@ pub fn screen(table: &TypedTable, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Sc
             .count(),
         cfg.max_predictors, cfg.max_model_rows,
     );
+    let excluded_names: Vec<&str> = excluded_targets
+        .iter()
+        .filter(|i| enc.feat_cols.contains(i))
+        .map(|&i| table.names[i].as_str())
+        .collect();
+    if !excluded_names.is_empty() {
+        coverage.push_str(&format!(
+            "; {} column(s) excluded as targets by frame role: {}",
+            excluded_names.len(),
+            excluded_names.join(", ")
+        ));
+    }
     ScreenOutcome {
         findings,
         results,
@@ -1075,7 +1100,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default());
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
         let y_res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert!(y_res.metric > 0.9, "r2 = {}", y_res.metric);
         assert!(out.findings.iter().any(|f| (f
@@ -1104,7 +1129,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default());
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
         let res = out.results.iter().find(|r| r.name == "class").unwrap();
         assert!(res.metric > 0.85, "acc = {}", res.metric);
         assert!(res.metric > res.baseline + 0.2);
@@ -1189,7 +1214,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default());
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
         assert!(out
             .results
             .iter()

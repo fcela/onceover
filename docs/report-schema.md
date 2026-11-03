@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.3"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.4"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -14,13 +14,44 @@ in `findings.md`.
 
 | key | content |
 |---|---|
-| `schema_version` | string, e.g. `"0.3"` |
+| `schema_version` | string, e.g. `"0.4"` |
 | `overview` | `n_rows`, `n_columns`, `headline` (one-line summary), `dtype_counts`, `role_counts`, `top_findings` (top five claim strings) |
-| `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
+| `frame` | the frame model, computed before the detectors run: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on) and, when a time axis was found, `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, or `year_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis and `source_column` when the axis is or was parsed from one column). Absent in reports built outside the pipeline |
+| `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
 | `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected` |
 | `coverage` | object keyed by pipeline pass name (which can differ from detector ID); each entry: `status` (`ran_exact`, `ran_sampled`, `capped`, `skipped`, `not_applicable`, `error`) and `detail` (free text — can be very long on wide tables; see the context-budget note in `docs/benchmarks/2026-10-28-context-digest.md`); on timing-enabled runs (`profile(..., timing=True)`) each entry also carries `elapsed_ms`, the wall time attributed to the pass — the interval since the previous entry was recorded (passes run sequentially; the first entry also carries extraction and the column cards) |
+
+## The frame model
+
+The `frame` section records two judgements the pipeline makes
+before any detector runs. The semantic roles say what each column
+is for: an `index` is a monotonic integer sequence (including a
+sequence that restarts per group), an `identifier` holds a
+distinct label per row, a `timestamp` is a native date or datetime
+column, a `timestamp_part` is a member of a set of integer columns
+(year and month at minimum) that jointly form a timestamp, a
+`dimension` is a low-cardinality grouping column, a `measure` is a
+numeric quantity, and `text` is free text. A `roles` hint
+(`hints={"roles": {"col": "measure"}}`) overrides the assignment
+for that column. The axis is the frame's time axis, chosen in
+precedence order: a `time` hint, a native date/datetime column, a
+string column whose values parse as timestamps, a timestamp
+assembled from part columns, or — recorded at low confidence — a
+single year-like integer column.
+
+Detectors consume the model in two ways. The temporal passes
+(breaks, ordered partitions, drift, period associations, dates)
+receive the axis, with string and part columns materialized as a
+real date or datetime column, so they run on frames whose time is
+stored as text or split into parts. And columns the model marks
+as scaffolding — `index`, `identifier`, and `timestamp` columns,
+plus the part columns of an assembled axis — are excluded as
+detector targets and as discontinuity axes; every exclusion is
+recorded in the affected pass's `coverage` entry. Column cards
+still describe every column, and nothing is removed from the
+report body.
 
 ## Finding object
 

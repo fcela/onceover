@@ -96,7 +96,10 @@ def test_identity_on_a_unique_key_is_demoted_and_tagged():
     keyed = pl.DataFrame(
         {
             "order_id": list(range(400)),
-            "double_id": [2 * i for i in range(400)],
+            # A float column: a unique integer column is frame-model
+            # scaffolding (an identifier) and is excluded as an
+            # identity target; a unique float measurement is not.
+            "double_id": [2.0 * i for i in range(400)],
             "amount": [float((i * 37) % 91) for i in range(400)],
         }
     )

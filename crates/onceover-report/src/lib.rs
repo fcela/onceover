@@ -19,7 +19,9 @@ pub use ledger::{
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
-pub const SCHEMA_VERSION: &str = "0.3";
+/// 0.4 adds the `frame` section (semantic column roles and the assembled
+/// time axis) and the per-card `semantic_role` fields; additive over 0.3.
+pub const SCHEMA_VERSION: &str = "0.4";
 
 /// Statistics for numeric columns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -105,6 +107,15 @@ pub struct ColumnCard {
     /// all_null | constant | boolean | categorical | continuous | identifier |
     /// free_text | date | datetime | other
     pub role: String,
+    /// The frame model's semantic role: identifier | index | timestamp |
+    /// timestamp_part | dimension | measure | text. Assigned before the
+    /// detectors run, with the evidence in `semantic_role_evidence`;
+    /// absent when no assignment was made (opaque, empty, or constant
+    /// columns). The dtype/cardinality `role` above is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_role_evidence: Option<String>,
     pub n: usize,
     pub null_count: usize,
     pub null_fraction: f64,
@@ -202,11 +213,66 @@ pub struct Overview {
     pub top_findings: Vec<String>,
 }
 
+/// One column's semantic role assignment in the frame model, with
+/// the evidence the assignment rests on. `role` is null when no
+/// assignment was made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameColumnRole {
+    pub column: String,
+    pub role: Option<String>,
+    pub evidence: String,
+}
+
+/// The frame's time axis as the temporal passes receive it: a native
+/// or declared column, a string column parsed as timestamps, a
+/// timestamp assembled from part columns, or a year-like integer
+/// column recorded as a low-confidence candidate.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameAxis {
+    /// The axis column's name. For an assembled axis this is the
+    /// part names joined with "/" (e.g. "year/month/day/hour"); the
+    /// materialized axis column carries this name in the table the
+    /// temporal passes receive.
+    pub name: String,
+    /// hint | native | string_parse | timestamp_parts | year_candidate
+    pub source: String,
+    /// One-line statement of what the axis is, for readers.
+    pub description: String,
+    /// declared | inferred | low
+    pub confidence: String,
+    /// The part columns, when the axis was assembled from parts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<String>,
+    /// The source column, when the axis is or was parsed from one
+    /// column of the profiled frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_column: Option<String>,
+}
+
+/// The frame model: what the dataset is, computed before the
+/// detectors run — semantic column roles with their evidence, and
+/// the assembled time axis. Detectors consume this model (scaffolding
+/// columns are excluded as targets; temporal passes receive the
+/// axis); the section itself makes no findings.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameInfo {
+    pub roles: Vec<FrameColumnRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<FrameAxis>,
+}
+
 /// The complete profile report.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProfileReport {
     pub schema_version: String,
     pub overview: Overview,
+    /// The frame model (roles + assembled axis); absent in reports
+    /// built outside the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<FrameInfo>,
     pub columns: BTreeMap<String, ColumnCard>,
     /// The ranked findings ledger. Order is the product.
     pub findings: Vec<Finding>,
@@ -252,6 +318,29 @@ impl ProfileReport {
             .collect();
         md.push_str(&format!("- **roles**: {}\n", roles.join(", ")));
         md.push('\n');
+
+        if let Some(frame) = &self.frame {
+            md.push_str("## Frame\n\n");
+            if let Some(axis) = &frame.axis {
+                md.push_str(&format!(
+                    "- **time axis**: {} ({}, confidence {})\n",
+                    axis.description, axis.source, axis.confidence
+                ));
+            }
+            let assigned: Vec<String> = frame
+                .roles
+                .iter()
+                .filter_map(|r| {
+                    r.role
+                        .as_ref()
+                        .map(|role| format!("{}: {}", r.column, role))
+                })
+                .collect();
+            if !assigned.is_empty() {
+                md.push_str(&format!("- **semantic roles**: {}\n", assigned.join(", ")));
+            }
+            md.push('\n');
+        }
 
         md.push_str("## Findings\n\n");
         if self.findings.is_empty() {

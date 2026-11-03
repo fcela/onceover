@@ -1,11 +1,15 @@
-# Finding schema 0.3
+# Finding schema 0.4
 
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.3 adds a `facets` object to every finding (see "Facets" below); the
-category and type values are unchanged from schema 0.2, which replaced
-schema 0.1. Schema 0.3 is used by package version 0.1.3.
+Schema 0.4 adds a `frame` section to the report and `semantic_role` /
+`semantic_role_evidence` fields to the column cards (see
+`report-schema.md`, "The frame model"); the finding object itself is
+unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
+finding (see "Facets" below); the category and type values are
+unchanged from schema 0.2, which replaced schema 0.1. Schema 0.4 is
+used by package version 0.1.3.
 
 ## Categories and statement definitions
 
@@ -567,5 +571,5 @@ extensions are reported in coverage rather than silently changing the taxonomy.
 | `variance_change` | `changes/variance_change` |
 | `transient_excursion` | `changes/transient_excursion` |
 
-The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.3; CI
+The scientific notebook `notebooks/onceover_analysis.ipynb` uses schema 0.4; CI
 executes it against the installed wheel.
