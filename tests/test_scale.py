@@ -25,10 +25,17 @@ def test_unique_and_dirty_keys_above_one_million_values(budget):
     dirty=select(report,"uniqueness",column="dirty_id")[0]
     assert metrics(dirty,contains="duplicates")["duplicates"]==1
     if budget=="standard":
-        identity=select(report,"dependencies",subtype="functional",form="affine")[0]
-        ev=metrics(identity,contains="matching_rows")
-        assert ev["n"]==n and ev["matching_rows"]==n-1 and ev["violations"]==1
-        assert "1 violation" in identity["claim"] and "100.00%" not in identity["claim"]
+        # Since PR #138 (issues #121/#122, fixing #110 at the role
+        # rule), index- and identifier-roled columns are excluded as
+        # dependency targets, so the near-identity between the two
+        # key columns is no longer reported as an affine dependency:
+        # it is carried by the uniqueness findings above and the
+        # grain statement. Pin the exclusion itself — if either
+        # column becomes an eligible target again, this fails.
+        assert not select(report,"dependencies",subtype="functional",form="affine")
+        detail=report.coverage["functional_dependencies"]["detail"]
+        assert "frame-role target exclusions" in detail
+        assert "id (index)" in detail and "dirty_id (identifier)" in detail
 
 
 @pytest.mark.parametrize("reverse", [False, True])
