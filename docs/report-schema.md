@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.4"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.5"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -14,9 +14,9 @@ in `findings.md`.
 
 | key | content |
 |---|---|
-| `schema_version` | string, e.g. `"0.4"` |
+| `schema_version` | string, e.g. `"0.5"` |
 | `overview` | `n_rows`, `n_columns`, `headline` (one-line summary), `dtype_counts`, `role_counts`, `top_findings` (top five claim strings) |
-| `frame` | the frame model, computed before the detectors run: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on) and, when a time axis was found, `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, or `year_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis and `source_column` when the axis is or was parsed from one column). Absent in reports built outside the pipeline |
+| `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, or `year_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
@@ -52,6 +52,58 @@ detector targets and as discontinuity axes; every exclusion is
 recorded in the affected pass's `coverage` entry. Column cards
 still describe every column, and nothing is removed from the
 report body.
+
+## The frame account
+
+Schema 0.5 adds the account: two records computed from the frame
+model once the dependency pass has run, stated in the digest
+before any finding. `grain` is the frame's key record:
+`key_columns` (empty when no exact key exists), `factorization`
+(one entry per component of a dimension × axis cross: `column`
+and its `distinct` count), `balanced` (every combination of the
+factors occurs exactly once — the product of the distinct counts
+equals the row count), `combinations` (that product), `near_key`
+(when no exact key exists and the axis nearly identifies rows:
+the candidate `columns`, its `distinct` count, and the
+`duplicate_rows` that repeat a value already present), and
+`statement`, the account sentence exactly as the digest states
+it. A factorized grain is also a finding (category `uniqueness`,
+detector `keys`, algorithm `grain_factorization`, facet scope
+`frame`); it replaces the bare key finding for the same columns.
+A near key is likewise a finding (category `duplicates`,
+algorithm `near_key_axis`, scope `frame`).
+
+`dominant` lists the frame's dominant structures, strongest first
+(at most two): `kind` (`time`, `cycle`, or `dimension`), `label`
+("shared time pattern", "annual cycle", "weekly cycle", "daily
+cycle", or the dimension column's name), `grouping` (what was
+grouped by), `shares` (the measures the grouping organises,
+strongest first: the share of each measure's variance that sits
+between groups), `peak` (the highest-mean group for the strongest
+measure: `label`, `measure`, `mean`), and `statement`. A grouping
+is stated only when it organises at least 0.10 of some measure's
+variance; up to two groupings are stated, strongest first.
+
+The selected findings are presented in report-band order:
+frame-scope and uniqueness findings (the account) first, then
+missingness, gaps, and duplicates (completeness), then
+dependencies, associations, and conditional rules (relations),
+then column roles, formats, ordering, and concentration, then
+changes and intervals (deviations); the selection score orders
+findings within a band. Selection itself is unchanged: the caps
+consume candidates in demotion-adjusted score order, so no
+finding is lost to the re-ranking — the band orders the report
+body, not the budget. Relation findings whose subject lies
+inside the calendar family (the axis's own columns, every column
+the axis determines exactly — measured directly, since the
+dependency pass never reports a dependency whose determinant is
+the timestamp — and the closure of those under the exact
+functional dependencies) are demoted in ranking, as is any
+finding whose whole subject is scaffolding columns — never
+removed — with the reason (`calendar_derivation` or
+`scaffolding_subject`) and a 0.6 factor recorded in their
+evidence metrics; the demotion counts are stated in the
+`frame_model` coverage entry.
 
 ## Finding object
 

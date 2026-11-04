@@ -1,5 +1,14 @@
 //! Consolidate equivalent statements, rank their evidence, and select a report.
 //!
+//! Ranking contract (frame-model step 2): selection consumes
+//! candidates in demotion-adjusted score order, exactly as before
+//! — no budget changes, and no finding a dataset earns is lost to
+//! the re-ranking. The selected findings are then presented in
+//! report-band order (see `report_band`: account, completeness,
+//! relations, column structure, deviations), score within a band.
+//! Demotions are the one ranking force that also reaches
+//! selection, through the lowered score.
+//!
 //! Scoring contract: a finding arrives with the producing detector's
 //! own interestingness. Selection replaces `interestingness` with the
 //! selection score — the mean of the detector's score and the ledger's
@@ -15,7 +24,7 @@
 //! evidence record. Nothing is dropped for triviality; demoted
 //! findings stay in the report, ranked lower, with the reasons on
 //! record.
-use crate::{Category, Evidence, EvidenceBasis, Finding, FindingGroup, Sampling};
+use crate::{Category, Evidence, EvidenceBasis, Finding, FindingGroup, Sampling, Scope};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -158,6 +167,35 @@ fn score(f: &Finding) -> f64 {
     (best * 10_000.0).round() / 10_000.0
 }
 
+/// The report band of a finding (frame-model step 2): the
+/// presentation order of the selected findings — account first
+/// (grain and key statements), then completeness and frame
+/// integrity, then relations, then column structure, then
+/// deviations; the selection score orders findings within a band.
+/// The bands are the digest order stated as a ranking of the
+/// report body: a deviation is presented after the account it
+/// deviates from, however strong its detector score, and a
+/// relation after the key and completeness statements that frame
+/// it. Selection is by score and does not consult the band.
+/// Frame-scope findings (the account's own statements: the
+/// factorized grain, the near key) are account content whatever
+/// their category.
+pub fn report_band(f: &Finding) -> u8 {
+    if f.facets.scope == Scope::Frame {
+        return 0;
+    }
+    match f.category {
+        Category::Uniqueness => 0,
+        Category::Missingness | Category::Gaps | Category::Duplicates => 1,
+        Category::Dependencies | Category::Associations | Category::ConditionalRules => 2,
+        Category::ColumnRoles
+        | Category::Formats
+        | Category::Ordering
+        | Category::Concentration => 3,
+        Category::Changes | Category::Intervals => 4,
+    }
+}
+
 pub fn finalize_ledger(findings: Vec<Finding>) -> Vec<Finding> {
     select_findings(findings, &SelectionPolicy::default())
 }
@@ -273,6 +311,14 @@ pub fn select_findings_counted(
         }
         f.interestingness = (combined * 10_000.0).round() / 10_000.0;
     }
+    // Selection order is the standing one: demotion-adjusted
+    // interestingness, canonical key as the tiebreak. The caps
+    // below consume candidates in this order, so the report keeps
+    // the findings it earns under the standing budgets — frame-
+    // model step 2 changes no budget and no selection outcome
+    // beyond the demotions themselves (a demoted finding's lower
+    // score can cost it a capped slot; that is the demotion
+    // mechanism working as designed).
     ranked.sort_by(|a, b| {
         b.interestingness
             .total_cmp(&a.interestingness)
@@ -331,6 +377,18 @@ pub fn select_findings_counted(
         f.id = format!("{}-{hash:016x}", f.category.as_str());
         selected.push(f);
     }
+    // Presentation order (frame-model step 2): the selected
+    // findings are returned in report-band order — account,
+    // completeness, relations, column structure, deviations — with
+    // interestingness inside the band, so a reader meets what the
+    // dataset is before what deviates in it. Selection above is
+    // unaffected by the band.
+    selected.sort_by(|a, b| {
+        report_band(a)
+            .cmp(&report_band(b))
+            .then(b.interestingness.total_cmp(&a.interestingness))
+            .then(a.canonical_key().cmp(&b.canonical_key()))
+    });
     (selected, capped)
 }
 

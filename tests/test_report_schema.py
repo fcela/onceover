@@ -26,7 +26,7 @@ def _validate(report):
 
 def test_schema_is_well_formed():
     jsonschema.Draft202012Validator.check_schema(SCHEMA)
-    assert SCHEMA["properties"]["schema_version"] == {"const": "0.4"}
+    assert SCHEMA["properties"]["schema_version"] == {"const": "0.5"}
     assert "type" in SCHEMA["$defs"]["finding"]["required"]
 
 

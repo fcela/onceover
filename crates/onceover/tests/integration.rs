@@ -135,7 +135,7 @@ fn recovers_planted_structure_with_semantic_categories() {
             ..Default::default()
         },
     );
-    assert_eq!(report.schema_version, "0.4");
+    assert_eq!(report.schema_version, "0.5");
     assert!(report
         .findings
         .iter()

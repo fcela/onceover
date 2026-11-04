@@ -588,3 +588,68 @@ fn default_policy_caps_the_two_char_heavy_detectors() {
     assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
     assert_eq!(policy.max_findings_per_detector.len(), 2);
 }
+
+#[test]
+fn selection_orders_by_report_band_before_score() {
+    // Frame-model step 2: the finding list is ordered account
+    // first, then relations, then deviations — a high-scoring
+    // change never outranks the account it deviates from.
+    let change = Finding::new(
+        Pattern::StepDiscontinuity,
+        BTreeMap::from([
+            ("column".into(), json!("value")),
+            ("time_column".into(), json!("date")),
+        ]),
+        "value steps at 2024-06".into(),
+        EvidenceBasis::Measured,
+        0.99,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("breaks", "step_discontinuity", "test"),
+    );
+    assert_eq!(change.category, Category::Changes);
+    let missing = Finding::new(
+        Pattern::MissingValues,
+        BTreeMap::from([("column".into(), json!("value"))]),
+        "value is missing in 12% of rows".into(),
+        EvidenceBasis::Measured,
+        0.4,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("column_profile", "missing_values", "test"),
+    );
+    let selected = finalize_ledger(vec![change, fd_finding(0.5), missing, key_finding(None)]);
+    let order: Vec<Category> = selected.iter().map(|f| f.category).collect();
+    assert_eq!(
+        order,
+        vec![
+            Category::Uniqueness,   // band 0: the account's key statement
+            Category::Missingness,  // band 1: completeness
+            Category::Dependencies, // band 2: relations
+            Category::Changes,      // band 4: deviations, despite the top detector score
+        ]
+    );
+}
+
+#[test]
+fn frame_scope_findings_lead_the_report() {
+    // A frame-scope statement (the account's grain / near-key
+    // findings) is band 0 whatever its category.
+    let mut near_key = Finding::new(
+        Pattern::Duplicates,
+        BTreeMap::from([("columns".into(), json!(["date_time"]))]),
+        "the time axis does not identify rows".into(),
+        EvidenceBasis::Measured,
+        0.75,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("keys", "near_key_axis", "test"),
+    );
+    let mut facets = near_key.facets;
+    facets.scope = Scope::Frame;
+    near_key = near_key.with_facets(facets);
+    assert_eq!(report_band(&near_key), 0);
+    let selected = finalize_ledger(vec![fd_finding(0.9), near_key]);
+    assert_eq!(selected[0].category, Category::Duplicates);
+    assert_eq!(selected[1].category, Category::Dependencies);
+}

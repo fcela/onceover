@@ -450,6 +450,212 @@ fn restart_run(table: &TypedTable, ci: usize, group_cols: &[usize]) -> Option<us
 }
 
 // ---------------------------------------------------------------------
+// axis span (step 2): the account states the axis's span and
+// frequency for every temporal frame, so both are measured here,
+// where the axis is assembled.
+// ---------------------------------------------------------------------
+
+pub(crate) const MICROS_PER_DAY: i64 = 86_400_000_000;
+
+/// Per-row ticks of a native temporal column, normalized to
+/// microseconds since the epoch.
+fn column_ticks_micros(col: &TypedCol) -> Option<Vec<Option<i64>>> {
+    match col {
+        TypedCol::Date { vals } => Some(
+            vals.iter()
+                .map(|v| v.map(|d| d as i64 * MICROS_PER_DAY))
+                .collect(),
+        ),
+        TypedCol::Datetime { vals, unit } => {
+            let per_second = dateutil::ticks_per_second(*unit);
+            Some(
+                vals.iter()
+                    .map(|v| v.map(|t| t * 1_000_000 / per_second))
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
+}
+
+/// The modal step between consecutive distinct axis values, as a
+/// reader-facing label. Calendar steps are recognized by their
+/// landing pattern (month starts, year starts), not by a fixed day
+/// count.
+fn modal_step_label(sorted_distinct_micros: &[i64]) -> Option<String> {
+    if sorted_distinct_micros.len() < 2 {
+        return None;
+    }
+    let mut counts: Vec<(i64, usize)> = Vec::new();
+    for w in sorted_distinct_micros.windows(2) {
+        let diff = w[1] - w[0];
+        match counts.iter_mut().find(|(d, _)| *d == diff) {
+            Some((_, c)) => *c += 1,
+            None => counts.push((diff, 1)),
+        }
+    }
+    // Modal difference: highest count, smallest difference on ties.
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let diff = counts.first()?.0;
+    if diff <= 0 {
+        return None;
+    }
+    let civil = |t: i64| dateutil::civil_from_days(t.div_euclid(MICROS_PER_DAY));
+    let days = diff.div_euclid(MICROS_PER_DAY);
+    if diff % MICROS_PER_DAY == 0
+        && (28..=31).contains(&days)
+        && sorted_distinct_micros.iter().all(|&t| civil(t).2 == 1)
+    {
+        return Some("1 month".into());
+    }
+    if diff % MICROS_PER_DAY == 0
+        && (365..=366).contains(&days)
+        && sorted_distinct_micros
+            .iter()
+            .all(|&t| civil(t).1 == 1 && civil(t).2 == 1)
+    {
+        return Some("1 year".into());
+    }
+    if diff % MICROS_PER_DAY == 0 {
+        return Some(match days {
+            1 => "1 day".to_string(),
+            7 => "1 week".to_string(),
+            d => format!("{d} days"),
+        });
+    }
+    if diff % 3_600_000_000 == 0 {
+        let h = diff / 3_600_000_000;
+        return Some(if h == 1 {
+            "1 hour".to_string()
+        } else {
+            format!("{h} hours")
+        });
+    }
+    if diff % 60_000_000 == 0 {
+        let m = diff / 60_000_000;
+        return Some(if m == 1 {
+            "1 minute".to_string()
+        } else {
+            format!("{m} minutes")
+        });
+    }
+    let secs = diff / 1_000_000;
+    if secs >= 1 {
+        return Some(if secs == 1 {
+            "1 second".to_string()
+        } else {
+            format!("{secs} seconds")
+        });
+    }
+    Some("less than 1 second".into())
+}
+
+/// Measure the axis span from per-row microsecond ticks: the ISO
+/// endpoints (dates when the axis is day-granular, datetimes when
+/// any value carries a time of day), the distinct count, and the
+/// modal step label.
+fn span_from_ticks(
+    ticks: &[Option<i64>],
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<usize>,
+    Option<String>,
+) {
+    let mut vals: Vec<i64> = ticks.iter().flatten().copied().collect();
+    if vals.is_empty() {
+        return (None, None, None, None);
+    }
+    vals.sort_unstable();
+    vals.dedup();
+    let sub_day = vals.iter().any(|t| t.rem_euclid(MICROS_PER_DAY) != 0);
+    let fmt = |t: i64| {
+        if sub_day {
+            dateutil::iso_datetime(t)
+        } else {
+            dateutil::iso_date(t.div_euclid(MICROS_PER_DAY))
+        }
+    };
+    let step = modal_step_label(&vals);
+    (
+        Some(fmt(vals[0])),
+        Some(fmt(vals[vals.len() - 1])),
+        Some(vals.len()),
+        step,
+    )
+}
+
+/// The axis's per-row ticks in microseconds, from whichever
+/// representation the axis carries: materialized ticks (strings /
+/// parts) or a native temporal column. None when the axis has no
+/// tick representation (a year candidate, an integer hint column).
+pub(crate) fn axis_ticks_micros(
+    table: &TypedTable,
+    frame: &FrameModel,
+) -> Option<Vec<Option<i64>>> {
+    if let Some(ticks) = &frame.axis_ticks {
+        return Some(if frame.axis_is_datetime {
+            ticks.clone()
+        } else {
+            ticks
+                .iter()
+                .map(|t| t.map(|d| d * MICROS_PER_DAY))
+                .collect()
+        });
+    }
+    let src = frame.info.axis.as_ref()?.source_column.as_deref()?;
+    let i = table.names.iter().position(|n| n == src)?;
+    column_ticks_micros(&table.cols[i])
+}
+
+/// The span of the assembled axis, from whichever representation
+/// the axis carries: materialized ticks (strings / parts), a native
+/// temporal column, or the year candidate's card facts.
+fn measure_axis_span(
+    table: &TypedTable,
+    facts: &[CardFacts],
+    axis: &FrameAxis,
+    axis_ticks: &Option<Vec<Option<i64>>>,
+    axis_is_datetime: bool,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<usize>,
+    Option<String>,
+) {
+    if let Some(ticks) = axis_ticks {
+        let micros: Vec<Option<i64>> = if axis_is_datetime {
+            ticks.clone()
+        } else {
+            ticks
+                .iter()
+                .map(|t| t.map(|d| d * MICROS_PER_DAY))
+                .collect()
+        };
+        return span_from_ticks(&micros);
+    }
+    let Some(src) = axis.source_column.as_deref() else {
+        return (None, None, None, None);
+    };
+    let Some(i) = table.names.iter().position(|n| n == src) else {
+        return (None, None, None, None);
+    };
+    if let Some(ticks) = column_ticks_micros(&table.cols[i]) {
+        return span_from_ticks(&ticks);
+    }
+    if axis.source == "year_candidate" {
+        let fact = &facts[i];
+        return (
+            fact.numeric_min.map(|v| format!("{}", v as i64)),
+            fact.numeric_max.map(|v| format!("{}", v as i64)),
+            Some(fact.distinct),
+            None,
+        );
+    }
+    (None, None, None, None)
+}
+
+// ---------------------------------------------------------------------
 // the model
 // ---------------------------------------------------------------------
 
@@ -609,6 +815,10 @@ pub fn analyze_frame(
                         confidence: "declared".into(),
                         parts: Vec::new(),
                         source_column: Some(hint.clone()),
+                        min: None,
+                        max: None,
+                        distinct_values: None,
+                        step: None,
                     });
                     axis_name = Some(hint.clone());
                     axis_source = Some("hint".into());
@@ -624,6 +834,10 @@ pub fn analyze_frame(
                             confidence: "declared".into(),
                             parts: Vec::new(),
                             source_column: Some(hint.clone()),
+                            min: None,
+                            max: None,
+                            distinct_values: None,
+                            step: None,
                         });
                         axis_name = Some(hint.clone());
                         axis_source = Some("hint".into());
@@ -651,6 +865,10 @@ pub fn analyze_frame(
                 confidence: "inferred".into(),
                 parts: Vec::new(),
                 source_column: Some(name.clone()),
+                min: None,
+                max: None,
+                distinct_values: None,
+                step: None,
             });
             axis_name = Some(name);
             axis_source = Some("native".into());
@@ -671,6 +889,10 @@ pub fn analyze_frame(
                     confidence: "inferred".into(),
                     parts: Vec::new(),
                     source_column: Some(name.clone()),
+                    min: None,
+                    max: None,
+                    distinct_values: None,
+                    step: None,
                 });
                 axis_name = Some(name);
                 axis_source = Some("string_parse".into());
@@ -699,6 +921,10 @@ pub fn analyze_frame(
                 confidence: "inferred".into(),
                 parts: names.clone(),
                 source_column: None,
+                min: None,
+                max: None,
+                distinct_values: None,
+                step: None,
             });
             axis_name = Some(joined);
             axis_source = Some("timestamp_parts".into());
@@ -732,6 +958,10 @@ pub fn analyze_frame(
                     confidence: "low".into(),
                     parts: Vec::new(),
                     source_column: Some(name.clone()),
+                    min: None,
+                    max: None,
+                    distinct_values: None,
+                    step: None,
                 });
                 axis_name = Some(name);
                 axis_source = Some("year_candidate".into());
@@ -757,6 +987,17 @@ pub fn analyze_frame(
         }
     }
 
+    // Step 2: the account states the axis's span and frequency for
+    // every temporal frame; measure them now that the axis is final.
+    if let Some(ax) = axis.as_mut() {
+        let (min, max, distinct, step) =
+            measure_axis_span(table, facts, ax, &axis_ticks, axis_is_datetime);
+        ax.min = min;
+        ax.max = max;
+        ax.distinct_values = distinct;
+        ax.step = step;
+    }
+
     let info = FrameInfo {
         roles: (0..n_cols)
             .map(|i| FrameColumnRole {
@@ -766,6 +1007,11 @@ pub fn analyze_frame(
             })
             .collect(),
         axis,
+        // The grain and dominant structure are computed by the
+        // account step in the pipeline, which also has the
+        // dependency outcome; they are filled in there.
+        grain: None,
+        dominant: Vec::new(),
     };
     FrameModel {
         info,
