@@ -14,14 +14,19 @@ mod ledger;
 pub use finding::*;
 pub use hints::{Cadence, ProfileHints};
 pub use ledger::{
-    finalize_ledger, group_findings, select_findings, select_findings_counted, SelectionPolicy,
-    SelectionSummary,
+    finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
+    SelectionPolicy, SelectionSummary,
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
-/// 0.4 adds the `frame` section (semantic column roles and the assembled
-/// time axis) and the per-card `semantic_role` fields; additive over 0.3.
-pub const SCHEMA_VERSION: &str = "0.4";
+/// 0.5 adds the frame account: axis span fields on `frame.axis`, the
+/// `frame.grain` record (the frame's key, factorized when the frame is
+/// a balanced cross of its dimensions and axis) and `frame.dominant`
+/// (the grouping that organises the largest share of variance);
+/// additive over 0.4. 0.4 adds the `frame` section (semantic column
+/// roles and the assembled time axis) and the per-card
+/// `semantic_role` fields; additive over 0.3.
+pub const SCHEMA_VERSION: &str = "0.5";
 
 /// Statistics for numeric columns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -249,19 +254,146 @@ pub struct FrameAxis {
     /// column of the profiled frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_column: Option<String>,
+    /// The axis's measured span: the smallest axis value, ISO format
+    /// (date, or datetime when the axis carries a time of day).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<String>,
+    /// The largest axis value, same format as `min`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<String>,
+    /// Distinct axis values present in the frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distinct_values: Option<usize>,
+    /// The modal step between consecutive distinct axis values, as a
+    /// reader-facing label ("1 hour", "1 day", "1 month"). Absent
+    /// when the axis has fewer than two distinct values or its steps
+    /// have no modal value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+}
+
+/// One component of a factorized grain: a dimension column or the
+/// time axis, with the number of distinct values it contributes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameGrainFactor {
+    /// The dimension column's name, or the axis's name when the
+    /// component is the time axis.
+    pub column: String,
+    pub distinct: usize,
+}
+
+/// A near key: a candidate the account tested that almost identifies
+/// rows. Recorded when no exact key exists, so the report states how
+/// close the frame came instead of staying silent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameNearKey {
+    /// The candidate's columns (the axis's source columns).
+    pub columns: Vec<String>,
+    /// Distinct values of the candidate present in the frame.
+    pub distinct: usize,
+    /// Rows whose candidate value already appeared on an earlier row.
+    pub duplicate_rows: usize,
+}
+
+/// The frame's grain: the combination of columns whose values
+/// identify a row, stated as account content. When the frame is a
+/// cross of dimension columns and the time axis, the grain carries
+/// the factorization (the distinct count of every component) and
+/// whether every combination occurs (`balanced`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameGrain {
+    /// The exact key's columns; empty when no exact key was found.
+    pub key_columns: Vec<String>,
+    /// The key's components with their distinct counts, when the
+    /// key crosses dimension columns with the time axis.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub factorization: Vec<FrameGrainFactor>,
+    /// Every combination of the factors occurs exactly once: the
+    /// product of the factor distinct counts equals the row count.
+    #[serde(default)]
+    pub balanced: bool,
+    /// The product of the factor distinct counts, when factorized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combinations: Option<usize>,
+    /// The closest candidate, when no exact key exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub near_key: Option<FrameNearKey>,
+    /// The account sentence, exactly as the digest and the grain
+    /// finding state it.
+    pub statement: String,
+}
+
+/// One measure's share of variance organised by a dominant grouping:
+/// the between-group sum of squares over the total.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameStructureShare {
+    pub measure: String,
+    pub share: f64,
+}
+
+/// The peak of a dominant grouping for its strongest measure: the
+/// group whose mean is highest.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameStructurePeak {
+    /// The peak group's label ("2020-04" for a monthly time pattern,
+    /// "April" for an annual cycle, "17:00" for a daily cycle, the
+    /// level itself for a dimension).
+    pub label: String,
+    pub measure: String,
+    pub mean: f64,
+}
+
+/// One dominant structure: a grouping — the time axis itself, a
+/// calendar cycle of the axis, or a dimension column — that organises
+/// a large share of the variance of the frame's measures.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameDominant {
+    /// time | cycle | dimension
+    pub kind: String,
+    /// Reader-facing name: "shared time pattern", "annual cycle",
+    /// "daily cycle", or the dimension column's name.
+    pub label: String,
+    /// The grouping measured: "axis value", "month of year",
+    /// "hour of day", "day of week", or the dimension column's name.
+    pub grouping: String,
+    /// The measures the grouping organises, strongest first (at
+    /// most three; each share is the between-group variance share).
+    pub shares: Vec<FrameStructureShare>,
+    /// The grouping's peak for its strongest measure, when a peak
+    /// is meaningful (time, cycle, and dimension groupings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak: Option<FrameStructurePeak>,
+    /// The account sentence, exactly as the digest states it.
+    pub statement: String,
 }
 
 /// The frame model: what the dataset is, computed before the
 /// detectors run — semantic column roles with their evidence, and
-/// the assembled time axis. Detectors consume this model (scaffolding
-/// columns are excluded as targets; temporal passes receive the
-/// axis); the section itself makes no findings.
+/// the assembled time axis — plus the account computed from it
+/// (step 2): the grain and the dominant structure, measured over
+/// the frame once the dependency pass has run. Detectors consume
+/// this model (scaffolding columns are excluded as targets; temporal
+/// passes receive the axis); the account leads the digest.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct FrameInfo {
     pub roles: Vec<FrameColumnRole>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis: Option<FrameAxis>,
+    /// The grain statement; absent when no key, near key, or
+    /// factorization could be measured (the account says so only
+    /// when a candidate was tested — see `FrameGrain::statement`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grain: Option<FrameGrain>,
+    /// The dominant structures, strongest first (at most two).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dominant: Vec<FrameDominant>,
 }
 
 /// The complete profile report.
@@ -325,6 +457,26 @@ impl ProfileReport {
                 md.push_str(&format!(
                     "- **time axis**: {} ({}, confidence {})\n",
                     axis.description, axis.source, axis.confidence
+                ));
+                if let (Some(min), Some(max)) = (&axis.min, &axis.max) {
+                    let mut span = format!("- **axis span**: {min} to {max}");
+                    if let Some(step) = &axis.step {
+                        span.push_str(&format!(", in {step} steps"));
+                    }
+                    if let Some(d) = axis.distinct_values {
+                        span.push_str(&format!(" ({d} distinct values)"));
+                    }
+                    span.push('\n');
+                    md.push_str(&span);
+                }
+            }
+            if let Some(grain) = &frame.grain {
+                md.push_str(&format!("- **grain**: {}\n", grain.statement));
+            }
+            for structure in &frame.dominant {
+                md.push_str(&format!(
+                    "- **dominant structure**: {}\n",
+                    structure.statement
                 ));
             }
             let assigned: Vec<String> = frame

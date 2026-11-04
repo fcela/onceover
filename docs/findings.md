@@ -201,7 +201,16 @@ substantive ones:
   which holds because the levels occupy disjoint value ranges;
   the same reason covers the layout's predictive restatements —
   the attribute predicted from the pooled measure, or the pooled
-  measure predicted with the attribute among its inputs).
+  measure predicted with the attribute among its inputs). The
+  frame model declares two more, applied to findings ahead of the
+  ledger (frame-model step 2): `calendar_derivation` (a relation
+  finding — dependency, association, or conditional rule — whose
+  subject lies inside the calendar family: the time axis's own
+  columns, every column the axis determines exactly, and their
+  closure under the exact functional dependencies) and
+  `scaffolding_subject` (a finding whose whole subject is
+  scaffolding columns — index, identifier, timestamp, or
+  timestamp-part roles).
 
 Demotion is the only triviality action: findings are never dropped
 for being trivial, only ranked lower, with the reason recorded in

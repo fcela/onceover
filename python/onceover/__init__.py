@@ -11,7 +11,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.4"
+_SCHEMA_VERSION = "0.5"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -95,6 +95,51 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
                                          max_findings=max_findings, max_rules=max_rules,
                                          hints=_json.dumps(hints) if hints is not None else None,
                                          target=target, timing=timing))
+
+
+def _report_band(finding: dict) -> int:
+    """The report band of a finding (frame-model step 2), mirroring
+    the Rust ledger's ordering: 0 account (frame-scope statements
+    and keys), 1 completeness and frame integrity, 2 relations,
+    3 column structure, 4 deviations."""
+    if (finding.get("facets") or {}).get("scope") == "frame":
+        return 0
+    cat = finding.get("category")
+    if cat == "uniqueness":
+        return 0
+    if cat in ("missingness", "gaps", "duplicates"):
+        return 1
+    if cat in ("dependencies", "associations", "conditional_rules"):
+        return 2
+    if cat in ("column_roles", "formats", "ordering", "concentration"):
+        return 3
+    return 4
+
+
+def _account_lines(frame: dict) -> list[str]:
+    """The digest's account block, from the report's `frame`
+    section: the grain statement, the time axis with its measured
+    span and step, and each dominant structure's statement. Empty
+    when the frame model computed no account (a frame with no axis,
+    no key candidate, and no organising grouping)."""
+    lines: list[str] = []
+    grain = frame.get("grain") or {}
+    if grain.get("statement"):
+        lines.append("account: " + grain["statement"])
+    axis = frame.get("axis") or {}
+    if axis:
+        line = "account: time axis — " + axis.get("description", axis.get("name", ""))
+        if axis.get("min") and axis.get("max"):
+            line += f", {axis['min']} to {axis['max']}"
+            if axis.get("step"):
+                line += f", in {axis['step']} steps"
+            if axis.get("distinct_values"):
+                line += f" ({axis['distinct_values']} distinct values)"
+        lines.append(line)
+    for structure in frame.get("dominant") or []:
+        if structure.get("statement"):
+            lines.append("account: " + structure["statement"])
+    return lines
 
 
 def available_detectors():
@@ -441,18 +486,24 @@ class ProfileReport:
     def to_digest(self, budget_chars: int = 4000) -> str:
         """A context-budgeted plain-text digest of this report.
 
-        Header (shape, schema, headline, coverage exceptions,
-        finding counts by category), then one line per rollup group
-        — findings sharing category, type, form, and target — with
-        the group's highest-interestingness claim; groups with more
-        than one member also list up to three exemplar finding ids,
-        expandable with `.finding(id)`. Groups are
-        ordered by that claim's interestingness. When the rolled
-        lines exceed `budget_chars`, the digest keeps as many as
-        fit and ends with a line stating how many groups were
-        omitted; it never exceeds the budget (budgets under ~200
-        characters return a truncated header). The full record
-        stays in `.data` / `to_json()`.
+        The digest leads with the account (frame-model step 2):
+        the grain statement, the time axis with its span and step,
+        and the dominant structure, straight from the report's
+        `frame` section. Then the header (shape, schema, headline,
+        coverage exceptions, finding counts by category), then one
+        line per rollup group — findings sharing category, type,
+        form, and target — with the group's
+        highest-interestingness claim; groups with more than one
+        member also list up to three exemplar finding ids,
+        expandable with `.finding(id)`. Groups are ordered by
+        report band (account, completeness, relations, column
+        structure, deviations), then by that claim's
+        interestingness. When the rolled lines exceed
+        `budget_chars`, the digest keeps as many as fit and ends
+        with a line stating how many groups were omitted; it never
+        exceeds the budget (budgets under ~200 characters return a
+        truncated header). The full record stays in `.data` /
+        `to_json()`.
         """
         data = self.data
         findings = data["findings"]
@@ -463,6 +514,8 @@ class ProfileReport:
             f"{len(findings)} findings, schema "
             f"{data.get('schema_version', '?')}"
         ]
+        account_lines = _account_lines(data.get("frame") or {})
+        lines.extend(account_lines)
         if overview.get("headline"):
             lines.append("headline: " + overview["headline"])
         cov = data.get("coverage", {})
@@ -508,9 +561,16 @@ class ProfileReport:
             if len(fs_sorted) > 1:
                 exemplars = ", ".join(f["id"] for f in fs_sorted[:3])
                 line += f" [exemplars: {exemplars}]"
-            rolled.append((fs_sorted[0].get("interestingness") or 0, line))
-        rolled.sort(key=lambda kv: -kv[0])
-        body_lines = [line for _, line in rolled]
+            head_finding = fs_sorted[0]
+            rolled.append(
+                (
+                    _report_band(head_finding),
+                    -(head_finding.get("interestingness") or 0),
+                    line,
+                )
+            )
+        rolled.sort(key=lambda kv: (kv[0], kv[1], kv[2]))
+        body_lines = [line for _, _, line in rolled]
 
         def omission(dropped: int) -> str:
             return (
@@ -532,10 +592,22 @@ class ProfileReport:
         result = header + "\n" + "\n".join(kept + [omission(dropped)]) + "\n"
         if len(result) <= budget_chars:
             return result
-        # Degrade the header itself: drop the category-count line,
-        # then the coverage line, keeping the profile line.
-        for keep in (2, 1):
-            short_header = "\n".join(lines[:keep]) + "\n"
+        # Degrade the header itself: drop the category-count and
+        # coverage lines, then the headline, keeping the profile
+        # line and the account block — the account is the summary
+        # of record, so it is the last header content to go. If the
+        # whole account still does not fit alongside the omission
+        # line, keep the grain statement (the account's first line)
+        # with the profile line; the omission line itself is part
+        # of the contract and is dropped only when the budget
+        # cannot hold even it next to the profile line.
+        core = 1 + len(account_lines)
+        ladder = [lines[: core + 1], lines[:core]]
+        if account_lines:
+            ladder.append([lines[0], account_lines[0]])
+        ladder.append([lines[0]])
+        for cand in ladder:
+            short_header = "\n".join(cand) + "\n"
             result = short_header + omission(len(body_lines)) + "\n"
             if len(result) <= budget_chars:
                 return result

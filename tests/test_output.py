@@ -45,8 +45,13 @@ def test_findings_frame_matches_the_ledger():
         "basis",
     ):
         assert col in frame.columns
-    scores = frame["interestingness"].to_list()
-    assert scores == sorted(scores, reverse=True)
+    # The frame mirrors the report's finding order exactly. Since
+    # frame-model step 2 that order is the report band (account,
+    # completeness, relations, column structure, deviations) with
+    # interestingness inside the band — not a global score sort.
+    assert frame["id"].to_list() == [
+        f["id"] for f in report.data["findings"]
+    ]
     fd = frame.filter(
         (pl.col("category") == "dependencies") & (pl.col("target") == "region")
     )

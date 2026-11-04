@@ -806,6 +806,22 @@
               "type": "null"
             }
           ]
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/frameGrain"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dominant": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameDominant"
+          }
         }
       },
       "required": [
@@ -888,6 +904,47 @@
               "type": "null"
             }
           ]
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "distinct_values": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -895,6 +952,178 @@
         "source",
         "description",
         "confidence"
+      ]
+    },
+    "frameGrainFactor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "distinct": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "column",
+        "distinct"
+      ]
+    },
+    "frameNearKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "distinct": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicate_rows": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "columns",
+        "distinct",
+        "duplicate_rows"
+      ]
+    },
+    "frameGrain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "factorization": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameGrainFactor"
+          }
+        },
+        "balanced": {
+          "type": "boolean"
+        },
+        "combinations": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "near_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/frameNearKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statement": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_columns",
+        "statement"
+      ]
+    },
+    "frameStructureShare": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "measure": {
+          "type": "string"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "measure",
+        "share"
+      ]
+    },
+    "frameStructurePeak": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "measure": {
+          "type": "string"
+        },
+        "mean": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "measure",
+        "mean"
+      ]
+    },
+    "frameDominant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "time",
+            "cycle",
+            "dimension"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "grouping": {
+          "type": "string"
+        },
+        "shares": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameStructureShare"
+          }
+        },
+        "peak": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/frameStructurePeak"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statement": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "grouping",
+        "shares",
+        "statement"
       ]
     }
   },
@@ -931,7 +1160,7 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.4"
+      "const": "0.5"
     },
     "selection": {
       "$ref": "#/$defs/selection"
@@ -949,6 +1178,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.4)",
+  "title": "onceover profile report (schema_version 0.5)",
   "type": "object"
 }

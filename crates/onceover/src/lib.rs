@@ -6,6 +6,7 @@
 //!   cards + coverage block).
 //! - All profiling computation runs in Rust.
 
+pub mod account;
 pub mod config;
 pub mod detectors;
 pub mod frame;

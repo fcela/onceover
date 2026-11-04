@@ -196,7 +196,7 @@ fn profile_inner(
     // comes from strings or parts, so their existing axis selection
     // finds it. Column indices are preserved by the materialization
     // (the axis replaces its source column in place).
-    let frame = analyze_frame(&table, &card_facts, cfg.hints.as_ref());
+    let mut frame = analyze_frame(&table, &card_facts, cfg.hints.as_ref());
     for (i, name) in table.names.iter().enumerate() {
         if let Some(card) = columns.get_mut(name) {
             card.semantic_role = frame.roles[i].clone();
@@ -420,6 +420,57 @@ fn profile_inner(
                 deps.single_unique.len(),
                 deps.composite_uccs.len()
             )),
+        );
+    }
+
+    // ---------- frame account (frame-model step 2) ----------
+    // The grain and the dominant structure, computed from the frame
+    // model and the dependency outcome. The grain finding replaces
+    // the bare key finding for the same columns (the statement is
+    // strictly richer: it carries the factorization); the near-key
+    // finding states the axis's repeats when no exact key exists.
+    {
+        let account = crate::account::compute_account(&table, &frame, &card_facts, &deps);
+        if !account.replaced_key_subjects.is_empty() {
+            let replaced = &account.replaced_key_subjects;
+            findings.retain(|f| {
+                !(f.category == Category::Uniqueness
+                    && f.evidence.iter().any(|e| e.method.detector == "keys")
+                    && replaced
+                        .iter()
+                        .any(|s| *s == f.subject.columns.iter().cloned().collect()))
+            });
+        }
+        findings.extend(account.findings);
+        let mut detail = String::new();
+        match &account.grain {
+            Some(g) => detail.push_str(&format!("grain: {}", g.statement)),
+            None if account.grain_unresolved => detail.push_str(
+                "grain: no exact key found among the dimension columns and the time axis",
+            ),
+            None => detail.push_str("grain: no key candidates (no time axis or dimension columns)"),
+        }
+        if !account.replaced_key_subjects.is_empty() {
+            detail
+                .push_str("; the grain finding replaces the bare key finding for the same columns");
+        }
+        if account.dominant.is_empty() {
+            detail.push_str("; dominant structure: none at the 0.10 variance-share bar");
+        } else {
+            let labels: Vec<String> = account.dominant.iter().map(|d| d.label.clone()).collect();
+            detail.push_str(&format!("; dominant structure: {}", labels.join(", ")));
+        }
+        detail.push_str(
+            "; findings that restate the calendar derivation or the scaffolding columns are demoted in ranking, never removed; the demotion counts are appended to this entry",
+        );
+        frame.info.grain = account.grain;
+        frame.info.dominant = account.dominant;
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "frame_model".into(),
+            PassInfo::ran(detail),
         );
     }
 
@@ -1444,11 +1495,38 @@ fn profile_inner(
             }
         }
     }
+    // Frame-model step 2: demote restatements (calendar derivations
+    // and scaffolding-only subjects) ahead of the ledger. Demotion
+    // is a ranking change declared in the findings' evidence; the
+    // counts are disclosed on the frame_model entry (and repeated
+    // on the selection entry when a cap also binds). The selection
+    // entry itself keeps its standing contract: it appears only
+    // when a cap binds.
+    let demotions = crate::account::demote_restatements(&mut findings, &table, &frame, &deps);
+    let demotion_note = if demotions.is_empty() {
+        None
+    } else {
+        let total: usize = demotions.values().sum();
+        let by_reason: Vec<String> = demotions
+            .iter()
+            .map(|(reason, n)| format!("{reason} ×{n}"))
+            .collect();
+        Some(format!(
+            "frame model demoted {total} finding(s) in ranking ({}) — demoted, never removed; the reason is recorded in each finding's evidence",
+            by_reason.join(", ")
+        ))
+    };
+    if let Some(note) = &demotion_note {
+        if let Some(info) = coverage.get_mut("frame_model") {
+            info.detail.push_str("; ");
+            info.detail.push_str(note);
+        }
+    }
     let (findings, capped) = select_findings_counted(findings, &cfg.selection);
     if !capped.is_empty() {
         // Per-detector report caps are disclosed with counts, never
         // applied silently (the demote-never-suppress rule).
-        let parts: Vec<String> = capped
+        let mut parts: Vec<String> = capped
             .iter()
             .map(|(detector, n)| {
                 let cap = cfg
@@ -1460,6 +1538,9 @@ fn profile_inner(
                 format!("{detector}: {n} statement(s) past the per-detector report cap of {cap} not selected")
             })
             .collect();
+        if let Some(note) = &demotion_note {
+            parts.push(note.clone());
+        }
         stamp_insert(
             &mut coverage,
             &mut last_mark,

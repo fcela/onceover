@@ -104,11 +104,21 @@ comparison rule, sample scope, and violations. The
 
 ## Use rank to navigate
 
-`interestingness` orders the report; it is not a probability of correctness.
-This report reaches the default 100-finding limit, so some discovered
-statements are omitted. `selection` distinguishes candidate generation,
-verification, consolidation, and final selection. A missing result alone
-cannot establish independence or absence of a data-quality problem.
+Findings are ordered by report band first — the account (the grain
+and key statements in the `frame` section, which the digest states
+before any finding), then completeness, then relations, then column
+structure, then deviations — and by `interestingness` within a band.
+`interestingness` is not a probability of correctness. Findings that
+restate the frame's own structure (a dependency between two
+calendar-derived columns, a statement about a scaffolding column)
+are demoted — their score is scaled by 0.6, lowering them within
+their band — never removed; the reason is recorded in their
+evidence as `triviality`, and the demotion counts are stated in
+the `frame_model` coverage entry. This report reaches the default
+100-finding limit, so some discovered statements are omitted.
+`selection` distinguishes candidate generation, verification,
+consolidation, and final selection. A missing result alone cannot
+establish independence or absence of a data-quality problem.
 
 The [capability guide](book/usage/capabilities.ipynb) helps choose a method;
 [coverage](book/usage/coverage.ipynb) explains its work limits; the

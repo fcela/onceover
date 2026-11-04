@@ -395,7 +395,7 @@ pub fn screen_sampled(
 
     let n_links = deps.iter().filter(|d| d.max_signal() >= 0.98).count();
     let mut coverage = format!(
-        "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong, {} redundancy links",
+        "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong pairwise, {} redundancy links",
         pair_list.len(),
         total_pairs,
         if capped { "capped" } else { "full" },
