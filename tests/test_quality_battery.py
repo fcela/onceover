@@ -9,13 +9,26 @@ miss here is a regression signal, not a tolerance question. The
 full battery (12 seeds, all plants, perturbation variants) runs
 from benchmarks/quality/battery.py; it is a script, not a test,
 because it takes minutes.
+
+The battery's truth generation needs numpy, which is not a library
+dependency (the wheel does not ship it), so this module skips where
+numpy is unavailable — the wheel-test environment installs only the
+wheel and pytest. Environments that install scipy run it in full.
 """
 
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 QDIR = ROOT / "benchmarks" / "quality"
+
+# plants.py and battery.py import numpy at module level; skip the
+# whole module where it is absent instead of failing collection.
+pytest.importorskip(
+    "numpy",
+    reason="planted-signal battery needs numpy (not a library dependency)")
 
 
 def _load(name):
