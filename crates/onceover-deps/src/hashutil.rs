@@ -14,7 +14,7 @@ pub struct ColHashes {
     pub nulls: Vec<Vec<bool>>,
 }
 
-fn fnv64(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv64(bytes: &[u8]) -> u64 {
     let mut h: u64 = 14695981039346656037;
     for b in bytes {
         h ^= *b as u64;

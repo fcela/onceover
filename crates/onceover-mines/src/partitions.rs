@@ -642,7 +642,7 @@ pub fn ordered_partitions(
         // and the response are present and finite.
         let mut rows: Vec<(i64, f64, f64, u32)> = Vec::new();
         for (row, tick) in ticks.iter().enumerate() {
-            if let (Some(tick), Some(y)) = (*tick, crate::encode::numeric_at(col, row)) {
+            if let (Some(tick), Some(y)) = (*tick, col.numeric_at(row)) {
                 if y.is_finite() {
                     rows.push((tick, t_of(tick), y, row as u32));
                 }

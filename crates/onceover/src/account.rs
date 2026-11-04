@@ -43,7 +43,7 @@ use onceover_core::{TypedCol, TypedTable};
 use onceover_deps::fd::DepsOutcome;
 use onceover_deps::hashutil;
 use onceover_report::{
-    EvidenceBasis, Finding, FrameDominant, FrameGrain, FrameGrainFactor, FrameNearKey,
+    round4, EvidenceBasis, Finding, FrameDominant, FrameGrain, FrameGrainFactor, FrameNearKey,
     FrameStructurePeak, FrameStructureShare, Method, Pattern, Scope,
 };
 use serde_json::json;
@@ -90,34 +90,6 @@ fn fmt_num(x: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-fn round4(x: f64) -> f64 {
-    (x * 10_000.0).round() / 10_000.0
-}
-
-fn value_is_null(col: &TypedCol, r: usize) -> bool {
-    match col {
-        TypedCol::I64 { vals } => vals.at(r).is_none(),
-        TypedCol::U64 { vals } => vals.at(r).is_none(),
-        TypedCol::F64 { vals } => vals.at(r).is_none(),
-        TypedCol::Str { vals } => vals[r].is_none(),
-        TypedCol::StrOwned { vals } => vals[r].is_none(),
-        TypedCol::Bool { vals } => vals[r].is_none(),
-        TypedCol::Date { vals } => vals[r].is_none(),
-        TypedCol::Datetime { vals, .. } => vals[r].is_none(),
-        TypedCol::Null { .. } => true,
-        TypedCol::Other { .. } => true,
-    }
-}
-
-fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
-    match col {
-        TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
-        TypedCol::U64 { vals } => vals.at(r).map(|v| v as f64),
-        TypedCol::F64 { vals } => vals.at(r),
-        _ => None,
-    }
-}
-
 fn render_value(col: &TypedCol, r: usize) -> String {
     match col {
         TypedCol::Str { vals } => vals[r].unwrap_or("").to_string(),
@@ -129,7 +101,7 @@ fn render_value(col: &TypedCol, r: usize) -> String {
         TypedCol::Datetime { vals, unit } => vals[r]
             .map(|t| dateutil::iso_datetime(t * 1_000_000 / dateutil::ticks_per_second(*unit)))
             .unwrap_or_default(),
-        _ => numeric_at(col, r).map(fmt_num).unwrap_or_default(),
+        _ => col.numeric_at(r).map(fmt_num).unwrap_or_default(),
     }
 }
 
@@ -186,7 +158,7 @@ fn verify_key(table: &TypedTable, comps: &[Comp], ticks: &[Option<i64>]) -> Opti
         for comp in comps {
             match comp {
                 Comp::Col(i) => {
-                    if value_is_null(&table.cols[*i], r) {
+                    if table.cols[*i].is_null_at(r) {
                         return None;
                     }
                     buf.push(b'c');
@@ -243,15 +215,22 @@ fn compute_grain(
         .map(|(i, _)| i)
         .collect();
 
+    // The axis's distinct count serves both the exact-key
+    // factorization and the near-key branch; compute it at most
+    // once, on first use (the branches below do not both run).
+    let mut axis_distinct_cache: Option<usize> = None;
+
     // ---- axis-crossed candidates, verified directly ----
     if let Some(ticks) = ticks {
         if (8..=GRAIN_VERIFY_MAX_ROWS).contains(&n) {
-            let axis_distinct: usize = ticks
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<BTreeSet<_>>()
-                .len();
+            let axis_distinct: usize = *axis_distinct_cache.get_or_insert_with(|| {
+                ticks
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .len()
+            });
             let mut by_distinct = dims.clone();
             by_distinct.sort_by_key(|&i| std::cmp::Reverse(facts[i].distinct));
             let mut candidates: Vec<Vec<Comp>> = Vec::new();
@@ -403,12 +382,14 @@ fn compute_grain(
 
     // ---- near key: the axis nearly identifies rows ----
     if let Some(ticks) = ticks {
-        let distinct: usize = ticks
-            .iter()
-            .flatten()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .len();
+        let distinct: usize = *axis_distinct_cache.get_or_insert_with(|| {
+            ticks
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .len()
+        });
         let duplicate_rows = n - distinct.min(n);
         if distinct >= 8 && duplicate_rows >= 1 && (distinct as f64) >= 0.5 * n as f64 {
             let columns = axis_subject_columns(frame);
@@ -521,14 +502,13 @@ fn weekday_name(w: i64) -> String {
 
 /// The label of a time point at the axis's own granularity: the
 /// month for a monthly axis, the date for a daily one, the datetime
-/// otherwise.
-fn time_peak_label(ticks: &[i64], key: i64) -> String {
-    if ticks.iter().all(|&t| t.rem_euclid(MICROS_PER_DAY) == 0) {
+/// otherwise. The two axis-wide alignment facts are computed once
+/// by the caller; they were previously re-scanned from the full
+/// tick vector on every call (once per distinct tick).
+fn time_peak_label(day_aligned: bool, all_month_starts: bool, key: i64) -> String {
+    if day_aligned {
         let days = key.div_euclid(MICROS_PER_DAY);
         let (y, m, _) = dateutil::civil_from_days(days);
-        let all_month_starts = ticks
-            .iter()
-            .all(|&t| dateutil::civil_from_days(t.div_euclid(MICROS_PER_DAY)).2 == 1);
         if all_month_starts {
             return format!("{y:04}-{m:02}");
         }
@@ -567,9 +547,14 @@ pub fn dominant_structure(
             // The time axis itself, when rows replicate over it
             // (a panel): the shared time pattern.
             if distinct_ticks.len() >= 2 && distinct_ticks.len() * 2 <= table.n {
+                let day_aligned = present.iter().all(|&t| t.rem_euclid(MICROS_PER_DAY) == 0);
+                let all_month_starts = day_aligned
+                    && present
+                        .iter()
+                        .all(|&t| dateutil::civil_from_days(t.div_euclid(MICROS_PER_DAY)).2 == 1);
                 let peak_labels: BTreeMap<i64, String> = distinct_ticks
                     .iter()
-                    .map(|&t| (t, time_peak_label(&present, t)))
+                    .map(|&t| (t, time_peak_label(day_aligned, all_month_starts, t)))
                     .collect();
                 groupings.push(Grouping {
                     kind: "time",
@@ -588,20 +573,7 @@ pub fn dominant_structure(
             // pattern in the data.)
             let modal_step: Option<i64> = {
                 let d: Vec<i64> = distinct_ticks.iter().copied().collect();
-                if d.len() < 2 {
-                    None
-                } else {
-                    let mut counts: Vec<(i64, usize)> = Vec::new();
-                    for w in d.windows(2) {
-                        let diff = w[1] - w[0];
-                        match counts.iter_mut().find(|(x, _)| *x == diff) {
-                            Some((_, c)) => *c += 1,
-                            None => counts.push((diff, 1)),
-                        }
-                    }
-                    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-                    counts.first().map(|c| c.0)
-                }
+                crate::frame::modal_diff(&d)
             };
             let step_days = modal_step.map(|s| s as f64 / MICROS_PER_DAY as f64);
             let (y0, _, _) = dateutil::civil_from_days(days_min);
@@ -660,7 +632,7 @@ pub fn dominant_structure(
         let mut keys: Vec<Option<i64>> = Vec::with_capacity(table.n);
         let mut buf: Vec<u8> = Vec::new();
         for r in 0..table.n {
-            if value_is_null(&table.cols[i], r) {
+            if table.cols[i].is_null_at(r) {
                 keys.push(None);
                 continue;
             }
@@ -716,7 +688,7 @@ pub fn dominant_structure(
             let mut sums: Vec<(usize, f64)> = vec![(0, 0.0); n_groups];
             let (mut cnt, mut sum, mut sumsq) = (0usize, 0.0f64, 0.0f64);
             for (r, &gi) in row_group.iter().enumerate() {
-                let (Some(x), Some(gi)) = (numeric_at(col, r), gi) else {
+                let (Some(x), Some(gi)) = (col.numeric_at(r), gi) else {
                     continue;
                 };
                 if !x.is_finite() {
@@ -954,7 +926,7 @@ fn axis_determines(table: &TypedTable, ticks: &[Option<i64>], col: usize) -> boo
     for (r, tick) in ticks.iter().enumerate() {
         let Some(t) = *tick else { continue };
         buf.clear();
-        if value_is_null(&table.cols[col], r) {
+        if table.cols[col].is_null_at(r) {
             buf.push(0xFE);
         } else {
             buf.push(0x01);

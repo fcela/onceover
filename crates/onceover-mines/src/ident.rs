@@ -61,7 +61,7 @@ pub fn fit_linear_sample(
         x.push(1.0);
         let mut ok = true;
         for p in predictors {
-            match crate::encode::numeric_at(p, row) {
+            match p.numeric_at(row) {
                 Some(v) => x.push(v),
                 None => {
                     ok = false;
@@ -70,7 +70,7 @@ pub fn fit_linear_sample(
             }
         }
         if ok {
-            if let Some(y) = crate::encode::numeric_at(target, row) {
+            if let Some(y) = target.numeric_at(row) {
                 xs.push(x);
                 ys.push(y);
             }
@@ -169,7 +169,7 @@ pub fn scan_fixed_linear(
     let eval = |cols: &[&onceover_core::TypedCol], row: usize| -> Option<f64> {
         let mut acc = 0.0;
         for (i, c) in cols.iter().enumerate() {
-            acc += coeffs[i] * crate::encode::numeric_at(c, row)?;
+            acc += coeffs[i] * c.numeric_at(row)?;
         }
         Some(acc)
     };
@@ -182,7 +182,7 @@ pub fn scan_fixed_linear(
             Some(p) => p,
             None => continue,
         };
-        let y = match crate::encode::numeric_at(target, row) {
+        let y = match target.numeric_at(row) {
             Some(v) => v,
             None => continue,
         };
@@ -202,7 +202,7 @@ pub fn scan_fixed_linear(
             Some(p) => p,
             None => continue,
         };
-        let y = match crate::encode::numeric_at(target, row) {
+        let y = match target.numeric_at(row) {
             Some(v) => v,
             None => continue,
         };
@@ -244,8 +244,8 @@ pub fn scan_product_ratio(
                 row: usize|
      -> Option<f64> {
         let (_, a, b) = cols;
-        let a = crate::encode::numeric_at(a, row)?;
-        let b = crate::encode::numeric_at(b, row)?;
+        let a = a.numeric_at(row)?;
+        let b = b.numeric_at(row)?;
         if is_ratio {
             if b == 0.0 {
                 None
@@ -267,7 +267,7 @@ pub fn scan_product_ratio(
             Some(v) => v,
             None => continue,
         };
-        let y = match crate::encode::numeric_at(target, row) {
+        let y = match target.numeric_at(row) {
             Some(v) => v,
             None => continue,
         };
@@ -292,7 +292,7 @@ pub fn scan_product_ratio(
             Some(v) => v,
             None => continue,
         };
-        let y = match crate::encode::numeric_at(target, row) {
+        let y = match target.numeric_at(row) {
             Some(v) => v,
             None => continue,
         };
@@ -337,7 +337,7 @@ pub fn scan_linear_combo(
         let mut vals: Vec<f64> = Vec::with_capacity(predictors.len());
         let mut ok = true;
         for p in predictors {
-            match crate::encode::numeric_at(p, row) {
+            match p.numeric_at(row) {
                 Some(v) => vals.push(v),
                 None => {
                     ok = false;
@@ -348,7 +348,7 @@ pub fn scan_linear_combo(
         if !ok {
             continue;
         }
-        let y = crate::encode::numeric_at(target, row)?;
+        let y = target.numeric_at(row)?;
         usable += 1;
         let mut predicted = coeffs[0];
         for i in 0..vals.len() {
@@ -373,7 +373,7 @@ pub fn scan_linear_combo(
         let mut vals: Vec<f64> = Vec::with_capacity(predictors.len());
         let mut ok = true;
         for p in predictors {
-            match crate::encode::numeric_at(p, row) {
+            match p.numeric_at(row) {
                 Some(v) => vals.push(v),
                 None => {
                     ok = false;
@@ -384,7 +384,7 @@ pub fn scan_linear_combo(
         if !ok {
             continue;
         }
-        let y = match crate::encode::numeric_at(target, row) {
+        let y = match target.numeric_at(row) {
             Some(v) => v,
             None => continue,
         };
@@ -646,7 +646,7 @@ pub fn multiterm_identities(
         .filter(|&c| {
             let vals: Vec<f64> = sample_rows
                 .iter()
-                .filter_map(|&r| crate::encode::numeric_at(&table.cols[c], r as usize))
+                .filter_map(|&r| table.cols[c].numeric_at(r as usize))
                 .collect();
             if vals.len() < 2 {
                 return false;
@@ -910,10 +910,7 @@ pub fn identities(
             let mut n = 0usize;
             let mut matched = 0usize;
             for row in 0..table.n {
-                if let (Some(x), Some(y)) = (
-                    crate::encode::numeric_at(x, row),
-                    crate::encode::numeric_at(y, row),
-                ) {
+                if let (Some(x), Some(y)) = (x.numeric_at(row), y.numeric_at(row)) {
                     n += 1;
                     matched += usize::from((y - (a * x + b)).abs() <= 1e-9 * (1.0 + y.abs()));
                 }

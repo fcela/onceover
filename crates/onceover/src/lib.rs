@@ -27,8 +27,3 @@ pub use onceover_report::{
 pub fn profile_default(df: &polars::prelude::DataFrame) -> ProfileReport {
     profile(df, &ProfileConfig::default())
 }
-
-/// Stratified subsample helper (legacy function name) (shared with mines).
-pub fn stride_rows(n: usize, cap: usize) -> Vec<u32> {
-    onceover_mines::stride_rows(n, cap)
-}

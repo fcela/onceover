@@ -173,6 +173,35 @@ impl<'a> TypedCol<'a> {
         }
     }
 
+    /// True when the value at row `r` is null. Null and
+    /// non-comparable columns are null at every row.
+    pub fn is_null_at(&self, r: usize) -> bool {
+        match self {
+            TypedCol::I64 { vals } => vals.at(r).is_none(),
+            TypedCol::U64 { vals } => vals.at(r).is_none(),
+            TypedCol::F64 { vals } => vals.at(r).is_none(),
+            TypedCol::Str { vals } => vals[r].is_none(),
+            TypedCol::StrOwned { vals } => vals[r].is_none(),
+            TypedCol::Bool { vals } => vals[r].is_none(),
+            TypedCol::Date { vals } => vals[r].is_none(),
+            TypedCol::Datetime { vals, .. } => vals[r].is_none(),
+            TypedCol::Null { .. } => true,
+            TypedCol::Other { .. } => true,
+        }
+    }
+
+    /// The value at row `r` as an f64, for the numeric column
+    /// kinds (int, uint, float); `None` for nulls and for
+    /// non-numeric columns.
+    pub fn numeric_at(&self, r: usize) -> Option<f64> {
+        match self {
+            TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
+            TypedCol::U64 { vals } => vals.at(r).map(|v| v as f64),
+            TypedCol::F64 { vals } => vals.at(r),
+            _ => None,
+        }
+    }
+
     /// True for borrowed or owned string columns.
     pub fn is_string(&self) -> bool {
         matches!(self, TypedCol::Str { .. } | TypedCol::StrOwned { .. })
