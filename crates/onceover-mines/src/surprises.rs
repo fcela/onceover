@@ -378,8 +378,14 @@ fn make_finding(
     let rows_list: Vec<usize> = extremes.iter().map(|e| e.row).collect();
     let values_list: Vec<f64> = extremes.iter().map(|e| e.value).collect();
     let pct = ex.bulk_share * 100.0;
-    let claim = match condition {
-        None => format!(
+    let (cluster_min, cluster_max) = extremes
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), e| {
+            (min.min(e.value), max.max(e.value))
+        });
+    let cluster_edge = if high { cluster_min } else { cluster_max };
+    let claim = match (condition, n_extreme) {
+        (None, 1) => format!(
             "{} reaches {} — isolated from the rest of the column: {:.2}% of values are {} {}, and the gap of {} is {:.1}x the central spread (p90-p10 = {}) of the remainder",
             target,
             crate::fmt_float(ex.value),
@@ -390,7 +396,23 @@ fn make_finding(
             ex.gap / ex.spread,
             crate::fmt_float(ex.spread),
         ),
-        Some((cname, cval)) => format!(
+        (None, _) => format!(
+            "{} has an isolated {} cluster of {} values from {} to {}; its inner edge at {} is separated from the column remainder edge at {} by {} ({:.1}x the remainder's central spread, p90-p10 = {}); {:.2}% of values are {} {}",
+            target,
+            if high { "high" } else { "low" },
+            n_extreme,
+            crate::fmt_float(cluster_min),
+            crate::fmt_float(cluster_max),
+            crate::fmt_float(cluster_edge),
+            crate::fmt_float(ex.bulk_edge),
+            crate::fmt_float(ex.gap),
+            ex.gap / ex.spread,
+            crate::fmt_float(ex.spread),
+            pct,
+            if high { "<=" } else { ">=" },
+            crate::fmt_float(ex.bulk_edge),
+        ),
+        (Some((cname, cval)), 1) => format!(
             "within {} = {} ({} rows), {} reaches {} — isolated from the rest of the subset: all other values are {} {}, a gap of {} ({:.1}x the subset's central spread, p90-p10 = {})",
             cname,
             cval,
@@ -402,6 +424,24 @@ fn make_finding(
             crate::fmt_float(ex.gap),
             ex.gap / ex.spread,
             crate::fmt_float(ex.spread),
+        ),
+        (Some((cname, cval)), _) => format!(
+            "within {} = {} ({} rows), {} has an isolated {} cluster of {} values from {} to {}; its inner edge at {} is separated from the subset remainder edge at {} by {} ({:.1}x the remainder's central spread, p90-p10 = {}); all remaining values are {} {}",
+            cname,
+            cval,
+            scope_rows,
+            target,
+            if high { "high" } else { "low" },
+            n_extreme,
+            crate::fmt_float(cluster_min),
+            crate::fmt_float(cluster_max),
+            crate::fmt_float(cluster_edge),
+            crate::fmt_float(ex.bulk_edge),
+            crate::fmt_float(ex.gap),
+            ex.gap / ex.spread,
+            crate::fmt_float(ex.spread),
+            if high { "<=" } else { ">=" },
+            crate::fmt_float(ex.bulk_edge),
         ),
     };
     let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -1056,6 +1096,120 @@ pub fn profile_surprises(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cluster_claims_cover_both_tails_and_scopes() {
+        fn make_extremes(values: &[f64], bulk_edge: f64) -> Vec<Extreme> {
+            values
+                .iter()
+                .enumerate()
+                .map(|(row, &value)| Extreme {
+                    row,
+                    value,
+                    bulk_edge,
+                    gap: 31.0,
+                    spread: 20.0,
+                    bulk_share: 51.0 / 53.0,
+                })
+                .collect()
+        }
+
+        let cfg = SurpriseConfig::default();
+        let high = make_extremes(&[75.0, 73.0], 42.0);
+        let high_conditional = make_finding("age", Some(("cohort", "b")), 53, &high, true, &cfg);
+        assert!(high_conditional
+            .claim
+            .contains("high cluster of 2 values from 73 to 75"));
+        assert!(high_conditional.claim.contains("inner edge at 73"));
+        assert!(high_conditional
+            .claim
+            .contains("all remaining values are <= 42"));
+        assert!(!high_conditional.claim.contains("reaches 75"));
+
+        let high_global = make_finding("age", None, 53, &high, true, &cfg);
+        assert!(high_global
+            .claim
+            .contains("high cluster of 2 values from 73 to 75"));
+        assert!(high_global.claim.contains("inner edge at 73"));
+        assert!(high_global.claim.contains("remainder edge at 42"));
+
+        let low = make_extremes(&[-75.0, -73.0], -42.0);
+        let low_conditional = make_finding("age", Some(("cohort", "b")), 53, &low, false, &cfg);
+        assert!(low_conditional
+            .claim
+            .contains("low cluster of 2 values from -75 to -73"));
+        assert!(low_conditional.claim.contains("inner edge at -73"));
+        assert!(low_conditional
+            .claim
+            .contains("all remaining values are >= -42"));
+
+        let low_global = make_finding("age", None, 53, &low, false, &cfg);
+        assert!(low_global
+            .claim
+            .contains("low cluster of 2 values from -75 to -73"));
+        assert!(low_global.claim.contains("inner edge at -73"));
+        assert!(low_global.claim.contains("remainder edge at -42"));
+    }
+
+    #[test]
+    fn singleton_extreme_claims_keep_existing_wording() {
+        let extreme = make_extreme_for_test(455.0, 94.0);
+        let global = make_finding(
+            "age",
+            None,
+            300,
+            std::slice::from_ref(&extreme),
+            true,
+            &SurpriseConfig::default(),
+        );
+        assert!(global.claim.contains("age reaches 455"));
+        assert!(!global.claim.contains("cluster"));
+
+        let conditional = make_finding(
+            "age",
+            Some(("cohort", "b")),
+            53,
+            &[extreme],
+            true,
+            &SurpriseConfig::default(),
+        );
+        assert!(conditional.claim.contains("age reaches 455"));
+        assert!(!conditional.claim.contains("cluster"));
+
+        let low_extreme = make_extreme_for_test(-500.0, 30.0);
+        let low_global = make_finding(
+            "age",
+            None,
+            300,
+            std::slice::from_ref(&low_extreme),
+            false,
+            &SurpriseConfig::default(),
+        );
+        assert!(low_global.claim.contains("age reaches -500"));
+        assert!(!low_global.claim.contains("cluster"));
+
+        let low_conditional = make_finding(
+            "age",
+            Some(("cohort", "b")),
+            53,
+            &[low_extreme],
+            false,
+            &SurpriseConfig::default(),
+        );
+        assert!(low_conditional.claim.contains("age reaches -500"));
+        assert!(!low_conditional.claim.contains("cluster"));
+    }
+
+    fn make_extreme_for_test(value: f64, bulk_edge: f64) -> Extreme {
+        Extreme {
+            row: 0,
+            value,
+            bulk_edge,
+            gap: value - bulk_edge,
+            spread: 20.0,
+            bulk_share: 0.99,
+        }
+    }
 
     #[test]
     fn peel_flags_isolated_max() {

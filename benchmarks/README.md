@@ -9,7 +9,7 @@ on real datasets.
 |---|---|---|
 | Large-table fixture | Runtime, resident memory, exact cardinalities, and relationships beyond column 64 | [Protocol and recorded results](../docs/benchmarks/large-table-performance.md) |
 | Known-answer corpus | Findings and coverage against per-dataset expectations | [Corpus guide](corpus/README.md) |
-| CI timing gate | Large runtime regressions on two smaller synthetic tables | [Timing gate](timing_gate.py) |
+| CI timing gate | Large runtime regressions and late-column affine recovery on three smaller synthetic tables | [Timing gate](timing_gate.py) |
 
 ## Large tables
 
