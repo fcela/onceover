@@ -20,6 +20,13 @@ bindings (`python/onceover/`, PyO3/maturin).
   `cargo fmt --check`.
 - Notebooks committed to git are committed executed; the notebook
   check (`notebooks/check_notebook.py`) fails otherwise.
+- The book (`docs/book/`) is executable too, but neither the gate
+  nor PR CI builds it: the Docs workflow runs only on pushes to
+  `main`, so a broken page surfaces only after merge. A change
+  that alters report output (schema version, the frame section,
+  digest shape, finding text) must run
+  `bash docs/book/build-html.sh` (strict, executed) before merge
+  and update every page that renders the changed output.
 
 ## Benchmarks
 
