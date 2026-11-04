@@ -76,43 +76,20 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
         .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= cfg.max_levels)
         .collect();
 
-    // Combinations to examine, pairs first, then (deep) triples.
-    let mut combos: Vec<Vec<usize>> = Vec::new();
-    for a in 0..eligible.len() {
-        for b in (a + 1)..eligible.len() {
-            let (fa, fb) = (eligible[a], eligible[b]);
-            if enc.n_bins[fa] * enc.n_bins[fb] <= cfg.max_cells_pair {
-                combos.push(vec![fa, fb]);
-            }
-        }
-    }
-    let mut triples_examined = 0usize;
-    if cfg.triples {
-        let small: Vec<usize> = eligible
-            .iter()
-            .copied()
-            .filter(|&f| enc.n_bins[f] <= 8)
-            .collect();
-        'outer: for a in 0..small.len() {
-            for b in (a + 1)..small.len() {
-                for c in (b + 1)..small.len() {
-                    if triples_examined >= cfg.max_triples {
-                        break 'outer;
-                    }
-                    let (fa, fb, fc) = (small[a], small[b], small[c]);
-                    if enc.n_bins[fa] * enc.n_bins[fb] * enc.n_bins[fc] <= cfg.max_cells_triple {
-                        combos.push(vec![fa, fb, fc]);
-                        triples_examined += 1;
-                    }
-                }
-            }
-        }
-    }
-    let cells_examined: usize = combos
-        .iter()
-        .map(|c| c.iter().map(|&f| enc.n_bins[f]).product::<usize>())
-        .sum();
-    if combos.is_empty() || cells_examined == 0 {
+    // The combination universe is enumerated, never
+    // materialized: at 5,001 eligible columns it holds 12.5M
+    // pairs, and building the list cost ~1.1 s and one heap
+    // allocation per combination (issue #117). Enumeration is a
+    // pure function of the bin counts and the config, so the
+    // pass enumerates twice — once to total the examined cells
+    // (the Bonferroni denominator), once to evaluate — holding
+    // only the current combination: O(1) combination state in
+    // place of the O(combinations) list. `enumerate_combos`
+    // yields pairs first, then (deep) triples, in exactly the
+    // order the list used to hold them.
+    let (n_combos, triples_examined, cells_examined) =
+        enumerate_combos(&enc.n_bins, cfg, &eligible, |_| {});
+    if n_combos == 0 || cells_examined == 0 {
         return (
             Vec::new(),
             format!(
@@ -136,12 +113,12 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
         .map(|b| b.iter().filter(|&&c| c != MISSING).count())
         .collect();
     let mut hits: Vec<CellHit> = Vec::new();
-    for combo in &combos {
+    enumerate_combos(&enc.n_bins, cfg, &eligible, |combo| {
         if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
-            continue;
+            return;
         }
         evaluate_combo(enc, combo, cfg, z_bar, &mut hits);
-    }
+    });
     hits.sort_by(|a, b| {
         b.z.total_cmp(&a.z)
             .then(a.feats.cmp(&b.feats))
@@ -160,13 +137,72 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
     let cov = format!(
         "{} eligible columns, {} combinations examined ({} triples), {} cells examined, z bar {:.2} (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of {} rows",
         eligible.len(),
-        combos.len(),
+        n_combos,
         triples_examined,
         cells_examined,
         z_bar,
         enc.n,
     );
     (findings, cov)
+}
+
+/// Enumerate the combinations the pass examines, in the exact
+/// order the materialized list used to hold them: pairs first
+/// (eligible order, gated by the pair cell cap), then triples
+/// when the config enables them — over the features with at
+/// most 8 bins, in the same order, gated by the triple cell
+/// cap, stopping once `cfg.max_triples` triples have been
+/// examined (the cap check runs before each candidate, as it
+/// did in the list-building loop). Returns (combinations,
+/// triples, cells) totals: the coverage counts and the
+/// Bonferroni denominator. Only the current combination is
+/// materialized, so enumeration state is O(1) in the number of
+/// combinations, beyond the O(width) eligible/small lists.
+fn enumerate_combos(
+    n_bins: &[usize],
+    cfg: &HotspotConfig,
+    eligible: &[usize],
+    mut visit: impl FnMut(&[usize]),
+) -> (usize, usize, usize) {
+    let mut n_combos = 0usize;
+    let mut cells_examined = 0usize;
+    for a in 0..eligible.len() {
+        for b in (a + 1)..eligible.len() {
+            let (fa, fb) = (eligible[a], eligible[b]);
+            let pair_cells = n_bins[fa] * n_bins[fb];
+            if pair_cells <= cfg.max_cells_pair {
+                visit(&[fa, fb]);
+                n_combos += 1;
+                cells_examined += pair_cells;
+            }
+        }
+    }
+    let mut triples_examined = 0usize;
+    if cfg.triples {
+        let small: Vec<usize> = eligible
+            .iter()
+            .copied()
+            .filter(|&f| n_bins[f] <= 8)
+            .collect();
+        'outer: for a in 0..small.len() {
+            for b in (a + 1)..small.len() {
+                for c in (b + 1)..small.len() {
+                    if triples_examined >= cfg.max_triples {
+                        break 'outer;
+                    }
+                    let (fa, fb, fc) = (small[a], small[b], small[c]);
+                    let triple_cells = n_bins[fa] * n_bins[fb] * n_bins[fc];
+                    if triple_cells <= cfg.max_cells_triple {
+                        visit(&[fa, fb, fc]);
+                        n_combos += 1;
+                        cells_examined += triple_cells;
+                        triples_examined += 1;
+                    }
+                }
+            }
+        }
+    }
+    (n_combos, triples_examined, cells_examined)
 }
 
 /// Score every cell of one combination against independence of
@@ -393,5 +429,65 @@ mod tests {
         assert!((inv_normal_cdf(0.975) - 1.959964).abs() < 1e-6);
         assert!((inv_normal_cdf(0.5)).abs() < 1e-9);
         assert!((inv_normal_cdf(0.999999) - 4.753424).abs() < 1e-5);
+    }
+
+    #[test]
+    fn enumeration_matches_materialized_universe() {
+        // Bin counts chosen to exercise the eligibility filter,
+        // the pair cell cap, the triple cell cap over the
+        // <= 8-bin subset, and the max-triples cutoff.
+        let n_bins = vec![2usize, 3, 8, 9, 20, 21, 4, 8];
+        let cfg = HotspotConfig {
+            max_cells_pair: 64,
+            max_cells_triple: 200,
+            triples: true,
+            max_triples: 5,
+            ..HotspotConfig::default()
+        };
+        let eligible: Vec<usize> = (0..n_bins.len())
+            .filter(|&f| n_bins[f] >= 2 && n_bins[f] <= cfg.max_levels)
+            .collect();
+        // The naive materialization, exactly as the pass used
+        // to build it before streaming (issue #117).
+        let mut expect: Vec<Vec<usize>> = Vec::new();
+        for a in 0..eligible.len() {
+            for b in (a + 1)..eligible.len() {
+                let (fa, fb) = (eligible[a], eligible[b]);
+                if n_bins[fa] * n_bins[fb] <= cfg.max_cells_pair {
+                    expect.push(vec![fa, fb]);
+                }
+            }
+        }
+        let mut triples = 0usize;
+        let small: Vec<usize> = eligible
+            .iter()
+            .copied()
+            .filter(|&f| n_bins[f] <= 8)
+            .collect();
+        'outer: for a in 0..small.len() {
+            for b in (a + 1)..small.len() {
+                for c in (b + 1)..small.len() {
+                    if triples >= cfg.max_triples {
+                        break 'outer;
+                    }
+                    let (fa, fb, fc) = (small[a], small[b], small[c]);
+                    if n_bins[fa] * n_bins[fb] * n_bins[fc] <= cfg.max_cells_triple {
+                        expect.push(vec![fa, fb, fc]);
+                        triples += 1;
+                    }
+                }
+            }
+        }
+        let expect_cells: usize = expect
+            .iter()
+            .map(|c| c.iter().map(|&f| n_bins[f]).product::<usize>())
+            .sum();
+        let mut seen: Vec<Vec<usize>> = Vec::new();
+        let (n, t, cells) = enumerate_combos(&n_bins, &cfg, &eligible, |c| seen.push(c.to_vec()));
+        assert_eq!(seen, expect);
+        assert_eq!(n, expect.len());
+        assert_eq!(t, triples);
+        assert_eq!(cells, expect_cells);
+        assert!(triples == cfg.max_triples, "cutoff exercised");
     }
 }
