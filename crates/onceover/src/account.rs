@@ -905,11 +905,11 @@ pub fn calendar_family(
         }
     }
     let mut family = base.clone();
-    // The dependency pass never reports a functional dependency
-    // whose determinant is the timestamp itself (near-unique
-    // determinants are out of its scope), so the closure cannot
-    // start from the mined dependencies alone. Measure the seed
-    // directly instead: a column the axis determines exactly —
+    // The seed cannot come from the mined dependencies alone:
+    // where the timestamp is itself unique, the dependency pass
+    // reports no dependency from it, so the closure would have
+    // nothing to start from. Measure the seed directly instead:
+    // a column the axis determines exactly —
     // every axis value co-occurs with exactly one value of the
     // column — is a calendar derivation by construction (month
     // from date, holiday from date, season from date). Measures

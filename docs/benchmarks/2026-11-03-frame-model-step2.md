@@ -42,9 +42,10 @@ composition are the record; timings are not compared.
 - Restatement demotion: a relation finding (dependency,
   association, conditional rule) whose subject lies inside the
   calendar family — the axis's own columns, every column the axis
-  determines exactly (measured directly; the dependency pass
-  never reports a dependency whose determinant is the timestamp,
-  so the family cannot be seeded from mined dependencies alone),
+  determines exactly (measured directly: where the timestamp is
+  itself unique, the dependency pass reports no dependency from
+  it, so the family cannot be seeded from mined dependencies
+  alone),
   closed under the exact functional dependencies — is demoted
   with reason `calendar_derivation`; a finding whose whole
   subject is scaffolding columns is demoted with reason

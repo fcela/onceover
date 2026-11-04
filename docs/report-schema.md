@@ -95,9 +95,9 @@ consume candidates in demotion-adjusted score order, so no
 finding is lost to the re-ranking — the band orders the report
 body, not the budget. Relation findings whose subject lies
 inside the calendar family (the axis's own columns, every column
-the axis determines exactly — measured directly, since the
-dependency pass never reports a dependency whose determinant is
-the timestamp — and the closure of those under the exact
+the axis determines exactly — measured directly, since a
+timestamp that is itself unique has no mined dependency from it
+to seed the family — and the closure of those under the exact
 functional dependencies) are demoted in ranking, as is any
 finding whose whole subject is scaffolding columns — never
 removed — with the reason (`calendar_derivation` or
