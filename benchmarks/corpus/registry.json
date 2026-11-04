@@ -755,9 +755,9 @@
      "type": "step_discontinuity",
      "expect": "found",
      "columns_any": [
-      "customer_id"
+      "online_order_flag"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 26 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. Pinned to customer_id until 2026-11-04, when whole-number columns named like keys became identifiers and left the screen's targets; the pinned column now carries the top-ranked step."
     }
    ],
    "notes": [

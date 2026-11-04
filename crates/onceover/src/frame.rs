@@ -45,6 +45,8 @@ pub struct CardFacts {
     pub null_count: usize,
     pub numeric_min: Option<f64>,
     pub numeric_max: Option<f64>,
+    /// All non-null values of a numeric column are whole numbers.
+    pub integral: bool,
 }
 
 /// The computed frame model: the serializable `frame` section plus
@@ -466,13 +468,8 @@ fn column_ticks_micros(col: &TypedCol) -> Option<Vec<Option<i64>>> {
                 .map(|v| v.map(|d| d as i64 * MICROS_PER_DAY))
                 .collect(),
         ),
-        TypedCol::Datetime { vals, unit } => {
-            let per_second = dateutil::ticks_per_second(*unit);
-            Some(
-                vals.iter()
-                    .map(|v| v.map(|t| t * 1_000_000 / per_second))
-                    .collect(),
-            )
+        TypedCol::Datetime { vals, .. } => {
+            Some((0..vals.len()).map(|r| col.datetime_micros(r)).collect())
         }
         _ => None,
     }
@@ -668,6 +665,36 @@ fn measure_axis_span(
 /// Grouping columns eligible for restart detection: categorical /
 /// boolean card roles with at least 2 levels, at most 8 of them, in
 /// column order.
+/// Whole-number columns with at most this many values can be grouping
+/// columns (hour, month, a coded category); above it they are measured
+/// quantities on a grid (age in years, hours worked).
+const MAX_NUMERIC_DIMENSION_LEVELS: usize = 32;
+/// The same limit for columns holding fractional values.
+const MAX_FRACTIONAL_DIMENSION_LEVELS: usize = 12;
+/// Unique whole numbers are issued labels when their range spans at most
+/// this many times the row count.
+const MAX_ISSUED_ID_SPREAD: f64 = 20.0;
+
+/// True when the name's last word marks a key: `customer_id`, `orderId`,
+/// `sku`. Splits on `_`, `-`, spaces and lower-to-upper case changes.
+fn key_like_name(name: &str) -> bool {
+    let mut last = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if !c.is_alphanumeric() || (c.is_uppercase() && prev_lower) {
+            last.clear();
+        }
+        if c.is_alphanumeric() {
+            last.extend(c.to_lowercase());
+        }
+        prev_lower = c.is_lowercase();
+    }
+    matches!(
+        last.as_str(),
+        "id" | "uid" | "uuid" | "guid" | "key" | "code" | "sku"
+    )
+}
+
 fn grouping_candidates(facts: &[CardFacts]) -> Vec<usize> {
     facts
         .iter()
@@ -766,11 +793,20 @@ pub fn analyze_frame(
                 continue;
             }
         }
-        // (f) identifier: every non-null value unique, label-typed
+        // (f) identifier: every non-null value unique, label-typed. A
+        // whole-number column also needs to look issued: values packed
+        // close together, or a key-like name. Widely spaced unique
+        // integers are amounts (307 hospital spending totals in the
+        // tens of thousands are all distinct and identify nothing).
         let n_nonnull = table.n - fact.null_count;
+        let integer_col = matches!(col, TypedCol::I64 { .. } | TypedCol::U64 { .. });
+        let densely_issued = match (fact.numeric_min, fact.numeric_max) {
+            (Some(lo), Some(hi)) => (hi - lo + 1.0) <= MAX_ISSUED_ID_SPREAD * n_nonnull as f64,
+            _ => false,
+        };
         if fact.distinct == n_nonnull
             && n_nonnull >= MIN_SUPPORT
-            && (col.is_string() || matches!(col, TypedCol::I64 { .. } | TypedCol::U64 { .. }))
+            && (col.is_string() || (integer_col && (densely_issued || key_like_name(name))))
         {
             roles[i] = Some("identifier".into());
             evidence[i] = format!(
@@ -779,16 +815,40 @@ pub fn analyze_frame(
             );
             continue;
         }
-        // (g) dimension: low-cardinality grouping columns
-        if matches!(fact.card_role.as_str(), "categorical" | "boolean")
-            || matches!(col, TypedCol::Bool { .. })
+        // (g) dimension: low-cardinality grouping columns. The card's
+        // "categorical" scales with row count, so age (74 values) or a
+        // normalized reading (50 values) reaches it on a large frame;
+        // a numeric column groups only on a small whole-number grid.
+        let numeric_grid = col.is_numeric()
+            && fact.card_role == "categorical"
+            && !(fact.integral && fact.distinct <= MAX_NUMERIC_DIMENSION_LEVELS)
+            && fact.distinct > MAX_FRACTIONAL_DIMENSION_LEVELS;
+        if !numeric_grid
+            && (matches!(fact.card_role.as_str(), "categorical" | "boolean")
+                || matches!(col, TypedCol::Bool { .. }))
         {
             roles[i] = Some("dimension".into());
             evidence[i] = format!("{} distinct values", fact.distinct);
             continue;
         }
-        // (h/i) the rest: numeric measures, text
-        if col.is_numeric() {
+        // (h) identifier: a whole-number label named like a key.
+        // Averaging it is meaningless, even when values repeat.
+        if col.is_numeric() && fact.integral && key_like_name(name) {
+            roles[i] = Some("identifier".into());
+            evidence[i] = format!(
+                "whole-number column named like a key ({} distinct values)",
+                fact.distinct
+            );
+            continue;
+        }
+        // (i/j) the rest: numeric measures, text
+        if numeric_grid {
+            roles[i] = Some("measure".into());
+            evidence[i] = format!(
+                "numeric column on a grid of {} values, too fine to group by",
+                fact.distinct
+            );
+        } else if col.is_numeric() {
             roles[i] = Some("measure".into());
             evidence[i] = "numeric column not otherwise classified".into();
         } else if col.is_string() {
@@ -1056,6 +1116,7 @@ mod tests {
                     null_count: card.card.null_count,
                     numeric_min: card.card.numeric_stats.as_ref().and_then(|s| s.min),
                     numeric_max: card.card.numeric_stats.as_ref().and_then(|s| s.max),
+                    integral: false,
                 }
             })
             .collect();
