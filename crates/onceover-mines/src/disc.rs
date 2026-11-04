@@ -446,10 +446,31 @@ pub fn disc_scan_ordered(
     if q == 0 || target.len() != n || fit.len() != n {
         return Vec::new();
     }
-    let streams = q + 3;
     let Some(base) = scan_totals(background, target, fit, n, q, |_| {}) else {
         return Vec::new();
     };
+    disc_scan_with_base(u, order, background, target, fit, &base, cuts, min_side)
+}
+
+/// The ordered scan against a precomputed `ScanBase`. The base
+/// totals depend only on (background, target, fit) — never on the
+/// projection `u` or the cuts — so a caller scanning many
+/// projections against one background computes them once and
+/// reuses them here; the arithmetic per cut is unchanged.
+#[allow(clippy::too_many_arguments)]
+fn disc_scan_with_base(
+    u: &[f64],
+    order: &[u32],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    base: &ScanBase,
+    cuts: &[f64],
+    min_side: usize,
+) -> Vec<DiscCandidate> {
+    let n = u.len();
+    let q = base.q;
+    let streams = q + 3;
 
     let us: Vec<f64> = order.iter().map(|&i| u[i as usize]).collect();
 
@@ -496,7 +517,7 @@ pub fn disc_scan_ordered(
             suffix_eval[s] = base.total_eval[s] - cum_eval[s];
         }
         by_cut[ci] = eval_cut(
-            &base,
+            base,
             cut,
             min_side,
             &suffix_fit,
@@ -744,6 +765,33 @@ fn scan_unit(
     fit: &[u8],
     cfg: &DiscConfig,
 ) -> Option<DiscCandidate> {
+    let n = u.len();
+    if n == 0 || target.len() != n || fit.len() != n {
+        return None;
+    }
+    let q = background.len() / n;
+    if q == 0 {
+        return None;
+    }
+    // When the base totals cannot be computed, every scan of
+    // this unit returns no candidates, exactly as when the scan
+    // computed them itself and found none.
+    let base = scan_totals(background, target, fit, n, q, |_| {})?;
+    scan_unit_with_base(u, background, target, fit, cfg, &base)
+}
+
+/// `scan_unit` against a caller-supplied `ScanBase` (see
+/// `disc_scan_with_base`): the coarse scan and its refinement
+/// share the one base, and diagonal directions of one pair share
+/// the base their caller computed for the pair.
+fn scan_unit_with_base(
+    u: &[f64],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    cfg: &DiscConfig,
+    base: &ScanBase,
+) -> Option<DiscCandidate> {
     let order = sort_order(u);
     // Fit-half values in ascending order (the fit subsequence of
     // the full order) for the quantile grid.
@@ -757,7 +805,16 @@ fn scan_unit(
     if cuts.is_empty() {
         return None;
     }
-    let cands = disc_scan_ordered(u, &order, background, target, fit, &cuts, cfg.min_side);
+    let cands = disc_scan_with_base(
+        u,
+        &order,
+        background,
+        target,
+        fit,
+        base,
+        &cuts,
+        cfg.min_side,
+    );
     let best = cands
         .iter()
         .max_by(|a, b| {
@@ -791,7 +848,16 @@ fn scan_unit(
     let fine: Vec<f64> = (1..=20)
         .map(|k| lo + (hi - lo) * (k as f64) / 21.0)
         .collect();
-    let refined = disc_scan_ordered(u, &order, background, target, fit, &fine, cfg.min_side);
+    let refined = disc_scan_with_base(
+        u,
+        &order,
+        background,
+        target,
+        fit,
+        base,
+        &fine,
+        cfg.min_side,
+    );
     let best_fine = refined.iter().max_by(|a, b| {
         a.t_fit
             .abs()
@@ -849,7 +915,7 @@ impl<'a> NumericColumn<'a> {
         let valid = (missing > 0).then(|| {
             let mut bits = vec![0u64; n.div_ceil(64)];
             for row in 0..n {
-                if crate::encode::numeric_at(col, row).is_some() {
+                if col.numeric_at(row).is_some() {
                     bits[row / 64] |= 1u64 << (row % 64);
                 }
             }
@@ -864,7 +930,7 @@ impl<'a> NumericColumn<'a> {
         }
     }
     fn at(&self, row: usize) -> f64 {
-        crate::encode::numeric_at(self.col, row).unwrap_or(f64::NAN)
+        self.col.numeric_at(row).unwrap_or(f64::NAN)
     }
 }
 
@@ -1199,6 +1265,18 @@ fn screen_target(
             let stats: &Vec<(f64, f64)> = &pair.stats;
             let n = target.len();
             let bg: &[f64] = &pair.bg;
+            // The scan base depends only on (background, target,
+            // fit) — identical for every direction of this pair —
+            // so compute it once here instead of once per scan
+            // (and once more per refinement) inside scan_unit.
+            // A `None` base means every direction's scan would
+            // return no candidates; the direction loop still
+            // counts the units it would have scanned.
+            let base = if n > 0 {
+                scan_totals(bg, &target, fit, n, bg.len() / n, |_| {})
+            } else {
+                None
+            };
             let axis_tol = (std::f64::consts::PI / cfg.directions as f64).sin();
             for d in 0..cfg.directions {
                 let theta = std::f64::consts::PI * (d as f64) / (cfg.directions as f64);
@@ -1210,7 +1288,9 @@ fn screen_target(
                 }
                 let u: Vec<f64> = (0..n).map(|i| c * z[0][i] + s * z[1][i]).collect();
                 out.n_diag += 1;
-                let best = scan_unit(&u, bg, &target, fit, cfg);
+                let best = base
+                    .as_ref()
+                    .and_then(|b| scan_unit_with_base(&u, bg, &target, fit, cfg, b));
                 if let Some(best) = &best {
                     if flagged(best) {
                         flagged_units.push(Flagged {
@@ -1232,7 +1312,10 @@ fn screen_target(
     }
 
     out.n_flagged += flagged_units.len();
-    // Rank on fit-half statistics only; type the leaders.
+    // Rank on fit-half statistics only; type the leaders. The
+    // typing result travels with each leader from here on:
+    // make_finding reports the same numbers, and recomputing
+    // them there was a second full typing per reported finding.
     flagged_units.sort_by(|a, b| {
         b.cand
             .t_fit
@@ -1240,15 +1323,16 @@ fn screen_target(
             .partial_cmp(&a.cand.t_fit.abs())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut typed: Vec<&Flagged> = Vec::new();
+    type Typed<'f> = (&'f Flagged, (Option<f64>, Option<(f64, f64)>));
+    let mut typed: Vec<Typed> = Vec::new();
     for f in flagged_units
         .iter()
         .take(cfg.type_top.max(cfg.max_per_target))
     {
-        let (_tz, gap) = typing_numbers(f);
-        match gap {
+        let typing = typing_numbers(f);
+        match typing.1 {
             Some((ratio, gap_t)) if gap_t > TYPE_GAP_T_CRIT && ratio < TYPE_RATIO_CRIT => {
-                typed.push(f);
+                typed.push((f, typing));
             }
             _ => {
                 out.n_untyped += 1;
@@ -1257,9 +1341,9 @@ fn screen_target(
     }
     // Reporting bars: strict z and material gain (share of the
     // target's evaluation-half variance).
-    let typed: Vec<&Flagged> = typed
+    let typed: Vec<Typed> = typed
         .into_iter()
-        .filter(|f| {
+        .filter(|(f, _)| {
             if f.cand.z.abs() < cfg.z_report {
                 return false;
             }
@@ -1278,17 +1362,17 @@ fn screen_target(
     // One finding per (target, axis set): adjacent diagonal
     // directions can type the same boundary twice; keep the
     // strongest |z| per axis set.
-    let mut by_set: Vec<&Flagged> = Vec::new();
-    for f in typed.iter() {
+    let mut by_set: Vec<Typed> = Vec::new();
+    for entry in typed.iter() {
         if let Some(slot) = by_set
             .iter_mut()
-            .find(|k| k.kind == f.kind && k.axes == f.axes)
+            .find(|k| k.0.kind == entry.0.kind && k.0.axes == entry.0.axes)
         {
-            if f.cand.z.abs() > slot.cand.z.abs() {
-                *slot = f;
+            if entry.0.cand.z.abs() > slot.0.cand.z.abs() {
+                *slot = *entry;
             }
         } else {
-            by_set.push(f);
+            by_set.push(*entry);
         }
     }
     let typed = by_set;
@@ -1296,19 +1380,20 @@ fn screen_target(
     // comparable strength are the same jump; report the axis step
     // unless the diagonal is much stronger (>= 1.5x |z|), in which
     // case the axis reading is its shadow.
-    let mut kept: Vec<&Flagged> = Vec::new();
-    for f in typed.iter().filter(|f| f.kind == "axis") {
-        kept.push(f);
+    let mut kept: Vec<Typed> = Vec::new();
+    for entry in typed.iter().filter(|e| e.0.kind == "axis") {
+        kept.push(*entry);
     }
-    for f in typed.iter().filter(|f| f.kind == "diagonal") {
+    for entry in typed.iter().filter(|e| e.0.kind == "diagonal") {
+        let f = entry.0;
         let deg = f.direction_deg.unwrap_or(0.0);
         let a1 = deg % 90.0;
         let angle = a1.min(90.0 - a1);
         let mut suppressed = false;
         if angle < 25.0 {
             for (i, k) in kept.iter().enumerate() {
-                if k.kind == "axis" && f.axes.contains(&k.axes[0]) {
-                    if f.cand.z.abs() >= 1.5 * k.cand.z.abs() {
+                if k.0.kind == "axis" && f.axes.contains(&k.0.axes[0]) {
+                    if f.cand.z.abs() >= 1.5 * k.0.cand.z.abs() {
                         kept.remove(i);
                     } else {
                         suppressed = true;
@@ -1318,12 +1403,12 @@ fn screen_target(
             }
         }
         if !suppressed {
-            kept.push(f);
+            kept.push(*entry);
         }
     }
     let mut target_findings: Vec<Finding> = Vec::new();
-    for f in kept.iter() {
-        target_findings.push(make_finding(table, f, cfg));
+    for (f, typing) in kept.iter() {
+        target_findings.push(make_finding(table, f, cfg, *typing));
     }
     target_findings.sort_by(|a, b| {
         b.interestingness
@@ -1391,11 +1476,16 @@ pub fn profile_discontinuities(
     (findings, coverage)
 }
 
-fn make_finding(table: &TypedTable, f: &Flagged, _cfg: &DiscConfig) -> Finding {
+fn make_finding(
+    table: &TypedTable,
+    f: &Flagged,
+    _cfg: &DiscConfig,
+    typing: (Option<f64>, Option<(f64, f64)>),
+) -> Finding {
     let tname = table.names[f.target].as_str();
     let cand = &f.cand;
     let n = f.target_vals.len();
-    let (type_z, gap) = typing_numbers(f);
+    let (type_z, gap) = typing;
     let (ratio, gap_t) = gap.unwrap_or((f64::NAN, f64::NAN));
 
     let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();

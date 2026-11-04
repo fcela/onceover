@@ -231,7 +231,7 @@ fn detect_part_set(table: &TypedTable) -> Option<PartSet> {
 /// optional trailing 'Z'. Returns (ticks, has_time): ticks are days
 /// since the epoch, or microseconds when the value carries a time.
 /// Calendar validity is checked by round-tripping the civil date.
-pub fn parse_timestamp(text: &str) -> Option<(i64, bool)> {
+pub(crate) fn parse_timestamp(text: &str) -> Option<(i64, bool)> {
     let s = text.trim();
     let bytes = s.as_bytes();
     if bytes.len() < 10 {
@@ -478,25 +478,31 @@ fn column_ticks_micros(col: &TypedCol) -> Option<Vec<Option<i64>>> {
     }
 }
 
-/// The modal step between consecutive distinct axis values, as a
-/// reader-facing label. Calendar steps are recognized by their
-/// landing pattern (month starts, year starts), not by a fixed day
-/// count.
-fn modal_step_label(sorted_distinct_micros: &[i64]) -> Option<String> {
-    if sorted_distinct_micros.len() < 2 {
+/// The modal difference between consecutive distinct values:
+/// the difference with the highest count, smallest on ties.
+/// `None` with fewer than two values.
+pub(crate) fn modal_diff(sorted_distinct: &[i64]) -> Option<i64> {
+    if sorted_distinct.len() < 2 {
         return None;
     }
     let mut counts: Vec<(i64, usize)> = Vec::new();
-    for w in sorted_distinct_micros.windows(2) {
+    for w in sorted_distinct.windows(2) {
         let diff = w[1] - w[0];
         match counts.iter_mut().find(|(d, _)| *d == diff) {
             Some((_, c)) => *c += 1,
             None => counts.push((diff, 1)),
         }
     }
-    // Modal difference: highest count, smallest difference on ties.
     counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let diff = counts.first()?.0;
+    counts.first().map(|c| c.0)
+}
+
+/// The modal step between consecutive distinct axis values, as a
+/// reader-facing label. Calendar steps are recognized by their
+/// landing pattern (month starts, year starts), not by a fixed day
+/// count.
+fn modal_step_label(sorted_distinct_micros: &[i64]) -> Option<String> {
+    let diff = modal_diff(sorted_distinct_micros)?;
     if diff <= 0 {
         return None;
     }
@@ -808,37 +814,29 @@ pub fn analyze_frame(
                 | TypedCol::Datetime { .. }
                 | TypedCol::I64 { .. }
                 | TypedCol::U64 { .. } => {
-                    axis = Some(FrameAxis {
-                        name: hint.clone(),
-                        source: "hint".into(),
-                        description: format!("declared by hints.time: the column '{hint}'"),
-                        confidence: "declared".into(),
-                        parts: Vec::new(),
-                        source_column: Some(hint.clone()),
-                        min: None,
-                        max: None,
-                        distinct_values: None,
-                        step: None,
-                    });
+                    axis = Some(FrameAxis::unmeasured(
+                        hint.clone(),
+                        "hint",
+                        format!("declared by hints.time: the column '{hint}'"),
+                        "declared",
+                        Vec::new(),
+                        Some(hint.clone()),
+                    ));
                     axis_name = Some(hint.clone());
                     axis_source = Some("hint".into());
                 }
                 col if col.is_string() => {
                     if let Some((ticks, is_dt)) = parse_string_column(col) {
-                        axis = Some(FrameAxis {
-                            name: hint.clone(),
-                            source: "hint".into(),
-                            description: format!(
+                        axis = Some(FrameAxis::unmeasured(
+                            hint.clone(),
+                            "hint",
+                            format!(
                                 "declared by hints.time: the string column '{hint}', parsed as timestamps"
                             ),
-                            confidence: "declared".into(),
-                            parts: Vec::new(),
-                            source_column: Some(hint.clone()),
-                            min: None,
-                            max: None,
-                            distinct_values: None,
-                            step: None,
-                        });
+                            "declared",
+                            Vec::new(),
+                            Some(hint.clone()),
+                        ));
                         axis_name = Some(hint.clone());
                         axis_source = Some("hint".into());
                         axis_replace_index = Some(i);
@@ -858,18 +856,14 @@ pub fn analyze_frame(
             .position(|c| matches!(c, TypedCol::Date { .. } | TypedCol::Datetime { .. }))
         {
             let name = table.names[i].clone();
-            axis = Some(FrameAxis {
-                name: name.clone(),
-                source: "native".into(),
-                description: format!("the {} column '{name}'", table.dtypes[i]),
-                confidence: "inferred".into(),
-                parts: Vec::new(),
-                source_column: Some(name.clone()),
-                min: None,
-                max: None,
-                distinct_values: None,
-                step: None,
-            });
+            axis = Some(FrameAxis::unmeasured(
+                name.clone(),
+                "native",
+                format!("the {} column '{name}'", table.dtypes[i]),
+                "inferred",
+                Vec::new(),
+                Some(name.clone()),
+            ));
             axis_name = Some(name);
             axis_source = Some("native".into());
         }
@@ -882,18 +876,14 @@ pub fn analyze_frame(
             }
             if let Some((ticks, is_dt)) = parse_string_column(col) {
                 let name = table.names[i].clone();
-                axis = Some(FrameAxis {
-                    name: name.clone(),
-                    source: "string_parse".into(),
-                    description: format!("the string column '{name}', parsed as timestamps"),
-                    confidence: "inferred".into(),
-                    parts: Vec::new(),
-                    source_column: Some(name.clone()),
-                    min: None,
-                    max: None,
-                    distinct_values: None,
-                    step: None,
-                });
+                axis = Some(FrameAxis::unmeasured(
+                    name.clone(),
+                    "string_parse",
+                    format!("the string column '{name}', parsed as timestamps"),
+                    "inferred",
+                    Vec::new(),
+                    Some(name.clone()),
+                ));
                 axis_name = Some(name);
                 axis_source = Some("string_parse".into());
                 axis_replace_index = Some(i);
@@ -914,18 +904,14 @@ pub fn analyze_frame(
                 .find(|(k, _)| *k == PartKind::Year)
                 .map(|(_, i)| *i)
                 .expect("part set requires a year");
-            axis = Some(FrameAxis {
-                name: joined.clone(),
-                source: "timestamp_parts".into(),
-                description: format!("a timestamp assembled from {joined}"),
-                confidence: "inferred".into(),
-                parts: names.clone(),
-                source_column: None,
-                min: None,
-                max: None,
-                distinct_values: None,
-                step: None,
-            });
+            axis = Some(FrameAxis::unmeasured(
+                joined.clone(),
+                "timestamp_parts",
+                format!("a timestamp assembled from {joined}"),
+                "inferred",
+                names.clone(),
+                None,
+            ));
             axis_name = Some(joined);
             axis_source = Some("timestamp_parts".into());
             axis_parts = names;
@@ -947,22 +933,18 @@ pub fn analyze_frame(
             );
             if in_range && fact.distinct >= 2 {
                 let name = table.names[i].clone();
-                axis = Some(FrameAxis {
-                    name: name.clone(),
-                    source: "year_candidate".into(),
-                    description: format!(
+                axis = Some(FrameAxis::unmeasured(
+                    name.clone(),
+                    "year_candidate",
+                    format!(
                         "the integer column '{name}' holds plausible years ({}..={}); recorded as a candidate axis at low confidence",
                         fact.numeric_min.map(|v| v as i64).unwrap_or(0),
                         fact.numeric_max.map(|v| v as i64).unwrap_or(0)
                     ),
-                    confidence: "low".into(),
-                    parts: Vec::new(),
-                    source_column: Some(name.clone()),
-                    min: None,
-                    max: None,
-                    distinct_values: None,
-                    step: None,
-                });
+                    "low",
+                    Vec::new(),
+                    Some(name.clone()),
+                ));
                 axis_name = Some(name);
                 axis_source = Some("year_candidate".into());
                 break;

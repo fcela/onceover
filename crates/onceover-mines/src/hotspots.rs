@@ -65,6 +65,12 @@ struct CellHit {
     z: f64,
 }
 
+/// A combination reports only when it has at least this many
+/// complete rows; `evaluate_combo` returns without a hit below
+/// it, so combinations whose complete-row count is bounded
+/// below it by any single feature are skipped before counting.
+const MIN_COMPLETE_ROWS: usize = 200;
+
 pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, String) {
     let eligible: Vec<usize> = (0..enc.feat_names.len())
         .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= cfg.max_levels)
@@ -117,8 +123,23 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
     }
     let z_bar = inv_normal_cdf(1.0 - 0.01 / (2.0 * cells_examined as f64));
 
+    // Complete rows of a combination are a subset of any one
+    // feature's non-missing rows, so a feature with fewer than
+    // MIN_COMPLETE_ROWS present bounds the whole combination
+    // below the reporting floor. Wide frames with few rows put
+    // every pair in that case; counting them anyway is the
+    // pass's quadratic blow-up on such frames. The counts are
+    // computed once here.
+    let present: Vec<usize> = enc
+        .bins
+        .iter()
+        .map(|b| b.iter().filter(|&&c| c != MISSING).count())
+        .collect();
     let mut hits: Vec<CellHit> = Vec::new();
     for combo in &combos {
+        if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
+            continue;
+        }
         evaluate_combo(enc, combo, cfg, z_bar, &mut hits);
     }
     hits.sort_by(|a, b| {
@@ -186,7 +207,7 @@ fn evaluate_combo(
             margins[k][code as usize] += 1;
         }
     }
-    if n_complete < 200 {
+    if n_complete < MIN_COMPLETE_ROWS {
         return;
     }
     let nf = n_complete as f64;

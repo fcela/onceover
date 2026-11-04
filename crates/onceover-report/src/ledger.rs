@@ -164,7 +164,7 @@ fn score(f: &Finding) -> f64 {
                 + 0.1 * simplicity,
         );
     }
-    (best * 10_000.0).round() / 10_000.0
+    crate::round4(best)
 }
 
 /// The report band of a finding (frame-model step 2): the
@@ -303,13 +303,13 @@ pub fn select_findings_counted(
             let factor: f64 = demotions.values().product();
             combined *= factor;
             let reasons = demotions.keys().cloned().collect::<Vec<_>>().join("+");
-            let rounded = (factor * 10_000.0).round() / 10_000.0;
+            let rounded = crate::round4(factor);
             for e in &mut f.evidence {
                 e.metrics.insert("triviality".into(), json!(reasons));
                 e.metrics.insert("triviality_factor".into(), json!(rounded));
             }
         }
-        f.interestingness = (combined * 10_000.0).round() / 10_000.0;
+        f.interestingness = crate::round4(combined);
     }
     // Selection order is the standing one: demotion-adjusted
     // interestingness, canonical key as the tiebreak. The caps

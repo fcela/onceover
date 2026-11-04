@@ -68,7 +68,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         match col {
             TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
                 let vals: Vec<Option<f64>> = (0..m)
-                    .map(|j| numeric_at(col, out.rows[j] as usize))
+                    .map(|j| col.numeric_at(out.rows[j] as usize))
                     .collect();
                 if let Some((bins, edges)) = bin_numeric(&vals) {
                     out.feat_cols.push(ci);
@@ -172,15 +172,6 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         skipped + uncapped.saturating_sub(out.feat_cols.len()),
     );
     (out, coverage)
-}
-
-pub(crate) fn numeric_at(col: &TypedCol, r: usize) -> Option<f64> {
-    match col {
-        TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
-        TypedCol::U64 { vals } => vals.at(r).map(|v| v as f64),
-        TypedCol::F64 { vals } => vals.at(r),
-        _ => None,
-    }
 }
 
 fn days_at(col: &TypedCol, r: usize) -> Option<f64> {

@@ -39,17 +39,9 @@ impl PairDep {
 /// Extract f64 pairs (pairwise-complete) from two numeric columns.
 pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
-    let get = |c: &TypedCol, i: usize| -> Option<f64> {
-        match c {
-            TypedCol::I64 { vals } => vals.at(i).map(|v| v as f64),
-            TypedCol::U64 { vals } => vals.at(i).map(|v| v as f64),
-            TypedCol::F64 { vals } => vals.at(i),
-            _ => None,
-        }
-    };
     let n = a.len().min(b.len());
     for i in 0..n {
-        if let (Some(x), Some(y)) = (get(a, i), get(b, i)) {
+        if let (Some(x), Some(y)) = (a.numeric_at(i), b.numeric_at(i)) {
             out.push((x, y));
         }
     }
@@ -59,12 +51,7 @@ pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
 /// Extract bounded pair-complete observations over shared sampled row ids.
 pub fn sampled_pairs(a: &TypedCol, b: &TypedCol, rows: &[u32]) -> Vec<(f64, f64)> {
     rows.iter()
-        .filter_map(|&r| {
-            Some((
-                crate::encode::numeric_at(a, r as usize)?,
-                crate::encode::numeric_at(b, r as usize)?,
-            ))
-        })
+        .filter_map(|&r| Some((a.numeric_at(r as usize)?, b.numeric_at(r as usize)?)))
         .collect()
 }
 
@@ -195,13 +182,6 @@ pub fn chatterjee_xi(pairs: &[(f64, f64)]) -> Option<f64> {
 }
 
 /// Screen all numeric pairs (rayon-parallel, deterministic order).
-pub fn screen(
-    table: &onceover_core::TypedTable,
-    pair_cap: usize,
-) -> (Vec<PairDep>, Vec<Finding>, String) {
-    screen_sampled(table, pair_cap, 20_000, &[])
-}
-
 pub fn screen_sampled(
     table: &onceover_core::TypedTable,
     pair_cap: usize,

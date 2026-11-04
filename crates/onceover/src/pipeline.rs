@@ -809,7 +809,7 @@ fn profile_inner(
                 PassInfo::sampled(enc_cov),
             );
 
-            let screen = if enabled("gbm") {
+            let mut screen = if enabled("gbm") {
                 screen_predictability(&table, &enc, &tier.screen, &scaffold_excluded)
             } else {
                 onceover_mines::ScreenOutcome {
@@ -825,7 +825,7 @@ fn profile_inner(
                 "predictability_screen".into(),
                 PassInfo::sampled(screen.coverage.clone()),
             );
-            findings.extend(screen.findings.clone());
+            findings.extend(std::mem::take(&mut screen.findings));
 
             // Spend target budgets on columns with a predictive signal,
             // rather than letting near-majority baselines crowd them out.

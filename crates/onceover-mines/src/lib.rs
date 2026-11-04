@@ -32,7 +32,7 @@ pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 pub use association::{association_rules, AssociationConfig};
 pub use breaks::{profile_breaks, BreaksConfig};
 pub use dates::{analyze_temporal, DatesOutcome};
-pub use dep::{screen as screen_dependence, PairDep};
+pub use dep::PairDep;
 pub use disc::{profile_discontinuities, DiscConfig};
 pub use drift::{profile_drift, DriftConfig};
 pub use dtable::{decision_tables, DtableConfig};

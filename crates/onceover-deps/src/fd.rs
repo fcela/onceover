@@ -21,7 +21,7 @@ use serde_json::json;
 
 use onceover_core::{TypedCol, TypedTable};
 
-use crate::hashutil::{build_hashes, encode_value, subsample_rows, ColHashes};
+use crate::hashutil::{build_hashes, encode_value, fnv64, subsample_rows, ColHashes};
 use crate::ColInfo;
 
 /// Configuration for the dependency pass.
@@ -71,30 +71,15 @@ pub struct DepsOutcome {
 
 // ---------- helpers ----------
 
-fn value_is_null(col: &TypedCol, r: usize) -> bool {
-    match col {
-        TypedCol::I64 { vals } => vals.at(r).is_none(),
-        TypedCol::U64 { vals } => vals.at(r).is_none(),
-        TypedCol::F64 { vals } => vals.at(r).is_none(),
-        TypedCol::Str { vals } => vals[r].is_none(),
-        TypedCol::StrOwned { vals } => vals[r].is_none(),
-        TypedCol::Bool { vals } => vals[r].is_none(),
-        TypedCol::Date { vals } => vals[r].is_none(),
-        TypedCol::Datetime { vals, .. } => vals[r].is_none(),
-        TypedCol::Null { .. } => true,
-        TypedCol::Other { .. } => true,
-    }
-}
-
 /// Exact FD verification via canonical encodings. Returns (n_used, violations).
 pub fn verify_fd(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) -> (usize, usize) {
     let mut groups: FxHashMap<Vec<u8>, FxHashMap<Vec<u8>, u32>> = FxHashMap::default();
     for &rr in rows {
         let r = rr as usize;
-        if lhs.iter().any(|&c| value_is_null(&table.cols[c], r)) {
+        if lhs.iter().any(|&c| table.cols[c].is_null_at(r)) {
             continue;
         }
-        if value_is_null(&table.cols[rhs], r) {
+        if table.cols[rhs].is_null_at(r) {
             continue;
         }
         let mut key = Vec::with_capacity(16 * lhs.len());
@@ -139,10 +124,10 @@ fn collect_mapping(
     let mut groups: MappingGroups = FxHashMap::default();
     for &rr in rows {
         let r = rr as usize;
-        if lhs.iter().any(|&c| value_is_null(&table.cols[c], r)) {
+        if lhs.iter().any(|&c| table.cols[c].is_null_at(r)) {
             continue;
         }
-        if value_is_null(&table.cols[rhs], r) {
+        if table.cols[rhs].is_null_at(r) {
             continue;
         }
         let mut key = Vec::with_capacity(16 * lhs.len());
@@ -207,7 +192,7 @@ pub(crate) fn count_distinct_tuples(table: &TypedTable, cols: &[usize]) -> usize
     let n = table.n;
     let mut set: FxHashSet<Vec<u8>> = FxHashSet::default();
     for r in 0..n {
-        if cols.iter().any(|&c| value_is_null(&table.cols[c], r)) {
+        if cols.iter().any(|&c| table.cols[c].is_null_at(r)) {
             return usize::MAX;
         }
         let mut key = Vec::with_capacity(16 * cols.len());
@@ -868,26 +853,17 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
     out.composite_uccs = composite;
 }
 
-fn fnv64_local(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 14695981039346656037;
-    for b in bytes {
-        h ^= *b as u64;
-        h = h.wrapping_mul(1099511628211);
-    }
-    h
-}
-
 fn value_hash64(col: &TypedCol, r: usize) -> u64 {
     match col {
         TypedCol::I64 { vals } => vals.at(r).map(|v| v as u64).unwrap_or(0),
         TypedCol::U64 { vals } => vals.at(r).unwrap_or(0),
         TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_bits()).unwrap_or(0),
         TypedCol::Str { vals } => match vals[r] {
-            Some(s) => fnv64_local(s.as_bytes()),
+            Some(s) => fnv64(s.as_bytes()),
             None => 0,
         },
         TypedCol::StrOwned { vals } => match &vals[r] {
-            Some(s) => fnv64_local(s.as_bytes()),
+            Some(s) => fnv64(s.as_bytes()),
             None => 0,
         },
         TypedCol::Bool { vals } => match vals[r] {

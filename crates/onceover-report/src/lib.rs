@@ -28,6 +28,12 @@ pub use ledger::{
 /// `semantic_role` fields; additive over 0.3.
 pub const SCHEMA_VERSION: &str = "0.5";
 
+/// Round to four decimal places — the report's display precision
+/// for shares and means carried in evidence payloads.
+pub fn round4(x: f64) -> f64 {
+    (x * 10_000.0).round() / 10_000.0
+}
+
 /// Statistics for numeric columns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -270,6 +276,33 @@ pub struct FrameAxis {
     /// have no modal value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
+}
+
+impl FrameAxis {
+    /// An axis record whose measured span is not filled in yet:
+    /// the span fields are measured once, after the axis source
+    /// is settled, and written over the `None`s this leaves.
+    pub fn unmeasured(
+        name: String,
+        source: &str,
+        description: String,
+        confidence: &str,
+        parts: Vec<String>,
+        source_column: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            source: source.into(),
+            description,
+            confidence: confidence.into(),
+            parts,
+            source_column,
+            min: None,
+            max: None,
+            distinct_values: None,
+            step: None,
+        }
+    }
 }
 
 /// One component of a factorized grain: a dimension column or the
