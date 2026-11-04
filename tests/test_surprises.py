@@ -49,6 +49,10 @@ def test_subset_extreme_not_globally_extreme():
     spec = hit["specification"]["definition"]
     assert spec["condition_column"] == "cohort"
     assert spec["condition_value"] == "b"
+    assert "high cluster of 2 values from 73 to 75" in hit["claim"]
+    assert "inner edge at 73" in hit["claim"]
+    assert "all remaining values are <= 42" in hit["claim"]
+    assert "reaches 75" not in hit["claim"]
     metrics = hit["evidence"][0]["metrics"]
     assert sorted(metrics["extreme_values"]) == [73.0, 75.0]
     assert metrics["bulk_edge"] == 42.0
