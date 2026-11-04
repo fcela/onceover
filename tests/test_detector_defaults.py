@@ -5,7 +5,8 @@ opt-in.md) measured five detectors producing zero findings in 40 runs
 over 20 datasets; they are opt-in, like the experimental views pass.
 A default run must say so in coverage, per detector, and an explicit
 selection must still run them. The per-detector report caps on
-functional_dependencies and gbm must likewise be disclosed with
+functional_dependencies, gbm, and discontinuities (the last added by
+the 2026-11-04 battery) must likewise be disclosed with
 counts, never applied silently.
 """
 
@@ -82,3 +83,23 @@ def test_functional_dependency_cap_is_disclosed_with_counts():
     entry = report.coverage["selection"]
     assert entry["status"] == "capped"
     assert "functional_dependencies" in entry["detail"]
+
+
+def test_discontinuities_cap_is_disclosed_with_counts():
+    # State unemployment (wide panel): the discontinuities detector
+    # produced 81 selected statements in the 2026-11-04 battery's
+    # default run, crowding out every gbm and numeric-dependence
+    # statement; the per-detector report cap of 25 now bounds it and
+    # must be disclosed the same way.
+    path = "benchmarks/corpus/data/crosscat/state-unemployment/data.csv"
+    df = pl.read_csv(path, infer_schema_length=None, try_parse_dates=True)
+    report = onceover.profile(df)
+    disc = [
+        f
+        for f in report.findings
+        if f["evidence"][0]["method"]["detector"] == "discontinuities"
+    ]
+    assert 0 < len(disc) <= 25
+    entry = report.coverage["selection"]
+    assert entry["status"] == "capped"
+    assert "discontinuities" in entry["detail"]

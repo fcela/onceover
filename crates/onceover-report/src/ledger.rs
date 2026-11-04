@@ -48,12 +48,18 @@ pub struct SelectionPolicy {
     pub rules_per_outcome: usize,
     pub predictive_findings_per_target: usize,
     /// Per-detector caps on selected statements, attributed by the
-    /// detector of a statement's first evidence record. The two
+    /// detector of a statement's first evidence record. The first two
     /// defaults bound the report's context cost where the 2026-11-02
     /// battery measured it: functional_dependencies and gbm together
     /// produced ~41% of all report characters (550,443 and 467,098 of
-    /// 2,479,798). A statement past its detector's cap is not
-    /// selected; the counts of capped statements are returned by
+    /// 2,479,798). The discontinuities cap (25) follows the 2026-11-04
+    /// battery (docs/benchmarks/2026-11-04-detector-battery-step2.md):
+    /// its statements score in a narrow high band (0.83–0.93), so the
+    /// score ranking cannot ration them against other detectors, and
+    /// on the state-unemployment panel they took 81 of the 100 slots,
+    /// crowding out every gbm and numeric_dependence statement. A
+    /// statement past its detector's cap is not selected; the counts
+    /// of capped statements are returned by
     /// `select_findings_counted` and reported in coverage, so a cap
     /// is never silent. Detectors absent from the map are uncapped.
     pub max_findings_per_detector: BTreeMap<String, usize>,
@@ -72,6 +78,7 @@ impl Default for SelectionPolicy {
             max_findings_per_detector: BTreeMap::from([
                 ("functional_dependencies".to_string(), 25),
                 ("gbm".to_string(), 20),
+                ("discontinuities".to_string(), 25),
             ]),
         }
     }
