@@ -181,6 +181,89 @@ pub fn chatterjee_xi(pairs: &[(f64, f64)]) -> Option<f64> {
     Some(1.0 - (n as f64) * num / den)
 }
 
+/// Pairs are consumed in chunks of this many ordinals wherever
+/// the universe is streamed (issue #117): large enough to keep
+/// rayon's per-chunk overhead negligible, small enough that a
+/// chunk's scored pairs stay a few MB.
+const PAIR_CHUNK: usize = 1 << 18;
+
+/// The pair at ordinal `k` (0-based) in the numeric-pair
+/// universe: pairs are ordered lexicographically by position in
+/// `numeric` — (0,1), (0,2), …, (0,m−1), (1,2), … — the order
+/// the materialized pair list used to hold. The number of pairs
+/// before first-position `i` is i·m − i·(i+1)/2; `i` is
+/// recovered from the quadratic root and corrected by at most
+/// a step either way, so the result is exact.
+fn pair_at(numeric: &[usize], k: usize) -> (usize, usize) {
+    let m = numeric.len();
+    debug_assert!(m >= 2 && k < m * (m - 1) / 2);
+    let before = |i: usize| i * m - i * (i + 1) / 2;
+    let span = (2 * m - 1) as f64;
+    let mut i = ((span - (span * span - 8.0 * k as f64).sqrt()) / 2.0) as usize;
+    while i + 1 < m && before(i + 1) <= k {
+        i += 1;
+    }
+    while before(i) > k {
+        i -= 1;
+    }
+    (numeric[i], numeric[i + 1 + (k - before(i))])
+}
+
+/// Total-order wrapper for f64 scores, for the streaming
+/// selection's bounded heap: `total_cmp` keeps the heap order
+/// identical to the in-place partition's comparator, including
+/// for signed zeros.
+#[derive(PartialEq)]
+struct TotalF64(f64);
+
+impl Eq for TotalF64 {}
+
+impl PartialOrd for TotalF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TotalF64 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+/// A stage-1 boundary-tie candidate in the streaming survivor
+/// selection, ordered by (first column name, second column
+/// name, pair ordinal) — the fill order of the in-place
+/// selection, with the ordinal making full ties deterministic.
+struct TieCand {
+    name_a: String,
+    name_b: String,
+    ord: usize,
+    pair: (usize, usize),
+}
+
+impl PartialEq for TieCand {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for TieCand {}
+
+impl PartialOrd for TieCand {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TieCand {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name_a
+            .cmp(&other.name_a)
+            .then_with(|| self.name_b.cmp(&other.name_b))
+            .then_with(|| self.ord.cmp(&other.ord))
+    }
+}
+
 /// Screen all numeric pairs (rayon-parallel, deterministic order).
 pub fn screen_sampled(
     table: &onceover_core::TypedTable,
@@ -208,7 +291,7 @@ pub fn screen_sampled(
     // Width gate: past 25M pairs even the cheap stage's constant
     // is too large (7,071+ numeric columns); skip pair screening
     // and say so in coverage rather than truncating silently.
-    // Checked arithmetically, before the pair list is built.
+    // Checked arithmetically, before any pair is enumerated.
     const PAIR_GATE: usize = 25_000_000;
     let total_pairs = numeric.len() * numeric.len().saturating_sub(1) / 2;
     if total_pairs > PAIR_GATE {
@@ -221,13 +304,16 @@ pub fn screen_sampled(
             ),
         );
     }
-    let mut pair_list: Vec<(usize, usize)> = Vec::new();
-    for (i, &a) in numeric.iter().enumerate() {
-        for &b in numeric.iter().skip(i + 1) {
-            pair_list.push((a, b));
-        }
-    }
     let capped = total_pairs > pair_cap;
+    // The pair universe is enumerated by ordinal, never
+    // materialized: at 5,000 numeric columns it holds ~12.5M
+    // pairs. `pair_at` maps an ordinal to its pair in the same
+    // lexicographic order the list used to hold, and every stage
+    // consumes the universe in bounded chunks (issue #117), so
+    // peak pair storage is O(chunk + survivors), not O(pairs).
+    // `pair_list` survives only as the capped path's final
+    // survivor list, bounded by `pair_cap` by construction.
+    let mut pair_list: Vec<(usize, usize)> = Vec::new();
     // Cheap screening covers the entire pair universe in two
     // stages: stage 1 scores every pair on a bounded row
     // subsample (256 encoded rows; exact when the encoded sample
@@ -259,31 +345,46 @@ pub fn screen_sampled(
             .iter()
             .map(|bins| crate::screen::marginal_entropy(bins, &stage1_rows))
             .collect();
+        let score_one = |a: usize, b: usize, rows: &[u32], fast: bool| -> f64 {
+            let (x, y) = (inv[a], inv[b]);
+            if x >= 0 && y >= 0 {
+                let (x, y) = (x as usize, y as usize);
+                if fast {
+                    crate::screen::information_fast(
+                        &encoded.bins[x],
+                        &encoded.bins[y],
+                        rows,
+                        (ents[x], ents[y]),
+                    )
+                } else {
+                    crate::screen::information(&encoded.bins[x], &encoded.bins[y], rows)
+                }
+            } else {
+                0.0
+            }
+        };
         let score_pairs =
             |rows: &[u32], pairs: Vec<(usize, usize)>, fast: bool| -> Vec<((usize, usize), f64)> {
                 pairs
                     .into_par_iter()
-                    .map(|(a, b)| {
-                        let (x, y) = (inv[a], inv[b]);
-                        let score = if x >= 0 && y >= 0 {
-                            let (x, y) = (x as usize, y as usize);
-                            if fast {
-                                crate::screen::information_fast(
-                                    &encoded.bins[x],
-                                    &encoded.bins[y],
-                                    rows,
-                                    (ents[x], ents[y]),
-                                )
-                            } else {
-                                crate::screen::information(&encoded.bins[x], &encoded.bins[y], rows)
-                            }
-                        } else {
-                            0.0
-                        };
-                        ((a, b), score)
-                    })
+                    .map(|(a, b)| ((a, b), score_one(a, b, rows, fast)))
                     .collect()
             };
+        // Score pairs by ordinal range, in pair order, without
+        // materializing the pairs first (issue #117).
+        let score_range = |rows: &[u32],
+                           start: usize,
+                           end: usize,
+                           fast: bool|
+         -> Vec<(usize, (usize, usize), f64)> {
+            (start..end)
+                .into_par_iter()
+                .map(|k| {
+                    let (a, b) = pair_at(&numeric, k);
+                    (k, (a, b), score_one(a, b, rows, fast))
+                })
+                .collect()
+        };
         let by_score = |ranked: &mut Vec<((usize, usize), f64)>| {
             ranked.sort_by(|a, b| {
                 b.1.total_cmp(&a.1)
@@ -291,28 +392,100 @@ pub fn screen_sampled(
                     .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
             });
         };
-        let mut ranked = score_pairs(&stage1_rows, pair_list, true);
-        // Keep the survivor set without sorting the whole pair
-        // universe: partition at the survivor boundary score,
-        // then fill boundary ties by column name — the result is
-        // exactly the full sort's top `want` entries.
-        let want = (pair_cap * 4).max(1024).min(ranked.len());
-        if ranked.len() > want {
-            let (_, pivot, _) = ranked.select_nth_unstable_by(want - 1, |a, b| b.1.total_cmp(&a.1));
-            let boundary = pivot.1;
-            let mut top: Vec<((usize, usize), f64)> =
-                ranked.iter().filter(|r| r.1 > boundary).cloned().collect();
-            let need = want - top.len();
-            let mut tied: Vec<((usize, usize), f64)> =
-                ranked.iter().filter(|r| r.1 == boundary).cloned().collect();
-            tied.sort_by(|a, b| {
-                table.names[a.0 .0]
-                    .cmp(&table.names[b.0 .0])
-                    .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
-            });
-            top.extend(tied.into_iter().take(need));
-            ranked = top;
-        }
+        // Survivor selection keeps exactly the full sort's top
+        // `want` entries: every pair above the boundary score,
+        // then boundary ties filled by column name. Two routes
+        // produce that set in that order. While the universe
+        // fits the survivor bound it is scored into one list
+        // and partitioned in place. Above it, the universe is
+        // streamed in chunks (issue #117): a first pass retains
+        // only the `want` largest scores, whose minimum is the
+        // boundary; a second pass — scoring is a pure function
+        // of the encoded matrix, so it reproduces every score
+        // bit-for-bit — collects the pairs above the boundary
+        // in pair order and the name-smallest boundary ties.
+        // Selection state is O(want); nothing is O(pairs).
+        let stream_over = (pair_cap * 4).max(1024);
+        let mut ranked = if total_pairs <= stream_over {
+            let all_pairs: Vec<(usize, usize)> =
+                (0..total_pairs).map(|k| pair_at(&numeric, k)).collect();
+            let mut ranked = score_pairs(&stage1_rows, all_pairs, true);
+            let want = stream_over.min(ranked.len());
+            if ranked.len() > want {
+                let (_, pivot, _) =
+                    ranked.select_nth_unstable_by(want - 1, |a, b| b.1.total_cmp(&a.1));
+                let boundary = pivot.1;
+                let mut top: Vec<((usize, usize), f64)> =
+                    ranked.iter().filter(|r| r.1 > boundary).cloned().collect();
+                let need = want - top.len();
+                let mut tied: Vec<((usize, usize), f64)> =
+                    ranked.iter().filter(|r| r.1 == boundary).cloned().collect();
+                tied.sort_by(|a, b| {
+                    table.names[a.0 .0]
+                        .cmp(&table.names[b.0 .0])
+                        .then(table.names[a.0 .1].cmp(&table.names[b.0 .1]))
+                });
+                top.extend(tied.into_iter().take(need));
+                ranked = top;
+            }
+            ranked
+        } else {
+            let want = stream_over;
+            // Pass 1: the boundary is the `want`-th largest
+            // score; retain only the `want` largest scores.
+            let mut best: std::collections::BinaryHeap<std::cmp::Reverse<TotalF64>> =
+                std::collections::BinaryHeap::new();
+            let mut start = 0usize;
+            while start < total_pairs {
+                let end = (start + PAIR_CHUNK).min(total_pairs);
+                for (_, _, score) in score_range(&stage1_rows, start, end, true) {
+                    if best.len() < want {
+                        best.push(std::cmp::Reverse(TotalF64(score)));
+                    } else if let Some(&std::cmp::Reverse(TotalF64(min))) = best.peek() {
+                        if score.total_cmp(&min) == std::cmp::Ordering::Greater {
+                            best.pop();
+                            best.push(std::cmp::Reverse(TotalF64(score)));
+                        }
+                    }
+                }
+                start = end;
+            }
+            let boundary = best.peek().map(|r| r.0 .0).unwrap_or(f64::NEG_INFINITY);
+            // Pass 2: pairs above the boundary in pair order,
+            // and the name-smallest boundary ties.
+            let mut above: Vec<((usize, usize), f64)> = Vec::new();
+            let mut ties: std::collections::BinaryHeap<TieCand> =
+                std::collections::BinaryHeap::new();
+            let mut start = 0usize;
+            while start < total_pairs {
+                let end = (start + PAIR_CHUNK).min(total_pairs);
+                for (k, (a, b), score) in score_range(&stage1_rows, start, end, true) {
+                    if score > boundary {
+                        above.push(((a, b), score));
+                    } else if score == boundary {
+                        ties.push(TieCand {
+                            name_a: table.names[a].clone(),
+                            name_b: table.names[b].clone(),
+                            ord: k,
+                            pair: (a, b),
+                        });
+                        if ties.len() > want {
+                            ties.pop();
+                        }
+                    }
+                }
+                start = end;
+            }
+            let need = want - above.len();
+            let mut top = above;
+            top.extend(
+                ties.into_sorted_vec()
+                    .into_iter()
+                    .take(need)
+                    .map(|t| (t.pair, boundary)),
+            );
+            top
+        };
         by_score(&mut ranked);
         let survivors: Vec<(usize, usize)> = ranked.into_iter().map(|(pair, _)| pair).collect();
         // Stage 2: survivors rescored on all encoded rows.
@@ -326,26 +499,50 @@ pub fn screen_sampled(
     }
     let rows = crate::stride_rows(table.n, row_cap);
 
-    let deps: Vec<PairDep> = pair_list
-        .par_iter()
-        .map(|&(a, b)| {
-            let pairs = sampled_pairs(&table.cols[a], &table.cols[b], &rows);
-            PairDep {
-                a,
-                b,
-                pearson: pearson(&pairs),
-                spearman: spearman(&pairs),
-                xi_ab: chatterjee_xi(&pairs),
-                xi_ba: {
-                    let flipped: Vec<(f64, f64)> = pairs.iter().map(|(x, y)| (*y, *x)).collect();
-                    chatterjee_xi(&flipped)
-                },
-                n: pairs.len(),
-                population_rows: table.n,
-                sampled: rows.len() < table.n,
-            }
-        })
-        .collect();
+    let dep_for_pair = |a: usize, b: usize| -> PairDep {
+        let pairs = sampled_pairs(&table.cols[a], &table.cols[b], &rows);
+        PairDep {
+            a,
+            b,
+            pearson: pearson(&pairs),
+            spearman: spearman(&pairs),
+            xi_ab: chatterjee_xi(&pairs),
+            xi_ba: {
+                let flipped: Vec<(f64, f64)> = pairs.iter().map(|(x, y)| (*y, *x)).collect();
+                chatterjee_xi(&flipped)
+            },
+            n: pairs.len(),
+            population_rows: table.n,
+            sampled: rows.len() < table.n,
+        }
+    };
+    // Capped: detailed statistics cover the survivor list only
+    // (bounded by the pair cap). Uncapped: the whole universe,
+    // enumerated in ordinal chunks so the pair list is never
+    // materialized; chunks concatenate in pair order, so the
+    // result is identical to screening a materialized list.
+    let deps: Vec<PairDep> = if capped {
+        pair_list
+            .par_iter()
+            .map(|&(a, b)| dep_for_pair(a, b))
+            .collect()
+    } else {
+        let mut deps: Vec<PairDep> = Vec::with_capacity(total_pairs);
+        let mut start = 0usize;
+        while start < total_pairs {
+            let end = (start + PAIR_CHUNK).min(total_pairs);
+            let chunk: Vec<PairDep> = (start..end)
+                .into_par_iter()
+                .map(|k| {
+                    let (a, b) = pair_at(&numeric, k);
+                    dep_for_pair(a, b)
+                })
+                .collect();
+            deps.extend(chunk);
+            start = end;
+        }
+        deps
+    };
 
     // Findings: only strong pairs, and never a pair involving a
     // frame-role scaffolding column.
@@ -376,7 +573,7 @@ pub fn screen_sampled(
     let n_links = deps.iter().filter(|d| d.max_signal() >= 0.98).count();
     let mut coverage = format!(
         "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong pairwise, {} redundancy links",
-        pair_list.len(),
+        deps.len(),
         total_pairs,
         if capped { "capped" } else { "full" },
         total_pairs, rows.len(), table.n,
@@ -500,5 +697,33 @@ mod tests {
     fn midranks_handles_ties() {
         let r = midranks(&[1.0, 2.0, 2.0, 3.0]);
         assert_eq!(r, vec![1.0, 2.5, 2.5, 4.0]);
+    }
+
+    #[test]
+    fn pair_at_matches_materialized_order() {
+        // Exhaustive over small widths: the ordinal mapping
+        // must reproduce the nested-loop pair order exactly —
+        // the streaming stages depend on it (issue #117).
+        for m in 2..40usize {
+            let numeric: Vec<usize> = (0..m).map(|i| i * 3 + 1).collect();
+            let mut expect: Vec<(usize, usize)> = Vec::new();
+            for (i, &a) in numeric.iter().enumerate() {
+                for &b in numeric.iter().skip(i + 1) {
+                    expect.push((a, b));
+                }
+            }
+            for (k, &pair) in expect.iter().enumerate() {
+                assert_eq!(pair_at(&numeric, k), pair, "m={m} k={k}");
+            }
+        }
+        // Spot checks at screening scale: first pair, first
+        // pair of the second row, last pair.
+        let m = 5001usize;
+        let numeric: Vec<usize> = (0..m).collect();
+        let total = m * (m - 1) / 2;
+        assert_eq!(pair_at(&numeric, 0), (0, 1));
+        assert_eq!(pair_at(&numeric, m - 2), (0, m - 1));
+        assert_eq!(pair_at(&numeric, m - 1), (1, 2));
+        assert_eq!(pair_at(&numeric, total - 1), (m - 2, m - 1));
     }
 }
