@@ -1532,6 +1532,135 @@
    ],
    "sha256": "e03de4ee4ef4dc376ac6e04bf829673c6269e8eba5c60fa121640fa2f829504f",
    "rows": 17379
+  },
+  {
+   "id": "adult-census-income",
+   "pack": "business",
+   "title": "Adult (Census Income): 1994 Census demographics and the over-$50K income label",
+   "mode": "bundled",
+   "license": "CC BY 4.0",
+   "source": "UCI Adult (id 2), DOI 10.24432/C5XW20",
+   "dir": "data/business/adult-census-income",
+   "file": "adult-census-income_uci-2.csv",
+   "budget": "standard",
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "education_num",
+     "note": "education -> education_num holds exactly (0 violations in 48,842 rows); the encoding is a bijection over 16 levels, verified independently by group counting in the 2026-11-03 case study."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "target": "education",
+     "note": "education_num -> education holds exactly (0 violations in 48,842 rows); the reverse direction of the same bijection."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "duplicate_encoding",
+     "columns_all": [
+      "education",
+      "education_num"
+     ],
+     "note": "The report states the encoding directly: the two columns pair one-to-one over 16 levels on all 48,842 rows. The two functional dependencies above are the same fact in dependency form."
+    },
+    {
+     "kind": "finding",
+     "category": "duplicates",
+     "type": "duplicate_rows",
+     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "capital_loss"
+     ],
+     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "capital_gain"
+     ],
+     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified)."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_any": [
+      "native_country"
+     ],
+     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "keys",
+     "status": "not_applicable",
+     "note": "No key exists on this frame: no single column is unique and the full 15-column tuple repeats (52 excess rows), so no subset of columns can be a key. The keys pass records not_applicable ('0 single-column unique, 0 composite')."
+    },
+    {
+     "kind": "max_findings",
+     "value": 62,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Missingness after the '?' marker is decoded: work_class null on 2,799 rows (5.73%), occupation on 2,809 (5.75%), native_country on 857 (1.75%)",
+     "status": "missed",
+     "note": "No finding in the standard profile mentions missing values in any column; the counts live only in the column cards. The pattern of issue #100, on a second unseen frame. Counts measured with Polars on the raw files, 2026-11-03."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "capital_gain top-code: the value 99,999 occurs on 244 rows (the maximum; 0 on 44,807 rows, 91.74%)",
+     "status": "missed",
+     "note": "The sentinels pass scans all 6 numeric columns and reports nothing; the concentration (91.7% zero) and digit-preference findings circle the shape without stating the ceiling mass. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233 (0 on 46,560 rows, 95.33%; maximum 4,356)",
+     "status": "missed",
+     "note": "No finding isolates the spikes; the concentration finding states only the zero share. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Near-duplicates through the sampling weight: 6,374 excess rows repeat a row that differs only in final_weight (42,468 distinct rows ignoring final_weight, of 48,842)",
+     "status": "missed",
+     "note": "The duplicates finding compares all 15 columns and reports the 52 exact repeats; the weight-only duplication -- the frame's near-key structure -- is stated nowhere. final_weight is roled a plain measure and appears as a predictor in six predictive findings. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Dominant structure: marital_status explains 33.5% of the variance in age, occupation 31.0% of education_num, relationship 22.5% of age (eta-squared, measured with Polars)",
+     "status": "missed",
+     "note": "Neither build states it. The step-2 account records 'dominant structure: none at the 0.10 variance-share bar' in frame_model coverage, but its search takes measures from columns roled measure, and step 1 roles age, education_num, capital_loss and hours_per_week as dimensions; the two measure-roled numerics (capital_gain, final_weight) peak at shares 0.050 and 0.022. Measured 2026-11-03."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Extreme-value claim misstated (work_class = Federal-gov, hours_per_week): the claim says all other values are <= 80 with a gap of 12",
+     "status": "partial",
+     "note": "The finding fires, and its evidence lists extreme_values [99, 99, 92] over a bulk edge of 80; the subset's true extremes are 92 (1 row) and 99 (2 rows), so 'all other values <= 80' is false and the gap isolating 99 is 7, not 12 (12 is the bulk-edge-to-first-extreme distance). The claim template describes a single isolated value. Verified on the prepared file, 2026-11-03."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Categorical-outlier enumeration undercounts (education = Some-college, relationship = Husband, 3,658 rows): the claim names 2 breaker rows; the slice has 3 (rows 3787, 39624, 48118, all marital_status = Married-AF-spouse)",
+     "status": "partial",
+     "note": "The finding's own dominant_share (0.999180 = 3655/3658) implies exactly 3 exceptions while its outlier_count says 2 and the claim repeats 2. Rows verified on the prepared file, 2026-11-03."
+    }
+   ],
+   "notes": [
+    "The classic census classification table, in the business pack: expectations pin what the standard profile verifiably produces (the exact encoding in both directions, the direct duplicate-encoding statement, the exact duplicates, the three concentrations, the absent key); the documented cases hold the verified structure it does not state, and the two findings it misstates.",
+    "Profiled as an unseen case study before bundling (2026-11-03, iteration 3 of the unseen-dataset loop) against both the main build (schema 0.4) and the frame-model step-2 build (schema 0.5): identical 62 findings on both builds; the step-2 account states no grain and no dominant structure on this timeless, keyless frame and demotes nothing. See docs/benchmarks/2026-11-03-adult-census-income.md."
+   ],
+   "sha256": "eaf8404eee27ae20a76ace5244cbae63ba77dc546648ee9c495799e3a9352e6c",
+   "rows": 48842
   }
  ]
 }
