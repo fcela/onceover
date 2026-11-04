@@ -577,7 +577,7 @@ fn per_detector_cap_limits_and_counts_statements() {
 }
 
 #[test]
-fn default_policy_caps_the_two_char_heavy_detectors() {
+fn default_policy_caps_the_char_heavy_detectors() {
     let policy = SelectionPolicy::default();
     assert_eq!(
         policy
@@ -586,7 +586,14 @@ fn default_policy_caps_the_two_char_heavy_detectors() {
         Some(&25)
     );
     assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
-    assert_eq!(policy.max_findings_per_detector.len(), 2);
+    // The 2026-11-04 battery added discontinuities at 25: its
+    // statements outscore every other change detector on panels and
+    // took 81 of 100 slots on state-unemployment.
+    assert_eq!(
+        policy.max_findings_per_detector.get("discontinuities"),
+        Some(&25)
+    );
+    assert_eq!(policy.max_findings_per_detector.len(), 3);
 }
 
 #[test]

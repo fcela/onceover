@@ -353,12 +353,16 @@ and evaluation participates in selection. It is not an independent confirmation
 sample and has no multiple-testing guarantee.
 
 Selection defaults to at most 100 findings, 20 conditional rules, two rules per
-outcome, and three predictive findings per target. Two per-detector caps bound
+outcome, and three predictive findings per target. Three per-detector caps bound
 the report's context cost: at most 25 selected statements attributed to
-`functional_dependencies` and 20 attributed to `gbm`, where a statement is
+`functional_dependencies`, 20 attributed to `gbm`, and 25 attributed to
+`discontinuities`, where a statement is
 attributed to the detector of its first evidence record. The 2026-11-02
-battery measured those two detectors producing about 41% of all report
-characters (550,443 and 467,098 of 2,479,798). A cap is never silent: when one
+battery measured the first two detectors producing about 41% of all report
+characters (550,443 and 467,098 of 2,479,798); the 2026-11-04 battery added
+the discontinuities cap after measuring it taking 81 of the 100 slots on the
+state-unemployment panel, crowding out every gbm and numeric-dependence
+statement (docs/benchmarks/2026-11-04-detector-battery-step2.md). A cap is never silent: when one
 binds, coverage gains a `selection` entry with status `capped` stating how
 many statements per detector were not selected. Rule evaluation requires at
 least 30 eligible rows, 30 antecedent matches and 20 joint matches; the conditional
