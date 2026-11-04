@@ -29,11 +29,14 @@ The `frame` section records two judgements the pipeline makes
 before any detector runs. The semantic roles say what each column
 is for: an `index` is a monotonic integer sequence (including a
 sequence that restarts per group), an `identifier` holds a
-distinct label per row, a `timestamp` is a native date or datetime
+distinct label per row (for whole numbers: packed close together, or
+named like a key) or is a whole-number column named like a key
+(`customer_id`, `orderKey`), a `timestamp` is a native date or datetime
 column, a `timestamp_part` is a member of a set of integer columns
 (year and month at minimum) that jointly form a timestamp, a
-`dimension` is a low-cardinality grouping column, a `measure` is a
-numeric quantity, and `text` is free text. A `roles` hint
+`dimension` is a low-cardinality grouping column (a numeric column
+qualifies only with at most 32 whole-number values, or 12 fractional
+ones), a `measure` is a numeric quantity, and `text` is free text. A `roles` hint
 (`hints={"roles": {"col": "measure"}}`) overrides the assignment
 for that column. The axis is the frame's time axis, chosen in
 precedence order: a `time` hint, a native date/datetime column, a

@@ -7,6 +7,8 @@ the model marks as scaffolding (index, identifier, timestamp, and
 the parts of an assembled axis) are excluded as detector targets
 and as discontinuity axes, with the exclusion recorded in coverage.
 """
+from datetime import date, datetime, timedelta
+
 import polars as pl
 
 import onceover
@@ -161,3 +163,63 @@ def test_identifier_column_is_excluded_as_a_target():
     report = onceover.profile(df)
     assert _roles(report)["label"] == "identifier"
     assert "label" not in _targets(report)
+
+
+def test_datetime_axis_span_is_correct_in_every_time_unit():
+    # Polars defaults to microseconds. Normalizing those ticks must not
+    # overflow, or the account states a 1969-1970 span for modern data.
+    start = datetime(2022, 5, 30)
+    base = pl.DataFrame({
+        "ts": [start + timedelta(days=i) for i in range(400)],
+        "y": [float(i % 7) for i in range(400)],
+    })
+    for unit in ("ms", "us", "ns"):
+        frame = base.with_columns(pl.col("ts").cast(pl.Datetime(unit)))
+        axis = onceover.profile(frame).data["frame"]["axis"]
+        assert axis["min"].startswith("2022-05-30"), unit
+        assert axis["max"].startswith("2023-07-03"), unit
+        assert axis["step"] == "1 day", unit
+
+
+def test_axis_alone_is_the_grain_when_it_is_unique():
+    # Crossing a dimension with an already unique axis is a non-minimal key.
+    n = 200
+    frame = pl.DataFrame({
+        "when": [date(2020, 1, 1) + timedelta(days=i) for i in range(n)],
+        "region": [f"R{i % 7}" for i in range(n)],
+        "value": [float((i * 37) % 101) for i in range(n)],
+    })
+    grain = onceover.profile(frame).data["frame"]["grain"]
+    assert [f["column"] for f in grain["factorization"]] == ["when"]
+
+
+def test_numeric_grids_are_measures_and_key_named_integers_are_identifiers():
+    n = 5000
+    frame = pl.DataFrame({
+        "age": [18 + (i * 13) % 74 for i in range(n)],
+        "reading": [((i * 7) % 50) / 50 for i in range(n)],
+        "hour": [i % 24 for i in range(n)],
+        "customer_id": [(i * 31) % 900 for i in range(n)],
+        "currencyRateId": [i // 3 for i in range(n)],
+        "sales": [float((i * 97) % 10007) / 3 for i in range(n)],
+    })
+    roles = _roles(onceover.profile(frame))
+    assert roles["age"] == "measure"
+    assert roles["reading"] == "measure"
+    assert roles["hour"] == "dimension"
+    assert roles["customer_id"] == "identifier"
+    assert roles["currencyRateId"] == "identifier"
+    assert roles["sales"] == "measure"
+
+
+def test_unique_widely_spaced_integers_are_measures():
+    n = 300
+    frame = pl.DataFrame({
+        "total_spend": [30_000 + (i * 7919) % 30_011 for i in range(n)],
+        "row_label": [100 + (i * 7) % n for i in range(n)],
+        "group": [f"G{i % 3}" for i in range(n)],
+    })
+    roles = _roles(onceover.profile(frame))
+    assert frame["total_spend"].n_unique() == n
+    assert roles["total_spend"] == "measure"
+    assert roles["row_label"] == "identifier"

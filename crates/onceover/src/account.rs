@@ -233,7 +233,9 @@ fn compute_grain(
             });
             let mut by_distinct = dims.clone();
             by_distinct.sort_by_key(|&i| std::cmp::Reverse(facts[i].distinct));
-            let mut candidates: Vec<Vec<Comp>> = Vec::new();
+            // The axis alone comes first: when it is already unique,
+            // any dimension crossed with it is a non-minimal key.
+            let mut candidates: Vec<Vec<Comp>> = vec![vec![Comp::Axis]];
             for &d in &by_distinct {
                 candidates.push(vec![Comp::Col(d), Comp::Axis]);
             }
@@ -242,7 +244,6 @@ fn compute_grain(
                 all.push(Comp::Axis);
                 candidates.push(all);
             }
-            candidates.push(vec![Comp::Axis]);
             for comps in &candidates {
                 let Some(distinct_tuples) = verify_key(table, comps, ticks) else {
                     continue;
@@ -1068,6 +1069,7 @@ mod tests {
                     null_count: card.card.null_count,
                     numeric_min: card.card.numeric_stats.as_ref().and_then(|s| s.min),
                     numeric_max: card.card.numeric_stats.as_ref().and_then(|s| s.max),
+                    integral: false,
                 }
             })
             .collect();

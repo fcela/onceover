@@ -99,14 +99,14 @@ def test_identity_on_a_unique_key_is_demoted_and_tagged():
             # A float column: a unique integer column is frame-model
             # scaffolding (an identifier) and is excluded as an
             # identity target; a unique float measurement is not.
-            "double_id": [2.0 * i for i in range(400)],
+            "doubled": [2.0 * i for i in range(400)],
             "amount": [float((i * 37) % 91) for i in range(400)],
         }
     )
     report = onceover.profile(keyed, budget="standard")
     hits = [
         f
-        for f in find(report, "dependencies", target="double_id")
+        for f in find(report, "dependencies", target="doubled")
         if (f.get("subject") or {}).get("inputs") == ["order_id"]
     ]
     assert len(hits) == 1

@@ -177,6 +177,7 @@ fn profile_inner(
             null_count: c.card.null_count,
             numeric_min: c.card.numeric_stats.as_ref().and_then(|s| s.min),
             numeric_max: c.card.numeric_stats.as_ref().and_then(|s| s.max),
+            integral: c.card.numeric_stats.as_ref().is_some_and(|s| s.integral),
         })
         .collect();
     let mut columns: BTreeMap<String, ColumnCard> = BTreeMap::new();
