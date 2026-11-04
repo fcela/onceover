@@ -40,14 +40,21 @@ Every transformation is listed in the dataset's `ATTRIBUTION.md`, and
 Bundled datasets are hash-verified against the registry before
 profiling. Test-only datasets run when their `data.csv` exists locally
 and are otherwise reported as skipped with the registry's reason.
-Each run writes a JSON record under `runs/` (gitignored) and exits
-nonzero if any "found" expectation misses, any known-miss tripwire
-matches, or any coverage entry errors.
+Each run writes a JSON record under `runs/` (gitignored) and exits 1
+if any "found" expectation misses, any known-miss tripwire matches,
+or any coverage entry errors. It exits 2 when the machine checks are
+clean but documented cases stand at "missed", and 0 otherwise: a
+green machine run must not read as "every documented case passes".
 
 Expectations come in three kinds: `finding` predicates over the
 report (category / type / form / target / columns), `documented_case`
 records (published anomalies with a found / partial / missed
 disposition, reviewed by hand each run), and `max_findings` guards.
+Documented cases are reviewed documentation, not machine checks:
+they carry no pass/fail of their own, and the run summary tallies
+them separately from the machine-verified expectations, by
+disposition — a missed documented case stays visible in the output
+and in the exit status rather than counting as a success.
 A `finding` expectation with `"expect": "missed"` is a known-miss
 tripwire: it passes while nothing matches, and fails loudly when a
 future detector starts matching — the signal to promote the case.
