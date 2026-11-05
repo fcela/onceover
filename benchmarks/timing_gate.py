@@ -12,10 +12,13 @@ Exit code 0 = within thresholds, 1 = regression or broken timing.
 """
 from __future__ import annotations
 
+import argparse
+import json
 import math
 import random
 import sys
 import time
+from pathlib import Path
 
 import polars as pl
 
@@ -86,7 +89,13 @@ def late_identity_recovered(report) -> bool:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output", type=Path, help="write per-case and per-pass timings as JSON"
+    )
+    output = parser.parse_args().output
     failed = False
+    record = []
     for rows, cols, budget, threshold, check_late_identity in CASES:
         df = synthetic(rows, cols, late_identity=check_late_identity)
         if df.shape != (rows, cols):
@@ -104,6 +113,14 @@ def main() -> int:
         )
         for name, elapsed_ms in top[:5]:
             print(f"    {name:<28} {elapsed_ms:>10.1f} ms")
+        record.append({
+            "rows": rows,
+            "columns": cols,
+            "budget": budget,
+            "wall_seconds": round(wall, 3),
+            "findings": len(report.findings),
+            "passes_ms": {name: round(ms, 1) for name, ms in top},
+        })
         if invalid:
             print(f"FAIL: passes with missing or invalid elapsed_ms: {invalid}")
             failed = True
@@ -117,6 +134,8 @@ def main() -> int:
             if not late_identity_recovered(report):
                 print("FAIL: affine identity in final columns was not recovered")
                 failed = True
+    if output:
+        output.write_text(json.dumps({"cases": record}, indent=1) + "\n", encoding="utf-8")
     return 1 if failed else 0
 
 
