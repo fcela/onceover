@@ -36,6 +36,7 @@
 //! declining distribution, not a row of mass points.
 
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
+use rayon::prelude::*;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 
@@ -90,11 +91,13 @@ const CANONICAL_SCALES: [(f64, f64); 7] = [
 ];
 
 pub fn boundary_mass(table: &TypedTable) -> Vec<Finding> {
-    let mut out = Vec::new();
-    for (i, col) in table.cols.iter().enumerate() {
-        out.extend(boundary_mass_column(table, i, col));
-    }
-    out
+    let per_column: Vec<Vec<Finding>> = table
+        .cols
+        .par_iter()
+        .enumerate()
+        .map(|(i, col)| boundary_mass_column(table, i, col))
+        .collect();
+    per_column.into_iter().flatten().collect()
 }
 
 fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Finding> {
@@ -151,12 +154,6 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     let canonical = CANONICAL_SCALES
         .iter()
         .any(|&(lo, hi)| col_min == lo && col_max == hi);
-    // All evaluated values, sorted once: bulk quartiles for any
-    // candidate are read off this array with the pile's own run
-    // skipped, instead of re-sorting the bulk per candidate.
-    let mut sorted_vals: Vec<f64> = entries.iter().map(|&(_, _, x)| x).collect();
-    sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
     // Example rows for candidate values only (count >= MIN_PILE):
     // first few and last row index, so the implicated scope is
     // retrievable from the report.
@@ -165,6 +162,15 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
         .filter(|(_, &c)| c >= MIN_PILE)
         .map(|(&k, _)| k)
         .collect();
+    // No value repeats enough to pile, which is every continuous column.
+    if candidate_keys.is_empty() {
+        return Vec::new();
+    }
+    // All evaluated values, sorted once: bulk quartiles for any
+    // candidate are read off this array with the pile's own run
+    // skipped, instead of re-sorting the bulk per candidate.
+    let mut sorted_vals: Vec<f64> = entries.iter().map(|&(_, _, x)| x).collect();
+    sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let mut rows_of: HashMap<u64, (Vec<usize>, usize)> = HashMap::new();
     for &(r, key, _) in &entries {
         if candidate_keys.contains(&key) {
