@@ -13,7 +13,9 @@ pub enum BreakKind {
 pub struct BreaksConfig {
     /// Maximum number of rows processed per series.
     pub row_cap: usize,
-    /// Maximum number of series analyzed.
+    /// Maximum number of series analyzed. When more series are
+    /// eligible, the analyzed set is chosen by a whole-population
+    /// prescore (see `prescore`), not by column order.
     pub series_cap: usize,
     /// Maximum number of breaks reported per series.
     pub max_breaks: usize,
@@ -771,6 +773,80 @@ fn variance_finding(
     ))
 }
 
+/// Number of contiguous time blocks the prescore compares.
+const PRESCORE_BLOCKS: usize = 16;
+
+/// Number of largest absolute deviations whose share of the
+/// total absolute deviation forms the prescore's excursion
+/// component.
+const PRESCORE_TOP_POINTS: usize = 10;
+
+/// Share of a series' total variance that sits between the
+/// means of `blocks` contiguous blocks (eta-squared). A series
+/// whose level moves between blocks scores near 1; stationary
+/// noise scores near (blocks - 1) / (n - 1).
+fn eta_squared_blocks(xs: &[f64], blocks: usize) -> f64 {
+    let n = xs.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let grand = xs.iter().sum::<f64>() / n as f64;
+    let total: f64 = xs.iter().map(|&x| (x - grand) * (x - grand)).sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let blocks = blocks.min(n);
+    let mut between = 0.0f64;
+    for b in 0..blocks {
+        let lo = b * n / blocks;
+        let hi = (b + 1) * n / blocks;
+        if hi > lo {
+            let m = xs[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
+            between += (hi - lo) as f64 * (m - grand) * (m - grand);
+        }
+    }
+    between / total
+}
+
+/// Cheap whole-population prescore for one series' values in
+/// time order: the largest of three components, one per break
+/// family the scan reports. The between-block variance share of
+/// the values themselves ranks level and trend breaks; the same
+/// share computed on the squared deviations from the mean ranks
+/// variance breaks (a variance break is a level break in the
+/// squared series); and the share of the total absolute
+/// deviation from the median held by the largest few points
+/// ranks transient excursions. Column position plays no part.
+fn prescore(values: &[f64]) -> f64 {
+    let n = values.len();
+    if n < 2 {
+        return 0.0;
+    }
+    let mean = values.iter().sum::<f64>() / n as f64;
+    let level = eta_squared_blocks(values, PRESCORE_BLOCKS);
+    let squared: Vec<f64> = values.iter().map(|&v| (v - mean) * (v - mean)).collect();
+    let variance = eta_squared_blocks(&squared, PRESCORE_BLOCKS);
+    let mut scratch = values.to_vec();
+    let median = {
+        let (_, pivot, _) = scratch.select_nth_unstable_by(n / 2, |a, b| a.total_cmp(b));
+        *pivot
+    };
+    let mut devs: Vec<f64> = values.iter().map(|&v| (v - median).abs()).collect();
+    let total_dev: f64 = devs.iter().sum();
+    let excursion = if total_dev <= 0.0 {
+        0.0
+    } else {
+        let k = PRESCORE_TOP_POINTS.min(n - 1);
+        if k == 0 {
+            0.0
+        } else {
+            devs.select_nth_unstable_by(k, |a, b| b.total_cmp(a));
+            devs[..k].iter().sum::<f64>() / total_dev
+        }
+    };
+    level.max(variance).max(excursion)
+}
+
 pub fn profile_breaks(
     table: &TypedTable,
     excluded: &[usize],
@@ -846,12 +922,43 @@ pub fn profile_breaks(
         .filter(|&i| table.cols[i].is_numeric() && i != time_col && !excluded.contains(&i))
         .collect();
     let eligible = series.len();
-    let scanned_count = eligible.min(cfg.series_cap);
+    let capped = eligible > cfg.series_cap;
+
+    // Prescore every eligible series before the series cap
+    // binds, so the cap spends on signal rather than on column
+    // position (issue #126). The prescore reads each series'
+    // values once, in time order; the values are rebuilt for
+    // the scanned subset, so nothing per-series is retained
+    // across the cap. The scanned set is iterated in column
+    // order, so an uncapped run is unchanged.
+    let mut scored: Vec<(usize, f64)> = series
+        .iter()
+        .map(|&col| {
+            let values: Vec<f64> = timed
+                .iter()
+                .filter_map(|&(_, r)| numeric_at(&table.cols[col], r as usize))
+                .collect();
+            let score = if values.len() < 2 * cfg.min_segment + 40 {
+                0.0
+            } else {
+                prescore(&values)
+            };
+            (col, score)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut chosen: Vec<usize> = scored
+        .iter()
+        .take(cfg.series_cap)
+        .map(|&(col, _)| col)
+        .collect();
+    chosen.sort_unstable();
+    let scanned_count = chosen.len();
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut skipped = 0usize;
 
-    for col in series.iter().take(cfg.series_cap) {
+    for col in &chosen {
         let name = table.names[*col].as_str();
         let points: Vec<(i64, u32, f64)> = timed
             .iter()
@@ -896,7 +1003,7 @@ pub fn profile_breaks(
         ));
     }
 
-    let coverage = format!(
+    let mut coverage = format!(
         "{} of {} numeric series scanned along {} over {} time-ordered rows, {} skipped, {} findings; training-selected, holdout-validated",
         scanned_count,
         eligible,
@@ -905,6 +1012,29 @@ pub fn profile_breaks(
         skipped,
         findings.len()
     );
+    if capped {
+        let mut is_chosen = vec![false; table.cols.len()];
+        for &col in &chosen {
+            is_chosen[col] = true;
+        }
+        let not_scanned: Vec<&str> = series
+            .iter()
+            .filter(|&&c| !is_chosen[c])
+            .map(|&c| table.names[c].as_str())
+            .collect();
+        let total_unscanned = not_scanned.len();
+        let shown = total_unscanned.min(40);
+        let mut names = not_scanned[..shown].join(", ");
+        if total_unscanned > shown {
+            names.push_str(&format!(", and {} more", total_unscanned - shown));
+        }
+        coverage.push_str(&format!(
+            "; series cap {} bound: {} of {} eligible series scanned, chosen by prescore \
+             (between-block variance shares of the series and of its squared deviations, \
+             and largest-point deviation share), not column order; not scanned: {}",
+            cfg.series_cap, scanned_count, eligible, names
+        ));
+    }
 
     (findings, coverage)
 }
@@ -1013,6 +1143,75 @@ mod tests {
             min_train_gain: 0.10,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn prescore_ranks_level_break_above_noise() {
+        let n = 2000;
+        let mut rng = Lcg(1234);
+        let noise: Vec<f64> = (0..n).map(|_| rng.noise(2.0)).collect();
+        let mut rng = Lcg(99);
+        let level: Vec<f64> = (0..n)
+            .map(|i| {
+                if i < n / 2 {
+                    rng.noise(2.0)
+                } else {
+                    4.0 + rng.noise(2.0)
+                }
+            })
+            .collect();
+        assert!(
+            prescore(&level) > 0.5,
+            "level prescore {} should be large",
+            prescore(&level)
+        );
+        assert!(
+            prescore(&level) > 5.0 * prescore(&noise),
+            "level {} vs noise {}",
+            prescore(&level),
+            prescore(&noise)
+        );
+    }
+
+    #[test]
+    fn prescore_ranks_variance_break_above_noise() {
+        let n = 2000;
+        let mut rng = Lcg(1234);
+        let noise: Vec<f64> = (0..n).map(|_| rng.noise(2.0)).collect();
+        let mut rng = Lcg(7);
+        let variance: Vec<f64> = (0..n)
+            .map(|i| {
+                if i < n / 2 {
+                    rng.noise(2.0)
+                } else {
+                    rng.noise(6.0)
+                }
+            })
+            .collect();
+        assert!(
+            prescore(&variance) > 3.0 * prescore(&noise),
+            "variance {} vs noise {}",
+            prescore(&variance),
+            prescore(&noise)
+        );
+    }
+
+    #[test]
+    fn prescore_ranks_transient_spike_above_noise() {
+        let n = 2000;
+        let mut rng = Lcg(1234);
+        let noise: Vec<f64> = (0..n).map(|_| rng.noise(2.0)).collect();
+        let mut rng = Lcg(5);
+        let mut spike: Vec<f64> = (0..n).map(|_| rng.noise(2.0)).collect();
+        for v in spike.iter_mut().skip(1000).take(10) {
+            *v += 12.0;
+        }
+        assert!(
+            prescore(&spike) > 3.0 * prescore(&noise),
+            "spike {} vs noise {}",
+            prescore(&spike),
+            prescore(&noise)
+        );
     }
 
     #[test]
