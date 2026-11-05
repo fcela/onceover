@@ -955,6 +955,81 @@ pub fn screen_sampled(
             .then(a.0.cmp(&b.0))
     });
     dep_findings.truncate(20);
+
+    // Simpson reversal check (issue #134, item 5): a strong
+    // statement is unconditional, so check whether its pooled
+    // direction reverses inside every usable stratum of a
+    // categorical dimension. A reversal appends a qualification
+    // to the claim and a payload to the evidence; the finding
+    // itself is never removed or re-tiered.
+    let (mut simpson_checked, mut simpson_qualified) = (0usize, 0usize);
+    let mut simpson_budget = crate::simpson::SimpsonBudget::new();
+    let has_strong = dep_findings.iter().any(|(_, t, _)| *t == "strong");
+    let stratifiers = if has_strong {
+        crate::simpson::stratifiers_from_table(table, &rows, excluded)
+    } else {
+        Vec::new()
+    };
+    if has_strong {
+        for (idx, tier, finding) in dep_findings.iter_mut() {
+            if *tier != "strong" {
+                continue;
+            }
+            let d = &deps[*idx];
+            // The directional component: the larger of the two
+            // measured correlations (Pearson on a tie). Below
+            // the materiality floor the pair's strength is the
+            // unsigned xi component and there is no direction
+            // to reverse.
+            let (stat, pooled) = match (d.pearson, d.spearman) {
+                (Some(p), Some(s)) => {
+                    if s.abs() > p.abs() {
+                        (crate::simpson::SignedStat::Spearman, s)
+                    } else {
+                        (crate::simpson::SignedStat::Pearson, p)
+                    }
+                }
+                (Some(p), None) => (crate::simpson::SignedStat::Pearson, p),
+                (None, Some(s)) => (crate::simpson::SignedStat::Spearman, s),
+                (None, None) => continue,
+            };
+            if pooled.abs() < crate::simpson::MIN_DIRECTIONAL_EFFECT {
+                continue;
+            }
+            simpson_checked += 1;
+            let universe: Vec<(Option<f64>, Option<f64>)> = rows
+                .iter()
+                .map(|&r| {
+                    (
+                        table.cols[d.a].numeric_at(r as usize),
+                        table.cols[d.b].numeric_at(r as usize),
+                    )
+                })
+                .collect();
+            if let Some(hit) = crate::simpson::reversal_for_pair(
+                stat,
+                pooled,
+                &universe,
+                &stratifiers,
+                &[d.a, d.b],
+                &mut simpson_budget,
+            ) {
+                simpson_qualified += 1;
+                finding
+                    .claim
+                    .push_str(&crate::simpson::claim_clause(stat, pooled, &hit));
+                if let Some(ev) = finding.evidence.first_mut() {
+                    ev.metrics.insert(
+                        "simpson".to_string(),
+                        serde_json::Value::Object(crate::simpson::simpson_payload(
+                            stat, pooled, &hit,
+                        )),
+                    );
+                }
+            }
+        }
+    }
+
     let n_weak = dep_findings.iter().filter(|(_, t, _)| *t == "weak").count();
     let findings: Vec<Finding> = dep_findings.into_iter().map(|(_, _, f)| f).collect();
 
@@ -1007,6 +1082,18 @@ pub fn screen_sampled(
             "; dependence findings involving {} column(s) withheld by frame role: {}",
             excluded_numeric.len(),
             excluded_numeric.join(", ")
+        ));
+    }
+    if simpson_qualified > 0 || simpson_budget.capped {
+        coverage.push_str(&format!(
+            "; Simpson reversal check over {} strong numeric pairs: {} qualified{}",
+            simpson_checked,
+            simpson_qualified,
+            if simpson_budget.capped {
+                " (evaluation bound reached; some pairs unchecked)"
+            } else {
+                ""
+            }
         ));
     }
 

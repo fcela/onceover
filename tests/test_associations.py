@@ -1,6 +1,7 @@
 """Tested associations (issue #134): per-pair tests with
 Benjamini-Hochberg correction, the strong/weak reporting tiers,
-and the report's associations table."""
+the report's associations table, and the Simpson reversal
+qualification attached to strong statements (item 5)."""
 import math
 import random
 
@@ -131,3 +132,138 @@ def test_budgeted_json_keeps_the_associations_table():
     view = json.loads(report.to_json(max_chars=6000))
     assert "associations" in view
     assert any(r["tier"] == "weak" for r in view["associations"])
+
+
+# --- Simpson reversal qualification (issue #134, item 5) ---
+
+
+def _pearson(xs, ys):
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    vx = sum((x - mx) ** 2 for x in xs)
+    vy = sum((y - my) ** 2 for y in ys)
+    return cov / math.sqrt(vx * vy)
+
+
+def _strong_finding(report, columns):
+    for f in report.findings:
+        if f["type"] != "statistical":
+            continue
+        if set(f["subject"]["columns"]) != set(columns):
+            continue
+        for ev in f.get("evidence") or []:
+            m = ev.get("metrics") or {}
+            if m.get("tier") == "strong":
+                return f, m
+    return None, None
+
+
+def _any_simpson(report):
+    out = []
+    for f in report.findings:
+        for ev in f.get("evidence") or []:
+            m = ev.get("metrics") or {}
+            if "simpson" in m:
+                out.append((f, m["simpson"]))
+    return out
+
+
+def _simpson_numeric(seed=7, slope=-1.5):
+    rng = random.Random(seed)
+    x, y, g = [], [], []
+    for grp, (lo, base) in enumerate([(0.0, 0.0), (3.0, 8.0)]):
+        for _ in range(2000):
+            xi = lo + 2.0 * rng.random()
+            x.append(xi)
+            y.append(base + slope * xi + rng.gauss(0.0, 0.3))
+            g.append("a" if grp == 0 else "b")
+    return pl.DataFrame({"x": x, "y": y, "g": g})
+
+
+def test_simpson_qualification_on_numeric_pair():
+    df = _simpson_numeric()
+    report = onceover.profile(df)
+    f, m = _strong_finding(report, {"x", "y"})
+    assert f is not None, "the planted pair must be a strong statement"
+    assert "direction reverses within every level of g" in f["claim"]
+    s = m["simpson"]
+    assert s["stratifier"] == "g"
+    assert s["statistic"] in ("pearson", "spearman")
+    # Independent recomputation: pooled positive, both strata negative.
+    xs = df["x"].to_list()
+    ys = df["y"].to_list()
+    gs = df["g"].to_list()
+    pooled = _pearson(xs, ys)
+    assert pooled > 0.3
+    by_level = {lv: _pearson([x for x, g in zip(xs, gs) if g == lv],
+                              [y for y, g in zip(ys, gs) if g == lv])
+                for lv in ("a", "b")}
+    assert all(v < 0 for v in by_level.values())
+    strata = {row["level"]: row for row in s["strata"]}
+    assert set(strata) == {"a", "b"}
+    for lv, row in strata.items():
+        assert abs(row["effect"] - by_level[lv]) < 0.05
+        assert row["n"] == 2000
+    assert s["pooled_effect"] * s["within_effect"] < 0
+
+
+def test_simpson_homogeneous_pair_gets_no_qualification():
+    df = _simpson_numeric(seed=8, slope=1.5)
+    report = onceover.profile(df)
+    f, m = _strong_finding(report, {"x", "y"})
+    assert f is not None, "the homogeneous pair is still a strong statement"
+    assert "direction reverses" not in f["claim"]
+    assert _any_simpson(report) == []
+
+
+def _simpson_mixed(seed=13):
+    rng = random.Random(seed)
+    t, y, s = [], [], []
+    for base, p_treat, n in [(10.0, 0.95, 3800), (0.0, 0.05, 200)]:
+        for _ in range(n):
+            treated = rng.random() < p_treat
+            t.append("trt" if treated else "ctrl")
+            y.append(base + (-1.0 if treated else 0.0) + rng.gauss(0.0, 0.1))
+            s.append("A" if base > 0 else "B")
+    return pl.DataFrame({"t": t, "y": y, "s": s})
+
+
+def test_simpson_qualification_on_mixed_pair():
+    report = onceover.profile(_simpson_mixed())
+    f, m = _strong_finding(report, {"t", "y"})
+    assert f is not None, "the planted mixed pair must be a strong statement"
+    assert "direction reverses within every level of s" in f["claim"]
+    s = m["simpson"]
+    assert s["statistic"] == "point_biserial"
+    assert s["coded_level"] in ("ctrl", "trt")
+    assert s["pooled_effect"] * s["within_effect"] < 0
+    assert all(row["effect"] * s["pooled_effect"] < 0 for row in s["strata"])
+    assert {row["level"] for row in s["strata"]} == {"A", "B"}
+
+
+def test_simpson_qualification_on_nominal_2x2_pair():
+    cells = [
+        ("A", "trt", "yes", 4410), ("A", "trt", "no", 490),
+        ("A", "ctrl", "yes", 198), ("A", "ctrl", "no", 2),
+        ("B", "trt", "yes", 1), ("B", "trt", "no", 99),
+        ("B", "ctrl", "yes", 480), ("B", "ctrl", "no", 4320),
+    ]
+    s, t, o = [], [], []
+    for sv, tv, ov, c in cells:
+        s.extend([sv] * c)
+        t.extend([tv] * c)
+        o.extend([ov] * c)
+    report = onceover.profile(pl.DataFrame({"s": s, "t": t, "o": o}))
+    f, m = _strong_finding(report, {"t", "o"})
+    assert f is not None, "the planted 2x2 pair must be a strong statement"
+    assert "direction reverses within every level of s" in f["claim"]
+    q = m["simpson"]
+    assert q["statistic"] == "log_odds_ratio"
+    assert q["coded_level_a"] in ("ctrl", "trt")
+    assert q["coded_level_b"] in ("yes", "no")
+    assert q["pooled_effect"] * q["within_effect"] < 0
+    assert all(row["effect"] * q["pooled_effect"] < 0 for row in q["strata"])
+    # No other strong statement in this frame reverses.
+    assert len(_any_simpson(report)) == 1

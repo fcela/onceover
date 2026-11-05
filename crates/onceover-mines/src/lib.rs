@@ -25,6 +25,7 @@ pub mod regimes;
 mod screen;
 pub mod series;
 pub mod shapes;
+pub mod simpson;
 pub mod surprises;
 pub mod targets;
 pub mod views;

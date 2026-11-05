@@ -173,3 +173,5 @@ dependency):
   reversal check over stratifying dimensions is included, so a
   strong pair statement can still reverse inside a subgroup;
   the statement's evidence is the pooled sample, as before.
+  (Follow-up: the reversal check was added as item 5 of the
+  same issue — see docs/benchmarks/2026-11-05-simpson-check.md.)
