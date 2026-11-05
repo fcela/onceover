@@ -57,8 +57,10 @@ pub struct PartitionsConfig {
     pub max_depth: usize,
     /// Maximum leaves per tree.
     pub max_leaves: usize,
-    /// Maximum responses screened per run; the rest are counted
-    /// in coverage.
+    /// Maximum responses screened per run. When more responses
+    /// are eligible, the screened set is chosen by a
+    /// whole-population prescore (see `prescore`), not by column
+    /// order; the rest are counted in coverage.
     pub max_responses: usize,
     /// Maximum findings emitted per run.
     pub max_findings: usize,
@@ -587,6 +589,105 @@ impl TreeBuilder<'_> {
     }
 }
 
+/// Time blocks over which the prescore's between-block share is
+/// computed.
+const PRESCORE_BLOCKS: usize = 16;
+
+/// One response's (tick, t, y, table row) rows in t order, with
+/// the systematic row-cap sample applied; `None` when the
+/// response holds fewer than `cfg.min_rows` usable rows. The
+/// second element records whether the sample bound. Shared by
+/// the prescore pass and the screening pass so both see exactly
+/// the same rows.
+fn response_rows(
+    col: &TypedCol,
+    ticks: &[Option<i64>],
+    axis: Axis,
+    cfg: &PartitionsConfig,
+) -> Option<(Vec<(i64, f64, f64, u32)>, bool)> {
+    let t_of = |tick: i64| -> f64 {
+        match axis {
+            Axis::Date | Axis::Integer => tick as f64,
+            Axis::Datetime => tick as f64 / 86_400_000_000.0,
+        }
+    };
+    let mut rows: Vec<(i64, f64, f64, u32)> = Vec::new();
+    for (row, tick) in ticks.iter().enumerate() {
+        if let (Some(tick), Some(y)) = (*tick, col.numeric_at(row)) {
+            if y.is_finite() {
+                rows.push((tick, t_of(tick), y, row as u32));
+            }
+        }
+    }
+    if rows.len() < cfg.min_rows {
+        return None;
+    }
+    rows.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)).then(a.3.cmp(&b.3)));
+    let mut sampled = false;
+    if rows.len() > cfg.row_cap {
+        sampled = true;
+        let pos = crate::stride_rows(rows.len(), cfg.row_cap);
+        rows = pos.iter().map(|&p| rows[p as usize]).collect();
+    }
+    Some((rows, sampled))
+}
+
+/// Cheap whole-population prescore for one response's sampled,
+/// t-ordered rows: the larger of two between-group variance
+/// shares (eta-squared) of the response — the share between
+/// PRESCORE_BLOCKS contiguous time blocks, and the share
+/// between each offered dimension's levels. These are the two
+/// split families the tree itself searches (a breakpoint along
+/// t, a bipartition of a dimension's levels), so a response
+/// carrying either structure scores far above the noise floor
+/// of ~(groups - 1) / (n - 1), while position in the table
+/// plays no part. Rows missing a dimension count toward the
+/// grand total but toward no level, mirroring the tree's
+/// refusal to split a node on a dimension with missing rows.
+fn prescore(rows: &[(i64, f64, f64, u32)], dims: &[Dimension]) -> f64 {
+    let n = rows.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let mean = rows.iter().map(|r| r.2).sum::<f64>() / n as f64;
+    let total: f64 = rows.iter().map(|r| (r.2 - mean) * (r.2 - mean)).sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let blocks = PRESCORE_BLOCKS.min(n);
+    let mut best = 0.0f64;
+    let mut between = 0.0f64;
+    for b in 0..blocks {
+        let lo = b * n / blocks;
+        let hi = (b + 1) * n / blocks;
+        if hi > lo {
+            let m = rows[lo..hi].iter().map(|r| r.2).sum::<f64>() / (hi - lo) as f64;
+            between += (hi - lo) as f64 * (m - mean) * (m - mean);
+        }
+    }
+    best = best.max(between / total);
+    for d in dims {
+        let mut sums = vec![0.0f64; d.levels.len()];
+        let mut counts = vec![0usize; d.levels.len()];
+        for r in rows {
+            let lv = d.level_of_row[r.3 as usize];
+            if lv != u32::MAX {
+                sums[lv as usize] += r.2;
+                counts[lv as usize] += 1;
+            }
+        }
+        let mut between = 0.0f64;
+        for l in 0..sums.len() {
+            if counts[l] > 0 {
+                let m = sums[l] / counts[l] as f64;
+                between += counts[l] as f64 * (m - mean) * (m - mean);
+            }
+        }
+        best = best.max(between / total);
+    }
+    best
+}
+
 /// Screen every numeric response against the table's ordering
 /// axis (and its categorical dimensions) and return one finding
 /// per response whose tree has at least one accepted split.
@@ -612,52 +713,46 @@ pub fn ordered_partitions(
     };
     let axis_name = table.names[axis_idx].clone();
     let dims = collect_dimensions(table, axis_idx, excluded, cfg);
-    // t in f64: days for dates, days (from microsecond ticks)
-    // for datetimes, the raw value for integers.
-    let t_of = |tick: i64| -> f64 {
-        match axis {
-            Axis::Date | Axis::Integer => tick as f64,
-            Axis::Datetime => tick as f64 / 86_400_000_000.0,
-        }
-    };
     let slope_unit_days = matches!(axis, Axis::Date | Axis::Datetime);
 
     let responses: Vec<usize> = (0..table.cols.len())
         .filter(|&i| i != axis_idx && !excluded.contains(&i) && table.cols[i].is_numeric())
         .collect();
-    let n_responses = responses.len();
     let mut findings: Vec<Finding> = Vec::new();
     let mut screened = 0usize;
     let mut with_splits = 0usize;
-    let mut capped = false;
     let mut sampled_any = false;
 
+    // Prescore every eligible response before the response cap
+    // binds, so the cap spends on signal rather than on column
+    // position (issue #126). The prescore reads each response's
+    // rows once; the rows are rebuilt for the screened subset,
+    // so no per-response data is retained across the cap.
+    let mut eligible: Vec<(usize, f64)> = Vec::new();
     for &rc in &responses {
-        if screened >= cfg.max_responses {
-            capped = true;
-            break;
+        if let Some((rows, _)) = response_rows(&table.cols[rc], &ticks, axis, cfg) {
+            eligible.push((rc, prescore(&rows, &dims)));
         }
-        let col = &table.cols[rc];
-        // (tick, t, y, table row) for rows where both the axis
-        // and the response are present and finite.
-        let mut rows: Vec<(i64, f64, f64, u32)> = Vec::new();
-        for (row, tick) in ticks.iter().enumerate() {
-            if let (Some(tick), Some(y)) = (*tick, col.numeric_at(row)) {
-                if y.is_finite() {
-                    rows.push((tick, t_of(tick), y, row as u32));
-                }
-            }
-        }
-        if rows.len() < cfg.min_rows {
+    }
+    let n_eligible = eligible.len();
+    // Rank by score descending; ties keep column order, so the
+    // selection is a deterministic function of the table.
+    eligible.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let capped = n_eligible > cfg.max_responses;
+    let to_screen: Vec<usize> = eligible
+        .iter()
+        .take(cfg.max_responses)
+        .map(|&(rc, _)| rc)
+        .collect();
+
+    for &rc in &to_screen {
+        let Some((rows, sampled)) = response_rows(&table.cols[rc], &ticks, axis, cfg) else {
             continue;
+        };
+        if sampled {
+            sampled_any = true;
         }
         screened += 1;
-        rows.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)).then(a.3.cmp(&b.3)));
-        if rows.len() > cfg.row_cap {
-            sampled_any = true;
-            let pos = crate::stride_rows(rows.len(), cfg.row_cap);
-            rows = pos.iter().map(|&p| rows[p as usize]).collect();
-        }
         let data = SeriesData {
             t: rows.iter().map(|r| r.1).collect(),
             ticks: rows.iter().map(|r| r.0).collect(),
@@ -821,8 +916,10 @@ pub fn ordered_partitions(
     );
     if capped {
         detail.push_str(&format!(
-            "; {} of {n_responses} responses screened (response cap {})",
-            screened, cfg.max_responses
+            "; response cap {} bound: {} of {} eligible responses screened, \
+             chosen by prescore (between-block and between-level variance \
+             shares), not column order",
+            cfg.max_responses, screened, n_eligible
         ));
     }
     if sampled_any {
