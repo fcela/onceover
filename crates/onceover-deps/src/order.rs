@@ -96,6 +96,9 @@ pub struct OrderConfig {
     /// exact single-column functional dependency holds in either
     /// direction in this run — the derived-from-one-another pairs.
     pub derived_pairs: BTreeSet<(usize, usize)>,
+    /// Columns left out of every pair: row counters, labels and calendar
+    /// parts, whose order against other columns says nothing about the data.
+    pub excluded: BTreeSet<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -615,6 +618,7 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
     let preps: Vec<Option<ColPrep>> = table.cols.iter().map(prep_column).collect();
     out.columns_seen = preps.iter().filter(|p| p.is_some()).count();
     let eligible_cols: Vec<usize> = (0..table.cols.len())
+        .filter(|i| !cfg.excluded.contains(i))
         .filter(|&i| {
             preps[i]
                 .as_ref()
@@ -1003,6 +1007,7 @@ mod tests {
             &OrderConfig {
                 max_pairs: 10_000,
                 derived_pairs: BTreeSet::new(),
+                excluded: BTreeSet::new(),
             },
         )
     }
@@ -1140,6 +1145,7 @@ mod tests {
                     idx("base").min(idx("derived")),
                     idx("base").max(idx("derived")),
                 )]),
+                excluded: BTreeSet::new(),
             },
         );
         let order: Vec<(&str, &str)> = out
@@ -1172,6 +1178,7 @@ mod tests {
             &OrderConfig {
                 max_pairs: 1,
                 derived_pairs: BTreeSet::new(),
+                excluded: BTreeSet::new(),
             },
         );
         assert_eq!(out.pairs_evaluated, 1);

@@ -47,6 +47,14 @@
    "activation": "default"
   },
   {
+   "id": "order_constraints",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "duplicate_encodings",
    "categories": [
     "column_roles"

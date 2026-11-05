@@ -123,15 +123,15 @@ def test_independent_and_shuffled_pairs_stay_quiet():
 def test_identical_columns_and_plain_fd_stay_quiet():
     rng = random.Random(6)
     n = 5000
-    base = [rng.uniform(1.0, 40.0) for _ in range(n)]
+    base = [rng.uniform(0.0, 7.0) for _ in range(n)]
     df = pl.DataFrame(
         {
             "base": base,
             "base_copy": list(base),
-            # An exact functional dependency (base determines
-            # mod7) with no near-universal order either way: the
-            # FD pass's statement, not this pass's.
-            "mod7": [float(int(x) % 7) for x in base],
+            # A function of base that crosses it constantly, so no
+            # near-universal order holds either way: the FD pass's
+            # statement, not this pass's.
+            "mod7": [float(int(x * 10) % 7) for x in base],
         }
     )
     report = onceover.profile(df)

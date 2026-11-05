@@ -881,6 +881,18 @@ fn profile_inner(
                 &onceover_deps::OrderConfig {
                     max_pairs: tier.dep_pair_cap,
                     derived_pairs,
+                    excluded: frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| {
+                            matches!(
+                                r.as_deref(),
+                                Some("index" | "identifier" | "timestamp_part")
+                            )
+                        })
+                        .map(|(i, _)| i)
+                        .collect(),
                 },
             );
             let detail = format!(
