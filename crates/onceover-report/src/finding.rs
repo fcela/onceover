@@ -68,6 +68,7 @@ pub enum Pattern {
     ArithmeticIdentity,
     PredictiveDependency,
     PiecewiseDependency,
+    OrderConstraint,
     ConditionalRule,
     StatisticalAssociation,
     PeriodAssociation,
@@ -107,7 +108,8 @@ impl Pattern {
             | Self::AffineDependency
             | Self::ArithmeticIdentity
             | Self::PredictiveDependency
-            | Self::PiecewiseDependency => Category::Dependencies,
+            | Self::PiecewiseDependency
+            | Self::OrderConstraint => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
@@ -152,6 +154,7 @@ impl Pattern {
                 "functional"
             }
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
+            Self::OrderConstraint => "order_constraint",
             Self::ConditionalRule => "if_then",
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
@@ -666,6 +669,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::OrderConstraint => (
+                Sc::Columns,
+                O::Relation,
+                exact_or_approx,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::AffineDependency | Pattern::ArithmeticIdentity => (
                 Sc::Columns,
                 O::Relation,
@@ -884,6 +896,7 @@ impl Facets {
             (Category::Formats, Some("boundary_mass")) => Pattern::BoundaryMass,
             (Category::Formats, Some("content_anomaly")) => Pattern::ContentAnomaly,
             (Category::Formats, _) => Pattern::FormatVariation,
+            (Category::Dependencies, Some("order_constraint")) => Pattern::OrderConstraint,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -1093,6 +1106,18 @@ impl Finding {
                 );
                 spec.definition
                     .insert("comparison".into(), json!("canonical_equality"));
+            }
+            Pattern::OrderConstraint => {
+                spec.form = Some("pairwise_order".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude rows where either column is missing"),
+                );
+                spec.definition
+                    .insert("comparison".into(), json!("exact_order"));
+                if let Some(v) = metrics.get("relation") {
+                    spec.definition.insert("relation".into(), v.clone());
+                }
             }
             Pattern::CategoricalRole => {
                 spec.definition.insert("role".into(), json!("categorical"));
@@ -1453,9 +1478,12 @@ impl Finding {
             Category::Dependencies => {
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("functional" | "predictive")
+                    Some("functional" | "predictive" | "order_constraint")
                 ) {
-                    return Err("dependency type must be functional or predictive".into());
+                    return Err(
+                        "dependency type must be functional, predictive, or order_constraint"
+                            .into(),
+                    );
                 }
                 if self.subject.inputs.is_empty() || self.subject.target.is_none() {
                     return Err("a dependency requires inputs and a target".into());

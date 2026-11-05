@@ -35,6 +35,7 @@ used by package version 0.1.3.
 | `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison |
 | `formats` | Format counts and examples | Inconsistent representations within a field; also type `content_anomaly` from the `content` detector, with `kind` in the evidence: `numbers_as_text`, `dates_as_text`, `booleans_as_text`, `email`, `url`, `uuid`, `ipv4` (the share of values that fit and the ones that do not), `label_variants` (labels differing only in case or spacing), `possible_misspelling` (rare labels close to a common one), `long_text`, `repeated_extreme` (one value repeated at an isolated extreme), `minority_sign`, `zero_inflation`, `two_modes`, `temporal_outlier`; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
 | `dependencies` | Type `functional` | Inputs determine a target, subject to scope, comparison, tolerance and exceptions |
+| `dependencies` | Type `order_constraint` | One column is at most another on every evaluated row, or all but a small counted share of them, from the `order_constraints` detector: the two columns share a kind family (numeric, date, or datetime with the same unit) and compatible ranges; the claim names the direction, the evaluated rows, the violation count and share, the rows tied, and the worst violation with its row; pairs already tied by an exact functional dependency in either direction are stated but ranked below unrelated pairs, and violations of a near-universal order rank above exact orders |
 | `dependencies` | Type `predictive` | Specified inputs support prediction of a target under recorded validation |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
@@ -48,7 +49,7 @@ used by package version 0.1.3.
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, and `curved_shape`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, `curved_shape`, and `pairwise_order`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -142,6 +143,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `format_variation`, `boundary_mass`, `content_anomaly` | column | distribution | exact | unconditional | atemporal | validity | deviation |
 | `heaping`, `digit_preference`, `benford_deviation` | column | distribution | approximate | unconditional | atemporal | validity | deviation |
 | `functional` | columns | relation | exact, or approximate when the mapping has violations | unconditional | atemporal | — | regularity |
+| `order_constraint` | columns | relation | exact, or approximate when the order has violations | unconditional | atemporal | — | regularity |
 | `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
 | `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
@@ -555,7 +557,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 26 of the 33 registered detectors. Six are
+and activation. The default set has 27 of the 34 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40
