@@ -687,6 +687,17 @@ fn make_categorical_finding(
     params.insert("conditions".into(), json!(conditions));
     let mut metrics: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     metrics.insert("n".into(), json!(cand.subset));
+    metrics.insert("target".into(), json!(tname));
+    metrics.insert(
+        "context".into(),
+        json!(ctx_cols
+            .iter()
+            .map(|(c, coded, lvl)| json!({
+                "column": table.names[*c],
+                "value": coded.labels[*lvl as usize],
+            }))
+            .collect::<Vec<_>>()),
+    );
     metrics.insert("dominant_level".into(), json!(dom_label));
     metrics.insert("dominant_share".into(), json!(cand.share));
     metrics.insert("outlier_count".into(), json!(cand.breakers.len()));
@@ -1057,12 +1068,16 @@ pub fn profile_surprises(
                 }
                 for high in [true, false] {
                     let ex = peel_presorted(lvals, high, cfg.min_subset_rows, cfg);
-                    let fresh: Vec<Extreme> = ex
-                        .into_iter()
-                        .filter(|e| !reported_rows.contains(&e.row))
-                        .filter(|e| e.value >= global_lo && e.value <= global_hi)
-                        .collect();
-                    if !fresh.is_empty() {
+                    // The statement describes the subset's whole isolated
+                    // cluster, because its edge and gap are measured against
+                    // all of it. It needs a row not yet reported, and every
+                    // member must be ordinary for the column as a whole.
+                    let fresh = ex;
+                    let adds_a_row = fresh.iter().any(|e| !reported_rows.contains(&e.row));
+                    let all_ordinary = fresh
+                        .iter()
+                        .all(|e| e.value >= global_lo && e.value <= global_hi);
+                    if adds_a_row && all_ordinary {
                         for e in &fresh {
                             reported_rows.insert(e.row);
                         }
