@@ -81,6 +81,12 @@ report.findings_frame()                      # Polars DataFrame
 report.diff(other)                           # findings added /
         # removed / changed between two profiles of a table,
         # matched by stable id, plus coverage status changes
+report.verify(df)                            # recount statements
+        # through Polars: ok, mismatch, or not_checkable
+report.rows("<id>", df)                      # the rows behind a
+        # statement, with positions in `__row`
+report.to_checks()                           # exact statements as
+        # Polars expressions; "great_expectations" gives a suite
 ```
 
 `findings_frame()` is an index (one row per finding), not the
@@ -116,8 +122,8 @@ Passing a bare string where a list is expected raises
 `onceover.available_detectors()` lists the detector set with the
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
-restricts a run to named detectors. The default set has 25 of
-the 32 registered detectors: `views` (experimental), `dates`,
+restricts a run to named detectors. The default set has 26 of
+the 33 registered detectors: `views` (experimental), `dates`,
 `pivot`, `period_associations`, `drift`, and `granularity` are
 opt-in and run only when named — a default run records each as
 skipped in coverage, naming it opt-in. `expectations` is in the

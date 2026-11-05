@@ -43,8 +43,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (25 of the
-        32 registered detectors). Excluded unless requested: the opt-in
+        Detector IDs to select; None selects the default set (26 of the
+        33 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift" and "granularity" — each records
         a skipped coverage entry in default runs — and "target_shapes",
@@ -746,6 +746,56 @@ class ProfileReport:
             if len(result) <= budget_chars:
                 return result
         return (lines[0] + "\n")[:budget_chars]
+
+    def verify(self, df):
+        """Recount this report's statements in `df` through Polars.
+
+        Returns a DataFrame with one row per checked quantity: `status` is
+        `ok`, `mismatch`, `not_checkable` (a sampled or model-based statement,
+        with nothing exact to recount) or `error`. Polars shares no code with
+        the detectors, so a claim that disagrees with the data shows up as a
+        `mismatch`. Run it on the profiled frame to audit the report, or on
+        newer data to see which statements still hold.
+        """
+        from . import _checks
+
+        data = self.data
+        return _checks.verify(
+            [*data["findings"], *(data.get("grouped_findings") or [])], df
+        )
+
+    def rows(self, finding_id: str, df):
+        """The rows behind one statement, with their positions in `__row`.
+
+        Violations for a dependency or identity, missing rows, repeated rows,
+        extreme values, rows breaking a pattern, or rows matching a rule's
+        conditions. Raises ValueError for statements with no row set.
+        """
+        from . import _checks
+
+        finding = self.finding(finding_id)
+        if finding is None:
+            raise ValueError(f"no finding with id {finding_id}")
+        return _checks.rows_of(finding, df)
+
+    def to_checks(self, fmt: str = "polars", name: str = "onceover"):
+        """Exact statements as constraints to run on new data.
+
+        `fmt="polars"` returns dicts with a Polars expression in `polars`.
+        `fmt="great_expectations"` returns an expectation suite; constraints
+        with no built-in expectation are listed under
+        `meta.unmapped_constraints`. Statements with exceptions, or measured on
+        a sample, are left out.
+        """
+        from . import _checks
+
+        data = self.data
+        findings = [*data["findings"], *(data.get("grouped_findings") or [])]
+        if fmt == "polars":
+            return _checks.constraints(findings)
+        if fmt == "great_expectations":
+            return _checks.great_expectations_suite(findings, name)
+        raise ValueError(f"unknown format {fmt!r}; use polars or great_expectations")
 
     def save(self, path: str, fmt: str = "json") -> str:
         """Write the report to `path` as json or markdown. Returns the path."""
