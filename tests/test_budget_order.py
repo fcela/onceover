@@ -3,7 +3,7 @@ candidate cap binds, what gets examined must be chosen by a
 cheap whole-population score, not by column position — and
 the truncation must be disclosed in coverage.
 
-Two passes are pinned here:
+Three passes are pinned here:
 
 - ordered_partitions: 141 numeric responses against the
   standard budget's 128-response cap. A level-break response
@@ -15,6 +15,11 @@ Two passes are pinned here:
   cell planted on the last three columns is stated; the same
   data with the triple on the first three columns yields the
   identical statement.
+- breaks: 41 numeric series against the standard budget's
+  16-series cap. A variance-break series and a transient
+  spike series planted in the last position are scanned and
+  stated; the same data with the series planted first yields
+  the identical statements.
 
 The planted frames are built with numpy, which is not a
 library dependency, so this module skips where numpy is
@@ -153,3 +158,96 @@ def test_hotspots_cap_disclosed_in_coverage():
     assert "400 of 1140 candidate triples examined" in cov["detail"]
     assert "pre-score" in cov["detail"]
     assert "not column order" in cov["detail"]
+
+
+def _breaks_frame(kind: str, planted_last: bool) -> pl.DataFrame:
+    # One planted frame per kind; the twin is a pure column
+    # permutation of it, so the planted series sits in the last
+    # numeric position or the first and every value — hence the
+    # claim — is otherwise identical. 5,000 rows and 40 noise
+    # fillers follow the geometry of the issue's measurement
+    # (5,000 rows, fillers past the 16-series cap).
+    rng = np.random.default_rng(20261105)
+    n = 5000
+    dates = pl.date_range(
+        pl.date(2012, 1, 1), pl.date(2025, 9, 8), interval="1d", eager=True
+    )
+    assert dates.len() == n
+    fillers = {f"noise_{i:02d}": rng.standard_normal(n) for i in range(40)}
+    s = rng.standard_normal(n)
+    if kind == "variance":
+        s[n // 2 :] *= 3.0
+    elif kind == "spike":
+        s[2500:2510] += 12.0
+    else:
+        raise ValueError(kind)
+    cols = {"date": dates}
+    if planted_last:
+        cols.update(fillers)
+        cols["planted"] = s
+    else:
+        cols["planted"] = s
+        cols.update(fillers)
+    return pl.DataFrame(cols)
+
+
+def _break_hits(report, want_type: str) -> list:
+    return [
+        f
+        for f in report.findings
+        if f.get("type") == want_type and "planted" in f["subject"]["columns"]
+    ]
+
+
+def test_breaks_planted_variance_series_last_is_scanned():
+    report = onceover.profile(
+        _breaks_frame("variance", True), budget="standard", detectors=["breaks"]
+    )
+    hits = _break_hits(report, "variance_change")
+    assert hits, "planted variance-break series in last position was not scanned"
+
+
+def test_breaks_variance_position_invariance():
+    last = onceover.profile(
+        _breaks_frame("variance", True), budget="standard", detectors=["breaks"]
+    )
+    first = onceover.profile(
+        _breaks_frame("variance", False), budget="standard", detectors=["breaks"]
+    )
+    last_hits = _break_hits(last, "variance_change")
+    first_hits = _break_hits(first, "variance_change")
+    assert last_hits and first_hits
+    assert last_hits[0]["claim"] == first_hits[0]["claim"]
+
+
+def test_breaks_planted_spike_series_last_is_scanned():
+    report = onceover.profile(
+        _breaks_frame("spike", True), budget="standard", detectors=["breaks"]
+    )
+    hits = _break_hits(report, "transient_excursion")
+    assert hits, "planted spike series in last position was not scanned"
+
+
+def test_breaks_spike_position_invariance():
+    last = onceover.profile(
+        _breaks_frame("spike", True), budget="standard", detectors=["breaks"]
+    )
+    first = onceover.profile(
+        _breaks_frame("spike", False), budget="standard", detectors=["breaks"]
+    )
+    last_hits = _break_hits(last, "transient_excursion")
+    first_hits = _break_hits(first, "transient_excursion")
+    assert last_hits and first_hits
+    assert last_hits[0]["claim"] == first_hits[0]["claim"]
+
+
+def test_breaks_cap_disclosed_in_coverage():
+    report = onceover.profile(
+        _breaks_frame("variance", True), budget="standard", detectors=["breaks"]
+    )
+    cov = report.data["coverage"]["breaks"]
+    assert "series cap 16 bound" in cov["detail"]
+    assert "16 of 41 eligible series scanned" in cov["detail"]
+    assert "prescore" in cov["detail"]
+    assert "not column order" in cov["detail"]
+    assert "not scanned:" in cov["detail"]
