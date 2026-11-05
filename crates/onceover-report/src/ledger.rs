@@ -79,6 +79,7 @@ impl Default for SelectionPolicy {
                 ("functional_dependencies".to_string(), 25),
                 ("gbm".to_string(), 20),
                 ("discontinuities".to_string(), 25),
+                ("missingness".to_string(), 20),
             ]),
         }
     }

@@ -1648,14 +1648,14 @@
     },
     {
      "kind": "max_findings",
-     "value": 72,
-     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md)."
+     "value": 74,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Re-baselined to 74 on 2026-11-05 (issue #100): the missingness detector adds two statements, the work_class/occupation block and native_country."
     },
     {
      "kind": "documented_case",
      "ref": "Missingness after the '?' marker is decoded: work_class null on 2,799 rows (5.73%), occupation on 2,809 (5.75%), native_country on 857 (1.75%)",
-     "status": "missed",
-     "note": "No finding in the standard profile mentions missing values in any column; the counts live only in the column cards. The pattern of issue #100, on a second unseen frame. Counts measured with Polars on the raw files, 2026-11-03."
+     "status": "found",
+     "note": "Found since 2026-11-05 by the missingness detector when the ? marker is decoded to null: the digest states work_class, occupation missing together on 2,799 rows (5.7%) and native_country on 857 rows (1.8%)."
     },
     {
      "kind": "finding",

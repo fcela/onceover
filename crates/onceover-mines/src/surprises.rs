@@ -493,12 +493,12 @@ fn make_finding(
 
 /// Per-row level codes and labels for one eligible column
 /// (2..=max_condition_levels distinct non-null levels).
-struct Coded {
-    codes: Vec<Option<u32>>,
-    labels: Vec<String>,
+pub(crate) struct Coded {
+    pub(crate) codes: Vec<Option<u32>>,
+    pub(crate) labels: Vec<String>,
 }
 
-fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<Coded> {
+pub(crate) fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<Coded> {
     let raw = condition_levels(table, col, cfg)?;
     let mut labels: Vec<String> = Vec::new();
     let mut index: BTreeMap<String, u32> = BTreeMap::new();

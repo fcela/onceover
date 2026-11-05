@@ -15,7 +15,7 @@ used by package version 0.1.3.
 
 | Category | Type or required definition | Meaning |
 |---|---|---|
-| `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows; also sentinel values standing in for missing data — one implausible value repeated in a narrow row window (the `sentinels` detector; value, count, window, and the column mean with and without it in the evidence) |
+| `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows: a statement for each column missing on at least 1% of rows, with the pattern behind it when one clears a Bonferroni bar (a grouping level, a numeric threshold, or a point on the time axis, from `pattern`, `pattern_column` and the rate metrics in the evidence), and blocks of columns missing on the same rows (`pattern`: `co_missing`), from the `missingness` detector; also sentinel values standing in for missing data — one implausible value repeated in a narrow row window (the `sentinels` detector; value, count, window, and the column mean with and without it in the evidence) |
 | `concentration` | Distinct counts, dominant shares, concentration measures | Concentration of a value distribution, including constants; also hotspots — cells of a 2–3 column combination holding far more rows than the marginals predict under independence (the `hotspots` detector; observed vs expected rows, ratio, and the multiplicity bar in the evidence) |
 | `column_roles` | `specification.definition.role` | Suggested interpretation of a column, supported by observations |
 | `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level. At standard and deep budgets the wide form is profiled too and its findings are merged into the same report, tagged `source_form` in their evidence (coverage entry `pivot_profile`) |
@@ -431,7 +431,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 22 of the 29 registered detectors. Six are
+and activation. The default set has 24 of the 31 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40
