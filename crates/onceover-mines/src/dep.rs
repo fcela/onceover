@@ -1169,7 +1169,7 @@ mod tests {
         // Step-up monotonicity: a small p after a larger one
         // inherits the larger adjusted value.
         let q2 = bh_qvalues(&[Some(0.04), Some(0.001)]);
-        assert!(q2[0] >= q2[1].unwrap() - 1e-15 || q2[0] <= q2[1].unwrap() + 1e-15);
+        assert!(q2[0].unwrap() >= q2[1].unwrap());
         assert!((q2[1].unwrap() - 0.002).abs() < 1e-12);
     }
 
