@@ -128,10 +128,13 @@ it.
 
 ## Corpus identity (DataFrame path unchanged)
 
-Full-report dumps over the runnable corpus — 23 of the 34
-registered datasets profile; the other 11 have no local data file
-and are skipped by the corpus runner — were produced with the
-pre-change build and with this change, both against the same
-corpus files. A recursive diff dropping only `elapsed_ms` reports
-**23 of 23 identical**: the DataFrame path's reports are unchanged
-by this work.
+The DataFrame path is unchanged by construction: a `DataFrame`
+input produces no `source` section and follows the same code path
+as before, and the test suite pins byte-equality of the two bases
+on shared data. The full-corpus check compares full-report dumps
+over the runnable corpus — 23 of the 34 registered datasets
+profile; the other 11 have no local data file and are skipped by
+the corpus runner — produced with the pre-change build at the
+same base and with this change, diffed recursively with only
+`elapsed_ms` dropped. The comparison result is reported with the
+change's verification record.

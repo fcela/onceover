@@ -4,6 +4,7 @@ A native Rust profiler for Polars DataFrames.
 """
 
 import json as _json
+import os
 
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
@@ -19,13 +20,18 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
             max_findings: int = 100, max_rules: int = 20,
             hints: dict | None = None, target: str | None = None,
-            timing: bool = False):
+            timing: bool = False,
+            source_row_cap: int | None = None, exact: bool = False,
+            sample_seed: int = 0):
     """Give a Polars DataFrame a once-over.
 
     Parameters
     ----------
-    df : polars.DataFrame
-        The table to profile (Arrow interchange; Polars 1.28–2.x).
+    df : polars.DataFrame, polars.LazyFrame, str, or os.PathLike
+        The table to profile (Arrow interchange; Polars 1.28–2.x), a
+        lazy frame, or a path to a Parquet, CSV, or IPC file — see
+        ``source_row_cap`` for how lazy and file inputs are
+        collected.
     budget : str
         "quick" (summaries and integrity checks), "standard" (default passes with caps),
         or "deep" (wider caps and deeper search for those passes).
@@ -84,17 +90,162 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         carries extraction and the column cards). Opt-in because
         timing makes the coverage section nondeterministic; findings
         are identical either way.
+    source_row_cap : int, optional
+        LazyFrame and file inputs only: the most rows collected from
+        the source (default 200,000). A source at or under the cap is
+        collected in full; above it, a deterministic stratified
+        sample of ``source_row_cap`` rows is collected at the source
+        — one row per equal stratum, hash-chosen within the stratum,
+        drawn with ``sample_seed``. The report's top-level ``source``
+        block and its ``input`` coverage entry state the basis
+        (``full`` or ``sampled``, with the sample design), and on a
+        sampled basis every finding's evidence scope records the
+        sample and the source population. CSV inputs infer their
+        schema from the whole file, so a type that appears only in
+        late rows is not silently read as nulls.
+    exact : bool, optional
+        LazyFrame and file inputs only: collect the whole source
+        regardless of ``source_row_cap``. Exact statistics on a
+        larger-than-memory input are this opt-in; memory is then
+        the caller's responsibility.
+    sample_seed : int, optional
+        Seed for the source sample (default 0). The same source,
+        cap, and seed give the same sample and the same report.
+
+    ``source_row_cap``, ``exact``, and ``sample_seed`` are rejected
+    for DataFrame inputs, which are always profiled in full.
 
     Returns
     -------
     ProfileReport
         Ranked findings ledger + per-column cards + coverage block.
     """
+    import polars as _pl
+
+    source = None
+    if isinstance(df, _pl.DataFrame):
+        if source_row_cap is not None or exact or sample_seed:
+            raise ValueError(
+                "source_row_cap, exact and sample_seed apply to LazyFrame "
+                "and file inputs; a DataFrame is already in memory and is "
+                "always profiled in full"
+            )
+    else:
+        df, source = _materialize_source(
+            df, source_row_cap=source_row_cap, exact=exact,
+            sample_seed=sample_seed)
     return ProfileReport(_profile_native(df, budget, deadline_seconds, sample_rows=sample_rows,
                                          max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
                                          max_findings=max_findings, max_rules=max_rules,
                                          hints=_json.dumps(hints) if hints is not None else None,
-                                         target=target, timing=timing))
+                                         target=target, timing=timing,
+                                         source=_json.dumps(source) if source is not None else None))
+
+
+#: Default cap on rows collected from a lazy or file source.
+_DEFAULT_SOURCE_ROW_CAP = 200_000
+
+#: Row-index column used to select the source sample; a source that
+#: already carries this name is rejected rather than overwritten.
+_SOURCE_ROW_INDEX = "__onceover_source_row"
+
+
+def _stratified_indices(n: int, cap: int, seed: int) -> list[int]:
+    """The deterministic stratified source sample: one row per
+    equal stratum of the source, the row within a stratum chosen by
+    a splitmix64 hash of the stratum index and the seed — the design
+    `onceover_core::sample_rows` uses for relationship searches,
+    applied at the source, with no periodic stride to alias against
+    periodic data."""
+    mask = (1 << 64) - 1
+    out = []
+    for j in range(cap):
+        lo = (j * n) // cap
+        span = ((j + 1) * n) // cap - lo
+        if span <= 0:
+            continue
+        x = (j + seed + 0x9E3779B97F4A7C15) & mask
+        x = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9) & mask
+        x = ((x ^ (x >> 27)) * 0x94D049BB133111EB) & mask
+        x ^= x >> 31
+        out.append(lo + x % span)
+    return out
+
+
+def _scan_path(path):
+    """A path input as (LazyFrame, kind), via the matching scan
+    constructor."""
+    import polars as pl
+
+    suffix = os.path.splitext(os.fspath(path))[1].lower()
+    if suffix in (".parquet", ".pq"):
+        return pl.scan_parquet(path), "parquet"
+    if suffix == ".csv":
+        # infer_schema_length=None: the schema comes from the whole
+        # file, so a type that appears only in late rows is not
+        # silently read as nulls.
+        return pl.scan_csv(path, infer_schema_length=None), "csv"
+    if suffix in (".ipc", ".feather", ".arrow"):
+        return pl.scan_ipc(path), "ipc"
+    raise ValueError(
+        f"unsupported file extension {suffix or '(none)'!r}: profile() "
+        "reads .parquet, .pq, .csv, .ipc, .feather and .arrow files"
+    )
+
+
+def _materialize_source(df, *, source_row_cap, exact, sample_seed):
+    """Resolve a LazyFrame or path input to (frame, source):
+    collect in full when the source fits the cap (or exact=True),
+    otherwise collect a stratified sample of the source at the cap.
+    `source` is the report's source block, stating the basis of
+    every finding the report will contain."""
+    import polars as pl
+
+    if isinstance(df, pl.LazyFrame):
+        lf, kind = df, "lazyframe"
+    elif isinstance(df, (str, os.PathLike)):
+        lf, kind = _scan_path(df)
+    else:
+        raise TypeError(
+            "profile() expects a polars DataFrame, a polars LazyFrame, "
+            "or a path to a Parquet, CSV or IPC file; got "
+            f"{type(df).__name__}"
+        )
+    if source_row_cap is None:
+        cap = _DEFAULT_SOURCE_ROW_CAP
+    elif (isinstance(source_row_cap, bool)
+          or not isinstance(source_row_cap, int) or source_row_cap <= 0):
+        raise ValueError("source_row_cap must be a positive integer")
+    else:
+        cap = source_row_cap
+    if (isinstance(sample_seed, bool) or not isinstance(sample_seed, int)
+            or sample_seed < 0):
+        raise ValueError("sample_seed must be a nonnegative integer")
+    try:
+        n = lf.select(pl.len()).collect(engine="streaming").item()
+    except Exception:
+        n = lf.select(pl.len()).collect().item()
+    source = {"kind": kind, "rows": n, "rows_profiled": n, "basis": "full"}
+    if exact or n <= cap:
+        return lf.collect(), source
+    if _SOURCE_ROW_INDEX in lf.collect_schema():
+        raise ValueError(
+            f"source already has a column named {_SOURCE_ROW_INDEX!r}")
+    indices = _stratified_indices(n, cap, sample_seed)
+    work = (
+        lf.with_row_index(_SOURCE_ROW_INDEX)
+        .filter(pl.col(_SOURCE_ROW_INDEX).is_in(indices))
+        .drop(_SOURCE_ROW_INDEX)
+    )
+    try:
+        frame = work.collect(engine="streaming")
+    except Exception:
+        frame = work.collect()
+    source["rows_profiled"] = frame.height
+    source["basis"] = "sampled"
+    source["sample"] = {"method": "stratified", "seed": sample_seed,
+                        "cap": cap}
+    return frame, source
 
 
 def _report_band(finding: dict) -> int:
@@ -643,6 +794,20 @@ class ProfileReport:
             lines.append(quality)
         if overview.get("headline"):
             lines.append("headline: " + overview["headline"])
+        source = data.get("source")
+        if source:
+            if source.get("basis") == "sampled":
+                lines.append(
+                    f"source: {source.get('kind')}, {source.get('rows')} rows; "
+                    f"profiled on a stratified sample of "
+                    f"{source.get('rows_profiled')} rows \u2014 findings "
+                    "describe the sample"
+                )
+            else:
+                lines.append(
+                    f"source: {source.get('kind')}, {source.get('rows')} "
+                    "rows, collected in full"
+                )
         cov = data.get("coverage", {})
         skipped = [
             f"{k}={v.get('status')}"

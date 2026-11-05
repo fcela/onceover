@@ -341,6 +341,7 @@ fn markdown_places_evidence_and_result_tables_beside_findings() {
     let report = ProfileReport {
         schema_version: SCHEMA_VERSION.into(),
         frame: None,
+        source: None,
         overview: Overview {
             n_rows: 100,
             n_columns: 2,
@@ -382,6 +383,7 @@ fn report_schema_roundtrips_and_renders() {
     let report = ProfileReport {
         schema_version: SCHEMA_VERSION.into(),
         frame: None,
+        source: None,
         overview: Overview {
             n_rows: 100,
             n_columns: 2,

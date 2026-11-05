@@ -1205,6 +1205,64 @@
         "n",
         "tier"
       ]
+    },
+    "sourceInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_profiled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "basis": {
+          "type": "string"
+        },
+        "sample": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sourceSample"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "rows",
+        "rows_profiled",
+        "basis"
+      ]
+    },
+    "sourceSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "method",
+        "seed",
+        "cap"
+      ]
     }
   },
   "$id": "docs/report-schema.json",
@@ -1261,6 +1319,9 @@
     },
     "selection": {
       "$ref": "#/$defs/selection"
+    },
+    "source": {
+      "$ref": "#/$defs/sourceInfo"
     }
   },
   "required": [
