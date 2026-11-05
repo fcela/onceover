@@ -147,6 +147,30 @@ identity, or encoding statements, so grouping cannot engage; the
 report is unchanged apart from the schema version and the two new
 zero counts on `selection`.
 
+## After merging main (2026-11-05)
+
+The branch was merged with main `fa59cbe`, which added the identity search
+rework (#125), the false-alarm fixes (#123, #124), missingness (#100), and boundary
+mass (#119). Two statements above no longer describe the merged tree: the identity
+over `{cnt, casual, registered}` is now among the candidates, so it leads its family
+at rank 6 and all three FDs group under it, and the identity search states each
+relation once, so identity rotations rarely reach this pass.
+
+`benchmarks/family_evaluation.py` now also counts an item that matches a grouped
+statement, at its lead's rank. Without this, `fd_triangle` read as absent once all
+three of its statements were grouped.
+
+| dataset | findings | grouped (families) | top-10 | top-25 | stated | digest chars (lines) |
+|---|---:|---:|---:|---:|---:|---:|
+| Adult | 69 | 2 (1) | 4/10 | 7/10 | 10/10 | 3,827 (20) |
+| Bike Sharing | 100 | 3 (1) | 4/12 | 5/12 | 6/12 | 3,859 (23) |
+| State unemployment (long) | 1 | 0 (0) | 4/5 | 4/5 | 4/5 | 1,402 (10) |
+
+These numbers combine this change with the merged work, so they are not this
+change's effect alone. Adult's `max_findings` guard moves to 69, and
+`test_identity_family_retrievable` now builds a frame where FDs restate the identity,
+since the scan no longer produces rotations to group.
+
 ## Corpus-wide outcomes
 
 The corpus harness now records an explicit selection outcome for

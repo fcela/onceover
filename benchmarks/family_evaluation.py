@@ -171,9 +171,18 @@ def statement_stream(data: dict) -> list[dict]:
 
 def evaluate(data: dict, items: dict) -> dict:
     stream = statement_stream(data)
+    grouped = data.get("grouped_findings") or []
+    rank_of_id = {f["id"]: i + 1 for i, f in enumerate(stream) if f.get("id")}
     ranks = {}
     for name, pred in items.items():
         rank = next((i + 1 for i, f in enumerate(stream) if pred(f)), None)
+        if rank is None:
+            # A grouped statement is read through its lead.
+            rank = next(
+                (rank_of_id[m["grouped_under"]] for m in grouped
+                 if pred(m) and m.get("grouped_under") in rank_of_id),
+                None,
+            )
         ranks[name] = rank
     digest_full = None
     return {
