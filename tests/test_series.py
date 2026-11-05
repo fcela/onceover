@@ -1,4 +1,5 @@
 """Series along the time axis: axis gaps, trend, cycle, persistence, levels (#131)."""
+import calendar
 from datetime import date, datetime, timedelta
 
 import polars as pl
@@ -94,7 +95,10 @@ def test_weekly_cycle():
 
 def test_hourly_cycle():
     rng = np.random.default_rng(7)
-    t = [datetime(2020, 1, 1) + timedelta(hours=i) for i in range(N)]
+    # Epoch microseconds and a cast: building a Datetime series from Python
+    # datetimes raises on Polars 1.x under Python 3.15.
+    start = calendar.timegm(datetime(2020, 1, 1).timetuple()) * 1_000_000
+    t = pl.Series("t", [start + i * 3_600_000_000 for i in range(N)]).cast(pl.Datetime("us"))
     y = np.sin(np.arange(N) * 2 * np.pi / 24) * 2 + rng.normal(size=N) * 0.5
     assert _series(_run(t=t, y=y), "y")["cycle"]["evidence"][0]["metrics"]["period"] == "1 day"
 
