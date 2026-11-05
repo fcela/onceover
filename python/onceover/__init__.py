@@ -4,6 +4,7 @@ A native Rust profiler for Polars DataFrames.
 """
 
 import json as _json
+import os
 
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
@@ -11,7 +12,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.6"
+_SCHEMA_VERSION = "0.7"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -19,13 +20,18 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
             max_findings: int = 100, max_rules: int = 20,
             hints: dict | None = None, target: str | None = None,
-            timing: bool = False):
+            timing: bool = False,
+            source_row_cap: int | None = None, exact: bool = False,
+            sample_seed: int = 0):
     """Give a Polars DataFrame a once-over.
 
     Parameters
     ----------
-    df : polars.DataFrame
-        The table to profile (Arrow interchange; Polars 1.28–2.x).
+    df : polars.DataFrame, polars.LazyFrame, str, or os.PathLike
+        The table to profile (Arrow interchange; Polars 1.28–2.x), a
+        lazy frame, or a path to a Parquet, CSV, or IPC file — see
+        ``source_row_cap`` for how lazy and file inputs are
+        collected.
     budget : str
         "quick" (summaries and integrity checks), "standard" (default passes with caps),
         or "deep" (wider caps and deeper search for those passes).
@@ -43,8 +49,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (24 of the
-        31 registered detectors). Excluded unless requested: the opt-in
+        Detector IDs to select; None selects the default set (27 of the
+        34 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift" and "granularity" — each records
         a skipped coverage entry in default runs — and "target_shapes",
@@ -84,17 +90,162 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         carries extraction and the column cards). Opt-in because
         timing makes the coverage section nondeterministic; findings
         are identical either way.
+    source_row_cap : int, optional
+        LazyFrame and file inputs only: the most rows collected from
+        the source (default 200,000). A source at or under the cap is
+        collected in full; above it, a deterministic stratified
+        sample of ``source_row_cap`` rows is collected at the source
+        — one row per equal stratum, hash-chosen within the stratum,
+        drawn with ``sample_seed``. The report's top-level ``source``
+        block and its ``input`` coverage entry state the basis
+        (``full`` or ``sampled``, with the sample design), and on a
+        sampled basis every finding's evidence scope records the
+        sample and the source population. CSV inputs infer their
+        schema from the whole file, so a type that appears only in
+        late rows is not silently read as nulls.
+    exact : bool, optional
+        LazyFrame and file inputs only: collect the whole source
+        regardless of ``source_row_cap``. Exact statistics on a
+        larger-than-memory input are this opt-in; memory is then
+        the caller's responsibility.
+    sample_seed : int, optional
+        Seed for the source sample (default 0). The same source,
+        cap, and seed give the same sample and the same report.
+
+    ``source_row_cap``, ``exact``, and ``sample_seed`` are rejected
+    for DataFrame inputs, which are always profiled in full.
 
     Returns
     -------
     ProfileReport
         Ranked findings ledger + per-column cards + coverage block.
     """
+    import polars as _pl
+
+    source = None
+    if isinstance(df, _pl.DataFrame):
+        if source_row_cap is not None or exact or sample_seed:
+            raise ValueError(
+                "source_row_cap, exact and sample_seed apply to LazyFrame "
+                "and file inputs; a DataFrame is already in memory and is "
+                "always profiled in full"
+            )
+    else:
+        df, source = _materialize_source(
+            df, source_row_cap=source_row_cap, exact=exact,
+            sample_seed=sample_seed)
     return ProfileReport(_profile_native(df, budget, deadline_seconds, sample_rows=sample_rows,
                                          max_predictors=max_predictors, max_pairs=max_pairs, detectors=detectors,
                                          max_findings=max_findings, max_rules=max_rules,
                                          hints=_json.dumps(hints) if hints is not None else None,
-                                         target=target, timing=timing))
+                                         target=target, timing=timing,
+                                         source=_json.dumps(source) if source is not None else None))
+
+
+#: Default cap on rows collected from a lazy or file source.
+_DEFAULT_SOURCE_ROW_CAP = 200_000
+
+#: Row-index column used to select the source sample; a source that
+#: already carries this name is rejected rather than overwritten.
+_SOURCE_ROW_INDEX = "__onceover_source_row"
+
+
+def _stratified_indices(n: int, cap: int, seed: int) -> list[int]:
+    """The deterministic stratified source sample: one row per
+    equal stratum of the source, the row within a stratum chosen by
+    a splitmix64 hash of the stratum index and the seed — the design
+    `onceover_core::sample_rows` uses for relationship searches,
+    applied at the source, with no periodic stride to alias against
+    periodic data."""
+    mask = (1 << 64) - 1
+    out = []
+    for j in range(cap):
+        lo = (j * n) // cap
+        span = ((j + 1) * n) // cap - lo
+        if span <= 0:
+            continue
+        x = (j + seed + 0x9E3779B97F4A7C15) & mask
+        x = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9) & mask
+        x = ((x ^ (x >> 27)) * 0x94D049BB133111EB) & mask
+        x ^= x >> 31
+        out.append(lo + x % span)
+    return out
+
+
+def _scan_path(path):
+    """A path input as (LazyFrame, kind), via the matching scan
+    constructor."""
+    import polars as pl
+
+    suffix = os.path.splitext(os.fspath(path))[1].lower()
+    if suffix in (".parquet", ".pq"):
+        return pl.scan_parquet(path), "parquet"
+    if suffix == ".csv":
+        # infer_schema_length=None: the schema comes from the whole
+        # file, so a type that appears only in late rows is not
+        # silently read as nulls.
+        return pl.scan_csv(path, infer_schema_length=None), "csv"
+    if suffix in (".ipc", ".feather", ".arrow"):
+        return pl.scan_ipc(path), "ipc"
+    raise ValueError(
+        f"unsupported file extension {suffix or '(none)'!r}: profile() "
+        "reads .parquet, .pq, .csv, .ipc, .feather and .arrow files"
+    )
+
+
+def _materialize_source(df, *, source_row_cap, exact, sample_seed):
+    """Resolve a LazyFrame or path input to (frame, source):
+    collect in full when the source fits the cap (or exact=True),
+    otherwise collect a stratified sample of the source at the cap.
+    `source` is the report's source block, stating the basis of
+    every finding the report will contain."""
+    import polars as pl
+
+    if isinstance(df, pl.LazyFrame):
+        lf, kind = df, "lazyframe"
+    elif isinstance(df, (str, os.PathLike)):
+        lf, kind = _scan_path(df)
+    else:
+        raise TypeError(
+            "profile() expects a polars DataFrame, a polars LazyFrame, "
+            "or a path to a Parquet, CSV or IPC file; got "
+            f"{type(df).__name__}"
+        )
+    if source_row_cap is None:
+        cap = _DEFAULT_SOURCE_ROW_CAP
+    elif (isinstance(source_row_cap, bool)
+          or not isinstance(source_row_cap, int) or source_row_cap <= 0):
+        raise ValueError("source_row_cap must be a positive integer")
+    else:
+        cap = source_row_cap
+    if (isinstance(sample_seed, bool) or not isinstance(sample_seed, int)
+            or sample_seed < 0):
+        raise ValueError("sample_seed must be a nonnegative integer")
+    try:
+        n = lf.select(pl.len()).collect(engine="streaming").item()
+    except Exception:
+        n = lf.select(pl.len()).collect().item()
+    source = {"kind": kind, "rows": n, "rows_profiled": n, "basis": "full"}
+    if exact or n <= cap:
+        return lf.collect(), source
+    if _SOURCE_ROW_INDEX in lf.collect_schema():
+        raise ValueError(
+            f"source already has a column named {_SOURCE_ROW_INDEX!r}")
+    indices = _stratified_indices(n, cap, sample_seed)
+    work = (
+        lf.with_row_index(_SOURCE_ROW_INDEX)
+        .filter(pl.col(_SOURCE_ROW_INDEX).is_in(indices))
+        .drop(_SOURCE_ROW_INDEX)
+    )
+    try:
+        frame = work.collect(engine="streaming")
+    except Exception:
+        frame = work.collect()
+    source["rows_profiled"] = frame.height
+    source["basis"] = "sampled"
+    source["sample"] = {"method": "stratified", "seed": sample_seed,
+                        "cap": cap}
+    return frame, source
 
 
 def _report_band(finding: dict) -> int:
@@ -114,6 +265,36 @@ def _report_band(finding: dict) -> int:
     if cat in ("column_roles", "formats", "ordering", "concentration"):
         return 3
     return 4
+
+
+def _quality_line(data: dict) -> str | None:
+    """One line of exact completeness facts from the column cards and the
+    duplicate-row statement, or None when there is nothing to state."""
+    columns = data.get("columns") or {}
+    gaps = [
+        (card.get("null_fraction") or 0, name)
+        for name, card in columns.items()
+        if 0 < (card.get("null_fraction") or 0) < 1
+    ]
+    parts = []
+    if gaps:
+        rate, name = max(gaps, key=lambda g: (g[0], g[1]))
+        parts.append(
+            f"missing values in {len(gaps)} column(s), most in {name} ({rate:.1%})"
+        )
+    empty = sum(1 for card in columns.values() if card.get("role") == "all_null")
+    constant = sum(1 for card in columns.values() if card.get("role") == "constant")
+    if empty:
+        parts.append(f"{empty} empty column(s)")
+    if constant:
+        parts.append(f"{constant} constant column(s)")
+    for finding in data.get("findings") or []:
+        if finding.get("type") == "duplicate_rows":
+            claim = finding["claim"].split(" rows repeat", 1)[0]
+            if claim.isdigit():
+                parts.append(f"{claim} duplicate row(s)")
+            break
+    return "quality: " + "; ".join(parts) if parts else None
 
 
 def _account_lines(frame: dict) -> list[str]:
@@ -420,6 +601,48 @@ class ProfileReport:
             return pl.DataFrame(schema=schema)
         return pl.DataFrame(rows)
 
+    def associations(self):
+        """Every pair the association screens tested, as a Polars
+        DataFrame (schema 0.7).
+
+        One row per screened pair: `a`, `b`, `kind` ("numeric",
+        "nominal", or "mixed"), the pair-complete row count `n`,
+        the effect sizes that screen computed (`pearson`,
+        `spearman`, `xi_ab`, `xi_ba` for numeric pairs — ξ is
+        directional, so both directions are carried; `cramers_v`
+        for nominal pairs; `eta`, the correlation ratio, for mixed
+        pairs), the raw per-pair `p_value`, the Benjamini–Hochberg
+        `q_value` over the pairs tested by the same screen in this
+        run, and the reporting `tier`: "strong" (significant after
+        correction and at or above the effect bar), "weak"
+        (significant, below the bar), or "none". Findings state
+        the strong pairs individually and the weak pairs as
+        findings too; this table is the full screen, including
+        the pairs that earned no statement. Empty, with the same
+        schema, when no association screen ran.
+        """
+        import polars as pl
+
+        schema = {
+            "a": pl.String,
+            "b": pl.String,
+            "kind": pl.String,
+            "n": pl.UInt64,
+            "pearson": pl.Float64,
+            "spearman": pl.Float64,
+            "xi_ab": pl.Float64,
+            "xi_ba": pl.Float64,
+            "cramers_v": pl.Float64,
+            "eta": pl.Float64,
+            "p_value": pl.Float64,
+            "q_value": pl.Float64,
+            "tier": pl.String,
+        }
+        rows = self.data.get("associations") or []
+        if not rows:
+            return pl.DataFrame(schema=schema)
+        return pl.DataFrame(rows, schema=schema)
+
     def to_json(self, max_chars: int | None = None) -> str:
         """The report as JSON. With `max_chars`, a size-budgeted view:
         findings are kept in full in rank order until the budget is
@@ -465,6 +688,7 @@ class ProfileReport:
                 "groups": data["groups"],
                 "selection": data["selection"],
                 "coverage": data["coverage"],
+                "associations": data.get("associations") or [],
                 "budget": {
                     "max_chars": max_chars,
                     "full_findings": len(data["findings"]),
@@ -534,15 +758,24 @@ class ProfileReport:
         expandable with `.finding(id)`. Groups are ordered by
         report band (account, completeness, relations, column
         structure, deviations), then by that claim's
-        interestingness. When verified relationship families formed
+        interestingness. A `quality:` line after the account states
+        missing values, constant and empty columns, and duplicate rows,
+        counted over all rows. When verified relationship families formed
         (schema 0.6), the header states how many statements were
         grouped, and a family lead's rolled line carries its grouped
         member ids in a `[grouped: ...]` suffix; the lead presents
-        at the earliest band among itself and its members. When the rolled lines exceed
-        `budget_chars`, the digest keeps as many as fit and ends
-        with a line stating how many groups were omitted; it never
-        exceeds the budget (budgets under ~200 characters return a
-        truncated header). The full record stays in `.data` /
+        at the earliest band among itself and its members. Weak-tier
+        tested associations (schema 0.7: significant after
+        Benjamini–Hochberg correction but below the strong effect
+        bar) never take individual digest lines: however many there
+        are, they collapse into one line carrying the count and the
+        strongest examples, pointing at `report.associations()` for
+        the full table. When the rolled lines exceed `budget_chars`,
+        the digest takes lines from each band in turn, strongest
+        first, so that no band fills the budget alone, then ends with
+        a line stating what was omitted by category and how to retrieve
+        it; it never exceeds the budget (budgets under ~200 characters
+        return a truncated header). The full record stays in `.data` /
         `to_json()`.
         """
         data = self.data
@@ -556,8 +789,25 @@ class ProfileReport:
         ]
         account_lines = _account_lines(data.get("frame") or {})
         lines.extend(account_lines)
+        quality = _quality_line(data)
+        if quality:
+            lines.append(quality)
         if overview.get("headline"):
             lines.append("headline: " + overview["headline"])
+        source = data.get("source")
+        if source:
+            if source.get("basis") == "sampled":
+                lines.append(
+                    f"source: {source.get('kind')}, {source.get('rows')} rows; "
+                    f"profiled on a stratified sample of "
+                    f"{source.get('rows_profiled')} rows \u2014 findings "
+                    "describe the sample"
+                )
+            else:
+                lines.append(
+                    f"source: {source.get('kind')}, {source.get('rows')} "
+                    "rows, collected in full"
+                )
         cov = data.get("coverage", {})
         skipped = [
             f"{k}={v.get('status')}"
@@ -601,8 +851,22 @@ class ProfileReport:
                     band = min(band, _report_band(member))
             return band
 
+        def weak_assoc(f: dict) -> bool:
+            # Weak-tier tested associations (schema 0.7) collapse
+            # into a single digest line below, however many there
+            # are: they are leads, not headline statements.
+            if f.get("type") != "statistical":
+                return False
+            return any(
+                (ev.get("metrics") or {}).get("tier") == "weak"
+                for ev in f.get("evidence") or []
+            )
+
+        weak = [f for f in findings if weak_assoc(f)]
+        stated = [f for f in findings if not weak_assoc(f)]
+
         groups: dict[tuple, list[dict]] = {}
-        for f in findings:
+        for f in stated:
             subj = f.get("subject") or {}
             key = (
                 f.get("category"),
@@ -635,31 +899,78 @@ class ProfileReport:
                     band_of(head_finding),
                     -(head_finding.get("interestingness") or 0),
                     line,
+                    cat,
+                    len(fs_sorted),
+                )
+            )
+        if weak:
+            weak_sorted = sorted(
+                weak, key=lambda x: -(x.get("interestingness") or 0)
+            )
+            examples = "; ".join(f["claim"] for f in weak_sorted[:3])
+            rolled.append(
+                (
+                    band_of(weak_sorted[0]),
+                    -(weak_sorted[0].get("interestingness") or 0),
+                    f"[associations] statistical/weak (x{len(weak)}): "
+                    f"{len(weak)} tested association(s) below the strong "
+                    f"effect bar — strongest: {examples} "
+                    "[full table: report.associations()]",
+                    "associations",
+                    len(weak),
                 )
             )
         rolled.sort(key=lambda kv: (kv[0], kv[1], kv[2]))
-        body_lines = [line for _, _, line in rolled]
+        body_lines = [entry[2] for entry in rolled]
 
-        def omission(dropped: int) -> str:
+        def omission(omitted: list[tuple]) -> str:
+            by_category: dict[str, int] = {}
+            for entry in omitted:
+                by_category[entry[3]] = by_category.get(entry[3], 0) + entry[4]
+            ordered = sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0]))
+            names = ", ".join(f"{c} {n}" for c, n in ordered[:4])
+            retrieve = (
+                f'; report.select(category="{ordered[0][0]}") retrieves them'
+                if ordered
+                else ""
+            )
             return (
-                f"... [{dropped} rolled-up finding groups omitted to fit "
-                f"{budget_chars} chars; {len(findings)} findings total]"
+                f"... [{len(omitted)} rolled-up finding groups omitted to fit "
+                f"{budget_chars} chars; {len(findings)} findings total: "
+                f"{names}{retrieve}]"
             )
 
         full = header + "\n" + "\n".join(body_lines) + "\n"
         if len(full) <= budget_chars:
             return full
-        kept: list[str] = []
-        used = len(header) + 1 + len(omission(len(body_lines))) + 1
-        for ln in body_lines:
-            if used + len(ln) + 1 > budget_chars:
-                break
-            kept.append(ln)
-            used += len(ln) + 1
-        dropped = len(body_lines) - len(kept)
-        result = header + "\n" + "\n".join(kept + [omission(dropped)]) + "\n"
-        if len(result) <= budget_chars:
-            return result
+        # Take lines from each band in turn.
+        queues: dict[int, list[int]] = {}
+        for i, entry in enumerate(rolled):
+            queues.setdefault(entry[0], []).append(i)
+        kept_order: list[int] = []
+        used = len(header) + 1 + len(omission(rolled)) + 1
+        progressed = True
+        while progressed:
+            progressed = False
+            for band in sorted(queues):
+                queue = queues[band]
+                while queue:
+                    i = queue.pop(0)
+                    if used + len(rolled[i][2]) + 1 <= budget_chars:
+                        kept_order.append(i)
+                        used += len(rolled[i][2]) + 1
+                        progressed = True
+                        break
+        # The omission line changes with what it lists, so it can come out
+        # longer than the reserve. Give back the latest lines until it fits.
+        while kept_order:
+            kept_ids = set(kept_order)
+            kept = [rolled[i][2] for i in sorted(kept_ids)]
+            omitted = [rolled[i] for i in range(len(rolled)) if i not in kept_ids]
+            result = header + "\n" + "\n".join(kept + [omission(omitted)]) + "\n"
+            if len(result) <= budget_chars:
+                return result
+            kept_order.pop()
         # Degrade the header itself: drop the category-count and
         # coverage lines, then the headline, keeping the profile
         # line and the account block — the account is the summary
@@ -676,10 +987,60 @@ class ProfileReport:
         ladder.append([lines[0]])
         for cand in ladder:
             short_header = "\n".join(cand) + "\n"
-            result = short_header + omission(len(body_lines)) + "\n"
+            result = short_header + omission(rolled) + "\n"
             if len(result) <= budget_chars:
                 return result
         return (lines[0] + "\n")[:budget_chars]
+
+    def verify(self, df):
+        """Recount this report's statements in `df` through Polars.
+
+        Returns a DataFrame with one row per checked quantity: `status` is
+        `ok`, `mismatch`, `not_checkable` (a sampled or model-based statement,
+        with nothing exact to recount) or `error`. Polars shares no code with
+        the detectors, so a claim that disagrees with the data shows up as a
+        `mismatch`. Run it on the profiled frame to audit the report, or on
+        newer data to see which statements still hold.
+        """
+        from . import _checks
+
+        data = self.data
+        return _checks.verify(
+            [*data["findings"], *(data.get("grouped_findings") or [])], df
+        )
+
+    def rows(self, finding_id: str, df):
+        """The rows behind one statement, with their positions in `__row`.
+
+        Violations for a dependency or identity, missing rows, repeated rows,
+        extreme values, rows breaking a pattern, or rows matching a rule's
+        conditions. Raises ValueError for statements with no row set.
+        """
+        from . import _checks
+
+        finding = self.finding(finding_id)
+        if finding is None:
+            raise ValueError(f"no finding with id {finding_id}")
+        return _checks.rows_of(finding, df)
+
+    def to_checks(self, fmt: str = "polars", name: str = "onceover"):
+        """Exact statements as constraints to run on new data.
+
+        `fmt="polars"` returns dicts with a Polars expression in `polars`.
+        `fmt="great_expectations"` returns an expectation suite; constraints
+        with no built-in expectation are listed under
+        `meta.unmapped_constraints`. Statements with exceptions, or measured on
+        a sample, are left out.
+        """
+        from . import _checks
+
+        data = self.data
+        findings = [*data["findings"], *(data.get("grouped_findings") or [])]
+        if fmt == "polars":
+            return _checks.constraints(findings)
+        if fmt == "great_expectations":
+            return _checks.great_expectations_suite(findings, name)
+        raise ValueError(f"unknown format {fmt!r}; use polars or great_expectations")
 
     def save(self, path: str, fmt: str = "json") -> str:
         """Write the report to `path` as json or markdown. Returns the path."""

@@ -61,6 +61,13 @@ A report is a JSON-shaped object (contract:
   not mean clean data.** Check coverage first: passes may have
   been skipped (budget, deadline, column-count caps) rather than
   run and found nothing.
+- **Source** — `profile()` also accepts a Polars LazyFrame or a
+  file path (`.parquet`, `.csv`, `.ipc`). Those reports carry a
+  `source` section: the source's full row count and the basis —
+  `full`, or `sampled` with the sample's method, seed, and cap.
+  On a sampled basis every finding's evidence scope records the
+  sample and the source population; read sampled numbers as
+  statements about the sample, not the population.
 
 ## Getting findings back out
 
@@ -78,9 +85,21 @@ report.to_json(max_chars=12_000)             # budgeted view; a
         # `budget` record in the output states what was cut
 report.findings_frame()                      # Polars DataFrame
                                              # index of findings
+report.associations()                        # Polars DataFrame of
+                                             # every pair the
+                                             # association screens
+                                             # tested: effect sizes,
+                                             # raw and BH-adjusted
+                                             # p-values, tier
 report.diff(other)                           # findings added /
         # removed / changed between two profiles of a table,
         # matched by stable id, plus coverage status changes
+report.verify(df)                            # recount statements
+        # through Polars: ok, mismatch, or not_checkable
+report.rows("<id>", df)                      # the rows behind a
+        # statement, with positions in `__row`
+report.to_checks()                           # exact statements as
+        # Polars expressions; "great_expectations" gives a suite
 ```
 
 `findings_frame()` is an index (one row per finding), not the
@@ -116,8 +135,8 @@ Passing a bare string where a list is expected raises
 `onceover.available_detectors()` lists the detector set with the
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
-restricts a run to named detectors. The default set has 24 of
-the 31 registered detectors: `views` (experimental), `dates`,
+restricts a run to named detectors. The default set has 27 of
+the 34 registered detectors: `views` (experimental), `dates`,
 `pivot`, `period_associations`, `drift`, and `granularity` are
 opt-in and run only when named — a default run records each as
 skipped in coverage, naming it opt-in. `expectations` is in the

@@ -341,6 +341,7 @@ fn markdown_places_evidence_and_result_tables_beside_findings() {
     let report = ProfileReport {
         schema_version: SCHEMA_VERSION.into(),
         frame: None,
+        source: None,
         overview: Overview {
             n_rows: 100,
             n_columns: 2,
@@ -355,6 +356,7 @@ fn markdown_places_evidence_and_result_tables_beside_findings() {
         grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
+        associations: Vec::new(),
     };
     let md = report.to_markdown();
     let claim_at = md.find("conditional statement").unwrap();
@@ -381,6 +383,7 @@ fn report_schema_roundtrips_and_renders() {
     let report = ProfileReport {
         schema_version: SCHEMA_VERSION.into(),
         frame: None,
+        source: None,
         overview: Overview {
             n_rows: 100,
             n_columns: 2,
@@ -395,6 +398,7 @@ fn report_schema_roundtrips_and_renders() {
         grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
+        associations: Vec::new(),
     };
     let back: ProfileReport = serde_json::from_str(&report.to_json()).unwrap();
     assert_eq!(back, report);
@@ -459,6 +463,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         DigitPreference,
         BenfordDeviation,
         FunctionalDependency,
+        OrderConstraint,
         AffineDependency,
         ArithmeticIdentity,
         PredictiveDependency,
@@ -488,6 +493,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         let directed = matches!(
             pattern,
             FunctionalDependency
+                | OrderConstraint
                 | AffineDependency
                 | ArithmeticIdentity
                 | PredictiveDependency
@@ -939,7 +945,8 @@ fn default_policy_caps_the_char_heavy_detectors() {
         policy.max_findings_per_detector.get("missingness"),
         Some(&20)
     );
-    assert_eq!(policy.max_findings_per_detector.len(), 4);
+    assert_eq!(policy.max_findings_per_detector.get("series"), Some(&20));
+    assert_eq!(policy.max_findings_per_detector.len(), 5);
 }
 
 #[test]
