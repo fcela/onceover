@@ -440,6 +440,34 @@ pub struct FrameInfo {
 }
 
 /// The complete profile report.
+/// How the profiled frame was obtained from a lazy or file source:
+/// the report's statement of basis for everything it contains.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SourceInfo {
+    /// lazyframe | parquet | csv | ipc — how the source was read.
+    pub kind: String,
+    /// Exact row count of the source.
+    pub rows: usize,
+    /// Rows actually collected and profiled.
+    pub rows_profiled: usize,
+    /// "full" when the whole source was collected, "sampled" when
+    /// rows_profiled is a source sample of rows.
+    pub basis: String,
+    /// The sample design when basis == "sampled".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample: Option<SourceSample>,
+}
+
+/// The source sample design: a deterministic stratified sample —
+/// one row per equal stratum of the source, hash-chosen within the
+/// stratum.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SourceSample {
+    pub method: String,
+    pub seed: u64,
+    pub cap: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProfileReport {
     pub schema_version: String,
@@ -448,6 +476,11 @@ pub struct ProfileReport {
     /// built outside the pipeline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<FrameInfo>,
+    /// The lazy or file source the profiled frame was collected
+    /// from; absent for in-memory DataFrame inputs, whose reports
+    /// are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceInfo>,
     pub columns: BTreeMap<String, ColumnCard>,
     /// The ranked findings ledger. Order is the product.
     pub findings: Vec<Finding>,

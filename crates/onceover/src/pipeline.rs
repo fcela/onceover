@@ -126,6 +126,36 @@ fn profile_inner(
         )),
     );
 
+    if let Some(source) = &cfg.source {
+        let detail = if source.basis == "sampled" {
+            format!(
+                "{} source of {} rows profiled on a stratified sample of {} rows (seed {}); \
+                 every finding's evidence scope records the source population",
+                source.kind,
+                source.rows,
+                source.rows_profiled,
+                source.sample.as_ref().map(|s| s.seed).unwrap_or(0),
+            )
+        } else {
+            format!(
+                "{} source: {} rows, collected in full",
+                source.kind, source.rows
+            )
+        };
+        let info = if source.basis == "sampled" {
+            PassInfo::sampled(detail)
+        } else {
+            PassInfo::ran(detail)
+        };
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "input".into(),
+            info,
+        );
+    }
+
     // ---------- column cards ----------
     use rayon::prelude::*;
     let cards: Vec<CardOut> = table
@@ -1790,8 +1820,22 @@ fn profile_inner(
         }
     }
     let outcome = select_findings_counted(findings, &cfg.selection);
-    let findings = outcome.selected;
-    let grouped = outcome.grouped;
+    let mut findings = outcome.selected;
+    let mut grouped = outcome.grouped;
+    if let Some(source) = &cfg.source {
+        if source.basis == "sampled" {
+            // Basis disclosure: on a sampled source no finding may
+            // present sample numbers as population numbers. Every
+            // evidence scope names the sample and the source
+            // population it was drawn from.
+            for finding in findings.iter_mut().chain(grouped.iter_mut()) {
+                for evidence in &mut finding.evidence {
+                    evidence.scope.sampling = Sampling::Sample;
+                    evidence.scope.population_rows = Some(source.rows);
+                }
+            }
+        }
+    }
     let capped = outcome.capped;
     let grouping_note = if grouped.is_empty() {
         None
@@ -1848,7 +1892,15 @@ fn profile_inner(
         families: outcome.families,
         grouped_statements: grouped.len(),
     };
-    let overview = build_overview(&table, &columns, &findings, cfg);
+    let mut overview = build_overview(&table, &columns, &findings, cfg);
+    if let Some(source) = &cfg.source {
+        if source.basis == "sampled" {
+            overview.headline.push_str(&format!(
+                "; profiled on a stratified sample from {} source rows",
+                source.rows
+            ));
+        }
+    }
     if deadline_hit {
         stamp_insert(
             &mut coverage,
@@ -1871,6 +1923,7 @@ fn profile_inner(
         grouped_findings: grouped,
         groups,
         selection,
+        source: cfg.source.clone(),
         coverage,
         associations: association_pairs,
     }

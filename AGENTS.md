@@ -61,6 +61,13 @@ A report is a JSON-shaped object (contract:
   not mean clean data.** Check coverage first: passes may have
   been skipped (budget, deadline, column-count caps) rather than
   run and found nothing.
+- **Source** — `profile()` also accepts a Polars LazyFrame or a
+  file path (`.parquet`, `.csv`, `.ipc`). Those reports carry a
+  `source` section: the source's full row count and the basis —
+  `full`, or `sampled` with the sample's method, seed, and cap.
+  On a sampled basis every finding's evidence scope records the
+  sample and the source population; read sampled numbers as
+  statements about the sample, not the population.
 
 ## Getting findings back out
 

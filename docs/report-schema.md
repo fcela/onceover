@@ -24,6 +24,23 @@ in `findings.md`.
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
 | `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected`, and (schema 0.6) `families` and `grouped_statements` |
 | `coverage` | object keyed by pipeline pass name (which can differ from detector ID); each entry: `status` (`ran_exact`, `ran_sampled`, `capped`, `skipped`, `not_applicable`, `error`) and `detail` (free text — can be very long on wide tables; see the context-budget note in `docs/benchmarks/2026-10-28-context-digest.md`); on timing-enabled runs (`profile(..., timing=True)`) each entry also carries `elapsed_ms`, the wall time attributed to the pass — the interval since the previous entry was recorded (passes run sequentially; the first entry also carries extraction and the column cards) |
+| `source` | present only when the input was a LazyFrame or a file path: `kind` (`lazyframe`, `parquet`, `csv`, or `ipc`), `rows` (rows in the full source, counted exactly), `rows_profiled` (rows the profile ran on), `basis` (`full` or `sampled`), and, when sampled, `sample` (`method`, `seed`, `cap`). Absent for in-memory DataFrame inputs; inventoried under "Source inputs" below |
+
+## Source inputs
+
+The `source` section records where the profiled rows came from
+when the input was not an in-memory DataFrame. `rows` is counted
+exactly before any sampling. When the source holds more rows than
+the source row cap (default 200,000; `source_row_cap=`), the
+profile runs on a stratified sample — one row per equal stratum of
+the source, hash-chosen within the stratum, deterministic for a
+given `sample_seed=` — and `basis` is `sampled`; `exact=True`
+collects the source whole instead. When the basis is `sampled`,
+every finding's evidence scope records `sampling: "sample"` with
+`population_rows` set to the source row count, the overview
+headline states the sample, and the coverage `input` entry records
+the sample's size and seed, so no sampled number is presented as a
+population number.
 
 ## The frame model
 
