@@ -757,6 +757,75 @@ fn profile_inner(
         findings.append(&mut f);
     }
 
+    // ---------- series ----------
+    if check_deadline(&mut coverage, "series") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("series") {
+        let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+        let columns_with_role = |role: &str| -> Vec<usize> {
+            frame
+                .roles
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.as_deref() == Some(role))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        match (&ticks, &axis_name) {
+            (Some(ticks), Some(axis_name)) => {
+                let input = onceover_mines::SeriesInput {
+                    axis_name,
+                    ticks,
+                    measures: columns_with_role("measure"),
+                    dimensions: columns_with_role("dimension"),
+                };
+                let (mut f, detail) = onceover_mines::profile_series(&table, &input);
+                // The dates detector states the same axis's gaps with its
+                // own calendar when selected.
+                if enabled("dates") {
+                    f.retain(|finding| finding.category != Category::Gaps);
+                }
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "series".into(),
+                    PassInfo::ran(detail),
+                );
+                findings.append(&mut f);
+            }
+            _ => stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "series".into(),
+                PassInfo::skipped("no date or datetime axis to describe series along".to_string()),
+            ),
+        }
+    }
+
+    // ---------- content ----------
+    if check_deadline(&mut coverage, "content") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("content") {
+        let mut f = onceover_deps::column_content(&table);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "content".into(),
+            PassInfo::ran(format!(
+                "{} columns scanned for content; {} statements",
+                table.cols.len(),
+                f.len()
+            )),
+        );
+        findings.append(&mut f);
+    }
+
     // ---------- boundaries ----------
     if check_deadline(&mut coverage, "boundaries") {
         deadline_hit = true;
@@ -1495,7 +1564,7 @@ fn profile_inner(
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
                     "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
-                    | "identities" | "missingness" => Sampling::Full,
+                    | "identities" | "missingness" | "content" => Sampling::Full,
                     "association_rules" | "prism" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample

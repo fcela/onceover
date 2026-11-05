@@ -158,7 +158,7 @@ def test_format_artifact_keeps_its_low_detector_score():
         for i in range(300)
     ]
     report = onceover.profile(pl.DataFrame(rows), budget="standard")
-    formats = [f for f in report.findings if f.get("category") == "formats"]
+    formats = [f for f in report.findings if f.get("type") == "format_variation"]
     assert formats
     for f in formats:
         # The format detector assigns 0.42; selection used to overwrite

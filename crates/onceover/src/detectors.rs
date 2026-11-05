@@ -86,6 +86,8 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("sentinels", vec![Missingness], &[], Default),
         make("boundaries", vec![Formats], &[], Default),
         make("missingness", vec![Missingness], &[], Default),
+        make("content", vec![Formats], &[], Default),
+        make("series", vec![Gaps, Changes], &[], Default),
         make("digits", vec![Formats], &[], Default),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs across two batteries (2026-10-29, 2026-11-02).
@@ -187,12 +189,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_24_measured_detectors() {
+    fn default_set_is_the_26_measured_detectors() {
         let active = active_detectors(None);
-        // 31 registered: 24 default (23 Default + hint-gated
+        // 33 registered: 26 default (25 Default + hint-gated
         // expectations), 6 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 31);
-        assert_eq!(active.len(), 24);
+        assert_eq!(builtin_detectors().len(), 33);
+        assert_eq!(active.len(), 26);
         for id in [
             "views",
             "dates",
@@ -223,7 +225,7 @@ mod tests {
         for d in builtin_detectors() {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&23));
+        assert_eq!(counts.get("Default"), Some(&25));
         assert_eq!(counts.get("OptIn"), Some(&6));
         assert_eq!(counts.get("HintGated"), Some(&1));
         assert_eq!(counts.get("TargetGated"), Some(&1));

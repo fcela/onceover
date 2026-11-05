@@ -95,6 +95,23 @@
    "activation": "default"
   },
   {
+   "id": "content",
+   "categories": [
+    "formats"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
+   "id": "series",
+   "categories": [
+    "gaps",
+    "changes"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "digits",
    "categories": [
     "formats"
