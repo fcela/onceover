@@ -664,18 +664,24 @@ pub fn screen_target(
         .filter(|&f| f != own && !excluded_targets.contains(&enc.feat_cols[f]))
         .collect();
     if selected.len() > cfg.max_predictors {
-        let scores: Vec<f64> = selected
+        // Pair each feature with its information score before
+        // sorting: `selected` is not the full feature range once
+        // exclusions apply, so scores cannot be indexed by feature
+        // position.
+        let mut scored: Vec<(usize, f64)> = selected
             .iter()
-            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .map(|&f| {
+                (
+                    f,
+                    crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows),
+                )
+            })
             .collect();
-        selected.sort_by(|&a, &b| {
-            // selected initially contains every feature except own.
-            let ai = if a < own { a } else { a - 1 };
-            let bi = if b < own { b } else { b - 1 };
-            scores[bi]
-                .total_cmp(&scores[ai])
-                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        scored.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
         });
+        selected = scored.into_iter().map(|(f, _)| f).collect();
         selected.truncate(cfg.max_predictors);
     }
     if selected.is_empty() {
@@ -1211,17 +1217,24 @@ pub fn fit_gbm_model_restricted(
         .filter(|&f| f != own && !exclude_cols.contains(&enc.feat_cols[f]))
         .collect();
     if selected.len() > cfg.max_predictors {
-        let scores: Vec<f64> = selected
+        // Pair each feature with its information score before
+        // sorting: `selected` is not the full feature range once
+        // exclusions apply, so scores cannot be indexed by feature
+        // position.
+        let mut scored: Vec<(usize, f64)> = selected
             .iter()
-            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .map(|&f| {
+                (
+                    f,
+                    crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows),
+                )
+            })
             .collect();
-        selected.sort_by(|&a, &b| {
-            let ai = if a < own { a } else { a - 1 };
-            let bi = if b < own { b } else { b - 1 };
-            scores[bi]
-                .total_cmp(&scores[ai])
-                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        scored.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
         });
+        selected = scored.into_iter().map(|(f, _)| f).collect();
         selected.truncate(cfg.max_predictors);
     }
     if selected.is_empty() {
@@ -1432,7 +1445,7 @@ mod tests {
         assert!(select_driver_idx(&[], 0.0).is_empty());
     }
 
-    fn driver_frame() -> (TypedTable, EncodedMatrix) {
+    fn driver_frame() -> polars::prelude::DataFrame {
         // y = x^2 plus six noise columns.
         let mut rng = Lcg(123);
         let mut x: Vec<Option<f64>> = Vec::new();
@@ -1446,20 +1459,19 @@ mod tests {
                 col.push(Some(rng.next_f64()));
             }
         }
-        let df = df! {
+        df! {
             "x" => x, "y" => y,
             "n0" => n[0].clone(), "n1" => n[1].clone(), "n2" => n[2].clone(),
             "n3" => n[3].clone(), "n4" => n[4].clone(), "n5" => n[5].clone(),
         }
-        .unwrap();
-        let table = extract(&df);
-        let (enc, _) = encode(&table, &EncodeConfig::default());
-        (table, enc)
+        .unwrap()
     }
 
     #[test]
     fn screen_claim_names_only_the_planted_driver() {
-        let (table, enc) = driver_frame();
+        let df = driver_frame();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
         let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
@@ -1490,7 +1502,9 @@ mod tests {
 
     #[test]
     fn excluded_columns_leave_the_predictor_pool() {
-        let (table, enc) = driver_frame();
+        let df = driver_frame();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
         let x_col = table.names.iter().position(|n| n == "x").unwrap();
         let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col]);
         for r in &out.results {
@@ -1506,5 +1520,47 @@ mod tests {
             .findings
             .iter()
             .all(|f| !f.claim.starts_with("y is predictable")));
+    }
+
+    #[test]
+    fn excluded_columns_survive_the_predictor_shortlist() {
+        // Regression: with more encoded features than the predictor
+        // cap, the shortlist sort pairs each feature with its own
+        // score; indexing scores by feature position panics once an
+        // exclusion makes the selected set non-contiguous (the
+        // state-unemployment corpus frame: 50+ features, a timestamp
+        // exclusion, index 50 into a 50-long score vector).
+        use polars::prelude::*;
+        let mut rng = Lcg(77);
+        let n = 1200;
+        let mut cols: Vec<Series> = Vec::new();
+        let mut x: Vec<f64> = Vec::new();
+        let mut y: Vec<f64> = Vec::new();
+        for _ in 0..n {
+            let v = rng.next_f64();
+            x.push(v);
+            y.push(v * v + 0.01 * rng.next_f64());
+        }
+        cols.push(Series::new("x".into(), x));
+        cols.push(Series::new("y".into(), y));
+        for i in 0..53 {
+            let vals: Vec<f64> = (0..n).map(|_| rng.next_f64()).collect();
+            cols.push(Series::new(format!("n{i}").into(), vals));
+        }
+        let df = DataFrame::new_infer_height(
+            cols.into_iter().map(|s| s.into()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let excluded = table.names.iter().position(|nm| nm == "n0").unwrap();
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[excluded]);
+        let res = out.results.iter().find(|r| r.name == "y").unwrap();
+        assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
+        assert_eq!(res.drivers[0].0, "x");
+        assert!(out
+            .results
+            .iter()
+            .all(|r| !r.inputs.iter().any(|i| i == "n0")));
     }
 }
