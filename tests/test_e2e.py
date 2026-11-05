@@ -76,7 +76,10 @@ def test_planted_structure_recovered():
     # the rest of the planted structure belongs to the default set.
     report=onceover.profile(planted_df(6000),detectors=default_plus("dates"))
     assert select(report,"uniqueness",column="order_id")
-    assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="region_name")
+    # The region_id <-> region_name pair is an exact bijection: the
+    # FD is grouped under the duplicate-encoding lead (schema 0.6)
+    # and remains in the report as a grouped statement.
+    assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="region_name",include_grouped=True)
     assert select(report,"gaps",column="event_date")
     assert select(report,"column_roles",column="region_id")
     assert select(report,"dependencies",subtype="predictive",target="y")
@@ -87,7 +90,7 @@ def test_json_roundtrip_and_determinism():
     df=planted_df(1500)
     a=onceover.profile(df)
     assert a.to_json()==onceover.profile(df).to_json()
-    assert a.data["schema_version"]=="0.5"
+    assert a.data["schema_version"]=="0.6"
     assert a.columns["region_id"]["role"]=="categorical"
     for f in a.findings:
         assert "kind" not in f and "confidence" not in f
@@ -138,4 +141,4 @@ def test_markdown_and_save(tmp_path):
     # inheriting the locale default (cp1252 on Windows), which decodes
     # today's finding messages only by luck — the same latent pattern
     # as the notebook contract test's read.
-    assert json.loads(p.read_text(encoding='utf-8'))['schema_version']=='0.5'
+    assert json.loads(p.read_text(encoding='utf-8'))['schema_version']=='0.6'

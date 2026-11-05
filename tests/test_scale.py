@@ -55,7 +55,10 @@ def test_late_columns_reach_models_dependencies_and_pair_screen(reverse):
     assert len(report.columns) == df.width
     assert "all usable columns" in report.coverage["encoding"]["detail"]
     assert select(report,"dependencies",subtype="predictive",target="late_curve")
-    assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["late_code"],target="late_label")
+    # late_code <-> late_label is an exact bijection: the FD is
+    # grouped under the duplicate-encoding lead (schema 0.6) and
+    # remains in the report as a grouped statement.
+    assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["late_code"],target="late_label",include_grouped=True)
     assert select(report,"dependencies",subtype="functional",form="affine",column="late_affine")
     assert "all 2850 pairs screened" in report.coverage["dependence_screen"]["detail"]
 

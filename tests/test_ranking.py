@@ -56,13 +56,25 @@ def find(report, category, **kw):
 
 def test_lookup_fd_no_longer_scores_near_the_top():
     report = onceover.profile(panel(), budget="standard")
+    # The entity -> region lookup FD is a verified relationship
+    # family member now (schema 0.6): region is an exact rollup of
+    # entity, so the FD is grouped under the rollup lead. Wherever
+    # it sits in the report, its scores are the demoted ones.
     fds = [
         f
         for f in find(report, "dependencies", target="region")
         if (f.get("subject") or {}).get("inputs") == ["entity"]
     ]
+    fds += [
+        f
+        for f in report.grouped_findings
+        if f.get("category") == "dependencies"
+        and (f.get("subject") or {}).get("target") == "region"
+        and (f.get("subject") or {}).get("inputs") == ["entity"]
+    ]
     assert len(fds) == 1
     fd = fds[0]
+    assert fd.get("grouped_under"), "the lookup FD is grouped under the rollup lead"
     # Was 0.9889 under the old ledger. The detector now scores an exact
     # FD by the breadth of its determinant: 40 distinct entities over
     # 600 rows -> 0.5 + 0.35 * (40/600) = 0.5233, and the selection

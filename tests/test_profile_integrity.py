@@ -148,10 +148,14 @@ def test_pivot_preserves_unsigned_measure_identity():
     from _findings import default_plus
 
     report = onceover.profile(long, max_findings=500, detectors=default_plus("pivot"))
+    # The wide-form identity's FDs consolidate into its verified
+    # relationship family (schema 0.6); the statement is in the
+    # report either as a selected finding or as a grouped one.
     assert any(f["subject"]["inputs"] == ["a"]
                and any(e["metrics"].get("source_form") == "pivoted wide form"
                        and e["metrics"].get("lhs_distinct") == 300 for e in f["evidence"])
-               for f in report.select(category="dependencies", type="functional", target="b"))
+               for f in report.select(category="dependencies", type="functional", target="b",
+                                      include_grouped=True))
 
 
 def test_extreme_date_range_is_rejected_before_full_enumeration():

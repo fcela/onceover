@@ -15,10 +15,16 @@ pub use finding::*;
 pub use hints::{Cadence, ProfileHints};
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
-    SelectionPolicy, SelectionSummary,
+    SelectionOutcome, SelectionPolicy, SelectionSummary,
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
+/// 0.6 adds verified relationship families: the report gains a
+/// top-level `grouped_findings` list (statements the ledger grouped
+/// under a family lead; each carries `grouped_under`, and the lead
+/// carries `grouped_members`), and `selection` gains the `families`
+/// and `grouped_statements` counts. Grouped statements no longer
+/// appear in `findings`; every other field is additive over 0.5.
 /// 0.5 adds the frame account: axis span fields on `frame.axis`, the
 /// `frame.grain` record (the frame's key, factorized when the frame is
 /// a balanced cross of its dimensions and axis) and `frame.dominant`
@@ -26,7 +32,7 @@ pub use ledger::{
 /// additive over 0.4. 0.4 adds the `frame` section (semantic column
 /// roles and the assembled time axis) and the per-card
 /// `semantic_role` fields; additive over 0.3.
-pub const SCHEMA_VERSION: &str = "0.5";
+pub const SCHEMA_VERSION: &str = "0.6";
 
 /// Round to four decimal places — the report's display precision
 /// for shares and means carried in evidence payloads.
@@ -441,6 +447,13 @@ pub struct ProfileReport {
     pub columns: BTreeMap<String, ColumnCard>,
     /// The ranked findings ledger. Order is the product.
     pub findings: Vec<Finding>,
+    /// Statements grouped under a verified relationship family's
+    /// lead (schema 0.6): full finding records, each carrying
+    /// `grouped_under` with the lead's id. They spend no digest
+    /// slot and no selection slot; the lead's `grouped_members`
+    /// names them. Empty when no family formed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grouped_findings: Vec<Finding>,
     #[serde(default)]
     pub groups: Vec<FindingGroup>,
     #[serde(default)]
@@ -568,6 +581,42 @@ impl ProfileReport {
             }
         }
         md.push('\n');
+
+        if !self.grouped_findings.is_empty() {
+            md.push_str("## Grouped statements\n\n");
+            md.push_str(
+                "Statements that restate a verified relationship family's lead \
+                 finding, grouped under it (schema 0.6). They spend no digest \
+                 slot; each is listed with its lead and its evidence.\n\n",
+            );
+            for f in &self.grouped_findings {
+                let label = format!(
+                    "{}{}{}",
+                    f.category.as_str(),
+                    f.finding_type
+                        .as_ref()
+                        .map(|t| format!("/{t}"))
+                        .unwrap_or_default(),
+                    f.specification
+                        .form
+                        .as_ref()
+                        .map(|form| format!(" ({form})"))
+                        .unwrap_or_default()
+                );
+                md.push_str(&format!(
+                    "- **[{}·{}] {}** — {} (grouped under {})\n",
+                    f.interestingness,
+                    format!("{:?}", f.primary_evidence().basis).to_lowercase(),
+                    label,
+                    f.claim,
+                    f.grouped_under.as_deref().unwrap_or("?"),
+                ));
+                for e in &f.evidence {
+                    md.push_str(&render_evidence(f, e));
+                }
+            }
+            md.push('\n');
+        }
 
         if !self.groups.is_empty() {
             md.push_str("## Related finding groups\n\n");

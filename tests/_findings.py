@@ -19,8 +19,14 @@ def default_plus(*extra: str) -> list[str]:
     return ids + [e for e in extra if e not in ids]
 
 
-def select(report, category, *, subtype=None, form=None, target=None, inputs=None, column=None):
-    return [f for f in report.findings
+def select(report, category, *, subtype=None, form=None, target=None, inputs=None, column=None,
+           include_grouped=False):
+    pool = list(report.findings)
+    if include_grouped:
+        # Statements grouped under a verified relationship family
+        # (schema 0.6) are part of the report, in grouped_findings.
+        pool.extend(report.grouped_findings)
+    return [f for f in pool
             if f['category'] == category
             and (subtype is None or f.get('type') == subtype)
             and (form is None or f['specification'].get('form') == form)

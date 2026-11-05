@@ -1,14 +1,21 @@
-# Finding schema 0.4
+# Finding schema 0.6
 
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.4 adds a `frame` section to the report and `semantic_role` /
+Schema 0.6 adds verified relationship families (see "Consolidation and
+selection"): the report gains a top-level `grouped_findings` list, the
+finding object gains `grouped_members` on family leads and
+`grouped_under` on grouped statements — both omitted when unset — and
+`report.selection` gains `families` and `grouped_statements` counts.
+Schema 0.5 adds the frame account to the report (axis span, grain and
+dominant structure; see `report-schema.md`, "The frame account"); the
+finding object itself is unchanged from schema 0.4. Schema 0.4 adds a `frame` section to the report and `semantic_role` /
 `semantic_role_evidence` fields to the column cards (see
 `report-schema.md`, "The frame model"); the finding object itself is
 unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
 finding (see "Facets" below); the category and type values are
-unchanged from schema 0.2, which replaced schema 0.1. Schema 0.4 is
+unchanged from schema 0.2, which replaced schema 0.1. Schema 0.6 is
 used by package version 0.1.3.
 
 ## Categories and statement definitions
@@ -378,6 +385,76 @@ attributions are separate explanatory metadata.
 `report.groups` is a connected view over selected statements. Group membership
 asserts neither interchangeability nor redundancy. `report.selection` records
 candidate, verified-candidate, distinct-statement and selected counts.
+
+### Verified relationship families
+
+Selection also consolidates statements that restate one exact relation
+(schema 0.6). The library's passes verify the same relation in several
+forms: an exact bijection between two columns is stated by the
+duplicate-encoding pass and again by the functional-dependency pass in
+both directions, and an exact identity such as `cnt = casual +
+registered` is stated once per rearrangement, with a functional
+dependency per direction besides. Reporting each restatement as its own
+finding spends digest slots on one fact. A verified relationship family
+keeps one lead statement in `findings` and moves the restatements to
+`grouped_findings`, where each remains a full finding record carrying
+`grouped_under` with the lead's id; the lead carries `grouped_members`
+with the grouped ids. Grouped statements spend no selection slot and no
+digest slot, and `report.selection` records the family count and the
+grouped count alongside the standing counts. When grouping occurs, the
+`selection` coverage entry states how many statements were grouped
+under how many families.
+
+Families form only over exact, unconditional statements — the producing
+pass recorded zero violations (for a duplicate encoding, an exact
+one-to-one pairing; for a rollup, zero exceptions) and the statement
+carries no conditions. The seed cases are:
+
+- An exact duplicate encoding leads, and the exact functional
+  dependencies over its column pair, in both directions, group under
+  it.
+- An exact rollup leads, and the exact functional dependency in its
+  own direction (the finer column determines the coarser one) groups
+  under it.
+- Exact identities and affine dependencies over one column set are
+  partitioned by the relation they assert. Two linear statements are
+  rotations of one relation exactly when their recorded coefficient
+  vectors — weights and intercept — are proportional, whatever
+  surface form the scan reported (a sum, a difference, or a fitted
+  linear combination of the rearranged terms). Each rotation class
+  forms one family, and the exact functional dependencies over the
+  set attach to the first class family over that set: a functional
+  dependency over an identity's columns restates the identity, since
+  the identity itself makes each column a function of the others.
+- A set of exact functional dependencies over one column set whose
+  directions cover every column — each column is the target of a
+  dependency on the rest — is the dependency signature of one exact
+  relation and forms a family on its own, led by its highest-ranked
+  member.
+
+Directional and scoped distinctions are preserved. A prediction
+statement is not equivalent to an exact mapping and is never absorbed
+into a family. A statement that holds only within a slice (it carries
+conditions, or a value- or segment-conditioned facet) is never a
+member. Two different relations over the same columns — different
+coefficients, a different intercept, a sum and a product that both
+happen to hold — land in different rotation classes and stay distinct.
+A distributional statement over a family's columns (a hotspot cell, a
+column's role classification) is not implied by the exact relation and
+stays independent.
+
+A family competes in selection at its best-ranked member's position:
+when the first member is reached, the lead is admitted through the
+standing caps and counters, charged exactly as if it had been reached
+at its own position. If the lead is admitted, the remaining members
+are grouped. If the lead is turned away, the family does not form and
+every member competes on its own, exactly as before families existed.
+A lead presents at the earliest report band among itself and its
+grouped members, because the lead stands for the family's strongest
+content: a duplicate-encoding lead whose members are dependencies
+presents with the relations, not with the column-structure statements.
+The digest states the grouped count in its header and appends the
+grouped ids to the lead's rolled line.
 
 ## Declared expectations
 

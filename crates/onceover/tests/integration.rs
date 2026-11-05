@@ -135,17 +135,32 @@ fn recovers_planted_structure_with_semantic_categories() {
             ..Default::default()
         },
     );
-    assert_eq!(report.schema_version, "0.5");
+    assert_eq!(report.schema_version, "0.6");
     assert!(report
         .findings
         .iter()
         .any(|f| f.category == Category::Uniqueness && f.subject.columns == ["order_id"]));
+    // The region_id <-> region_name bijection is a verified
+    // relationship family (schema 0.6): the planted FD is grouped
+    // under the duplicate-encoding lead and stays in the report,
+    // retrievable from grouped_findings.
+    let fd = report
+        .grouped_findings
+        .iter()
+        .find(|f| {
+            f.is(Category::Dependencies, Some("functional"))
+                && f.subject.inputs == ["region_id"]
+                && f.subject.target.as_deref() == Some("region_name")
+        })
+        .expect("planted FD recovered as a grouped statement");
+    let lead_id = fd
+        .grouped_under
+        .as_deref()
+        .expect("grouped FD names its lead");
     assert!(report
         .findings
         .iter()
-        .any(|f| f.is(Category::Dependencies, Some("functional"))
-            && f.subject.inputs == ["region_id"]
-            && f.subject.target.as_deref() == Some("region_name")));
+        .any(|f| f.id == lead_id && f.grouped_members.contains(&fd.id)));
     assert!(report
         .findings
         .iter()
@@ -168,6 +183,7 @@ fn recovers_planted_structure_with_semantic_categories() {
     assert!(report
         .findings
         .iter()
+        .chain(report.grouped_findings.iter())
         .all(|f| !f.evidence.is_empty() && f.validate().is_ok()));
     assert!(!report.groups.is_empty());
     let json: serde_json::Value = serde_json::from_str(&report.to_json()).unwrap();

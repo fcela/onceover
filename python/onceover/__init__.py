@@ -11,7 +11,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.5"
+_SCHEMA_VERSION = "0.6"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -191,6 +191,16 @@ class ProfileReport:
         return self._data["findings"]
 
     @property
+    def grouped_findings(self) -> list:
+        """Statements grouped under a verified relationship family's
+        lead (schema 0.6): full finding records, each carrying
+        `grouped_under` with the lead's id. They spend no digest
+        slot; the lead finding names them in `grouped_members`.
+        Empty when no family formed."""
+        self._ensure()
+        return self._data.get("grouped_findings") or []
+
+    @property
     def columns(self) -> dict:
         self._ensure()
         return self._data["columns"]
@@ -209,9 +219,15 @@ class ProfileReport:
 
     def finding(self, finding_id: str):
         """One finding by its stable id, or None if the report has no
-        finding with that id. The returned dict is the live report
-        entry (the same object `.findings` carries)."""
+        finding with that id. Selected findings are searched first,
+        then the grouped statements (`grouped_findings`), so a lead's
+        `grouped_members` always resolve. The returned dict is the
+        live report entry (the same object `.findings` or
+        `.grouped_findings` carries)."""
         for f in self.findings:
+            if f.get("id") == finding_id:
+                return f
+        for f in self.grouped_findings:
             if f.get("id") == finding_id:
                 return f
         return None
@@ -229,6 +245,7 @@ class ProfileReport:
         temporality=None,
         quality_dimension=None,
         status=None,
+        include_grouped=False,
     ) -> list:
         """Findings matching every given filter, in report order.
 
@@ -239,7 +256,10 @@ class ProfileReport:
         `evidence`, `conditionality`, `temporality`,
         `quality_dimension`, `status`); a facet filter never matches a
         finding that does not carry the facet. With no filters,
-        returns all findings. The dicts are the live report entries."""
+        returns all findings. With `include_grouped=True`, grouped
+        statements (`grouped_findings`) are appended after the
+        selected findings, in their own report order. The dicts are
+        the live report entries."""
         facet_filters = {
             "scope": scope,
             "object": object,
@@ -249,8 +269,11 @@ class ProfileReport:
             "quality_dimension": quality_dimension,
             "status": status,
         }
+        pool = list(self.findings)
+        if include_grouped:
+            pool.extend(self.grouped_findings)
         out = []
-        for f in self.findings:
+        for f in pool:
             if category is not None and f.get("category") != category:
                 continue
             if type is not None and f.get("type") != type:
@@ -414,8 +437,21 @@ class ProfileReport:
 
         data = copy.deepcopy(self.data)
         total = len(data["findings"])
+        total_grouped = len(data.get("grouped_findings") or [])
         index: list[dict] = []
+        grouped_index: list[dict] = []
         state = {"columns": "full", "coverage_detail": "full"}
+
+        def index_entry(f: dict) -> dict:
+            subject = f.get("subject") or {}
+            return {
+                "id": f.get("id"),
+                "category": f.get("category"),
+                "type": f.get("type"),
+                "columns": list(subject.get("columns") or []),
+                "interestingness": f.get("interestingness"),
+                "claim": f.get("claim"),
+            }
 
         def render() -> str:
             view = {
@@ -424,6 +460,8 @@ class ProfileReport:
                 "columns": data["columns"],
                 "findings": data["findings"],
                 "finding_index": list(reversed(index)),
+                "grouped_findings": data.get("grouped_findings") or [],
+                "grouped_index": list(reversed(grouped_index)),
                 "groups": data["groups"],
                 "selection": data["selection"],
                 "coverage": data["coverage"],
@@ -431,6 +469,8 @@ class ProfileReport:
                     "max_chars": max_chars,
                     "full_findings": len(data["findings"]),
                     "indexed_findings": len(index),
+                    "full_grouped_findings": len(data.get("grouped_findings") or []),
+                    "indexed_grouped_findings": len(grouped_index),
                     "columns": state["columns"],
                     "coverage_detail": state["coverage_detail"],
                 },
@@ -441,19 +481,15 @@ class ProfileReport:
             return _json.dumps(view)
 
         out = render()
-        while len(out) > max_chars and data["findings"]:
-            f = data["findings"].pop()
-            subject = f.get("subject") or {}
-            index.append(
-                {
-                    "id": f.get("id"),
-                    "category": f.get("category"),
-                    "type": f.get("type"),
-                    "columns": list(subject.get("columns") or []),
-                    "interestingness": f.get("interestingness"),
-                    "claim": f.get("claim"),
-                }
-            )
+        while len(out) > max_chars and (data["findings"] or data.get("grouped_findings")):
+            # Selected findings collapse first; grouped statements
+            # (full records under grouped_findings) collapse into
+            # their own index once no selected finding is left in
+            # full, so the budget accounting stays exact per list.
+            if data["findings"]:
+                index.append(index_entry(data["findings"].pop()))
+            else:
+                grouped_index.append(index_entry(data["grouped_findings"].pop()))
             out = render()
         if len(out) > max_chars and state["columns"] == "full":
             state["columns"] = "names_only"
@@ -476,7 +512,7 @@ class ProfileReport:
             raise ValueError(
                 f"max_chars={max_chars} is below the minimal budgeted "
                 f"report skeleton ({len(out)} chars with all {total} "
-                "findings indexed)"
+                f"findings and {total_grouped} grouped findings indexed)"
             )
         return out
 
@@ -498,7 +534,11 @@ class ProfileReport:
         expandable with `.finding(id)`. Groups are ordered by
         report band (account, completeness, relations, column
         structure, deviations), then by that claim's
-        interestingness. When the rolled lines exceed
+        interestingness. When verified relationship families formed
+        (schema 0.6), the header states how many statements were
+        grouped, and a family lead's rolled line carries its grouped
+        member ids in a `[grouped: ...]` suffix; the lead presents
+        at the earliest band among itself and its members. When the rolled lines exceed
         `budget_chars`, the digest keeps as many as fit and ends
         with a line stating how many groups were omitted; it never
         exceeds the budget (budgets under ~200 characters return a
@@ -537,7 +577,29 @@ class ProfileReport:
                 for c, n in sorted(cats.items(), key=lambda kv: -kv[1])
             )
         )
+        selection = data.get("selection") or {}
+        n_grouped = selection.get("grouped_statements") or 0
+        if n_grouped:
+            lines.append(
+                f"grouped: {n_grouped} statement(s) grouped under "
+                f"{selection.get('families', 0)} verified relationship "
+                "families (the lead findings carry the grouped ids; "
+                "records in grouped_findings)"
+            )
         header = "\n".join(lines) + "\n"
+
+        grouped_by_id = {f["id"]: f for f in data.get("grouped_findings") or []}
+
+        def band_of(f: dict) -> int:
+            # A family lead presents at the earliest band among
+            # itself and its grouped members (schema 0.6): the lead
+            # stands for the family's strongest content.
+            band = _report_band(f)
+            for mid in f.get("grouped_members") or []:
+                member = grouped_by_id.get(mid)
+                if member is not None:
+                    band = min(band, _report_band(member))
+            return band
 
         groups: dict[tuple, list[dict]] = {}
         for f in findings:
@@ -562,9 +624,15 @@ class ProfileReport:
                 exemplars = ", ".join(f["id"] for f in fs_sorted[:3])
                 line += f" [exemplars: {exemplars}]"
             head_finding = fs_sorted[0]
+            member_ids = head_finding.get("grouped_members") or []
+            if member_ids:
+                shown = ", ".join(member_ids[:3])
+                if len(member_ids) > 3:
+                    shown += f", +{len(member_ids) - 3} more"
+                line += f" [grouped: {shown}]"
             rolled.append(
                 (
-                    _report_band(head_finding),
+                    band_of(head_finding),
                     -(head_finding.get("interestingness") or 0),
                     line,
                 )

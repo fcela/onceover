@@ -53,8 +53,16 @@ def test_strong_plants_are_found_on_both_seeds():
         for seed in (0, 1):
             rec = battery.run_plant(builder, seed)
             assert rec["detector_recall"], (name, seed, "detector")
-            assert rec["selected_recall"], (name, seed, "selected")
-            assert rec["top25"], (name, seed, "top25")
+            # Schema 0.6 selection outcomes are explicit: a strong
+            # plant must be stated — selected, or grouped under a
+            # verified relationship family's lead (the categorical
+            # FD plant's pair is an exact bijection, so its FD is
+            # the family's grouped member). A selected statement
+            # must additionally hold its top-25 rank; a grouped one
+            # spends no rank by design.
+            assert rec["stated_recall"], (name, seed, "stated")
+            assert rec["selection_outcome"] == "grouped" or rec["top25"], (
+                name, seed, "top25")
 
 
 def test_dependence_reporting_bar_is_where_the_battery_measured_it():
