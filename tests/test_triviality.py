@@ -11,12 +11,14 @@ def _by_claim(report, needle):
 
 
 def test_float_key_candidate_is_demoted():
-    # An all-distinct float measurement presented as a key candidate
-    # declares the continuous-measure demotion; an integer id does not.
+    # An all-distinct float measurement is stated as a measure and declares
+    # the continuous-measure demotion; an integer id is a key candidate.
     n = 400
     floats = [i * 0.371 + 1.0 for i in range(n)]
     report = onceover.profile(pl.DataFrame({"measure": floats}))
-    pk = _by_claim(report, "primary key candidate")
+    assert not _by_claim(report, "primary key candidate")
+    assert not _by_claim(report, "unique identifier")
+    pk = _by_claim(report, "not a key")
     assert len(pk) == 1
     metrics = pk[0]["evidence"][0]["metrics"]
     assert metrics["triviality"] == "continuous_measure_key_candidate"

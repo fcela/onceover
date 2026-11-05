@@ -284,7 +284,12 @@ fn compute_grain(
                 } else {
                     format!("({})", subject_columns.join(", "))
                 };
-                let statement = if balanced {
+                let statement = if factorization.len() == 1 {
+                    format!(
+                        "{subject_text} uniquely identifies rows ({} rows)",
+                        fmt_int(n)
+                    )
+                } else if balanced {
                     format!(
                         "the grain is {cross}: {} rows, every combination exactly once — {subject_text} jointly identify rows",
                         fmt_int(n)
