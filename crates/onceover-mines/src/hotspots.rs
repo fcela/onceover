@@ -168,10 +168,7 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
         let (hits, _) = evaluate_combo(enc, combo, cfg);
         cand_hits.extend(hits);
     }
-    let mut hits: Vec<CellHit> = cand_hits
-        .into_iter()
-        .filter(|h| h.z >= z_bar)
-        .collect();
+    let mut hits: Vec<CellHit> = cand_hits.into_iter().filter(|h| h.z >= z_bar).collect();
     hits.sort_by(|a, b| {
         b.z.total_cmp(&a.z)
             .then(a.feats.cmp(&b.feats))
@@ -334,11 +331,7 @@ fn select_triples(
         .iter()
         .map(|c| c.combo.iter().map(|&f| n_bins[f]).product::<usize>())
         .sum();
-    (
-        selected.iter().map(|c| c.combo).collect(),
-        universe,
-        cells,
-    )
+    (selected.iter().map(|c| c.combo).collect(), universe, cells)
 }
 
 /// Score every cell of one combination against independence of
@@ -642,9 +635,8 @@ mod tests {
         // score is its strongest pair's, so the winners are
         // the triples holding pairs (6, 7) — both of them —
         // and, among the two holding pair (2, 7), the earlier.
-        let (selected, universe, cells) = select_triples(&n_bins, &cfg, &small, |a, b| {
-            (a * 100 + b) as f64
-        });
+        let (selected, universe, cells) =
+            select_triples(&n_bins, &cfg, &small, |a, b| (a * 100 + b) as f64);
         assert_eq!(universe, universe_list.len());
         assert_eq!(selected, vec![[0, 2, 7], [0, 6, 7], [1, 6, 7]]);
         let expect_cells: usize = selected

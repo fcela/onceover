@@ -593,6 +593,9 @@ impl TreeBuilder<'_> {
 /// computed.
 const PRESCORE_BLOCKS: usize = 16;
 
+/// A response's row: tick, axis position, value, and source row.
+type ResponseRow = (i64, f64, f64, u32);
+
 /// One response's (tick, t, y, table row) rows in t order, with
 /// the systematic row-cap sample applied; `None` when the
 /// response holds fewer than `cfg.min_rows` usable rows. The
@@ -604,14 +607,14 @@ fn response_rows(
     ticks: &[Option<i64>],
     axis: Axis,
     cfg: &PartitionsConfig,
-) -> Option<(Vec<(i64, f64, f64, u32)>, bool)> {
+) -> Option<(Vec<ResponseRow>, bool)> {
     let t_of = |tick: i64| -> f64 {
         match axis {
             Axis::Date | Axis::Integer => tick as f64,
             Axis::Datetime => tick as f64 / 86_400_000_000.0,
         }
     };
-    let mut rows: Vec<(i64, f64, f64, u32)> = Vec::new();
+    let mut rows: Vec<ResponseRow> = Vec::new();
     for (row, tick) in ticks.iter().enumerate() {
         if let (Some(tick), Some(y)) = (*tick, col.numeric_at(row)) {
             if y.is_finite() {
