@@ -718,6 +718,34 @@ fn profile_inner(
         findings.extend(sent);
     }
 
+    // ---------- boundaries ----------
+    if check_deadline(&mut coverage, "boundaries") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("boundaries") {
+        let bnd = onceover_deps::boundary_mass(&table);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "boundaries".into(),
+            PassInfo::ran(format!(
+                "{} numeric columns scanned for boundary mass",
+                table
+                    .cols
+                    .iter()
+                    .filter(|c| matches!(
+                        c,
+                        onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::I64 { .. }
+                            | onceover_core::TypedCol::U64 { .. }
+                    ))
+                    .count()
+            )),
+        );
+        findings.extend(bnd);
+    }
+
     // ---------- digits ----------
     if check_deadline(&mut coverage, "digits") {
         deadline_hit = true;
@@ -1403,6 +1431,7 @@ fn profile_inner(
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
+                "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
             }.to_string();
