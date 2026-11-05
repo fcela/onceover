@@ -106,6 +106,7 @@ impl Default for SelectionPolicy {
                 ("gbm".to_string(), 20),
                 ("discontinuities".to_string(), 25),
                 ("missingness".to_string(), 20),
+                ("series".to_string(), 20),
             ]),
         }
     }

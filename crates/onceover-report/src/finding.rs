@@ -61,6 +61,8 @@ pub enum Pattern {
     BoundaryMass,
     /// A column's values against what the column appears to hold.
     ContentAnomaly,
+    /// What a series does over its whole span along the time axis.
+    SeriesStructure,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
@@ -122,6 +124,7 @@ impl Pattern {
             Self::DuplicateEncoding => Category::ColumnRoles,
             Self::DistributionShift => Category::Changes,
             Self::OrderedPartition => Category::Changes,
+            Self::SeriesStructure => Category::Changes,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -144,6 +147,7 @@ impl Pattern {
             Self::BenfordDeviation => "benford_deviation",
             Self::BoundaryMass => "boundary_mass",
             Self::ContentAnomaly => "content_anomaly",
+            Self::SeriesStructure => "series_structure",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
@@ -635,6 +639,15 @@ impl Facets {
                 Some(Q::Validity),
                 S::Deviation,
             ),
+            Pattern::SeriesStructure => (
+                Sc::Column,
+                O::TemporalBehaviour,
+                E::Approximate,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
             Pattern::BoundaryMass | Pattern::ContentAnomaly => (
                 Sc::Column,
                 O::Distribution,
@@ -893,6 +906,7 @@ impl Facets {
             (Category::Intervals, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
             (Category::Intervals, _) => Pattern::IntervalVariation,
             (Category::Ordering, _) => Pattern::ColumnOrdering,
+            (Category::Changes, Some("series_structure")) => Pattern::SeriesStructure,
             (Category::Changes, Some("level_shift")) => Pattern::LevelShift,
             (Category::Changes, Some("trend_change")) => Pattern::TrendChange,
             (Category::Changes, Some("variance_change")) => Pattern::VarianceChange,
@@ -1270,6 +1284,15 @@ impl Finding {
                     }
                 }
             }
+            Pattern::SeriesStructure => {
+                // One column can hold several statements: a trend and a
+                // cycle, or several levels of a grouping column.
+                for k in ["kind", "value", "period"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
             Pattern::ContentAnomaly => {
                 // One column can hold several statements of different
                 // kinds, and of one kind at both ends of its range.
@@ -1484,6 +1507,7 @@ impl Finding {
                     self.finding_type.as_deref(),
                     Some(
                         "residual_level"
+                            | "series_structure"
                             | "level_shift"
                             | "trend_change"
                             | "variance_change"

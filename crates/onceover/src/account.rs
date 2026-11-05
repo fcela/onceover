@@ -358,7 +358,12 @@ fn compute_grain(
     }
 
     // ---- the dependency pass's exact key, without factorization ----
-    let deps_key: Option<Vec<String>> = if let Some(&i) = deps.single_unique.first() {
+    // A unique float is a measurement, not what the rows are keyed by.
+    let single_key = deps
+        .single_unique
+        .iter()
+        .find(|&&i| !matches!(table.cols[i], TypedCol::F64 { .. }));
+    let deps_key: Option<Vec<String>> = if let Some(&i) = single_key {
         Some(vec![table.names[i].clone()])
     } else {
         deps.composite_uccs
