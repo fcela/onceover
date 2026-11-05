@@ -1547,10 +1547,9 @@ mod tests {
             let vals: Vec<f64> = (0..n).map(|_| rng.next_f64()).collect();
             cols.push(Series::new(format!("n{i}").into(), vals));
         }
-        let df = DataFrame::new_infer_height(
-            cols.into_iter().map(|s| s.into()).collect::<Vec<_>>(),
-        )
-        .unwrap();
+        let df =
+            DataFrame::new_infer_height(cols.into_iter().map(|s| s.into()).collect::<Vec<_>>())
+                .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let excluded = table.names.iter().position(|nm| nm == "n0").unwrap();
