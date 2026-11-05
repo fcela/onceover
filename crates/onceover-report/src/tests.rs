@@ -459,6 +459,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         DigitPreference,
         BenfordDeviation,
         FunctionalDependency,
+        OrderConstraint,
         AffineDependency,
         ArithmeticIdentity,
         PredictiveDependency,
@@ -488,6 +489,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         let directed = matches!(
             pattern,
             FunctionalDependency
+                | OrderConstraint
                 | AffineDependency
                 | ArithmeticIdentity
                 | PredictiveDependency

@@ -781,6 +781,66 @@ fn profile_inner(
         findings.extend(bnd);
     }
 
+    // ---------- order constraints ----------
+    if check_deadline(&mut coverage, "order_constraints") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("order_constraints") {
+        if tier.dep_pair_cap == 0 {
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "order_constraints".into(),
+                PassInfo::skipped(
+                    "quick tier: the shared pair budget (max_pairs) is 0 at this tier",
+                ),
+            );
+        } else {
+            // Pairs between which an exact single-column FD holds
+            // in either direction in this run are derived from one
+            // another; the pass ranks their order findings below
+            // unrelated pairs and says so in the evidence.
+            let derived_pairs: std::collections::BTreeSet<(usize, usize)> = deps
+                .exact_fds
+                .iter()
+                .filter(|(lhs, _)| lhs.len() == 1)
+                .map(|(lhs, rhs)| (lhs[0].min(*rhs), lhs[0].max(*rhs)))
+                .collect();
+            let out = onceover_deps::order_constraints(
+                &table,
+                &onceover_deps::OrderConfig {
+                    max_pairs: tier.dep_pair_cap,
+                    derived_pairs,
+                },
+            );
+            let detail = format!(
+                "{} of {} eligible column pairs evaluated on the shared max_pairs budget; {} reportable order directions, {} findings",
+                out.pairs_evaluated,
+                out.pairs_total,
+                out.pairs_passing,
+                out.findings.len(),
+            );
+            let info = if out.pairs_evaluated < out.pairs_total {
+                PassInfo::capped(detail)
+            } else if out.screened {
+                PassInfo::sampled(format!(
+                    "{detail}; pairs screened on a deterministic row sample and verified on all rows"
+                ))
+            } else {
+                PassInfo::ran(detail)
+            };
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "order_constraints".into(),
+                info,
+            );
+            findings.extend(out.findings);
+        }
+    }
+
     // ---------- digits ----------
     if check_deadline(&mut coverage, "digits") {
         deadline_hit = true;
@@ -1467,6 +1527,7 @@ fn profile_inner(
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
+                "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
