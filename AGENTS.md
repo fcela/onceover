@@ -81,6 +81,12 @@ report.findings_frame()                      # Polars DataFrame
 report.diff(other)                           # findings added /
         # removed / changed between two profiles of a table,
         # matched by stable id, plus coverage status changes
+report.verify(df)                            # recount statements
+        # through Polars: ok, mismatch, or not_checkable
+report.rows("<id>", df)                      # the rows behind a
+        # statement, with positions in `__row`
+report.to_checks()                           # exact statements as
+        # Polars expressions; "great_expectations" gives a suite
 ```
 
 `findings_frame()` is an index (one row per finding), not the

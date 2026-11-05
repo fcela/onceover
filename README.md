@@ -79,6 +79,10 @@ report.finding(report.findings[0]["id"])  # One finding, including all its evide
 report.coverage                        # Completed, sampled, capped, or skipped work
 report.data                            # Complete JSON-compatible report
 report.save("profile.json")
+
+report.verify(df)                # Recount statements through Polars
+report.rows(finding_id, df)      # The rows behind a statement
+report.to_checks()               # Exact statements as constraints for new data
 ```
 
 Use `report.to_digest(4_000)` for a short reading budget, or
