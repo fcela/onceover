@@ -39,17 +39,27 @@ before it is reported. A direction is reported when its
 violations are zero or at most 1% of the rows where both
 columns are present (at least 100 such rows). At most one
 direction per pair is reported — the one with fewer violations.
+A direction must also beat random pairing of the two columns:
+the violations that pairing would give, computed from the two
+sorted columns and stated in the evidence as
+`violations_if_shuffled`, must be at least 20 and at least 4
+times those observed. A heavy-tailed column against a
+non-negative one has a compatible range and almost no crossings
+under any pairing; before this rule, independent columns of that
+kind filled the 25 finding cap on null frames.
 When both directions pass with equal violations the pair states
 no order: zero violations in both directions means the columns
 are equal wherever both are present (a duplicate-encoding
 statement), and equal nonzero counts mean the columns cross as
 often as they agree.
 
-Pairs are evaluated in column order on the shared pair budget
-(`max_pairs`, the budget that also caps the dependence screen:
-496 pairs at standard, 2,016 at deep, 0 at quick, where the
-pass records itself skipped). Coverage states how many of the
-eligible pairs were evaluated, how many directions were
+Every eligible pair is screened on the row sample, nearest columns
+first, up to 64 times the shared pair budget (`max_pairs`, the
+budget that also caps the dependence screen: 496 pairs at
+standard, 2,016 at deep, 0 at quick, where the pass records itself
+skipped). At most `max_pairs` survivors are verified on all rows.
+Coverage states how many eligible pairs were screened, how many
+survivors were verified, how many directions were
 reportable, and how many findings were emitted, and is marked
 capped when the budget or the findings cap binds. At most 25
 findings are emitted, ranked:

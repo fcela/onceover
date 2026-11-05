@@ -900,13 +900,17 @@ fn profile_inner(
                 },
             );
             let detail = format!(
-                "{} of {} eligible column pairs evaluated on the shared max_pairs budget; {} reportable order directions, {} findings",
-                out.pairs_evaluated,
+                "{} of {} eligible column pairs screened; {} of {} that stayed near-universal verified on all rows on the shared max_pairs budget; {} reportable order directions, {} findings",
+                out.pairs_screened,
                 out.pairs_total,
+                out.pairs_evaluated,
+                out.pairs_surviving,
                 out.pairs_passing,
                 out.findings.len(),
             );
-            let info = if out.pairs_evaluated < out.pairs_total {
+            let info = if out.pairs_screened < out.pairs_total
+                || out.pairs_evaluated < out.pairs_surviving
+            {
                 PassInfo::capped(detail)
             } else if out.screened {
                 PassInfo::sampled(format!(
@@ -1359,6 +1363,29 @@ fn profile_inner(
                         &scaffold_excluded,
                     );
                 association_pairs.extend(dep_records);
+                if enabled("row_consistency") {
+                    let measures: Vec<usize> = frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let (mut f, detail) = onceover_mines::profile_row_consistency(
+                        &table,
+                        &deps_pair,
+                        &scaffold_excluded,
+                        &measures,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "row_consistency".into(),
+                        PassInfo::ran(detail),
+                    );
+                    findings.append(&mut f);
+                }
                 let numeric = table
                     .cols
                     .iter()
@@ -1698,6 +1725,7 @@ fn profile_inner(
         ("breaks", "breaks"),
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
+        ("row_consistency", "row_consistency"),
         ("identities", "arithmetic_identities"),
         ("period_associations", "period_associations"),
         ("views", "views"),

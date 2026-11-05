@@ -944,7 +944,7 @@ fn default_policy_caps_the_char_heavy_detectors() {
         Some(&20)
     );
     assert_eq!(policy.max_findings_per_detector.get("series"), Some(&20));
-    assert_eq!(policy.max_findings_per_detector.len(), 5);
+    assert_eq!(policy.max_findings_per_detector.len(), 6);
 }
 
 #[test]

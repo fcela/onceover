@@ -24,6 +24,10 @@ use onceover_core::{TypedCol, TypedTable};
 use crate::hashutil::{build_hashes, encode_value, fnv64, subsample_rows, ColHashes};
 use crate::ColInfo;
 
+/// Random values collide unless the tuple space far exceeds n^2 / 2, so a
+/// key this far below that is structure, not chance.
+const KEY_CHANCE_DIVISOR: f64 = 20.0;
+
 /// Configuration for the dependency pass.
 #[derive(Clone, Debug)]
 pub struct FdConfig {
@@ -784,7 +788,12 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
     });
     out.single_unique = single;
 
-    if !out.single_unique.is_empty() || cfg.max_lhs_size < 2 || n < 30 {
+    // A unique float is a measurement, so it doesn't end the search for a key.
+    let has_label_key = out
+        .single_unique
+        .iter()
+        .any(|&c| !matches!(info[c].dtype.as_str(), "float32" | "float64"));
+    if has_label_key || cfg.max_lhs_size < 2 || n < 30 {
         return;
     }
 
@@ -794,6 +803,7 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
                 && info[i].distinct >= 2
                 && info[i].distinct < n
                 && info[i].role != "other"
+                && !matches!(info[i].dtype.as_str(), "float32" | "float64")
         })
         .collect();
     if plausible.len() < 2 {
@@ -815,7 +825,8 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             let mut seen = FxHashSet::default();
             let unique =
                 (0..sample.len()).all(|r| seen.insert((hashes.hashes[i][r], hashes.hashes[j][r])));
-            if unique {
+            let cells = info[ranked[i]].distinct as f64 * info[ranked[j]].distinct as f64;
+            if unique && cells <= (n as f64) * (n as f64) / KEY_CHANCE_DIVISOR {
                 candidates.push((ranked[i], ranked[j]));
             }
         }
@@ -834,7 +845,9 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             composite.push(vec![a, b]);
         }
     }
-    if cfg.max_lhs_size >= 3 {
+    // Three columns are tried when two found no key. Too many combinations
+    // for the row count would be unique by chance, so they don't qualify.
+    if cfg.max_lhs_size >= 3 || composite.is_empty() {
         let base: Vec<usize> = ranked
             .iter()
             .copied()
@@ -844,8 +857,27 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             })
             .take(12)
             .collect();
+        let position = |c: usize| ranked.iter().position(|&x| x == c);
         for comb in combinations(&base, 3) {
-            if tuple_hash_unique(table, &comb) && count_distinct_tuples(table, &comb) == n {
+            let cells: f64 = comb.iter().map(|&c| info[c].distinct as f64).product();
+            if cells > (n as f64) * (n as f64) / KEY_CHANCE_DIVISOR {
+                continue;
+            }
+            let on_sample = {
+                let positions: Vec<usize> = comb.iter().filter_map(|&c| position(c)).collect();
+                let mut seen = FxHashSet::default();
+                (0..sample.len()).all(|r| {
+                    seen.insert((
+                        hashes.hashes[positions[0]][r],
+                        hashes.hashes[positions[1]][r],
+                        hashes.hashes[positions[2]][r],
+                    ))
+                })
+            };
+            if on_sample
+                && tuple_hash_unique(table, &comb)
+                && count_distinct_tuples(table, &comb) == n
+            {
                 composite.push(comb);
             }
         }

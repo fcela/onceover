@@ -63,6 +63,10 @@ pub enum Pattern {
     ContentAnomaly,
     /// What a series does over its whole span along the time axis.
     SeriesStructure,
+    /// Rows matching another on every column but one.
+    NearDuplicateRows,
+    /// Rows that disagree with a relation between columns.
+    RowInconsistency,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
@@ -97,7 +101,8 @@ impl Pattern {
             Self::ValueConcentration | Self::Hotspot => Category::Concentration,
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
-            Self::Duplicates => Category::Duplicates,
+            Self::Duplicates | Self::NearDuplicateRows => Category::Duplicates,
+            Self::RowInconsistency => Category::Intervals,
             Self::FormatVariation
             | Self::Heaping
             | Self::DigitPreference
@@ -150,6 +155,8 @@ impl Pattern {
             Self::BoundaryMass => "boundary_mass",
             Self::ContentAnomaly => "content_anomaly",
             Self::SeriesStructure => "series_structure",
+            Self::NearDuplicateRows => "near_duplicate_rows",
+            Self::RowInconsistency => "row_inconsistency",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
@@ -615,7 +622,7 @@ impl Facets {
                 Some(Q::Uniqueness),
                 S::Regularity,
             ),
-            Pattern::Duplicates => (
+            Pattern::Duplicates | Pattern::NearDuplicateRows => (
                 Sc::Rows,
                 O::Structure,
                 E::Exact,
@@ -640,6 +647,15 @@ impl Facets {
                 C::Unconditional,
                 T::Atemporal,
                 Some(Q::Validity),
+                S::Deviation,
+            ),
+            Pattern::RowInconsistency => (
+                Sc::Columns,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
                 S::Deviation,
             ),
             Pattern::SeriesStructure => (
@@ -889,6 +905,7 @@ impl Facets {
             (Category::ColumnRoles, Some("duplicate_encoding")) => Pattern::DuplicateEncoding,
             (Category::ColumnRoles, _) => Pattern::CategoricalRole,
             (Category::Uniqueness, _) => Pattern::Uniqueness,
+            (Category::Duplicates, Some("near_duplicate_rows")) => Pattern::NearDuplicateRows,
             (Category::Duplicates, _) => Pattern::Duplicates,
             (Category::Formats, Some("heaping")) => Pattern::Heaping,
             (Category::Formats, Some("digit_preference")) => Pattern::DigitPreference,
@@ -915,6 +932,7 @@ impl Facets {
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
             (Category::Gaps, _) => Pattern::Gap,
+            (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
             (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
             (Category::Intervals, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
             (Category::Intervals, _) => Pattern::IntervalVariation,
@@ -1304,6 +1322,18 @@ impl Finding {
                     json!("exclude rows missing either column"),
                 );
                 for k in ["finer", "coarser"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::RowInconsistency | Pattern::NearDuplicateRows => {
+                if pattern == Pattern::NearDuplicateRows {
+                    subject.unit = Some("rows".into());
+                    spec.definition
+                        .insert("comparison".into(), json!("equal on all but one column"));
+                }
+                for k in ["kind", "varying_column"] {
                     if let Some(v) = metrics.get(k) {
                         spec.definition.insert(k.into(), v.clone());
                     }

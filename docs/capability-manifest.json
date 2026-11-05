@@ -120,6 +120,17 @@
    "activation": "default"
   },
   {
+   "id": "row_consistency",
+   "categories": [
+    "duplicates",
+    "intervals"
+   ],
+   "requires": [
+    "numeric_dependence"
+   ],
+   "activation": "default"
+  },
+  {
    "id": "digits",
    "categories": [
     "formats"

@@ -37,10 +37,18 @@
 //! often as they agree, a near-equality, not a near-universal
 //! order.
 //!
-//! Pairs are evaluated in column order on the shared pair budget
-//! (`max_pairs`, the same budget that caps the dependence
-//! screen); when the budget binds, coverage says how many of the
-//! eligible pairs were evaluated. A pair whose columns are
+//! A direction must also beat random pairing. Pairing the two columns
+//! at random gives a violation count computed from their sorted values;
+//! the direction is reported only when that count is at least 20 and at
+//! least 4 times the observed violations. A heavy-tailed column set against
+//! a positive one has a compatible range and almost no crossings, whichever
+//! way the rows are paired, and this rule keeps it out.
+//!
+//! Every eligible pair is screened on the row sample, up to 64 times
+//! the shared pair budget, nearest columns first. Pairs that stay
+//! near-universal on the sample are verified on all rows, up to
+//! `max_pairs` of them (the budget that also caps the dependence screen),
+//! and coverage says how many were screened and verified. A pair whose columns are
 //! functionally related in this run's exact functional
 //! dependencies — one is a function of the other, so any order
 //! between them may follow from their derivation — is reported
@@ -51,6 +59,7 @@
 //! derived columns is the weakest statement this pass makes.
 
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
+use rayon::prelude::*;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -64,9 +73,14 @@ const MIN_DISTINCT: usize = 5;
 /// A direction is reported when its violations are at most this
 /// share of the evaluated rows (zero violations always reports).
 const MAX_VIOLATION_SHARE: f64 = 0.01;
-/// Rows sampled per pair for the screening stage when the table
-/// has more rows than this; survivors are verified on all rows.
+/// Rows sampled for the screening stage when the table has more
+/// rows than this; survivors are verified on all rows.
 const SCREEN_ROWS: usize = 4096;
+/// Pairs screened on the sample, as a multiple of the pair budget.
+const SCREEN_PAIRS_PER_BUDGET: usize = 64;
+/// Below this many complete sampled rows the screen says nothing,
+/// and both directions go on to verification.
+const MIN_SCREEN_COMPLETE: usize = 30;
 /// Screening survival bar: twice the reporting bar, so sampling
 /// noise at the reporting bar cannot screen out a true pair.
 const SCREEN_SHARE: f64 = 0.02;
@@ -75,6 +89,12 @@ const SCREEN_SHARE: f64 = 0.02;
 /// range.
 const MAX_WIDTH_RATIO: f64 = 100.0;
 const MIN_OVERLAP_SHARE: f64 = 0.25;
+/// A direction must beat random pairing: shuffling one column against the
+/// other would have to produce at least this many violations, and at least
+/// CHANCE_MARGIN times the violations observed. Two independent columns whose
+/// values rarely cross satisfy a near-universal order by their marginals alone.
+const MIN_CHANCE_VIOLATIONS: f64 = 20.0;
+const CHANCE_MARGIN: f64 = 4.0;
 /// Integer magnitudes up to 2^53 are exactly representable in
 /// f64; an integer column beyond that cannot be compared exactly
 /// against a float column and pairs only with integer columns.
@@ -89,8 +109,8 @@ const EXAMPLE_ROWS: usize = 10;
 
 #[derive(Clone, Debug)]
 pub struct OrderConfig {
-    /// The shared pair budget: at most this many eligible pairs
-    /// are evaluated, in column order.
+    /// The shared pair budget: at most this many pairs are
+    /// verified on all rows, nearest columns first.
     pub max_pairs: usize,
     /// Unordered column-index pairs (lo, hi) between which an
     /// exact single-column functional dependency holds in either
@@ -107,7 +127,12 @@ pub struct OrderOutcome {
     /// Eligible pairs (same kind, per-column bars passed, ranges
     /// compatible) before the pair budget.
     pub pairs_total: usize,
-    /// Pairs whose rows were examined, budget permitting.
+    /// Pairs screened on the row sample, or on all rows when the
+    /// table is smaller than the sample.
+    pub pairs_screened: usize,
+    /// Pairs that stayed near-universal on the screen.
+    pub pairs_surviving: usize,
+    /// Surviving pairs verified on all rows, budget permitting.
     pub pairs_evaluated: usize,
     /// Directions that passed the reporting bar before the
     /// findings cap (at most one per pair).
@@ -120,7 +145,7 @@ pub struct OrderOutcome {
 
 /// A column prepared for pair comparison: values in the exact
 /// comparison domain of its kind, plus the marginal statistics
-/// the candidate guards read.
+/// the candidate guards read. `distinct` counts up to MIN_DISTINCT.
 enum ColPrep {
     Ints {
         vals: Vec<Option<i128>>,
@@ -181,6 +206,58 @@ impl ColPrep {
     fn is_temporal(&self) -> bool {
         matches!(self, ColPrep::Ticks { .. })
     }
+    /// The same column with only the given rows' values; the marginal
+    /// statistics stay those of the whole column.
+    fn restricted(self, rows: &[u32]) -> ColPrep {
+        fn pick<T: Copy>(vals: &[Option<T>], rows: &[u32]) -> Vec<Option<T>> {
+            rows.iter().map(|&r| vals[r as usize]).collect()
+        }
+        match self {
+            ColPrep::Ints {
+                vals,
+                min,
+                max,
+                distinct,
+                nonnull,
+                f64_exact,
+            } => ColPrep::Ints {
+                vals: pick(&vals, rows),
+                min,
+                max,
+                distinct,
+                nonnull,
+                f64_exact,
+            },
+            ColPrep::Floats {
+                vals,
+                min,
+                max,
+                distinct,
+                nonnull,
+            } => ColPrep::Floats {
+                vals: pick(&vals, rows),
+                min,
+                max,
+                distinct,
+                nonnull,
+            },
+            ColPrep::Ticks {
+                vals,
+                unit_ns,
+                min,
+                max,
+                distinct,
+                nonnull,
+            } => ColPrep::Ticks {
+                vals: pick(&vals, rows),
+                unit_ns,
+                min,
+                max,
+                distinct,
+                nonnull,
+            },
+        }
+    }
 }
 
 fn prep_column(col: &TypedCol) -> Option<ColPrep> {
@@ -194,7 +271,9 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 match v {
                     Some(&x) => {
                         let x = x as i128;
-                        seen.insert(x);
+                        if seen.len() < MIN_DISTINCT {
+                            seen.insert(x);
+                        }
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
@@ -224,7 +303,9 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 match v {
                     Some(&x) => {
                         let x = x as i128;
-                        seen.insert(x);
+                        if seen.len() < MIN_DISTINCT {
+                            seen.insert(x);
+                        }
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
@@ -252,7 +333,9 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
             for v in vals.iter() {
                 match v {
                     Some(&x) => {
-                        seen.insert(x.to_bits());
+                        if seen.len() < MIN_DISTINCT {
+                            seen.insert(x.to_bits());
+                        }
                         min = min.min(x);
                         max = max.max(x);
                         out.push(Some(x));
@@ -276,7 +359,9 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 match v {
                     Some(x) => {
                         let x = *x as i128;
-                        seen.insert(x);
+                        if seen.len() < MIN_DISTINCT {
+                            seen.insert(x);
+                        }
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
@@ -305,7 +390,9 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 match v {
                     Some(x) => {
                         let x = *x as i128;
-                        seen.insert(x);
+                        if seen.len() < MIN_DISTINCT {
+                            seen.insert(x);
+                        }
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
@@ -400,17 +487,12 @@ impl ScanVal for i128 {
     }
 }
 
-/// Violation counts for both directions over the given rows, and
-/// how many of those rows had both values present.
-fn count_directions<T: ScanVal>(
-    a: &[Option<T>],
-    b: &[Option<T>],
-    rows: &[u32],
-) -> (usize, usize, usize) {
+/// Violation counts for both directions, and how many rows had both
+/// values present.
+fn count_directions<T: ScanVal>(a: &[Option<T>], b: &[Option<T>]) -> (usize, usize, usize) {
     let (mut viol_ab, mut viol_ba, mut complete) = (0usize, 0usize, 0usize);
-    for &r in rows {
-        let r = r as usize;
-        if let (Some(x), Some(y)) = (a[r], b[r]) {
+    for (x, y) in a.iter().zip(b) {
+        if let (Some(x), Some(y)) = (x, y) {
             complete += 1;
             if x > y {
                 viol_ab += 1;
@@ -420,6 +502,35 @@ fn count_directions<T: ScanVal>(
         }
     }
     (viol_ab, viol_ba, complete)
+}
+
+/// Violations of `lower <= upper` that random pairing would give on the
+/// rows where both are present: the share of (lower, upper) value pairs out
+/// of order, times the rows.
+fn chance_violations<T: ScanVal>(lower: &[Option<T>], upper: &[Option<T>]) -> f64 {
+    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+    for (x, y) in lower.iter().zip(upper) {
+        if let (Some(x), Some(y)) = (x, y) {
+            xs.push(*x);
+            ys.push(*y);
+        }
+    }
+    let by_value = |p: &T, q: &T| p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal);
+    xs.sort_by(by_value);
+    ys.sort_by(by_value);
+    let (mut below, mut crossed) = (0usize, 0u128);
+    for x in &xs {
+        while below < ys.len() && ys[below] < *x {
+            below += 1;
+        }
+        crossed += below as u128;
+    }
+    crossed as f64 / xs.len().max(1) as f64
+}
+
+/// Whether `violations` is far fewer than random pairing would give.
+fn beats_chance(violations: usize, chance: f64) -> bool {
+    chance >= MIN_CHANCE_VIOLATIONS && chance >= CHANCE_MARGIN * violations as f64
 }
 
 #[derive(Default)]
@@ -549,6 +660,8 @@ fn note_satisfied<T: ScanVal>(dir: &mut DirDetail<T>, slack: T) {
 
 /// A reportable direction, ready to rank and emit.
 struct Candidate {
+    /// Violations random pairing would give.
+    chance: f64,
     lower: usize,
     upper: usize,
     violations: usize,
@@ -615,55 +728,79 @@ impl Candidate {
 
 pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome {
     let mut out = OrderOutcome::default();
-    let preps: Vec<Option<ColPrep>> = table.cols.iter().map(prep_column).collect();
-    out.columns_seen = preps.iter().filter(|p| p.is_some()).count();
+    let sampled = table.n > SCREEN_ROWS;
+    let rows: Vec<u32> = if sampled {
+        onceover_core::sample_rows(table.n, SCREEN_ROWS)
+    } else {
+        (0..table.n as u32).collect()
+    };
+    out.screened = sampled;
+    // Whole columns are only needed for pairs that survive the screen, so
+    // only the sampled values are kept here.
+    let previews: Vec<Option<ColPrep>> = table
+        .cols
+        .par_iter()
+        .map(|col| prep_column(col).map(|p| p.restricted(&rows)))
+        .collect();
+    out.columns_seen = previews.iter().filter(|p| p.is_some()).count();
     let eligible_cols: Vec<usize> = (0..table.cols.len())
         .filter(|i| !cfg.excluded.contains(i))
         .filter(|&i| {
-            preps[i]
+            previews[i]
                 .as_ref()
                 .is_some_and(|p| p.distinct() >= MIN_DISTINCT && p.nonnull() >= MIN_EVALUATED)
         })
         .collect();
-    // The eligible universe, counted arithmetically over the
-    // pair space (never materialized): a pair is eligible when
-    // the two columns share an exact comparison domain and their
-    // ranges are compatible.
-    let pair_eligible = |i: usize, j: usize| -> Option<bool> {
-        let (a, b) = (preps[i].as_ref().unwrap(), preps[j].as_ref().unwrap());
-        let domain = pair_domain(a, b)?;
-        if ranges_compatible(a, b) {
-            Some(domain)
-        } else {
-            None
-        }
-    };
-    for x in 0..eligible_cols.len() {
-        for y in (x + 1)..eligible_cols.len() {
-            if pair_eligible(eligible_cols[x], eligible_cols[y]).is_some() {
-                out.pairs_total += 1;
-            }
-        }
-    }
-
-    let mut candidates: Vec<Candidate> = Vec::new();
-    'pairs: for x in 0..eligible_cols.len() {
-        for y in (x + 1)..eligible_cols.len() {
-            let (i, j) = (eligible_cols[x], eligible_cols[y]);
-            let Some(as_float) = pair_eligible(i, j) else {
+    // A pair is eligible when the two columns share an exact comparison
+    // domain and their ranges are compatible. Nearest columns come first:
+    // columns that bound each other tend to sit together, and this is the
+    // order in which the screen budget is spent.
+    let screen_budget = cfg.max_pairs.saturating_mul(SCREEN_PAIRS_PER_BUDGET);
+    let mut to_screen: Vec<(usize, usize, bool)> = Vec::new();
+    for distance in 1..eligible_cols.len() {
+        for x in 0..eligible_cols.len() - distance {
+            let (i, j) = (eligible_cols[x], eligible_cols[x + distance]);
+            let (a, b) = (previews[i].as_ref().unwrap(), previews[j].as_ref().unwrap());
+            let Some(as_float) = pair_domain(a, b) else {
                 continue;
             };
-            if out.pairs_evaluated >= cfg.max_pairs {
-                break 'pairs;
-            }
-            out.pairs_evaluated += 1;
-            let (a, b) = (preps[i].as_ref().unwrap(), preps[j].as_ref().unwrap());
-            let derived = cfg.derived_pairs.contains(&(i.min(j), i.max(j)));
-            if let Some(c) = evaluate_pair(table, a, b, i, j, as_float, derived, &mut out) {
-                candidates.push(c);
+            if ranges_compatible(a, b) {
+                out.pairs_total += 1;
+                if to_screen.len() < screen_budget {
+                    to_screen.push((i, j, as_float));
+                }
             }
         }
     }
+    out.pairs_screened = to_screen.len();
+
+    let survivors: Vec<(usize, usize, bool, bool, bool)> = to_screen
+        .par_iter()
+        .filter_map(|&(i, j, as_float)| {
+            let (a, b) = (previews[i].as_ref()?, previews[j].as_ref()?);
+            let (want_fs, want_sf) = screen_pair(a, b, as_float)?;
+            Some((i, j, as_float, want_fs, want_sf))
+        })
+        .collect();
+    drop(previews);
+    out.pairs_surviving = survivors.len();
+    let verified = &survivors[..survivors.len().min(cfg.max_pairs)];
+    out.pairs_evaluated = verified.len();
+
+    let columns: BTreeSet<usize> = verified.iter().flat_map(|p| [p.0, p.1]).collect();
+    let whole: BTreeMap<usize, ColPrep> = columns
+        .into_par_iter()
+        .filter_map(|c| prep_column(&table.cols[c]).map(|p| (c, p)))
+        .collect();
+    let mut candidates: Vec<Candidate> = verified
+        .par_iter()
+        .filter_map(|&(i, j, as_float, want_fs, want_sf)| {
+            let derived = cfg.derived_pairs.contains(&(i.min(j), i.max(j)));
+            let (a, b) = (whole.get(&i)?, whole.get(&j)?);
+            let want = (want_fs, want_sf);
+            evaluate_pair(a, b, i, j, as_float, derived, want, sampled)
+        })
+        .collect();
 
     out.pairs_passing = candidates.len();
     candidates.sort_by(|p, q| p.rank_key().partial_cmp(&q.rank_key()).unwrap());
@@ -673,36 +810,63 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
     out
 }
 
-/// Screen (when the table is large) and verify one pair; return
-/// the reportable direction, if any.
+/// The directions of a pair still near-universal on the screening rows.
+fn screen_pair(a: &ColPrep, b: &ColPrep, as_float: bool) -> Option<(bool, bool)> {
+    let counts = match (a, b, as_float) {
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
+            count_directions(av, bv)
+        }
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
+            count_directions(&as_floats(av), bv)
+        }
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => {
+            count_directions(av, &as_floats(bv))
+        }
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false)
+        | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => {
+            count_directions(av, bv)
+        }
+        _ => return None,
+    };
+    let (v_fs, v_sf, complete) = counts;
+    if complete < MIN_SCREEN_COMPLETE {
+        return Some((true, true));
+    }
+    let want_fs = v_fs as f64 <= SCREEN_SHARE * complete as f64;
+    let want_sf = v_sf as f64 <= SCREEN_SHARE * complete as f64;
+    (want_fs || want_sf).then_some((want_fs, want_sf))
+}
+
+fn as_floats(vals: &[Option<i128>]) -> Vec<Option<f64>> {
+    vals.iter().map(|v| v.map(|x| x as f64)).collect()
+}
+
+/// Verify one screened pair on all rows; return the reportable direction,
+/// if any.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_pair(
-    table: &TypedTable,
     a: &ColPrep,
     b: &ColPrep,
     i: usize,
     j: usize,
     as_float: bool,
     derived: bool,
-    out: &mut OrderOutcome,
+    want: (bool, bool),
+    screened: bool,
 ) -> Option<Candidate> {
     match (a, b, as_float) {
         (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
-            dispatch(table, av, bv, i, j, a, b, derived, out)
+            dispatch(av, bv, i, j, a, derived, want, screened)
         }
         (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
-            let avf: Vec<Option<f64>> = av.iter().map(|v| v.map(|x| x as f64)).collect();
-            dispatch(table, &avf, bv, i, j, a, b, derived, out)
+            dispatch(&as_floats(av), bv, i, j, a, derived, want, screened)
         }
         (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => {
-            let bvf: Vec<Option<f64>> = bv.iter().map(|v| v.map(|x| x as f64)).collect();
-            dispatch(table, av, &bvf, i, j, a, b, derived, out)
+            dispatch(av, &as_floats(bv), i, j, a, derived, want, screened)
         }
-        (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false) => {
-            dispatch(table, av, bv, i, j, a, b, derived, out)
-        }
-        (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => {
-            dispatch(table, av, bv, i, j, a, b, derived, out)
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false)
+        | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => {
+            dispatch(av, bv, i, j, a, derived, want, screened)
         }
         _ => None,
     }
@@ -710,45 +874,32 @@ fn evaluate_pair(
 
 #[allow(clippy::too_many_arguments)]
 fn dispatch<T: ScanVal>(
-    table: &TypedTable,
     av: &[Option<T>],
     bv: &[Option<T>],
     i: usize,
     j: usize,
     a_prep: &ColPrep,
-    b_prep: &ColPrep,
     derived: bool,
-    out: &mut OrderOutcome,
+    (want_fs, want_sf): (bool, bool),
+    screened: bool,
 ) -> Option<Candidate> {
-    // Screening stage: when the table is larger than the screen
-    // and the pair's complete rows cannot be bounded cheaply,
-    // count violations on a deterministic row sample first. A
-    // direction that is not near-universal on the sample is not
-    // verified; the reporting decision always rests on the full
-    // verification below.
-    let cheap_full = a_prep.nonnull().min(b_prep.nonnull()) <= SCREEN_ROWS;
-    let mut screened = false;
-    let (mut want_fs, mut want_sf) = (true, true);
-    if table.n > SCREEN_ROWS && !cheap_full {
-        screened = true;
-        out.screened = true;
-        let rows = onceover_core::sample_rows(table.n, SCREEN_ROWS);
-        let (v_fs, v_sf, complete) = count_directions(av, bv, &rows);
-        if complete >= 30 {
-            want_fs = v_fs as f64 <= SCREEN_SHARE * complete as f64;
-            want_sf = v_sf as f64 <= SCREEN_SHARE * complete as f64;
-            if !want_fs && !want_sf {
-                return None;
-            }
-        }
-    }
     let d = verify_pair(av, bv, want_fs, want_sf);
     if d.n < MIN_EVALUATED {
         return None;
     }
     let bar = |viol: usize| viol == 0 || viol as f64 <= MAX_VIOLATION_SHARE * d.n as f64;
-    let pass_fs = want_fs && bar(d.fs.violations);
-    let pass_sf = want_sf && bar(d.sf.violations);
+    let chance_fs = if want_fs && bar(d.fs.violations) {
+        chance_violations(av, bv)
+    } else {
+        0.0
+    };
+    let chance_sf = if want_sf && bar(d.sf.violations) {
+        chance_violations(bv, av)
+    } else {
+        0.0
+    };
+    let pass_fs = beats_chance(d.fs.violations, chance_fs);
+    let pass_sf = beats_chance(d.sf.violations, chance_sf);
     let temporal = a_prep.is_temporal();
     let unit_ns = match a_prep {
         ColPrep::Ticks { unit_ns, .. } => *unit_ns,
@@ -760,9 +911,11 @@ fn dispatch<T: ScanVal>(
                 lo_min: T,
                 lo_max: T,
                 hi_min: T,
-                hi_max: T|
+                hi_max: T,
+                chance: f64|
      -> Candidate {
         Candidate {
+            chance,
             lower,
             upper,
             violations: dir.violations,
@@ -803,13 +956,21 @@ fn dispatch<T: ScanVal>(
                 // order.
                 None
             } else if d.fs.violations < d.sf.violations {
-                Some(make(i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max))
+                Some(make(
+                    i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+                ))
             } else {
-                Some(make(j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max))
+                Some(make(
+                    j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+                ))
             }
         }
-        (true, false) => Some(make(i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max)),
-        (false, true) => Some(make(j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max)),
+        (true, false) => Some(make(
+            i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+        )),
+        (false, true) => Some(make(
+            j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+        )),
         (false, false) => None,
     }
 }
@@ -903,8 +1064,12 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         ),
         ("row_sampled".into(), json!(false)),
         (
+            "violations_if_shuffled".into(),
+            json!(c.chance),
+        ),
+        (
             "method".into(),
-            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are evaluated on the shared max_pairs budget"),
+            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, and random pairing of the two columns would give at least 20 violations and at least 4 times those observed, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
         ),
     ]);
     if c.temporal {
