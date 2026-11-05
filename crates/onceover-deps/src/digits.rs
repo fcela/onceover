@@ -34,6 +34,7 @@
 //! recorded here rather than in coverage per column.
 
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
+use rayon::prelude::*;
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -49,49 +50,61 @@ const CHI2_BENFORD_BAR: f64 = 34.0;
 const BENFORD_MAD_BAR: f64 = 0.012;
 
 pub fn digit_fingerprints(table: &TypedTable) -> (Vec<Finding>, String) {
+    let per_column: Vec<Option<(Vec<Finding>, bool)>> = table
+        .cols
+        .par_iter()
+        .enumerate()
+        .map(|(i, col)| digit_column(&table.names[i], col))
+        .collect();
     let mut out = Vec::new();
     let mut scanned = 0usize;
     let mut benford_eligible = 0usize;
-    for (i, col) in table.cols.iter().enumerate() {
-        let vals: Vec<f64> = match col {
-            TypedCol::F64 { vals } => vals
-                .iter()
-                .filter_map(|v| v.filter(|x| x.is_finite()).copied())
-                .collect(),
-            TypedCol::I64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
-            TypedCol::U64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
-            _ => continue,
-        };
-        if vals.len() < MIN_VALUES {
-            continue;
-        }
+    for (findings, eligible) in per_column.into_iter().flatten() {
         scanned += 1;
-        let name = &table.names[i];
-
-        // ---- integer-valued checks: heaping + terminal digit ----
-        if vals
-            .iter()
-            .all(|v| v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0)
-        {
-            let distinct: std::collections::HashSet<i64> = vals.iter().map(|v| *v as i64).collect();
-            if distinct.len() >= MIN_DISTINCT {
-                let heaped = heaping(name, &vals, &mut out);
-                if !heaped {
-                    terminal_digit(name, &vals, &mut out);
-                }
-            }
-        }
-
-        // ---- Benford ----
-        if benford(name, &vals, &mut out) {
-            benford_eligible += 1;
-        }
+        benford_eligible += usize::from(eligible);
+        out.extend(findings);
     }
     let cov = format!(
         "{} numeric columns digit-scanned; {} Benford-eligible (others fail the positivity, span, or distinctness eligibility recorded in the detector docs)",
         scanned, benford_eligible
     );
     (out, cov)
+}
+
+/// The column's findings and whether it was Benford-eligible, or None when
+/// the column is not numeric or too short to scan.
+fn digit_column(name: &str, col: &TypedCol) -> Option<(Vec<Finding>, bool)> {
+    let vals: Vec<f64> = match col {
+        TypedCol::F64 { vals } => vals
+            .iter()
+            .filter_map(|v| v.filter(|x| x.is_finite()).copied())
+            .collect(),
+        TypedCol::I64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
+        TypedCol::U64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
+        _ => return None,
+    };
+    if vals.len() < MIN_VALUES {
+        return None;
+    }
+    let mut out = Vec::new();
+
+    // ---- integer-valued checks: heaping + terminal digit ----
+    if vals
+        .iter()
+        .all(|v| v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0)
+    {
+        let distinct: std::collections::HashSet<i64> = vals.iter().map(|v| *v as i64).collect();
+        if distinct.len() >= MIN_DISTINCT {
+            let heaped = heaping(name, &vals, &mut out);
+            if !heaped {
+                terminal_digit(name, &vals, &mut out);
+            }
+        }
+    }
+
+    // ---- Benford ----
+    let eligible = benford(name, &vals, &mut out);
+    Some((out, eligible))
 }
 
 /// Returns true when a heaping finding was emitted.
