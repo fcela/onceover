@@ -939,7 +939,8 @@ fn default_policy_caps_the_char_heavy_detectors() {
         policy.max_findings_per_detector.get("missingness"),
         Some(&20)
     );
-    assert_eq!(policy.max_findings_per_detector.len(), 4);
+    assert_eq!(policy.max_findings_per_detector.get("series"), Some(&20));
+    assert_eq!(policy.max_findings_per_detector.len(), 5);
 }
 
 #[test]
