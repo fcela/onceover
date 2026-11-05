@@ -14,6 +14,12 @@ quantities the claim states agree with the payload it ships with:
   consistent: n - round(dominant_share * n) must equal the outlier
   count (the issue #111 shape, where claim and count agree with each
   other but not with the stated share).
+- predictive: the drivers the claim names, with their percentages,
+  equal the payload's `drivers` and `driver_shares`; every named
+  driver is one of the payload's `inputs`; and the holdout scores
+  the claim states equal the payload's — the reduced (drivers-only)
+  score when the claim reports a refit, the full model's `metric`
+  otherwise, plus the categorical majority `baseline`.
 
 Contradictions already on record are listed in KNOWN_FAILURES, keyed
 to the issues that own the fixes; the gate asserts the reproduced
@@ -150,9 +156,126 @@ def check_categorical_outlier(f: dict) -> list[str]:
     return problems
 
 
+def check_predictive(f: dict) -> list[str]:
+    """Problem kinds for one predictive finding (empty = consistent).
+
+    The claim names the model's drivers with their shares of the
+    split gain; the payload carries the same names and shares in
+    `drivers` / `driver_shares`, the full input list in `inputs`,
+    the full model's holdout score in `metric`, and — when the
+    driver set is a proper subset of the inputs and the claim
+    reports it — the score of a model refit on the drivers alone
+    in `reduced_metric`. The claim's headline score is the reduced
+    model's when a refit is reported and the full model's
+    otherwise; a categorical claim also states the majority
+    baseline. When the payload has no drivers the claim keeps the
+    bracket form and lists every input.
+
+    Scope: type `predictive` also covers other passes' statements
+    (local regimes, interactions, target shapes). This checker
+    applies only to the screen's findings, identified by their
+    claim shape; a screen-shaped claim whose payload lacks the
+    screen's keys is itself a shape problem.
+    """
+    problems: list[str] = []
+    m = _metrics(f)
+    claim = f["claim"]
+    if " is predictable from " not in claim:
+        return []
+    if not {"metric", "inputs", "drivers"} <= m.keys():
+        return ["claim-shape"]
+    drivers = [str(d) for d in m.get("drivers") or []]
+    shares = [float(s) for s in m.get("driver_shares") or []]
+    inputs = [str(i) for i in m.get("inputs") or []]
+    metric = float(m["metric"])
+    reduced = m.get("reduced_metric")
+    reduced = None if reduced is None else float(reduced)
+    baseline = float(m["baseline"])
+
+    parsed = re.search(r"^.+? is predictable from (.+?) \(holdout (.+)\)$",
+                       claim)
+    if parsed is None:
+        return ["claim-shape"]
+    named_part, rest = parsed.group(1), parsed.group(2)
+
+    if not drivers:
+        bracket = re.fullmatch(r"\[(.*)\]", named_part)
+        if bracket is None:
+            return ["claim-shape"]
+        listed = [p for p in bracket.group(1).split(", ") if p]
+        if listed != inputs:
+            problems.append("driver-names")
+    else:
+        named: list[tuple[str, int]] = []
+        for piece in named_part.split(", "):
+            pm = re.fullmatch(r"(.+) \((\d+)% of gain\)", piece)
+            if pm is None:
+                return ["claim-shape"]
+            named.append((pm.group(1), int(pm.group(2))))
+        if [n for n, _ in named] != drivers:
+            problems.append("driver-names")
+        if len(shares) != len(drivers):
+            problems.append("driver-share")
+        else:
+            for (_, pct), share in zip(named, shares):
+                if abs(pct - share * 100.0) > 0.5 + 1e-9:
+                    problems.append("driver-share")
+                    break
+        if any(d not in inputs for d in drivers):
+            problems.append("driver-not-input")
+
+    def stated(value: float) -> float:
+        return round(value, 2)
+
+    if rest.startswith("R² = "):
+        scores = re.fullmatch(
+            rf"R² = ({NUM})(?: using only these drivers; "
+            rf"({NUM}) using all inputs)?", rest)
+        if scores is None:
+            return problems + ["claim-shape"]
+        first = float(scores.group(1))
+        if scores.group(2) is not None:
+            if reduced is None:
+                problems.append("reduced-metric")
+            elif abs(first - stated(reduced)) > 0.005 + 1e-9:
+                problems.append("reduced-metric")
+            if abs(float(scores.group(2)) - stated(metric)) > 0.005 + 1e-9:
+                problems.append("full-metric")
+        else:
+            if abs(first - stated(metric)) > 0.005 + 1e-9:
+                problems.append("metric")
+            if reduced is not None:
+                problems.append("reduced-missing")
+    elif rest.startswith("accuracy "):
+        scores = re.fullmatch(
+            rf"accuracy ({NUM}) vs ({NUM}) majority baseline"
+            rf"(?:; ({NUM}) using all inputs)?", rest)
+        if scores is None:
+            return problems + ["claim-shape"]
+        first = float(scores.group(1))
+        if abs(float(scores.group(2)) - stated(baseline)) > 0.005 + 1e-9:
+            problems.append("baseline")
+        if scores.group(3) is not None:
+            if reduced is None:
+                problems.append("reduced-metric")
+            elif abs(first - stated(reduced)) > 0.005 + 1e-9:
+                problems.append("reduced-metric")
+            if abs(float(scores.group(3)) - stated(metric)) > 0.005 + 1e-9:
+                problems.append("full-metric")
+        else:
+            if abs(first - stated(metric)) > 0.005 + 1e-9:
+                problems.append("metric")
+            if reduced is not None:
+                problems.append("reduced-missing")
+    else:
+        problems.append("claim-shape")
+    return problems
+
+
 CHECKERS = {
     "extreme_value": check_extreme_value,
     "categorical_outlier": check_categorical_outlier,
+    "predictive": check_predictive,
 }
 
 # Reproduced contradictions on current main, recorded so the gate can
@@ -288,3 +411,98 @@ def test_checker_flags_the_share_implied_count_mismatch():
              "2 rows break the pattern: row 7 (x = B), row 8 (x = B)")
     f = _categorical_finding(claim, outlier_count=2, outlier_rows=[7, 8])
     assert check_categorical_outlier(f) == ["share-implied-count"]
+
+
+def _predictive_finding(claim: str, **metrics) -> dict:
+    base = {"task": "regression", "metric": 0.83, "baseline": 0.0,
+            "reduced_metric": 0.81,
+            "inputs": ["atemp", "hum", "windspeed"],
+            "drivers": ["atemp"], "driver_shares": [0.983],
+            "top_features": ["atemp"], "gain_shares": [0.983],
+            "n_train": 3750, "n_holdout": 1250, "rounds": 12,
+            "rows_used": 5000}
+    base.update(metrics)
+    return {"type": "predictive", "claim": claim,
+            "subject": {"target": "temp"},
+            "evidence": [{"metrics": base, "scope": "all rows"}]}
+
+
+PREDICTIVE_CLAIM = ("temp is predictable from atemp (98% of gain) "
+                    "(holdout R² = 0.81 using only these drivers; "
+                    "0.83 using all inputs)")
+
+
+def test_checker_accepts_a_consistent_predictive_claim():
+    assert check_predictive(_predictive_finding(PREDICTIVE_CLAIM)) == []
+
+
+def test_checker_accepts_a_full_driver_claim_without_refit():
+    claim = ("y is predictable from x1 (60% of gain), x2 (40% of gain) "
+             "(holdout R² = 0.91)")
+    f = _predictive_finding(
+        claim, metric=0.91, reduced_metric=None,
+        inputs=["x1", "x2"], drivers=["x1", "x2"],
+        driver_shares=[0.6, 0.4], top_features=["x1", "x2"],
+        gain_shares=[0.6, 0.4])
+    assert check_predictive(f) == []
+
+
+def test_checker_flags_a_corrupted_driver_share():
+    bad = _predictive_finding(PREDICTIVE_CLAIM.replace("98% of gain",
+                                                       "90% of gain"))
+    assert "driver-share" in check_predictive(bad)
+
+
+def test_checker_flags_a_swapped_driver_name():
+    bad = _predictive_finding(PREDICTIVE_CLAIM.replace("atemp (98%",
+                                                       "hum (98%"))
+    assert "driver-names" in check_predictive(bad)
+
+
+def test_checker_flags_a_corrupted_reduced_score():
+    bad = _predictive_finding(PREDICTIVE_CLAIM.replace("R² = 0.81",
+                                                       "R² = 0.71"))
+    assert "reduced-metric" in check_predictive(bad)
+
+
+def test_checker_flags_a_corrupted_full_score():
+    bad = _predictive_finding(PREDICTIVE_CLAIM.replace("0.83 using all",
+                                                       "0.93 using all"))
+    assert "full-metric" in check_predictive(bad)
+
+
+def test_checker_flags_a_dropped_refit_clause():
+    claim = ("temp is predictable from atemp (98% of gain) "
+             "(holdout R² = 0.83)")
+    assert "reduced-missing" in check_predictive(
+        _predictive_finding(claim))
+
+
+def _predictive_cat_finding(claim: str, **metrics) -> dict:
+    base = {"task": "classification", "metric": 0.90, "baseline": 0.61,
+            "reduced_metric": 0.88, "inputs": ["f1", "f2"],
+            "drivers": ["f1"], "driver_shares": [0.75],
+            "top_features": ["f1"], "gain_shares": [0.75],
+            "n_train": 3750, "n_holdout": 1250, "rounds": 9,
+            "rows_used": 5000}
+    base.update(metrics)
+    return {"type": "predictive", "claim": claim,
+            "subject": {"target": "cls"},
+            "evidence": [{"metrics": base, "scope": "all rows"}]}
+
+
+PREDICTIVE_CAT_CLAIM = (
+    "cls is predictable from f1 (75% of gain) "
+    "(holdout accuracy 0.88 vs 0.61 majority baseline; "
+    "0.90 using all inputs)")
+
+
+def test_checker_accepts_a_consistent_categorical_claim():
+    f = _predictive_cat_finding(PREDICTIVE_CAT_CLAIM)
+    assert check_predictive(f) == []
+
+
+def test_checker_flags_a_corrupted_baseline():
+    bad = _predictive_cat_finding(
+        PREDICTIVE_CAT_CLAIM.replace("vs 0.61 majority", "vs 0.51 majority"))
+    assert "baseline" in check_predictive(bad)

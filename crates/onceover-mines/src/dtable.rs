@@ -163,9 +163,14 @@ pub fn decision_tables(
         let baseline = *counts.iter().max().unwrap_or(&0) as f64 / positions.len().max(1) as f64;
         let own_feat = enc.feat_cols.iter().position(|&c| c == res.col);
 
-        // Feature pool: top by GBM gain, fallback to all.
-        let mut pool: Vec<usize> = res
-            .top_features
+        // Feature pool: the screen's driver shortlist when it
+        // produced one, else top by GBM gain; fallback to all.
+        let pool_source: &Vec<(String, f64)> = if res.drivers.is_empty() {
+            &res.top_features
+        } else {
+            &res.drivers
+        };
+        let mut pool: Vec<usize> = pool_source
             .iter()
             .filter_map(|(n, _)| enc.feat_names.iter().position(|f| f == n))
             .filter(|&f| Some(f) != own_feat)
@@ -316,6 +321,9 @@ mod tests {
             rounds: 1,
             inputs: Vec::new(),
             top_features: vec![],
+            drivers: Vec::new(),
+            reduced_metric: None,
+            reduced_rounds: None,
             cat_ids: Some((ids, vec!["0".into(), "1".into()])),
         };
         let (tables, _) = decision_tables(&enc, &[&target], &DtableConfig::default());

@@ -101,8 +101,14 @@ pub fn profile_regimes(
     let (mut findings, mut fitted, mut incomplete, mut skipped) =
         (Vec::new(), 0usize, 0usize, 0usize);
     for res in &candidates {
-        let mut features: Vec<usize> = res
-            .top_features
+        // Feature pool: the screen's driver shortlist when it
+        // produced one, else its top-gain features.
+        let pool_source: &Vec<(String, f64)> = if res.drivers.is_empty() {
+            &res.top_features
+        } else {
+            &res.drivers
+        };
+        let mut features: Vec<usize> = pool_source
             .iter()
             .filter_map(|(n, _)| table.names.iter().position(|v| v == n))
             .filter(|&i| i != res.col && !excluded.contains(&i) && table.cols[i].is_numeric())
@@ -466,6 +472,9 @@ mod tests {
             rounds: 0,
             inputs: Vec::new(),
             top_features: vec![("gate".into(), 0.6), ("x".into(), 0.4)],
+            drivers: Vec::new(),
+            reduced_metric: None,
+            reduced_rounds: None,
             cat_ids: None,
         }
     }
