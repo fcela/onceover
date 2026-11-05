@@ -1110,7 +1110,16 @@ fn profile_inner(
                 // real-valued measurements stay eligible — the
                 // behaviour the old card-role carve-out protected.
                 let excluded: &[usize] = &scaffold_excluded;
-                let (f, cov) = profile_discontinuities(&table, excluded, &tier.disc);
+                // Jumps in a flag or a label say little; targets are measures.
+                let measures: Vec<usize> = frame
+                    .roles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.as_deref() == Some("measure"))
+                    .map(|(i, _)| i)
+                    .collect();
+                let (f, cov) =
+                    profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
