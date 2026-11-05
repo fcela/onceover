@@ -923,8 +923,8 @@ fn profile_categorical_surprises(
     }
 
     // Selection: significance order, brevity as tie-break, at
-    // most 3 findings per target, a breaker row reported once
-    // per target.
+    // most 3 findings per target, and a context must add a breaker
+    // row no earlier statement about the target has named.
     candidates.sort_by(|a, b| {
         a.logtail
             .partial_cmp(&b.logtail)
@@ -942,19 +942,14 @@ fn profile_categorical_surprises(
         if per_target.get(&cand.target).copied().unwrap_or(0) >= 3 {
             continue;
         }
+        // A context earns a statement only by adding rows, and then it
+        // lists every row breaking its pattern: its dominant share counts
+        // them all, including rows an earlier statement already named.
         let seen = reported.entry(cand.target).or_default();
-        let fresh: Vec<usize> = cand
-            .breakers
-            .iter()
-            .copied()
-            .filter(|r| !seen.contains(r))
-            .collect();
-        if fresh.is_empty() {
+        if cand.breakers.iter().all(|r| seen.contains(r)) {
             continue;
         }
-        for &r in &fresh {
-            seen.insert(r);
-        }
+        seen.extend(cand.breakers.iter().copied());
         *per_target.entry(cand.target).or_insert(0) += 1;
         let tcoded = coded[cand.target].as_ref().unwrap();
         let ctx_cols: Vec<(usize, &Coded, u32)> = cand
@@ -968,7 +963,7 @@ fn profile_categorical_surprises(
             dom: cand.dom,
             share: cand.share,
             subset: cand.subset,
-            breakers: fresh,
+            breakers: cand.breakers.clone(),
             logtail: cand.logtail,
         };
         cand.breakers.sort_unstable();

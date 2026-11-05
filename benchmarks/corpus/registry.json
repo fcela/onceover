@@ -1696,8 +1696,8 @@
     {
      "kind": "documented_case",
      "ref": "Categorical-outlier enumeration undercounts (education = Some-college, relationship = Husband, 3,658 rows): the claim names 2 breaker rows; the slice has 3 (rows 3787, 39624, 48118, all marital_status = Married-AF-spouse)",
-     "status": "partial",
-     "note": "The finding's own dominant_share (0.999180 = 3655/3658) implies exactly 3 exceptions while its outlier_count says 2 and the claim repeats 2. Rows verified on the prepared file, 2026-11-03."
+     "status": "found",
+     "note": "Fixed 2026-11-05 (#111): the finding lists all 3 breaking rows (3787, 39624, 48118), matching its dominant share of 3655/3658."
     }
    ],
    "notes": [
