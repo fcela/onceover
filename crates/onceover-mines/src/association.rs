@@ -274,6 +274,9 @@ Method::new("association_rules", "nominal_pair_counts", "Pairwise nominal associ
 struct PairTest {
     /// Table column indices of the pair, for the scaffold filter.
     cols: (usize, usize),
+    /// Encoded feature indices of the pair (nominal side first
+    /// for mixed pairs), for the Simpson reversal check.
+    feats: (usize, usize),
     a: String,
     b: String,
     kind: &'static str,
@@ -284,6 +287,21 @@ struct PairTest {
     effect: Option<f64>,
     p_value: Option<f64>,
     extra: Vec<(&'static str, serde_json::Value)>,
+}
+
+/// The distinct non-missing bin codes a nominal feature takes
+/// over the encoded rows, ascending. The Simpson check reads a
+/// feature's signed direction only when exactly two codes are
+/// active.
+fn active_codes(enc: &EncodedMatrix, f: usize) -> Vec<u8> {
+    let mut seen: Vec<u8> = Vec::new();
+    for &c in &enc.bins[f] {
+        if c != MISSING && !seen.contains(&c) {
+            seen.push(c);
+        }
+    }
+    seen.sort_unstable();
+    seen
 }
 
 /// Tested pairwise associations over the encoded features
@@ -343,6 +361,7 @@ pub fn pair_associations(
             }
             let mut test = PairTest {
                 cols: (enc.feat_cols[fa], enc.feat_cols[fb]),
+                feats: (fa, fb),
                 a: enc.feat_names[fa].clone(),
                 b: enc.feat_names[fb].clone(),
                 kind: "nominal",
@@ -419,6 +438,7 @@ pub fn pair_associations(
             }
             let mut test = PairTest {
                 cols: (enc.feat_cols[fa], enc.feat_cols[fb]),
+                feats: (fa, fb),
                 a: enc.feat_names[fa].clone(),
                 b: enc.feat_names[fb].clone(),
                 kind: "mixed",
@@ -596,13 +616,123 @@ pub fn pair_associations(
         )
     });
     findings.truncate(20);
+
+    // Simpson reversal check (issue #134, item 5): a strong
+    // statement is unconditional, so check whether its pooled
+    // direction reverses inside every usable stratum of another
+    // nominal dimension. Only pairs with a signed reading are
+    // eligible: nominal pairs that are 2x2 on the observed
+    // levels (log odds ratio) and mixed pairs whose nominal
+    // side has two observed levels (point-biserial). Cramer's V
+    // and the correlation ratio over more levels are unsigned
+    // and carry no direction to reverse. A reversal appends a
+    // qualification to the claim and a payload to the evidence;
+    // the finding itself is never removed or re-tiered.
+    let (mut simpson_checked, mut simpson_qualified) = (0usize, 0usize);
+    let mut simpson_budget = crate::simpson::SimpsonBudget::new();
+    let has_strong = findings.iter().any(|(_, t, _)| *t == "strong");
+    let stratifiers = if has_strong {
+        crate::simpson::stratifiers_from_enc(enc, excluded)
+    } else {
+        Vec::new()
+    };
+    if has_strong {
+        for (idx, tier, finding) in findings.iter_mut() {
+            if *tier != "strong" {
+                continue;
+            }
+            let t = &tests[*idx];
+            let (fa, fb) = t.feats;
+            let mut coding: Vec<(&'static str, String)> = Vec::new();
+            let (stat, pooled, universe) = if t.kind == "nominal" {
+                let act_a = active_codes(enc, fa);
+                let act_b = active_codes(enc, fb);
+                if act_a.len() != 2 || act_b.len() != 2 {
+                    continue;
+                }
+                coding.push(("coded_level_a", enc.levels[fa][act_a[1] as usize].clone()));
+                coding.push(("coded_level_b", enc.levels[fb][act_b[1] as usize].clone()));
+                let pos = |c: u8, act: &[u8]| -> Option<f64> {
+                    if c == MISSING {
+                        None
+                    } else if c == act[0] {
+                        Some(0.0)
+                    } else if c == act[1] {
+                        Some(1.0)
+                    } else {
+                        None
+                    }
+                };
+                let universe: Vec<(Option<f64>, Option<f64>)> = (0..enc.n)
+                    .map(|j| (pos(enc.bins[fa][j], &act_a), pos(enc.bins[fb][j], &act_b)))
+                    .collect();
+                let pairs: Vec<(f64, f64)> =
+                    universe.iter().filter_map(|(x, y)| (*x).zip(*y)).collect();
+                match crate::simpson::log_odds_ratio(&pairs) {
+                    Some(v) => (crate::simpson::SignedStat::LogOddsRatio, v, universe),
+                    None => continue,
+                }
+            } else {
+                let act = active_codes(enc, fa);
+                if act.len() != 2 {
+                    continue;
+                }
+                coding.push(("coded_level", enc.levels[fa][act[1] as usize].clone()));
+                let col = &table.cols[enc.feat_cols[fb]];
+                let universe: Vec<(Option<f64>, Option<f64>)> = (0..enc.n)
+                    .map(|j| {
+                        let c = enc.bins[fa][j];
+                        let x = if c == MISSING {
+                            None
+                        } else if c == act[0] {
+                            Some(0.0)
+                        } else if c == act[1] {
+                            Some(1.0)
+                        } else {
+                            None
+                        };
+                        (x, col.numeric_at(enc.rows[j] as usize))
+                    })
+                    .collect();
+                let pairs: Vec<(f64, f64)> =
+                    universe.iter().filter_map(|(x, y)| (*x).zip(*y)).collect();
+                match crate::dep::pearson(&pairs) {
+                    Some(v) => (crate::simpson::SignedStat::PointBiserial, v, universe),
+                    None => continue,
+                }
+            };
+            simpson_checked += 1;
+            if let Some(hit) = crate::simpson::reversal_for_pair(
+                stat,
+                pooled,
+                &universe,
+                &stratifiers,
+                &[t.cols.0, t.cols.1],
+                &mut simpson_budget,
+            ) {
+                simpson_qualified += 1;
+                finding
+                    .claim
+                    .push_str(&crate::simpson::claim_clause(stat, pooled, &hit));
+                if let Some(ev) = finding.evidence.first_mut() {
+                    let mut payload = crate::simpson::simpson_payload(stat, pooled, &hit);
+                    for (k, v) in &coding {
+                        payload.insert((*k).to_string(), json!(v));
+                    }
+                    ev.metrics
+                        .insert("simpson".to_string(), serde_json::Value::Object(payload));
+                }
+            }
+        }
+    }
+
     let n_pair_findings = findings.len();
     let n_weak_pairs = findings.iter().filter(|(_, t, _)| *t == "weak").count();
     let findings: Vec<Finding> = findings.into_iter().map(|(_, _, f)| f).collect();
 
     let n_nominal = tests.iter().filter(|t| t.kind == "nominal").count();
     let n_tested = tests.iter().filter(|t| t.p_value.is_some()).count();
-    let coverage = format!(
+    let mut coverage = format!(
         "{} nominal pairs, {} mixed pairs screened over {} encoded rows; {} tested with p-values, Benjamini-Hochberg over the {} tested pairs: {} strong and {} weak pair findings (q <= {}, effect bar 0.5); untested pairs are carried in the associations table",
         n_nominal,
         tests.len() - n_nominal,
@@ -613,6 +743,18 @@ pub fn pair_associations(
         n_weak_pairs,
         Q_BAR,
     );
+    if simpson_qualified > 0 || simpson_budget.capped {
+        coverage.push_str(&format!(
+            "; Simpson reversal check over {} strong pairs: {} qualified{}",
+            simpson_checked,
+            simpson_qualified,
+            if simpson_budget.capped {
+                " (evaluation bound reached; some pairs unchecked)"
+            } else {
+                ""
+            }
+        ));
+    }
     (findings, records, coverage)
 }
 

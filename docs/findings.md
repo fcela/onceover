@@ -1,4 +1,4 @@
-# Finding schema 0.6
+# Finding schema 0.7
 
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
@@ -388,6 +388,42 @@ tested or not — is in the report's `associations` table
 pair-complete row count, its effect sizes, its raw and adjusted
 p-values, and its tier. Pairs involving frame-role scaffolding
 columns are in the table but, as before, earn no finding.
+
+Strong statements are unconditional, so they carry a Simpson
+reversal check. For a strong pair with a signed effect, the
+screen asks whether the pooled direction reverses inside every
+usable stratum of another categorical column (a stratifier:
+2–8 observed levels, not one of the pair's columns and not
+withheld by frame role; a stratum is usable with at least 30
+pair-complete rows and a defined effect, and the usable strata
+must together cover at least half of the pair-complete rows).
+Signed effects are the numeric pairs' larger correlation
+(Pearson or Spearman, checked when it reaches 0.3 in absolute
+value — below that the pair's strength is the unsigned ξ and
+there is no material direction), point-biserial correlation for
+a mixed pair whose nominal side has two observed levels, and
+the log odds ratio for a nominal pair that is 2×2 on the
+observed levels. Cramér's V beyond the 2×2 case and the
+correlation ratio η over more than two levels are unsigned:
+they have no direction to reverse and are not checked.
+
+When every usable stratum's effect has the opposite sign to
+the pooled effect, a qualification is appended to the claim —
+the stratifier is named and the pooled and within-stratum
+effects are stated with their signs — and the finding's
+evidence gains a `simpson` payload: the statistic, the pooled
+effect, the stratum-weighted within effect (Fisher-z average
+for correlations, inverse-variance weighting for log odds
+ratios), the per-stratum levels with row counts and effects,
+the usable and total stratum counts, and the share of
+pair-complete rows the usable strata cover. Binary statistics
+also name the level coded as 1 (`coded_level`, or
+`coded_level_a` / `coded_level_b` for the odds ratio), so the
+direction is interpretable. The finding is never removed,
+demoted, or re-tiered, and the associations table is unchanged.
+At most 24 stratifiers are considered per pair and 400
+pair×stratifier evaluations run per screen; when a bound stops
+a check, the screen's coverage entry says so.
 
 ## Consolidation and selection
 
