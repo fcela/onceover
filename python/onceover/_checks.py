@@ -367,7 +367,48 @@ def _check_axis_gap(f, m, df) -> list[Triple] | None:
     return [("expected steps", m["expected_steps"], distinct + m["absent_steps"])]
 
 
+def _check_near_duplicates(f, m, df) -> list[Triple]:
+    varying = m["varying_column"]
+    others = [c for c in df.columns if c != varying]
+    without = df.height - df.select(others).unique().height
+    exact = df.height - df.unique().height
+    return [
+        ("exact repeats", m["exact_repeats"], exact),
+        ("rows repeating all but one column", m["near_duplicates"], without - exact),
+    ]
+
+
+def _line_distance(m: dict) -> pl.Expr:
+    x, y = pl.col(m["x"]).cast(pl.Float64), pl.col(m["y"]).cast(pl.Float64)
+    return (y - m["slope"] * x - m["intercept"]).abs()
+
+
+def _check_residual_outliers(f, m, df) -> list[Triple]:
+    rows = df.drop_nulls([m["x"], m["y"]])
+    far = rows.filter(_line_distance(m) > m["ordinary_band"] * (1 + 1e-9)).height
+    return [
+        ("complete rows", m["n"], rows.height),
+        ("rows beyond the band", m["outliers"], far),
+    ]
+
+
+def _swap_expr(f: dict, m: dict) -> pl.Expr:
+    a, b = f["subject"]["columns"]
+    first, second = m["range_first"], m["range_second"]
+    return (
+        pl.col(a).cast(pl.Float64).is_between(second[0], second[1])
+        & pl.col(b).cast(pl.Float64).is_between(first[0], first[1])
+    )
+
+
+def _check_swapped(f, m, df) -> list[Triple]:
+    return [("swapped rows", m["swapped_rows"], df.filter(_swap_expr(f, m)).height)]
+
+
 CHECKS: dict[str, Callable] = {
+    "leave_one_column_out_hash": _check_near_duplicates,
+    "residual_scan": _check_residual_outliers,
+    "swapped_range_scan": _check_swapped,
     "uniqueness": _check_unique,
     "composite_uniqueness": _check_unique,
     "grain_factorization": _check_unique,
@@ -470,6 +511,14 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
         return indexed.filter(pl.struct(cols).is_duplicated())
     if algorithm == "near_key_axis":
         return indexed.filter(pl.col(cols[0]).is_duplicated())
+    if algorithm == "leave_one_column_out_hash":
+        others = [c for c in df.columns if c != m["varying_column"]]
+        return indexed.filter(pl.struct(others).is_duplicated())
+    if algorithm == "residual_scan":
+        complete = indexed.drop_nulls([m["x"], m["y"]])
+        return complete.filter(_line_distance(m) > m["ordinary_band"] * (1 + 1e-9))
+    if algorithm == "swapped_range_scan":
+        return indexed.filter(_swap_expr(f, m))
     if algorithm == "near_uniqueness":
         return indexed.drop_nulls(cols).filter(pl.col(cols[0]).is_duplicated())
     if algorithm in ("boundary_mass_scan", "sentinel_window_scan"):

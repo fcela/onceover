@@ -1359,6 +1359,29 @@ fn profile_inner(
                         &scaffold_excluded,
                     );
                 association_pairs.extend(dep_records);
+                if enabled("row_consistency") {
+                    let measures: Vec<usize> = frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let (mut f, detail) = onceover_mines::profile_row_consistency(
+                        &table,
+                        &deps_pair,
+                        &scaffold_excluded,
+                        &measures,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "row_consistency".into(),
+                        PassInfo::ran(detail),
+                    );
+                    findings.append(&mut f);
+                }
                 let numeric = table
                     .cols
                     .iter()
@@ -1698,6 +1721,7 @@ fn profile_inner(
         ("breaks", "breaks"),
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
+        ("row_consistency", "row_consistency"),
         ("identities", "arithmetic_identities"),
         ("period_associations", "period_associations"),
         ("views", "views"),

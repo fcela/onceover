@@ -226,3 +226,28 @@ def test_deterministic_across_runs():
     r2 = onceover.profile(df, detectors=["order_constraints"])
     assert [f["id"] for f in r1.findings] == [f["id"] for f in r2.findings]
     assert [f["claim"] for f in r1.findings] == [f["claim"] for f in r2.findings]
+
+
+def test_independent_columns_with_rare_crossings_stay_quiet():
+    # A heavy-tailed column set against a non-negative one has a compatible
+    # range and few crossings under any pairing of the rows.
+    rng = random.Random(11)
+    n = 5000
+    df = pl.DataFrame(
+        {
+            "tail": [rng.gauss(0, 1) / max(abs(rng.gauss(0, 1)), 1e-3) for _ in range(n)],
+            "count": [rng.randint(0, 1000) for _ in range(n)],
+        }
+    )
+    report = onceover.profile(df, detectors=["order_constraints"])
+    assert not _hits(report)
+
+
+def test_order_evidence_states_the_shuffled_violations():
+    rng = random.Random(12)
+    lo = [rng.uniform(0, 100) for _ in range(5000)]
+    df = pl.DataFrame({"lo": lo, "hi": [v + rng.uniform(0, 5) for v in lo]})
+    report = onceover.profile(df, detectors=["order_constraints"])
+    metrics = _hits(report, "lo", "hi")[0]["evidence"][0]["metrics"]
+    assert metrics["violations"] == 0
+    assert metrics["violations_if_shuffled"] > 1000

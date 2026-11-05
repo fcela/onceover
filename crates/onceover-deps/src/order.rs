@@ -37,6 +37,13 @@
 //! often as they agree, a near-equality, not a near-universal
 //! order.
 //!
+//! A direction must also beat random pairing. Pairing the two columns
+//! at random gives a violation count computed from their sorted values;
+//! the direction is reported only when that count is at least 20 and at
+//! least 4 times the observed violations. A heavy-tailed column set against
+//! a positive one has a compatible range and almost no crossings, whichever
+//! way the rows are paired, and this rule keeps it out.
+//!
 //! Pairs are evaluated in column order on the shared pair budget
 //! (`max_pairs`, the same budget that caps the dependence
 //! screen); when the budget binds, coverage says how many of the
@@ -75,6 +82,12 @@ const SCREEN_SHARE: f64 = 0.02;
 /// range.
 const MAX_WIDTH_RATIO: f64 = 100.0;
 const MIN_OVERLAP_SHARE: f64 = 0.25;
+/// A direction must beat random pairing: shuffling one column against the
+/// other would have to produce at least this many violations, and at least
+/// CHANCE_MARGIN times the violations observed. Two independent columns whose
+/// values rarely cross satisfy a near-universal order by their marginals alone.
+const MIN_CHANCE_VIOLATIONS: f64 = 20.0;
+const CHANCE_MARGIN: f64 = 4.0;
 /// Integer magnitudes up to 2^53 are exactly representable in
 /// f64; an integer column beyond that cannot be compared exactly
 /// against a float column and pairs only with integer columns.
@@ -422,6 +435,35 @@ fn count_directions<T: ScanVal>(
     (viol_ab, viol_ba, complete)
 }
 
+/// Violations of `lower <= upper` that random pairing would give on the
+/// rows where both are present: the share of (lower, upper) value pairs out
+/// of order, times the rows.
+fn chance_violations<T: ScanVal>(lower: &[Option<T>], upper: &[Option<T>]) -> f64 {
+    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+    for (x, y) in lower.iter().zip(upper) {
+        if let (Some(x), Some(y)) = (x, y) {
+            xs.push(*x);
+            ys.push(*y);
+        }
+    }
+    let by_value = |p: &T, q: &T| p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal);
+    xs.sort_by(by_value);
+    ys.sort_by(by_value);
+    let (mut below, mut crossed) = (0usize, 0u128);
+    for x in &xs {
+        while below < ys.len() && ys[below] < *x {
+            below += 1;
+        }
+        crossed += below as u128;
+    }
+    crossed as f64 / xs.len().max(1) as f64
+}
+
+/// Whether `violations` is far fewer than random pairing would give.
+fn beats_chance(violations: usize, chance: f64) -> bool {
+    chance >= MIN_CHANCE_VIOLATIONS && chance >= CHANCE_MARGIN * violations as f64
+}
+
 #[derive(Default)]
 struct DirDetail<T> {
     violations: usize,
@@ -549,6 +591,8 @@ fn note_satisfied<T: ScanVal>(dir: &mut DirDetail<T>, slack: T) {
 
 /// A reportable direction, ready to rank and emit.
 struct Candidate {
+    /// Violations random pairing would give.
+    chance: f64,
     lower: usize,
     upper: usize,
     violations: usize,
@@ -747,8 +791,18 @@ fn dispatch<T: ScanVal>(
         return None;
     }
     let bar = |viol: usize| viol == 0 || viol as f64 <= MAX_VIOLATION_SHARE * d.n as f64;
-    let pass_fs = want_fs && bar(d.fs.violations);
-    let pass_sf = want_sf && bar(d.sf.violations);
+    let chance_fs = if want_fs && bar(d.fs.violations) {
+        chance_violations(av, bv)
+    } else {
+        0.0
+    };
+    let chance_sf = if want_sf && bar(d.sf.violations) {
+        chance_violations(bv, av)
+    } else {
+        0.0
+    };
+    let pass_fs = beats_chance(d.fs.violations, chance_fs);
+    let pass_sf = beats_chance(d.sf.violations, chance_sf);
     let temporal = a_prep.is_temporal();
     let unit_ns = match a_prep {
         ColPrep::Ticks { unit_ns, .. } => *unit_ns,
@@ -760,9 +814,11 @@ fn dispatch<T: ScanVal>(
                 lo_min: T,
                 lo_max: T,
                 hi_min: T,
-                hi_max: T|
+                hi_max: T,
+                chance: f64|
      -> Candidate {
         Candidate {
+            chance,
             lower,
             upper,
             violations: dir.violations,
@@ -803,13 +859,21 @@ fn dispatch<T: ScanVal>(
                 // order.
                 None
             } else if d.fs.violations < d.sf.violations {
-                Some(make(i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max))
+                Some(make(
+                    i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+                ))
             } else {
-                Some(make(j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max))
+                Some(make(
+                    j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+                ))
             }
         }
-        (true, false) => Some(make(i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max)),
-        (false, true) => Some(make(j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max)),
+        (true, false) => Some(make(
+            i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+        )),
+        (false, true) => Some(make(
+            j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+        )),
         (false, false) => None,
     }
 }
@@ -903,8 +967,12 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         ),
         ("row_sampled".into(), json!(false)),
         (
+            "violations_if_shuffled".into(),
+            json!(c.chance),
+        ),
+        (
             "method".into(),
-            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are evaluated on the shared max_pairs budget"),
+            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, and random pairing of the two columns would give at least 20 violations and at least 4 times those observed, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are evaluated on the shared max_pairs budget"),
         ),
     ]);
     if c.temporal {

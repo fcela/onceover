@@ -22,6 +22,7 @@ pub mod partitions;
 pub mod periods;
 pub mod prism;
 pub mod regimes;
+pub mod rows;
 mod screen;
 pub mod series;
 pub mod shapes;
@@ -49,6 +50,7 @@ pub use partitions::{ordered_partitions, PartitionsConfig, PartitionsOutcome, Pa
 pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};
 pub use prism::{prism_rules, PrismConfig};
 pub use regimes::{profile_regimes, RegimesConfig};
+pub use rows::profile_row_consistency;
 pub use series::{profile_series, SeriesInput};
 pub use shapes::{profile_target_shapes, shape_diagnostics, ShapeDiagnostics, ShapesConfig};
 pub use surprises::{profile_surprises, SurpriseConfig};

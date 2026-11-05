@@ -128,8 +128,8 @@ Passing a bare string where a list is expected raises
 `onceover.available_detectors()` lists the detector set with the
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
-restricts a run to named detectors. The default set has 27 of
-the 34 registered detectors: `views` (experimental), `dates`,
+restricts a run to named detectors. The default set has 28 of
+the 35 registered detectors: `views` (experimental), `dates`,
 `pivot`, `period_associations`, `drift`, and `granularity` are
 opt-in and run only when named — a default run records each as
 skipped in coverage, naming it opt-in. `expectations` is in the

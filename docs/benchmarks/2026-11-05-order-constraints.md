@@ -39,6 +39,14 @@ before it is reported. A direction is reported when its
 violations are zero or at most 1% of the rows where both
 columns are present (at least 100 such rows). At most one
 direction per pair is reported — the one with fewer violations.
+A direction must also beat random pairing of the two columns:
+the violations that pairing would give, computed from the two
+sorted columns and stated in the evidence as
+`violations_if_shuffled`, must be at least 20 and at least 4
+times those observed. A heavy-tailed column against a
+non-negative one has a compatible range and almost no crossings
+under any pairing; before this rule, independent columns of that
+kind filled the 25 finding cap on null frames.
 When both directions pass with equal violations the pair states
 no order: zero violations in both directions means the columns
 are equal wherever both are present (a duplicate-encoding

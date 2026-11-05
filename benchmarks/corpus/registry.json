@@ -803,14 +803,14 @@
     {
      "kind": "finding",
      "category": "duplicates",
-     "expect": "missed",
-     "note": "Known-miss tripwire: restatements repeat (company, concept, period_end) with different filed dates/values; no finding isolates them because rows differ in filed/form/value."
+     "expect": "found",
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for."
     },
     {
      "kind": "documented_case",
      "ref": "Restatements (EDGAR-wide behavior)",
-     "status": "missed",
-     "note": "Amended filings restate values for the same period; the bundled table keeps them all (11,543 rows) and no current finding groups them."
+     "status": "found",
+     "note": "Found since 2026-11-05: 1,970 rows repeat another row on every column except value."
     },
     {
      "kind": "finding",
@@ -1419,8 +1419,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 63,
-     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass."
+     "value": 64,
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour."
     },
     {
      "kind": "documented_case",
@@ -1473,6 +1473,12 @@
    "dir": "data/anomaly/bike-sharing-hourly",
    "budget": "standard",
    "expectations": [
+    {
+     "kind": "finding",
+     "category": "intervals",
+     "type": "row_inconsistency",
+     "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132)."
+    },
     {
      "kind": "finding",
      "category": "dependencies",
@@ -1585,6 +1591,12 @@
    "expectations": [
     {
      "kind": "finding",
+     "category": "duplicates",
+     "type": "near_duplicate_rows",
+     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132)."
+    },
+    {
+     "kind": "finding",
      "category": "dependencies",
      "type": "functional",
      "target": "education_num",
@@ -1678,8 +1690,8 @@
     {
      "kind": "documented_case",
      "ref": "Near-duplicates through the sampling weight: 6,374 excess rows repeat a row that differs only in final_weight (42,468 distinct rows ignoring final_weight, of 48,842)",
-     "status": "missed",
-     "note": "The duplicates finding compares all 15 columns and reports the 52 exact repeats; the weight-only duplication -- the frame's near-key structure -- is stated nowhere. final_weight is roled a plain measure and appears as a predictor in six predictive findings. Counts verified on the prepared file."
+     "status": "found",
+     "note": "Found since 2026-11-05 (issue #132): 6,322 rows repeat another row on every column except final_weight, stated by the row_consistency detector. 6,374 excess rows ignoring final_weight, less the 52 that are exact repeats of all 15 columns, is 6,322. Counts verified on the prepared file."
     },
     {
      "kind": "documented_case",
