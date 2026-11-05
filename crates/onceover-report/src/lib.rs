@@ -19,6 +19,10 @@ pub use ledger::{
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
+/// 0.7 adds the associations table: the report gains a top-level
+/// `associations` list carrying every pair the association screens
+/// tested, with effect sizes, raw p-values, Benjamini–Hochberg
+/// q-values, and reporting tiers; additive over 0.6.
 /// 0.6 adds verified relationship families: the report gains a
 /// top-level `grouped_findings` list (statements the ledger grouped
 /// under a family lead; each carries `grouped_under`, and the lead
@@ -32,7 +36,7 @@ pub use ledger::{
 /// additive over 0.4. 0.4 adds the `frame` section (semantic column
 /// roles and the assembled time axis) and the per-card
 /// `semantic_role` fields; additive over 0.3.
-pub const SCHEMA_VERSION: &str = "0.6";
+pub const SCHEMA_VERSION: &str = "0.7";
 
 /// Round to four decimal places — the report's display precision
 /// for shares and means carried in evidence payloads.
@@ -460,6 +464,57 @@ pub struct ProfileReport {
     pub selection: SelectionSummary,
     /// What was tested, at what scale, what was skipped and why.
     pub coverage: BTreeMap<String, PassInfo>,
+    /// Every pair the association screens tested (issue #134):
+    /// effect sizes, the raw per-pair p-value, the
+    /// Benjamini–Hochberg q-value over the run's tested family,
+    /// and the reporting tier the pair earned. Findings state the
+    /// strong and weak pairs; this table is the full screen,
+    /// including the pairs that earned no statement. Absent
+    /// (empty) when no association screen ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub associations: Vec<AssociationPair>,
+}
+
+/// One screened pair in the report's associations table.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AssociationPair {
+    /// First column of the pair (the conditioning column for the
+    /// directional statistics and for mixed pairs).
+    pub a: String,
+    /// Second column of the pair.
+    pub b: String,
+    /// Which screen tested the pair: "numeric" (two numeric
+    /// columns), "nominal" (two categorical columns), or "mixed"
+    /// (categorical `a` against numeric `b`).
+    pub kind: String,
+    /// Pair-complete rows the statistics were computed on.
+    pub n: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pearson: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spearman: Option<f64>,
+    /// Chatterjee's ξ(a → b): how functional b is of a.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xi_ab: Option<f64>,
+    /// Chatterjee's ξ(b → a).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xi_ba: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cramers_v: Option<f64>,
+    /// Correlation ratio η of `b` across the levels of `a`
+    /// (mixed pairs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta: Option<f64>,
+    /// Raw per-pair p-value, before multiple-testing correction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p_value: Option<f64>,
+    /// Benjamini–Hochberg adjusted p-value over the pairs tested
+    /// by the same screen in this run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub q_value: Option<f64>,
+    /// "strong" (significant and at or above the effect bar),
+    /// "weak" (significant, below the bar), or "none".
+    pub tier: String,
 }
 
 impl ProfileReport {

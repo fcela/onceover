@@ -78,6 +78,12 @@ report.to_json(max_chars=12_000)             # budgeted view; a
         # `budget` record in the output states what was cut
 report.findings_frame()                      # Polars DataFrame
                                              # index of findings
+report.associations()                        # Polars DataFrame of
+                                             # every pair the
+                                             # association screens
+                                             # tested: effect sizes,
+                                             # raw and BH-adjusted
+                                             # p-values, tier
 report.diff(other)                           # findings added /
         # removed / changed between two profiles of a table,
         # matched by stable id, plus coverage status changes

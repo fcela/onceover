@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.6"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.7"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -20,6 +20,7 @@ in `findings.md`.
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `grouped_findings` | statements grouped under a verified relationship family's lead (schema 0.6): full finding objects, each carrying `grouped_under`; absent when no family formed. Grouped statements are not in `findings` and spend no selection or digest slot; the family semantics are defined in `docs/findings.md`, "Verified relationship families" |
+| `associations` | every pair the association screens tested (schema 0.7): `a`, `b`, `kind` (`numeric`, `nominal`, `mixed`), pair-complete `n`, the effect sizes that screen computed (`pearson`, `spearman`, `xi_ab`, `xi_ba`; `cramers_v`; `eta`), the raw `p_value`, the Benjamini-Hochberg `q_value` over the pairs tested by the same screen in the run, and the reporting `tier` (`strong`, `weak`, `none`). Findings state the strong and weak pairs; this table is the full screen, including pairs that earned no statement. Absent when no association screen ran |
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
 | `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected`, and (schema 0.6) `families` and `grouped_statements` |
 | `coverage` | object keyed by pipeline pass name (which can differ from detector ID); each entry: `status` (`ran_exact`, `ran_sampled`, `capped`, `skipped`, `not_applicable`, `error`) and `detail` (free text — can be very long on wide tables; see the context-budget note in `docs/benchmarks/2026-10-28-context-digest.md`); on timing-enabled runs (`profile(..., timing=True)`) each entry also carries `elapsed_ms`, the wall time attributed to the pass — the interval since the previous entry was recorded (passes run sequentially; the first entry also carries extraction and the column cards) |

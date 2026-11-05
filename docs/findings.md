@@ -3,7 +3,12 @@
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.6 adds verified relationship families (see "Consolidation and
+Schema 0.7 adds tested associations (see "Tested associations"
+below): association findings are stated only when a per-pair test
+is significant after Benjamini–Hochberg correction, in a strong
+tier at or above the effect bar and a weak tier below it, and the
+report gains a top-level `associations` table carrying every
+screened pair. Schema 0.6 adds verified relationship families (see "Consolidation and
 selection"): the report gains a top-level `grouped_findings` list, the
 finding object gains `grouped_members` on family leads and
 `grouped_under` on grouped statements — both omitted when unset — and
@@ -15,7 +20,7 @@ finding object itself is unchanged from schema 0.4. Schema 0.4 adds a `frame` se
 `report-schema.md`, "The frame model"); the finding object itself is
 unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
 finding (see "Facets" below); the category and type values are
-unchanged from schema 0.2, which replaced schema 0.1. Schema 0.6 is
+unchanged from schema 0.2, which replaced schema 0.1. Schema 0.7 is
 used by package version 0.1.3.
 
 ## Categories and statement definitions
@@ -338,6 +343,48 @@ The same ledger is available in four forms:
   `interestingness`, `claim`, `n_evidence`, and the primary evidence
   record's `basis`, in report order. It is an index for sorting and
   filtering; the measurements themselves stay in the JSON findings.
+
+### Tested associations
+
+Association statements (`associations` category, type `statistical`)
+are tested, not bar-filtered. Three screens test pairs:
+
+- numeric pairs (the `numeric_dependence` detector): Pearson and
+  Spearman correlations with their t-approximation tests, and
+  Chatterjee's ξ in both directions with a permutation-calibrated
+  test (the permutation mean and variance of the rank-difference
+  sum in closed form, normal tail). The pair's p-value is the
+  smallest component p-value, Bonferroni-multiplied by the number
+  of components computed.
+- nominal pairs (the `association_rules` detector's pair screen):
+  a G-test on the pair-complete contingency table, effect
+  Cramér's V. A pair whose smallest expected cell count is below
+  1 is carried untested.
+- mixed pairs (a nominal column against a numeric column, same
+  screen): a one-way F-test of the numeric column across the
+  nominal column's levels, effect the correlation ratio η.
+
+Each screen Benjamini–Hochberg-corrects over the pairs it tested
+in the run (for the numeric screen under a pair cap, the tested
+family is the survivor list the detailed statistics cover; the
+coverage entry states the family size). A tested pair is stated
+as a finding in one of two tiers, recorded as `tier` in the
+evidence beside `p_value` and `q_value`:
+
+- **strong**: q ≤ 0.05 and the effect at or above the 0.5 bar
+  (maximum of |Pearson|, |Spearman|, ξ in both directions for
+  numeric pairs; V or η for the pair screens);
+- **weak**: q ≤ 0.05 and the effect below the bar. Weak findings
+  carry the full evidence in the report JSON; in the digest they
+  collapse into a single line with their count and strongest
+  examples.
+
+Every pair a screen computed statistics for — stated or not,
+tested or not — is in the report's `associations` table
+(`report.associations()` as a DataFrame): the pair, its kind, the
+pair-complete row count, its effect sizes, its raw and adjusted
+p-values, and its tier. Pairs involving frame-role scaffolding
+columns are in the table but, as before, earn no finding.
 
 ## Consolidation and selection
 
