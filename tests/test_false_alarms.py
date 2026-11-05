@@ -5,10 +5,13 @@ stated about these columns is false by construction.
 """
 from datetime import date, timedelta
 
-import numpy as np
 import polars as pl
+import pytest
 
 import onceover
+
+# The wheel-test environment installs only the library and pytest.
+np = pytest.importorskip("numpy", reason="planted frames need numpy")
 
 
 def _claims(report, fragment):

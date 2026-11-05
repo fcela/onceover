@@ -4,10 +4,13 @@ Every count asserted here is recomputed with Polars from the same frame.
 """
 from datetime import date, timedelta
 
-import numpy as np
 import polars as pl
+import pytest
 
 import onceover
+
+# The wheel-test environment installs only the library and pytest.
+np = pytest.importorskip("numpy", reason="planted frames need numpy")
 
 
 def _missing(report):
