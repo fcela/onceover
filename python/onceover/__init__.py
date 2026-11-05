@@ -11,7 +11,7 @@ from onceover._native import profile as _profile_native
 __version__ = "0.1.3"
 __all__ = ["profile", "ProfileReport", "available_detectors"]
 
-_SCHEMA_VERSION = "0.6"
+_SCHEMA_VERSION = "0.7"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -450,6 +450,48 @@ class ProfileReport:
             return pl.DataFrame(schema=schema)
         return pl.DataFrame(rows)
 
+    def associations(self):
+        """Every pair the association screens tested, as a Polars
+        DataFrame (schema 0.7).
+
+        One row per screened pair: `a`, `b`, `kind` ("numeric",
+        "nominal", or "mixed"), the pair-complete row count `n`,
+        the effect sizes that screen computed (`pearson`,
+        `spearman`, `xi_ab`, `xi_ba` for numeric pairs — ξ is
+        directional, so both directions are carried; `cramers_v`
+        for nominal pairs; `eta`, the correlation ratio, for mixed
+        pairs), the raw per-pair `p_value`, the Benjamini–Hochberg
+        `q_value` over the pairs tested by the same screen in this
+        run, and the reporting `tier`: "strong" (significant after
+        correction and at or above the effect bar), "weak"
+        (significant, below the bar), or "none". Findings state
+        the strong pairs individually and the weak pairs as
+        findings too; this table is the full screen, including
+        the pairs that earned no statement. Empty, with the same
+        schema, when no association screen ran.
+        """
+        import polars as pl
+
+        schema = {
+            "a": pl.String,
+            "b": pl.String,
+            "kind": pl.String,
+            "n": pl.UInt64,
+            "pearson": pl.Float64,
+            "spearman": pl.Float64,
+            "xi_ab": pl.Float64,
+            "xi_ba": pl.Float64,
+            "cramers_v": pl.Float64,
+            "eta": pl.Float64,
+            "p_value": pl.Float64,
+            "q_value": pl.Float64,
+            "tier": pl.String,
+        }
+        rows = self.data.get("associations") or []
+        if not rows:
+            return pl.DataFrame(schema=schema)
+        return pl.DataFrame(rows, schema=schema)
+
     def to_json(self, max_chars: int | None = None) -> str:
         """The report as JSON. With `max_chars`, a size-budgeted view:
         findings are kept in full in rank order until the budget is
@@ -495,6 +537,7 @@ class ProfileReport:
                 "groups": data["groups"],
                 "selection": data["selection"],
                 "coverage": data["coverage"],
+                "associations": data.get("associations") or [],
                 "budget": {
                     "max_chars": max_chars,
                     "full_findings": len(data["findings"]),
@@ -570,13 +613,19 @@ class ProfileReport:
         (schema 0.6), the header states how many statements were
         grouped, and a family lead's rolled line carries its grouped
         member ids in a `[grouped: ...]` suffix; the lead presents
-        at the earliest band among itself and its members. When the
-        rolled lines exceed `budget_chars`, the digest takes lines from
-        each band in turn, strongest first, so that no band fills the
-        budget alone, then ends with a line stating what was omitted by
-        category and how to retrieve it; it never exceeds the budget
-        (budgets under ~200 characters return a truncated header). The
-        full record stays in `.data` / `to_json()`.
+        at the earliest band among itself and its members. Weak-tier
+        tested associations (schema 0.7: significant after
+        Benjamini–Hochberg correction but below the strong effect
+        bar) never take individual digest lines: however many there
+        are, they collapse into one line carrying the count and the
+        strongest examples, pointing at `report.associations()` for
+        the full table. When the rolled lines exceed `budget_chars`,
+        the digest takes lines from each band in turn, strongest
+        first, so that no band fills the budget alone, then ends with
+        a line stating what was omitted by category and how to retrieve
+        it; it never exceeds the budget (budgets under ~200 characters
+        return a truncated header). The full record stays in `.data` /
+        `to_json()`.
         """
         data = self.data
         findings = data["findings"]
@@ -637,8 +686,22 @@ class ProfileReport:
                     band = min(band, _report_band(member))
             return band
 
+        def weak_assoc(f: dict) -> bool:
+            # Weak-tier tested associations (schema 0.7) collapse
+            # into a single digest line below, however many there
+            # are: they are leads, not headline statements.
+            if f.get("type") != "statistical":
+                return False
+            return any(
+                (ev.get("metrics") or {}).get("tier") == "weak"
+                for ev in f.get("evidence") or []
+            )
+
+        weak = [f for f in findings if weak_assoc(f)]
+        stated = [f for f in findings if not weak_assoc(f)]
+
         groups: dict[tuple, list[dict]] = {}
-        for f in findings:
+        for f in stated:
             subj = f.get("subject") or {}
             key = (
                 f.get("category"),
@@ -673,6 +736,23 @@ class ProfileReport:
                     line,
                     cat,
                     len(fs_sorted),
+                )
+            )
+        if weak:
+            weak_sorted = sorted(
+                weak, key=lambda x: -(x.get("interestingness") or 0)
+            )
+            examples = "; ".join(f["claim"] for f in weak_sorted[:3])
+            rolled.append(
+                (
+                    band_of(weak_sorted[0]),
+                    -(weak_sorted[0].get("interestingness") or 0),
+                    f"[associations] statistical/weak (x{len(weak)}): "
+                    f"{len(weak)} tested association(s) below the strong "
+                    f"effect bar — strongest: {examples} "
+                    "[full table: report.associations()]",
+                    "associations",
+                    len(weak),
                 )
             )
         rolled.sort(key=lambda kv: (kv[0], kv[1], kv[2]))

@@ -3,7 +3,12 @@
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.6 adds verified relationship families (see "Consolidation and
+Schema 0.7 adds tested associations (see "Tested associations"
+below): association findings are stated only when a per-pair test
+is significant after Benjamini–Hochberg correction, in a strong
+tier at or above the effect bar and a weak tier below it, and the
+report gains a top-level `associations` table carrying every
+screened pair. Schema 0.6 adds verified relationship families (see "Consolidation and
 selection"): the report gains a top-level `grouped_findings` list, the
 finding object gains `grouped_members` on family leads and
 `grouped_under` on grouped statements — both omitted when unset — and
@@ -15,7 +20,7 @@ finding object itself is unchanged from schema 0.4. Schema 0.4 adds a `frame` se
 `report-schema.md`, "The frame model"); the finding object itself is
 unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
 finding (see "Facets" below); the category and type values are
-unchanged from schema 0.2, which replaced schema 0.1. Schema 0.6 is
+unchanged from schema 0.2, which replaced schema 0.1. Schema 0.7 is
 used by package version 0.1.3.
 
 ## Categories and statement definitions
@@ -40,7 +45,7 @@ used by package version 0.1.3.
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `intervals` | Type `categorical_outlier`; the context (one to three condition levels), the dominant level and its share, and the pattern-breaking rows with their values in the evidence | A categorical value contradicting its context's near-universal pattern, from the surprises detector: within the context one level of the column holds at least 99% of at least 30 rows, and at most 3 rows break it. Contexts are conjunctions of levels from the conditioning columns whose single levels come closest to the bar; findings are ranked by binomial significance against the dominant level's global rate, at most 3 per column; a context is reported only when it adds a row no earlier statement about the column named, and it lists every row breaking its pattern |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence; also the backfill shape — a column ordered except for a late block whose values return to earlier territory (at most 3 descents, no post-seam value above the pre-seam peak), reported with the seam row and tail length in the evidence |
-| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector, kept only when the series flags few lone points or the event's flagged points cluster beyond the series' scattered background (a Bonferroni-corrected binomial tail), so a heavy-tailed column's ordinary tail is not reported as events; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; type `ordered_partition` with form `recursive_partition` for a model-based recursive partition of a numeric response along a date, datetime, or integer-year axis — per-node level + linear-trend fits; splits in the statement definition with their F statistics and gain shares, each split either a break date on the axis or a bipartition of a categorical dimension's levels ordered by their within-level fitted level; leaves in the evidence with period, dimension conditions on the path from the root, row count, level at period start and slope per year — from the ordered_partitions detector; type `series_structure` from the `series` detector, describing a whole series along the axis, with `kind` in the evidence: `trend`, `cycle`, `persistence`, `new_level`, `ended_level`, `share_shift`; or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector, kept only when the series flags few lone points or the event's flagged points cluster beyond the series' scattered background (a Bonferroni-corrected binomial tail), so a heavy-tailed column's ordinary tail is not reported as events; type `step_discontinuity` with form `step` for a cross-sectional level jump of a `measure` column across a threshold in another numeric column, from the discontinuities detector, or at the deep budget across a line in two columns; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; type `ordered_partition` with form `recursive_partition` for a model-based recursive partition of a numeric response along a date, datetime, or integer-year axis — per-node level + linear-trend fits; splits in the statement definition with their F statistics and gain shares, each split either a break date on the axis or a bipartition of a categorical dimension's levels ordered by their within-level fitted level; leaves in the evidence with period, dimension conditions on the path from the root, row count, level at period start and slope per year — from the ordered_partitions detector; type `series_structure` from the `series` detector, describing a whole series along the axis, with `kind` in the evidence: `trend`, `cycle`, `persistence`, `new_level`, `ended_level`, `share_shift`; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
@@ -340,6 +345,48 @@ The same ledger is available in four forms:
   `interestingness`, `claim`, `n_evidence`, and the primary evidence
   record's `basis`, in report order. It is an index for sorting and
   filtering; the measurements themselves stay in the JSON findings.
+
+### Tested associations
+
+Association statements (`associations` category, type `statistical`)
+are tested, not bar-filtered. Three screens test pairs:
+
+- numeric pairs (the `numeric_dependence` detector): Pearson and
+  Spearman correlations with their t-approximation tests, and
+  Chatterjee's ξ in both directions with a permutation-calibrated
+  test (the permutation mean and variance of the rank-difference
+  sum in closed form, normal tail). The pair's p-value is the
+  smallest component p-value, Bonferroni-multiplied by the number
+  of components computed.
+- nominal pairs (the `association_rules` detector's pair screen):
+  a G-test on the pair-complete contingency table, effect
+  Cramér's V. A pair whose smallest expected cell count is below
+  1 is carried untested.
+- mixed pairs (a nominal column against a numeric column, same
+  screen): a one-way F-test of the numeric column across the
+  nominal column's levels, effect the correlation ratio η.
+
+Each screen Benjamini–Hochberg-corrects over the pairs it tested
+in the run (for the numeric screen under a pair cap, the tested
+family is the survivor list the detailed statistics cover; the
+coverage entry states the family size). A tested pair is stated
+as a finding in one of two tiers, recorded as `tier` in the
+evidence beside `p_value` and `q_value`:
+
+- **strong**: q ≤ 0.05 and the effect at or above the 0.5 bar
+  (maximum of |Pearson|, |Spearman|, ξ in both directions for
+  numeric pairs; V or η for the pair screens);
+- **weak**: q ≤ 0.05 and the effect below the bar. Weak findings
+  carry the full evidence in the report JSON; in the digest they
+  collapse into a single line with their count and strongest
+  examples.
+
+Every pair a screen computed statistics for — stated or not,
+tested or not — is in the report's `associations` table
+(`report.associations()` as a DataFrame): the pair, its kind, the
+pair-complete row count, its effect sizes, its raw and adjusted
+p-values, and its tier. Pairs involving frame-role scaffolding
+columns are in the table but, as before, earn no finding.
 
 ## Consolidation and selection
 

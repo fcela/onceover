@@ -65,28 +65,52 @@ def test_strong_plants_are_found_on_both_seeds():
                 name, seed, "top25")
 
 
-def test_dependence_reporting_bar_is_where_the_battery_measured_it():
-    # The recorded battery run found neither rho = 0.15 nor rho = 0.4
-    # reported at n = 4000 (dependence coverage reads "0 strong
-    # pairwise"; the predictability screen reads "0 predictable").
-    # This pins the measured bar: if a change lowers it, the failure
-    # here is the signal to update the battery doc and this pin in
-    # the same change — the same promotion rule as the corpus
-    # known-miss tripwires.
+def test_dependence_plants_are_stated_at_the_tested_bar():
+    # The recorded battery run (see the tested-associations addendum
+    # in docs/benchmarks/2026-11-04-quality-battery.md) states both
+    # rho = 0.15 and rho = 0.4 at n = 4000 on all 12 seeds: the pair
+    # screens now test each pair and control the false-discovery
+    # rate across the screened family, so a real association of this
+    # size is stated (weak tier) instead of falling under a fixed
+    # effect bar. The fast subset pins seeds 0 and 1 at the measured
+    # full recall; a miss here is a regression signal.
     for name in ("weak_association", "association_moderate"):
         builder = plants.CORE_PLANTS[name]
         for seed in (0, 1):
             rec = battery.run_plant(builder, seed)
-            assert not rec["detector_recall"], (name, seed)
-            assert not rec["selected_recall"], (name, seed)
+            assert rec["detector_recall"], (name, seed)
+            assert rec["stated_recall"], (name, seed)
 
 
-def test_null_frame_has_no_dependence_or_dependency_false_positives():
+def test_null_frame_dependence_discoveries_stay_at_the_tested_rate():
+    # The null pin is a rate, not a zero: tested screens at a 5%
+    # Benjamini-Hochberg level are expected to state a weak
+    # association on a null frame occasionally, and a single seed
+    # cannot pin a rate, so this runs all 12 battery seeds. The
+    # recorded run measured 3 weak-tier statistical findings across
+    # the 12 frames (one numeric, two mixed), no strong-tier
+    # statement on any null frame, and no dependency or break
+    # findings. The bounds below leave headroom over the measured
+    # values while still failing on a calibration blowup, which
+    # would state dozens. Effect sizes and tiers are read from the
+    # findings' evidence, counted once per finding (the battery's
+    # per-family counter multiplies by the number of plant specs
+    # sharing the family, so this test counts findings directly).
     specs = []
     for builder in plants.CORE_PLANTS.values():
         _, spec = builder(0)
         specs.append(spec)
-    rec = battery.run_null(0, specs)
-    assert rec["false_positives"]["dependencies"] == 0
-    assert rec["false_positives"]["dependence"] == 0
-    assert rec["false_positives"]["breaks"] == 0
+    statistical = 0
+    for seed in range(12):
+        rec = battery.run_null(seed, specs)
+        assert rec["false_positives"]["dependencies"] == 0, seed
+        assert rec["false_positives"]["breaks"] == 0, seed
+        df = plants.null_frame(seed)
+        full = battery.profile(df, None, restricted=False)
+        for f in full.data["findings"]:
+            if f.get("type") == "statistical":
+                statistical += 1
+                metrics = f["evidence"][0]["metrics"]
+                assert metrics.get("tier") == "weak", (seed, f["claim"])
+            assert f.get("type") != "predictive", (seed, f["claim"])
+    assert statistical <= 4, statistical

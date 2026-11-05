@@ -111,7 +111,12 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // rarely pass, and issue #95 tracks a panic on long-form
         // data with a time hint.
         make("drift", vec![Changes], &["gbm"], OptIn),
-        make("association_rules", vec![ConditionalRules], &[], Default),
+        make(
+            "association_rules",
+            vec![ConditionalRules, Associations],
+            &[],
+            Default,
+        ),
         make("hotspots", vec![Concentration], &[], Default),
         make("numeric_dependence", vec![Associations], &[], Default),
         make(

@@ -23,7 +23,7 @@ def _soybean_report():
 
 def test_every_finding_carries_facets():
     report = _soybean_report()
-    assert report.data["schema_version"] == "0.6"
+    assert report.data["schema_version"] == "0.7"
     assert report.findings
     for f in report.findings:
         facets = f["facets"]

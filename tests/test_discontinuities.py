@@ -60,17 +60,68 @@ def test_diagonal_step_found():
         for a, b in zip(s0, s1)
     ]
     df = pl.DataFrame({"s0": s0, "s1": s1, "y": y})
-    report = onceover.profile(df, budget="standard")
+    # Diagonal scans run at the deep budget.
+    report = onceover.profile(df, budget="deep")
     steps = [
         f
         for f in _steps(report)
         if f["evidence"][0]["metrics"]["kind"] == "diagonal"
-        and f["claim"].startswith("y steps")
+        and f["claim"].startswith("y jumps")
     ]
     assert steps, "no diagonal step finding reported for y"
     ev = steps[0]["evidence"][0]["metrics"]
     assert abs(ev["jump"] - 2.0) < 0.5, ev["jump"]
     assert set(steps[0]["subject"]["columns"]) == {"s0", "s1", "y"}
+
+
+def test_diagonal_claim_states_the_boundary_in_original_units():
+    rng = random.Random(2)
+    n = 1200
+    s0 = [rng.random() for _ in range(n)]
+    s1 = [rng.random() for _ in range(n)]
+    y = [
+        (2.0 if b > 0.45 + 0.35 * a else 0.0) + 1.5 * a + 0.5 * rng.gauss(0, 1)
+        for a, b in zip(s0, s1)
+    ]
+    report = onceover.profile(pl.DataFrame({"s0": s0, "s1": s1, "y": y}), budget="deep")
+    step = next(
+        f for f in _steps(report)
+        if f["evidence"][0]["metrics"]["kind"] == "diagonal"
+        and f["claim"].startswith("y jumps")
+    )
+    assert "across the line" in step["claim"] and "degrees" not in step["claim"]
+    b = step["evidence"][0]["metrics"]["boundary"]
+    # Rows on either side of the stated line should differ by the jump.
+    above = [v for a, c, v in zip(s0, s1, y) if b["c1"] * a + b["c2"] * c > b["k"]]
+    below = [v for a, c, v in zip(s0, s1, y) if b["c1"] * a + b["c2"] * c <= b["k"]]
+    assert abs(sum(above) / len(above) - sum(below) / len(below)) > 1.0
+
+
+def test_standard_budget_scans_axes_only():
+    rng = random.Random(2)
+    n = 1200
+    s0 = [rng.random() for _ in range(n)]
+    s1 = [rng.random() for _ in range(n)]
+    y = [
+        (2.0 if b > 0.45 + 0.35 * a else 0.0) + 1.5 * a + 0.5 * rng.gauss(0, 1)
+        for a, b in zip(s0, s1)
+    ]
+    report = onceover.profile(pl.DataFrame({"s0": s0, "s1": s1, "y": y}))
+    assert all(f["evidence"][0]["metrics"]["kind"] == "axis" for f in _steps(report))
+
+
+def test_flags_and_labels_are_not_targets():
+    # A flag that follows a threshold exactly is a rule, not a jump in a level.
+    n = 900
+    rng = random.Random(3)
+    x = [rng.random() for _ in range(n)]
+    frame = pl.DataFrame({
+        "x": x,
+        "flag": [1 if v > 0.6 else 0 for v in x],
+        "w": [rng.gauss(0, 1) for _ in range(n)],
+    })
+    report = onceover.profile(frame)
+    assert not [f for f in _steps(report) if f["claim"].startswith("flag jumps")]
 
 
 def test_smooth_transition_not_reported():

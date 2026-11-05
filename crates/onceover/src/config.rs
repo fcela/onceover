@@ -188,8 +188,11 @@ impl TierConfig {
                 // 45); the deep tier keeps the full search. Tables
                 // with at most `all_pairs_max_cols` axes are
                 // unaffected: they already scan every pair.
+                // Axis scans only: on the corpus this takes the pass from
+                // 3.9 to 0.5 s and still reports 105 jumps against 112.
                 disc: DiscConfig {
                     fallback_top_axes: 6,
+                    diagonals: false,
                     ..Default::default()
                 },
                 partitions: PartitionsConfig::default(),

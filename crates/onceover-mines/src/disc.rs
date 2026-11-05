@@ -29,6 +29,9 @@ pub struct DiscConfig {
     pub row_cap: usize,
     pub all_pairs_max_cols: usize,
     pub fallback_top_axes: usize,
+    /// Scan boundaries in two columns at once, as well as single axes.
+    /// Most of the pass's work, and off below the deep budget.
+    pub diagonals: bool,
     pub min_rows: usize,
     /// Reporting bar on the evaluation-half z (the screen itself
     /// flags at |z| >= 2; a profiler running the screen for every
@@ -52,6 +55,7 @@ impl Default for DiscConfig {
             row_cap: 20_000,
             all_pairs_max_cols: 20,
             fallback_top_axes: 10,
+            diagonals: true,
             min_rows: 120,
             z_report: 4.0,
             rel_gain_min: 0.005,
@@ -1362,7 +1366,9 @@ fn screen_target(
     }
 
     // Diagonal units.
-    let pair_axes: Vec<usize> = if axes.len() > cfg.all_pairs_max_cols {
+    let pair_axes: Vec<usize> = if !cfg.diagonals {
+        Vec::new()
+    } else if axes.len() > cfg.all_pairs_max_cols {
         let mut ranked = axis_strength.clone();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         ranked
@@ -1552,6 +1558,7 @@ fn screen_target(
 pub fn profile_discontinuities(
     table: &TypedTable,
     excluded: &[usize],
+    targets: Option<&[usize]>,
     cfg: &DiscConfig,
 ) -> (Vec<Finding>, String) {
     use rayon::prelude::*;
@@ -1579,7 +1586,12 @@ pub fn profile_discontinuities(
 
     // Targets are independent; screen them in parallel and merge
     // in target order, so the report is unchanged.
-    let outcomes: Vec<TargetOutcome> = numeric
+    let target_columns: Vec<usize> = numeric
+        .iter()
+        .copied()
+        .filter(|c| targets.is_none_or(|t| t.contains(c)))
+        .collect();
+    let outcomes: Vec<TargetOutcome> = target_columns
         .par_iter()
         .map(|&tcol| screen_target(table, tcol, &numeric, &values, &pos_map, cfg, &caches))
         .collect();
@@ -1647,34 +1659,34 @@ fn make_finding(
         let threshold_x = mean + sd * cand.threshold;
         metrics.insert("threshold".into(), json!(threshold_x));
         format!(
-            "{} steps by {:+} where {} crosses {}: evaluation-half jump {:+} (se {}, z {:+}), held-out gain {}; the local gap is scale-invariant (ratio {:.2}), typing it as a jump rather than a steep smooth transition",
+            "{} jumps by {:+} where {} crosses {} (z {:+.1} on rows not used to find it)",
             tname,
             crate::fmt_float(cand.jump),
             table.names[f.axes[0]],
             crate::fmt_float(threshold_x),
-            crate::fmt_float(cand.jump),
-            crate::fmt_float(cand.se),
-            crate::fmt_float(cand.z),
-            crate::fmt_float(cand.gain),
-            ratio,
+            cand.z,
         )
     } else {
         let deg = f.direction_deg.unwrap_or(0.0);
         metrics.insert("threshold".into(), json!(cand.threshold));
         metrics.insert("direction_deg".into(), json!(deg));
+        // The boundary in original units: c1*a + c2*b = k.
+        let (c, s) = (deg.to_radians().cos(), deg.to_radians().sin());
+        let ((m1, sd1), (m2, sd2)) = (f.axis_stats[0], f.axis_stats[1]);
+        let (c1, c2) = (c / sd1, s / sd2);
+        let k = cand.threshold + c1 * m1 + c2 * m2;
+        metrics.insert("boundary".into(), json!({"c1": c1, "c2": c2, "k": k}));
         format!(
-            "{} steps by {:+} across a diagonal boundary in {} and {} (direction {:.0} degrees, standardized threshold {}): evaluation-half jump {:+} (se {}, z {:+}), held-out gain {}; the local gap is scale-invariant (ratio {:.2}), typing it as a jump rather than a steep smooth transition",
+            "{} jumps by {:+} across the line {} * {} {} {} * {} = {} (z {:+.1} on rows not used to find it)",
             tname,
             crate::fmt_float(cand.jump),
+            crate::fmt_float(c1),
             table.names[f.axes[0]],
+            if c2 < 0.0 { "-" } else { "+" },
+            crate::fmt_float(c2.abs()),
             table.names[f.axes[1]],
-            deg,
-            crate::fmt_float(cand.threshold),
-            crate::fmt_float(cand.jump),
-            crate::fmt_float(cand.se),
-            crate::fmt_float(cand.z),
-            crate::fmt_float(cand.gain),
-            ratio,
+            crate::fmt_float(k),
+            cand.z,
         )
     };
 
@@ -2151,8 +2163,8 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let (f1, cov1) = profile_discontinuities(&table, &[], &cfg);
-            let (f2, cov2) = profile_discontinuities(&table, &[], &cfg);
+            let (f1, cov1) = profile_discontinuities(&table, &[], None, &cfg);
+            let (f2, cov2) = profile_discontinuities(&table, &[], None, &cfg);
             assert_eq!(cov1, cov2);
             let j1: Vec<String> = f1
                 .iter()
@@ -2165,14 +2177,16 @@ mod tests {
             assert_eq!(j1, j2, "repeated profile must be identical");
             assert!(
                 f1.iter()
-                    .any(|f| f.claim.contains("y_axis steps")
+                    .any(|f| f.claim.contains("y_axis jumps")
                         && f.claim.contains("where x1 crosses")),
                 "planted axis step not reported: {:?}",
                 f1.iter().map(|f| &f.claim).collect::<Vec<_>>()
             );
             assert!(
-                f1.iter().any(|f| f.claim.contains("y_diag steps")
-                    && f.claim.contains("diagonal boundary in x1 and x2")),
+                f1.iter().any(|f| f.claim.contains("y_diag jumps")
+                    && f.claim.contains("across the line")
+                    && f.claim.contains("* x1")
+                    && f.claim.contains("* x2")),
                 "planted diagonal step not reported: {:?}",
                 f1.iter().map(|f| &f.claim).collect::<Vec<_>>()
             );
