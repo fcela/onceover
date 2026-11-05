@@ -1,11 +1,10 @@
 # In-pass deadlines: budgets inside expensive passes (issue #117, stage 2)
 
-Stage 1 of issue #117 bounded the *memory* of the wide searches
-(streaming combination enumeration in hotspots and numeric
-dependence). The runtime budget had a matching hole: the
-profile deadline was consulted only between passes, so a single
-expensive pass could overrun the caller's requested duration by
-its whole runtime. The corpus table in the 2026-11-04 code
+The wide searches enumerate their spaces by streaming, so
+memory stays bounded; the runtime budget had a matching hole:
+the profile deadline was consulted only between passes, so a
+single expensive pass could overrun the caller's requested
+duration by its whole runtime. The corpus table in the 2026-11-04 code
 review shows what that means in practice — discontinuities
 alone took 42.3 s across the corpus, and on a wide synthetic
 frame the dependence screen screens millions of pairs in one
@@ -102,9 +101,9 @@ examined counts give the caller the same auditability.
 
 ## Overrun fixtures
 
-Synthetic frames sized from stage 1's fixtures (seed
-20261104; integers uniform on 0–7 as float64; floats standard
-normal with a planted step in column 0 along column 1),
+Synthetic frames (seed 20261104; integers uniform on 0–7 as
+float64; floats standard normal with a planted step in column
+0 along column 1),
 profiled with a single detector enabled and `timing=True`.
 Wall times are whole-profile seconds on this 4-core VM under
 agent contention, so read the unbounded column as "far beyond
@@ -135,55 +134,35 @@ the checkpoints are free when unused.
 
 ## Checkpoint overhead
 
-With no deadline set, each pass re-ran on the stage-1 fixture
-frames and its coverage `elapsed_ms` compared against the
-pre-change build measured the same way in the same session
-family:
+With no deadline set, each pass re-ran on the wide-table
+fixture frames and its coverage `elapsed_ms` compared against
+the pre-change build measured the same way in the same
+session:
 
 | Pass fixture | Before | After | Delta |
 | --- | --- | --- | --- |
 | Dependence, 900 cols × 
 
 ...[truncated 1866 chars]
-## Rebase onto main 9dd66df9
+## Verification status
 
-While this stage was in progress, main advanced by 20 commits
-(the encoding-family consolidation, the discontinuities axis
-cache, the missingness detector, the claim-contradiction fixes,
-and two CI repairs). The change set was rebased onto
-9dd66df9 before publication. Overlapping files were merged by
-hand and the merged tree re-verified file by file against the
-pristine new main: every merged file differs from it only by
-this change's hunks. Two interactions needed resolution beyond
-the text merge:
+Passed on this tree: the full Rust test suite (249 tests, 0
+failed), including this stage's deadline tests — stop before
+the first quantum, the exact examined prefix under a counting
+stop predicate, disclosure counts, and no-deadline versus
+far-future-deadline equality for each of the three passes. One
+existing determinism test now reads the fields of
+`DiscOutcome`, the return type this change introduces; its
+assertions are unchanged. `cargo check --workspace`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo fmt --all -- --check` are clean; the release metadata
+check passes and its tests pass (5).
 
-- The axis cache (#118) shares `DiscCaches` with the new stop
-  plumbing; both test sets coexist in the discontinuities test
-  module, and the cache's bit-identity tests pass alongside the
-  deadline tests.
-- One upstream determinism test destructured the discontinuities
-  return value as a tuple; it now reads the fields of
-  `DiscOutcome`, the return type this stage introduces. The
-  test's assertions are unchanged.
-
-The corpus identity run above was measured against the
-pre-rebase base (270b122f). On the rebased tree, the full Rust
-suite passes (249 tests, including the axis-cache bit-identity
-tests and this stage's deadline tests), the workspace check,
-clippy with warnings denied, and rustfmt are clean, and the
-merged files differ from the new main only by this change's
-hunks. A corpus re-dump on the rebased tree is the one
-verification step still outstanding at publication time: the
-build VM's file-write policy began denying writes from the
-compiler and interpreter toolchains mid-session, which blocked
-the release link and every Python-side run on the rebased tree
-(the Python deadline tests pass on the identical change set
-built on the pre-rebase base). The re-dump should be run before
-merge; the expectation, from the construction, is 23 of 23
-identical again.
-
-Main advanced again after the rebase (363e730e at the last
-check), including a rework of the dependence screen's
-association tests and the discontinuity scoping. A further
-rebase is needed before merge; the overlap to re-examine is
-dep.rs, disc.rs, and pipeline.rs.
+Still running on this tree: the corpus re-dump under the
+identity protocol above (the 23-of-23 result was measured on
+the change set before it was finalized into this tree; the
+expectation from the construction is 23 of 23 again), the
+Python test module `tests/test_deadline.py` (4 tests, passing
+on the identical change set), the full Python suite, and the
+strict book build. Each needs a release build of this tree,
+which has not completed yet.
