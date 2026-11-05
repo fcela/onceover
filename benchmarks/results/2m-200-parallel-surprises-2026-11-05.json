@@ -1,0 +1,187 @@
+{
+  "rows": 2000000,
+  "columns": 200,
+  "budget": "standard",
+  "seed": 20241024,
+  "platform": "macOS-26.3-arm64-arm-64bit",
+  "python": "3.12.11",
+  "onceover": "0.1.3",
+  "polars": "2.1.0",
+  "rayon_threads": 4,
+  "system_memory_gib": 24.0,
+  "profile_seconds": 56.957895416999236,
+  "memory_sample_interval_seconds": 0.02,
+  "rss_before_profile_gib": 3.0716094970703125,
+  "peak_profile_rss_gib": 4.418060302734375,
+  "additional_peak_rss_gib": 1.3464508056640625,
+  "checks": {
+    "all_column_cards": true,
+    "exact_unique_count": true,
+    "exact_dirty_count": true,
+    "primary_key": true,
+    "dirty_key": true,
+    "late_nonlinear_target": true,
+    "late_identity": true,
+    "late_dependency": true
+  },
+  "coverage": {
+    "arithmetic_identities": {
+      "status": "ran_exact",
+      "detail": "3 candidate pairs checked, 1 identities; frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "association_rules": {
+      "status": "ran_sampled",
+      "detail": "1 of 1 nominal features (all eligible columns, level cap 16); 15991 train / 4009 diagnostic holdout rows; 0 rules passing criteria, 0 emitted (cap 20); frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "boundaries": {
+      "status": "ran_exact",
+      "detail": "199 numeric columns scanned for boundary mass"
+    },
+    "breaks": {
+      "status": "ran_sampled",
+      "detail": "no date, datetime, or year-like integer column; break scan skipped"
+    },
+    "column_cards": {
+      "status": "ran_exact",
+      "detail": "200 cards (exact)"
+    },
+    "content": {
+      "status": "ran_exact",
+      "detail": "200 columns scanned for content; 1 statements"
+    },
+    "dates": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"dates\"]"
+    },
+    "decision_tables": {
+      "status": "ran_sampled",
+      "detail": "2 categorical targets searched, 0 tables found; 2 of 2 eligible targets selected (cap 6)"
+    },
+    "dependence_screen": {
+      "status": "capped",
+      "detail": "496 of 19701 numeric pairs (capped); all 19701 pairs screened; detailed statistics over 20000 of 2000000 rows; 3 strong pairwise, 4 redundancy links; dependence findings involving 2 column(s) withheld by frame role: id, dirty_id"
+    },
+    "digits": {
+      "status": "ran_exact",
+      "detail": "199 numeric columns digit-scanned; 194 Benford-eligible (others fail the positivity, span, or distinctness eligibility recorded in the detector docs)"
+    },
+    "discontinuities": {
+      "status": "ran_exact",
+      "detail": "197 numeric targets screened over 38612 axis units and 41370 diagonal units (16 directions x pairs); 1391 candidates flagged on the evaluation half (|z| >= 2, held-out gain > 0), 1251 of the typed leaders rejected as steep smooth transitions; 0 jumps reported; frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "drift": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"drift\"]"
+    },
+    "duplicate_encodings": {
+      "status": "ran_exact",
+      "detail": "2 label-like columns, 1 pairs evaluated on 100000 rows (sampled); 1 duplicate encodings, 0 rollups"
+    },
+    "encoding": {
+      "status": "ran_sampled",
+      "detail": "20000 rows (20000 of 2000000), 200 features (all usable columns; per-model predictor budget 48, 0 skipped/unusable)"
+    },
+    "expectations": {
+      "status": "skipped",
+      "detail": "no hints provided"
+    },
+    "extraction": {
+      "status": "ran_exact",
+      "detail": "2000000 rows \u00d7 200 columns"
+    },
+    "frame_model": {
+      "status": "ran_exact",
+      "detail": "grain: id uniquely identifies rows; dominant structure: none at the 0.10 variance-share bar; findings that restate the calendar derivation or the scaffolding columns are demoted in ranking, never removed; the demotion counts are appended to this entry; frame model demoted 3 finding(s) in ranking (scaffolding_subject \u00d73) \u2014 demoted, never removed; the reason is recorded in each finding's evidence"
+    },
+    "functional_dependencies": {
+      "status": "capped",
+      "detail": "all 2 eligible lhs / 198 eligible rhs columns screened (394 directed pairs over 2048 rows); per-target lhs cap 16; levels <= 2; verification rows 200000 (stratified sample); 2 exact FDs, 0 AFDs; composite keys screen all eligible pairs, verify up to 16 candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns; frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "granularity": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"granularity\"]"
+    },
+    "hotspots": {
+      "status": "ran_sampled",
+      "detail": "2 eligible columns, 1 combinations examined (0 triples), 20 cells examined, z bar 3.48 (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of 20000 rows"
+    },
+    "interactions": {
+      "status": "ran_sampled",
+      "detail": "3 numeric targets above the holdout R\u00b2 bar (0.1), 3 fitted, 0 clearing the additive-refit gate, 0 pairs evaluated on 128 sample rows; 0 interactions reported"
+    },
+    "keys": {
+      "status": "ran_exact",
+      "detail": "197 single-column unique, 0 composite"
+    },
+    "missingness": {
+      "status": "ran_exact",
+      "detail": "200 columns checked; none missing on at least 1% of rows"
+    },
+    "multiterm_identities": {
+      "status": "ran_exact",
+      "detail": "198970 multi-term candidates screened, 0 multi-term identities; 254858703 candidates possible, so each target tried its most correlated predictors first; frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "ordered_partitions": {
+      "status": "not_applicable",
+      "detail": "no date, datetime, or year-like integer column to order by"
+    },
+    "period_associations": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"period_associations\"]"
+    },
+    "pivot": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"pivot\"]"
+    },
+    "predictability_screen": {
+      "status": "ran_sampled",
+      "detail": "198 target columns considered over 20000 encoded rows / 200 features; 5 predictable; predictors shortlisted from all features on training rows (max 48 predictors / 5000 fitting rows per target); 2 column(s) excluded as targets by frame role: id, dirty_id"
+    },
+    "prism_rules": {
+      "status": "ran_sampled",
+      "detail": "2 targets eligible, 0 rules; 2 of 2 eligible targets selected (cap 6)"
+    },
+    "regimes": {
+      "status": "ran_sampled",
+      "detail": "3 of 3 eligible numeric targets (cap 4), 3 fitted over at most 5000 rows / 8 predictors / depth 3; 0 incomplete row-target cases dropped; 0 insufficient/invalid targets; 1 findings (numeric predictors only; first date column if present; diagnostic holdout); frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "row_duplicates": {
+      "status": "ran_exact",
+      "detail": "no exact duplicate rows (exact)"
+    },
+    "selection": {
+      "status": "ran_exact",
+      "detail": "2 statement(s) grouped under 1 verified relationship families \u2014 each lead finding carries the grouped ids in grouped_members; the statements remain in the report under grouped_findings; frame model demoted 3 finding(s) in ranking (scaffolding_subject \u00d73) \u2014 demoted, never removed; the reason is recorded in each finding's evidence"
+    },
+    "sentinels": {
+      "status": "ran_exact",
+      "detail": "199 numeric columns scanned for sentinel values"
+    },
+    "sortedness": {
+      "status": "ran_exact",
+      "detail": "1 columns sorted by row order"
+    },
+    "surprises": {
+      "status": "ran_exact",
+      "detail": "197 numeric columns scanned against 2 conditioning columns; 0 surprise findings; 1 categorical columns scanned in 4 contexts up to 3 conditions; 0 categorical surprise findings; frame-role target exclusions: id (index), dirty_id (identifier)"
+    },
+    "target_shapes": {
+      "status": "skipped",
+      "detail": "runs when a target is designated, or when explicitly selected together with a target"
+    },
+    "views": {
+      "status": "skipped",
+      "detail": "opt-in detector; not in the default set \u2014 request it with detectors=[\"views\"]"
+    }
+  },
+  "schema_version": "0.6",
+  "selection": {
+    "candidates": 217,
+    "verified_candidates": 217,
+    "distinct_statements": 215,
+    "selected": 100,
+    "families": 1,
+    "grouped_statements": 2
+  },
+  "noise_targets_flagged": 0
+}

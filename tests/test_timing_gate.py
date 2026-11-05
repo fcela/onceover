@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from benchmarks import timing_gate
@@ -45,3 +46,13 @@ def test_timed_passes_reports_missing_and_invalid_elapsed_without_keyerror():
 
     assert valid == [("valid", 12.5)]
     assert invalid == ["missing", "string", "nan", "infinite", "negative", "boolean"]
+
+
+def test_gate_records_per_pass_timings(tmp_path, monkeypatch):
+    monkeypatch.setattr(timing_gate, "CASES", [(200, 8, "quick", 60.0, False)])
+    output = tmp_path / "timing.json"
+    monkeypatch.setattr("sys.argv", ["timing_gate", "--output", str(output)])
+    assert timing_gate.main() == 0
+    case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
+    assert (case["rows"], case["columns"]) == (200, 8)
+    assert case["passes_ms"]
