@@ -1246,17 +1246,20 @@ mod tests {
         let indep: Vec<(f64, f64)> = (0..4000).map(|_| (next(), next())).collect();
         let (_, p2) = chatterjee_xi_tested(&indep).unwrap();
         assert!(p2.unwrap() > 0.001, "p = {:?}", p2);
-        // Circle points: ξ sees what Pearson cannot.
-        let circ: Vec<(f64, f64)> = (0..2000)
+        // y = sin(6πx): ξ sees a dependence Pearson cannot. A circle
+        // would not do: y there is not a function of x, and ξ measures
+        // how far y is a function of x.
+        let wave: Vec<(f64, f64)> = (0..2000)
             .map(|i| {
-                let t = 2.0 * std::f64::consts::PI * i as f64 / 2000.0;
-                (t.cos(), t.sin())
+                let x = i as f64 / 1999.0;
+                (x, (6.0 * std::f64::consts::PI * x).sin())
             })
             .collect();
-        let (xi_c, p3) = chatterjee_xi_tested(&circ).unwrap();
+        assert!(pearson(&wave).unwrap().abs() < 0.3);
+        let (xi_w, p3) = chatterjee_xi_tested(&wave).unwrap();
         assert!(
-            xi_c > 0.5 && p3.unwrap() < 1e-6,
-            "xi = {xi_c}, p = {:?}",
+            xi_w > 0.5 && p3.unwrap() < 1e-6,
+            "xi = {xi_w}, p = {:?}",
             p3
         );
     }
