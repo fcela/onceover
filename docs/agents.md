@@ -27,7 +27,7 @@ directing the work. If neither does, claim it before writing code:
 git switch -c issue-<number>-<slug> origin/main
 git commit --allow-empty -m "Claim #<number>"
 git push -u origin HEAD
-gh pr create --draft --fill --body "Closes #<number>"
+gh pr create --draft --title "<title> (#<number>)" --body "Closes #<number>"
 ```
 
 - Two claims on one issue: the lower PR number keeps it, and the other closes.
