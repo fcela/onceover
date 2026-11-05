@@ -149,16 +149,16 @@ enum ColPrep {
 impl ColPrep {
     fn min(&self) -> f64 {
         match self {
-            ColPrep::Ints { min, .. } | ColPrep::Floats { min, .. } | ColPrep::Ticks { min, .. } => {
-                *min
-            }
+            ColPrep::Ints { min, .. }
+            | ColPrep::Floats { min, .. }
+            | ColPrep::Ticks { min, .. } => *min,
         }
     }
     fn max(&self) -> f64 {
         match self {
-            ColPrep::Ints { max, .. } | ColPrep::Floats { max, .. } | ColPrep::Ticks { max, .. } => {
-                *max
-            }
+            ColPrep::Ints { max, .. }
+            | ColPrep::Floats { max, .. }
+            | ColPrep::Ticks { max, .. } => *max,
         }
     }
     fn distinct(&self) -> usize {
@@ -827,10 +827,7 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
     let (claim, interpretation) = if c.violations == 0 {
         let mut claim = format!(
             "{} <= {} on all {} evaluated rows (0 violations; the two are equal on {} of them",
-            lower_name,
-            upper_name,
-            c.n,
-            c.equal,
+            lower_name, upper_name, c.n, c.equal,
         );
         if let (Some(s), Some(st)) = (c.min_slack, c.min_slack_ticks) {
             if s > 0.0 {
@@ -914,14 +911,8 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         metrics.insert("tick_unit_ns".into(), json!(c.unit_ns));
         if c.violations > 0 {
             metrics.insert("worst_violation".into(), json!(c.worst_ticks));
-            metrics.insert(
-                "worst_lower_value".into(),
-                json!(c.worst_lower_ticks),
-            );
-            metrics.insert(
-                "worst_upper_value".into(),
-                json!(c.worst_upper_ticks),
-            );
+            metrics.insert("worst_lower_value".into(), json!(c.worst_lower_ticks));
+            metrics.insert("worst_upper_value".into(), json!(c.worst_upper_ticks));
         }
         if let Some(s) = c.min_slack_ticks {
             metrics.insert("min_slack".into(), json!(s));
@@ -1039,11 +1030,18 @@ mod tests {
         let df = df! { "lo" => lo, "hi" => hi }.unwrap();
         let out = scan(&df);
         let hits = pair_findings(&out, "lo", "hi");
-        assert_eq!(hits.len(), 1, "{:?}", out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>());
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
         let m = &hits[0].evidence[0].metrics;
         assert_eq!(m["violations"], json!(0));
         assert_eq!(m["n"], json!(2000));
-        assert!(hits[0].claim.contains("lo <= hi on all 2000 evaluated rows"));
+        assert!(hits[0]
+            .claim
+            .contains("lo <= hi on all 2000 evaluated rows"));
         hits[0].validate().unwrap();
     }
 
@@ -1080,7 +1078,11 @@ mod tests {
         let b: Vec<f64> = (0..2000).map(|k| ((k * 91 + 13) % 1000) as f64).collect();
         let df = df! { "a" => a, "b" => b }.unwrap();
         let out = scan(&df);
-        assert!(out.findings.is_empty(), "{:?}", out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>());
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1200,14 +1202,15 @@ mod tests {
         let df = DataFrame::new(s.len(), vec![s.into(), e.into()]).unwrap();
         let out = scan(&df);
         let hits = pair_findings(&out, "start", "end");
-        assert_eq!(hits.len(), 1, "{:?}", out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>());
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
         let m = &hits[0].evidence[0].metrics;
         assert_eq!(m["violations"], json!(10));
-        assert!(
-            hits[0].claim.contains("2 hours after"),
-            "{}",
-            hits[0].claim
-        );
+        assert!(hits[0].claim.contains("2 hours after"), "{}", hits[0].claim);
         hits[0].validate().unwrap();
     }
 }
