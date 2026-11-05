@@ -134,4 +134,56 @@ fixed before any corpus measurement under it.
 
 ## Results
 
-(To be completed from the acceptance runs.)
+All runs below are on the final tree of this change, standard
+budget unless a dataset's registry entry says otherwise.
+
+### Planted frames
+
+Each plant was profiled end to end and the qualification was
+verified independently with NumPy: pooled and per-stratum
+effects recomputed from the raw arrays must agree with the
+payload's signs and magnitudes (within 0.05).
+
+- Numeric plants (pooled Pearson/Spearman positive, both
+  strata negative), 10 seeds: the strong statement carries the
+  qualification in 10/10 seeds.
+- Mixed plants (binary nominal side, point-biserial sign
+  planted), 10 seeds: 10/10 qualified.
+- Nominal 2×2 plants (rates drawn per seed around a fixed
+  reversal design, log odds ratio planted), 10 seeds: 10/10
+  qualified.
+- Homogeneous controls (numeric plant with the within-stratum
+  slope of the pooled sign), 5 seeds: the pair is still stated
+  strong, and no finding in any report carries a qualification.
+
+The same three plants and the homogeneous control are in the
+test suite as regression tests (tests/test_associations.py).
+
+### Null frames
+
+The quality battery's null frames (eight independent noise
+columns), 12 seeds: no strong statement on any frame (0 strong
+findings in total), and no qualification. The check cannot
+fire without a real strong pair.
+
+### Corpus
+
+The bundled registry: 23 datasets profiled, 11 test-only
+entries skipped (their data files are not present locally).
+The profiles carry 158 strong statistical statements. An
+eligibility tally over the same profiles counts 126 of the
+158 carrying a signed effect in the check's scope (a numeric
+pair whose larger correlation reaches 0.3, a 2×2 nominal pair,
+or a mixed pair with a two-level nominal side), and 64 of
+those 126 also had at least one candidate stratifier (another
+categorical column with 2–8 distinct values).
+
+No corpus statement gained a qualification: none of the 64
+met the reversal criterion. The criterion is the textbook
+form — reversal inside *every* usable stratum, not a
+weighted-average sign flip — and on this corpus no strong
+pair reverses that completely. The enumeration is the full
+acceptance check for this leg: every strong statement that
+gained a qualification (none) would have been recomputed
+independently from the raw frame before being counted as a
+genuine reversal.

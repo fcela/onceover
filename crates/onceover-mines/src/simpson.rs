@@ -411,6 +411,8 @@ pub fn stratifiers_from_enc(enc: &EncodedMatrix, excluded: &[usize]) -> Vec<Stra
 mod tests {
     use super::*;
 
+    type Universe = Vec<(Option<f64>, Option<f64>)>;
+
     fn stratifier(name: &str, col: usize, labels: &[&str], codes: &[Option<u16>]) -> Stratifier {
         Stratifier {
             col,
@@ -421,15 +423,17 @@ mod tests {
     }
 
     /// Two strata of 100 rows each; within each, y falls as x
-    /// rises (r = -1 exactly, points on a line); the second
-    /// stratum sits higher, so the pooled r is positive.
-    fn simpson_universe() -> (Vec<(Option<f64>, Option<f64>)>, Vec<Option<u16>>) {
+    /// rises (r = -1 exactly, points on a line). The second
+    /// stratum's x range is shifted up and its y baseline sits
+    /// higher still, so the pooled r is positive: the textbook
+    /// reversal.
+    fn simpson_universe() -> (Universe, Vec<Option<u16>>) {
         let mut universe = Vec::new();
         let mut codes = Vec::new();
         for g in 0..2u16 {
             for i in 0..100 {
-                let x = i as f64;
-                let y = 200.0 * g as f64 - x;
+                let x = 100.0 * g as f64 + i as f64;
+                let y = 400.0 * g as f64 - x;
                 universe.push((Some(x), Some(y)));
                 codes.push(Some(g));
             }
@@ -437,7 +441,7 @@ mod tests {
         (universe, codes)
     }
 
-    fn pooled_pearson(universe: &[(Option<f64>, Option<f64>)]) -> f64 {
+    fn pooled_pearson(universe: &Universe) -> f64 {
         pearson(
             &universe
                 .iter()
@@ -524,9 +528,9 @@ mod tests {
     #[test]
     fn single_usable_stratum_does_not_fire() {
         let (universe, mut codes) = simpson_universe();
-        // Shrink stratum 1 below the row floor: only one usable
-        // stratum remains.
-        for c in codes.iter_mut().skip(170) {
+        // Null out all but 29 of stratum 1's codes: only one
+        // usable stratum remains.
+        for c in codes.iter_mut().skip(129) {
             *c = None;
         }
         let strat = stratifier("g", 9, &["lo", "hi"], &codes);
