@@ -758,6 +758,13 @@ fn quantile_sorted(sorted: &[f64], p: f64) -> f64 {
 /// not diluted by grid placement. Refinement reads fit-half
 /// statistics only; the evaluation half is never touched by
 /// selection, so the winner's z keeps its null calibration.
+///
+/// Since the axis cache landed, production scans enter through
+/// `scan_axis_unit` / `scan_unit_with_base` with the base (and,
+/// on the axis path, the sort order) computed by the caller;
+/// this whole-unit form remains as the reference implementation
+/// the tests check those paths against.
+#[cfg(test)]
 fn scan_unit(
     u: &[f64],
     background: &[f64],
@@ -793,6 +800,24 @@ fn scan_unit_with_base(
     base: &ScanBase,
 ) -> Option<DiscCandidate> {
     let order = sort_order(u);
+    scan_unit_with_base_order(u, background, target, fit, cfg, base, &order)
+}
+
+/// `scan_unit_with_base` with the sort order of `u` supplied by
+/// the caller (the same `sort_order` result). The axis path
+/// passes the order cached with the unit's shared axis data, so
+/// a (column, kept-rows) unit is sorted once instead of once per
+/// target that scans it.
+#[allow(clippy::too_many_arguments)]
+fn scan_unit_with_base_order(
+    u: &[f64],
+    background: &[f64],
+    target: &[f64],
+    fit: &[u8],
+    cfg: &DiscConfig,
+    base: &ScanBase,
+    order: &[u32],
+) -> Option<DiscCandidate> {
     // Fit-half values in ascending order (the fit subsequence of
     // the full order) for the quantile grid.
     let fit_sorted: Vec<f64> = order
@@ -805,16 +830,7 @@ fn scan_unit_with_base(
     if cuts.is_empty() {
         return None;
     }
-    let cands = disc_scan_with_base(
-        u,
-        &order,
-        background,
-        target,
-        fit,
-        base,
-        &cuts,
-        cfg.min_side,
-    );
+    let cands = disc_scan_with_base(u, order, background, target, fit, base, &cuts, cfg.min_side);
     let best = cands
         .iter()
         .max_by(|a, b| {
@@ -848,16 +864,7 @@ fn scan_unit_with_base(
     let fine: Vec<f64> = (1..=20)
         .map(|k| lo + (hi - lo) * (k as f64) / 21.0)
         .collect();
-    let refined = disc_scan_with_base(
-        u,
-        &order,
-        background,
-        target,
-        fit,
-        base,
-        &fine,
-        cfg.min_side,
-    );
+    let refined = disc_scan_with_base(u, order, background, target, fit, base, &fine, cfg.min_side);
     let best_fine = refined.iter().max_by(|a, b| {
         a.t_fit
             .abs()
@@ -932,39 +939,6 @@ impl<'a> NumericColumn<'a> {
     fn at(&self, row: usize) -> f64 {
         self.col.numeric_at(row).unwrap_or(f64::NAN)
     }
-}
-
-/// One unit's working data: the target values, the standardized axis
-/// columns, the fit/eval parity flags, and each axis column's
-/// (mean, standard deviation).
-type UnitData = (Vec<f64>, Vec<Vec<f64>>, Vec<u8>, Vec<(f64, f64)>, Vec<u32>);
-
-/// Rows where the target and all given axis columns are finite,
-/// stride-sampled to the cap; deterministic parity half split.
-fn unit_data(
-    target_col: &NumericColumn,
-    axis_cols: &[&NumericColumn],
-    cap: usize,
-) -> Option<UnitData> {
-    let rows = kept_rows(target_col, axis_cols, cap);
-    let n = rows.len();
-    let target: Vec<f64> = rows.iter().map(|&i| target_col.at(i)).collect();
-    let mut z: Vec<Vec<f64>> = Vec::with_capacity(axis_cols.len());
-    let mut stats: Vec<(f64, f64)> = Vec::with_capacity(axis_cols.len());
-    for col in axis_cols {
-        let vals: Vec<f64> = rows.iter().map(|&i| col.at(i)).collect();
-        let mean = vals.iter().sum::<f64>() / n as f64;
-        let var = vals.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n as f64;
-        let sd = var.sqrt();
-        if sd.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-            return None;
-        }
-        stats.push((mean, sd));
-        z.push(vals.iter().map(|v| (v - mean) / sd).collect());
-    }
-    let fit: Vec<u8> = (0..n).map(|i| if i % 2 == 0 { 1 } else { 0 }).collect();
-    let rows32: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
-    Some((target, z, fit, stats, rows32))
 }
 
 fn flat_background(cols: &[&[f64]]) -> Vec<f64> {
@@ -1050,14 +1024,63 @@ impl PairData {
                 * std::mem::size_of::<f64>()
     }
 }
+
+/// One axis column's shared scan data over a fixed kept-row
+/// set: the standardized column and its (mean, sd), the parity
+/// fit mask, the axis scan's flat [1, z, z^2] background, and
+/// the sort order of z. Every field is a pure function of the
+/// kept rows and the column — the same values the axis path
+/// used to rebuild per target — so sharing them changes no
+/// arithmetic; only the scan base, which folds in the target
+/// vector, is still computed per target.
+struct AxisData {
+    rows: Vec<u32>,
+    z: Vec<f64>,
+    stats: (f64, f64),
+    fit: Vec<u8>,
+    bg: Vec<f64>,
+    order: Vec<u32>,
+}
+
+impl AxisData {
+    fn bytes(&self) -> usize {
+        (self.rows.len() + self.order.len()) * std::mem::size_of::<u32>()
+            + self.fit.len()
+            + (self.z.len() + self.bg.len() + 2) * std::mem::size_of::<f64>()
+    }
+}
+
+/// Axis data cached by table column index, byte-budgeted like
+/// the pair cache. An entry is used only when its kept rows
+/// match the caller's exactly: the kept rows are the
+/// complete-case selection for the caller's target, so the
+/// row selection (the missingness mask, in effect) is part of
+/// the key. An insert that would exceed the budget clears the
+/// cache first, and an entry larger than the budget is used
+/// but not stored. Eviction can only cost time, never results:
+/// a dropped entry is rebuilt by the same deterministic
+/// computation it replaced.
+struct AxisCache {
+    entries: std::collections::HashMap<usize, std::sync::Arc<AxisData>>,
+    bytes: usize,
+    budget: usize,
+}
+const AXIS_CACHE_BYTES: usize = 64 * 1024 * 1024;
+
 struct DiscCaches {
     pairs: std::sync::Mutex<PairCache>,
+    axes: std::sync::Mutex<AxisCache>,
 }
 
 impl DiscCaches {
     fn new() -> Self {
         Self {
             pairs: std::sync::Mutex::new(PairCache::default()),
+            axes: std::sync::Mutex::new(AxisCache {
+                entries: std::collections::HashMap::new(),
+                bytes: 0,
+                budget: AXIS_CACHE_BYTES,
+            }),
         }
     }
 
@@ -1100,6 +1123,56 @@ impl DiscCaches {
                     cache.bytes = 0;
                 }
                 if let Some(previous) = cache.entries.insert((a1, a2), data.clone()) {
+                    cache.bytes -= previous.bytes();
+                }
+                cache.bytes += size;
+            }
+        }
+        built
+    }
+
+    /// The axis column's shared data for these kept rows,
+    /// building and caching it on first use; `None` when the
+    /// column is constant over the kept rows. Mirrors `pair`:
+    /// a cached entry is used only when its kept rows match
+    /// exactly, and a failed build is not cached.
+    fn axis(
+        &self,
+        acol: usize,
+        rows: &[usize],
+        col: &NumericColumn,
+    ) -> Option<std::sync::Arc<AxisData>> {
+        let rows32: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
+        if let Some(data) = self.axes.lock().unwrap().entries.get(&acol) {
+            if data.rows == rows32 {
+                return Some(data.clone());
+            }
+        }
+        let built = standardize(rows, &[col]).map(|(z, stats)| {
+            let z = z.into_iter().next().unwrap();
+            let n = rows.len();
+            let ones = vec![1.0f64; n];
+            let z2: Vec<f64> = z.iter().map(|v| v * v).collect();
+            let bg = flat_background(&[&ones, &z, &z2]);
+            let order = sort_order(&z);
+            std::sync::Arc::new(AxisData {
+                rows: rows32,
+                fit: (0..n).map(|i| if i % 2 == 0 { 1 } else { 0 }).collect(),
+                z,
+                stats: stats[0],
+                bg,
+                order,
+            })
+        });
+        if let Some(data) = &built {
+            let size = data.bytes();
+            let mut cache = self.axes.lock().unwrap();
+            if size <= cache.budget {
+                if cache.bytes + size > cache.budget {
+                    cache.entries.clear();
+                    cache.bytes = 0;
+                }
+                if let Some(previous) = cache.entries.insert(acol, data.clone()) {
                     cache.bytes -= previous.bytes();
                 }
                 cache.bytes += size;
@@ -1175,6 +1248,61 @@ fn standardize(rows: &[usize], axis_cols: &[&NumericColumn]) -> Option<Standardi
     Some((z, stats))
 }
 
+/// The current target's values over one kept-row set, reused
+/// across the units of one `screen_target` call whose kept
+/// rows coincide — on a frame whose columns are complete,
+/// every unit of the target shares the one row set, and the
+/// diagonal path used to re-extract the same vector per pair.
+/// Local to the call, so it never outlives the target it
+/// describes; a miss recomputes the same values by the same
+/// extraction.
+struct TargetVec {
+    rows: Vec<usize>,
+    vals: Vec<f64>,
+}
+
+impl TargetVec {
+    fn new() -> Self {
+        Self {
+            rows: Vec::new(),
+            vals: Vec::new(),
+        }
+    }
+
+    fn get(&mut self, col: &NumericColumn, rows: &[usize]) -> &[f64] {
+        if self.rows.as_slice() != rows {
+            self.rows.clear();
+            self.rows.extend_from_slice(rows);
+            self.vals.clear();
+            self.vals.extend(rows.iter().map(|&i| col.at(i)));
+        }
+        &self.vals
+    }
+}
+
+/// The axis unit scan against the unit's shared data: the
+/// scan base is the only per-target piece (it folds in the
+/// target vector), so it is computed here; the background,
+/// fit mask and sort order come from the cache. Mirrors
+/// `scan_unit` for the [1, z, z^2] background (q = 3): a
+/// `None` base means no candidates, exactly as there.
+fn scan_axis_unit(axis: &AxisData, target: &[f64], cfg: &DiscConfig) -> Option<DiscCandidate> {
+    let n = target.len();
+    if n == 0 || axis.fit.len() != n {
+        return None;
+    }
+    let base = scan_totals(&axis.bg, target, &axis.fit, n, 3, |_| {})?;
+    scan_unit_with_base_order(
+        &axis.z,
+        &axis.bg,
+        target,
+        &axis.fit,
+        cfg,
+        &base,
+        &axis.order,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn screen_target(
     table: &TypedTable,
@@ -1196,23 +1324,24 @@ fn screen_target(
     let mut flagged_units: Vec<Flagged> = Vec::new();
     let mut axis_strength: Vec<(usize, f64)> = Vec::new();
 
-    // Axis units.
+    let mut target_vec = TargetVec::new();
+    // Axis units. The unit's standardization, background and
+    // sort order depend only on the axis column and the kept
+    // rows, so they come from the axis cache (rebuilt per
+    // target before issue #118); the target vector comes from
+    // this call's memo.
     for &acol in &axes {
         let ap = pos_map[acol];
-        let Some((target, z, fit, stats, _rows)) = unit_data(tvals, &[&values[ap]], cfg.row_cap)
-        else {
-            continue;
-        };
-        let n = target.len();
-        if n < cfg.min_rows {
+        let rows = kept_rows(tvals, &[&values[ap]], cfg.row_cap);
+        if rows.len() < cfg.min_rows {
             continue;
         }
+        let Some(axis) = caches.axis(acol, &rows, &values[ap]) else {
+            continue;
+        };
         out.n_axis += 1;
-        let u = z[0].clone();
-        let ones = vec![1.0f64; n];
-        let u2: Vec<f64> = u.iter().map(|v| v * v).collect();
-        let bg = flat_background(&[&ones, &u, &u2]);
-        let best = scan_unit(&u, &bg, &target, &fit, cfg);
+        let target: &[f64] = target_vec.get(tvals, &rows);
+        let best = scan_axis_unit(axis.as_ref(), target, cfg);
         if let Some(best) = &best {
             axis_strength.push((acol, best.t_fit.abs()));
             if flagged(best) {
@@ -1222,11 +1351,11 @@ fn screen_target(
                     axes: vec![acol],
                     direction_deg: None,
                     cand: best.clone(),
-                    u: u.clone(),
-                    target_vals: target.clone(),
-                    fit: fit.clone(),
-                    axis_z: z.clone(),
-                    axis_stats: stats.clone(),
+                    u: axis.z.clone(),
+                    target_vals: target.to_vec(),
+                    fit: axis.fit.clone(),
+                    axis_z: vec![axis.z.clone()],
+                    axis_stats: vec![axis.stats],
                 });
             }
         }
@@ -1259,7 +1388,7 @@ fn screen_target(
             let Some(pair) = caches.pair(a1, a2, &rows, &[&values[p1], &values[p2]]) else {
                 continue;
             };
-            let target: Vec<f64> = rows.iter().map(|&i| tvals.at(i)).collect();
+            let target: &[f64] = target_vec.get(tvals, &rows);
             let z: &Vec<Vec<f64>> = &pair.z;
             let fit: &Vec<u8> = &pair.fit;
             let stats: &Vec<(f64, f64)> = &pair.stats;
@@ -1273,7 +1402,7 @@ fn screen_target(
             // return no candidates; the direction loop still
             // counts the units it would have scanned.
             let base = if n > 0 {
-                scan_totals(bg, &target, fit, n, bg.len() / n, |_| {})
+                scan_totals(bg, target, fit, n, bg.len() / n, |_| {})
             } else {
                 None
             };
@@ -1290,7 +1419,7 @@ fn screen_target(
                 out.n_diag += 1;
                 let best = base
                     .as_ref()
-                    .and_then(|b| scan_unit_with_base(&u, bg, &target, fit, cfg, b));
+                    .and_then(|b| scan_unit_with_base(&u, bg, target, fit, cfg, b));
                 if let Some(best) = &best {
                     if flagged(best) {
                         flagged_units.push(Flagged {
@@ -1300,7 +1429,7 @@ fn screen_target(
                             direction_deg: Some(theta * 180.0 / std::f64::consts::PI),
                             cand: best.clone(),
                             u,
-                            target_vals: target.clone(),
+                            target_vals: target.to_vec(),
                             fit: fit.clone(),
                             axis_z: z.clone(),
                             axis_stats: stats.clone(),
@@ -1787,5 +1916,266 @@ mod tests {
         // This test pins that the scan runs and stays finite.
         let _ = flagged_count;
         assert!(cands.iter().all(|c| c.z.is_finite() && c.se > 0.0));
+    }
+
+    #[test]
+    fn axis_cache_matches_standardize_across_row_sets() {
+        // One axis column, two targets whose missingness differs,
+        // so the complete-case row sets differ: the cache must
+        // serve each set its own standardization, bit for bit,
+        // including after the second set displaces the first.
+        let n = 400;
+        let mut seed = 7u64;
+        let axis_vals: Vec<Option<f64>> = (0..n).map(|_| Some(lcg(&mut seed) * 10.0)).collect();
+        let t1: Vec<Option<f64>> = (0..n)
+            .map(|i| (i % 4 != 0).then(|| lcg(&mut seed)))
+            .collect();
+        let t2: Vec<Option<f64>> = (0..n)
+            .map(|i| (i % 6 != 0).then(|| lcg(&mut seed)))
+            .collect();
+        let cols = [
+            TypedCol::F64 {
+                vals: axis_vals.into(),
+            },
+            TypedCol::F64 { vals: t1.into() },
+            TypedCol::F64 { vals: t2.into() },
+        ];
+        let shared = std::sync::Arc::new(
+            crate::stride_rows(n, 20_000)
+                .into_iter()
+                .map(|r| r as usize)
+                .collect::<Vec<usize>>(),
+        );
+        let values: Vec<_> = cols
+            .iter()
+            .map(|c| NumericColumn::new(c, std::sync::Arc::clone(&shared)))
+            .collect();
+        let caches = DiscCaches::new();
+        for tpos in [1usize, 2] {
+            let rows = kept_rows(&values[tpos], &[&values[0]], 20_000);
+            let (z, stats) = standardize(&rows, &[&values[0]]).unwrap();
+            let data = caches.axis(0, &rows, &values[0]).expect("axis data");
+            assert_eq!(
+                data.rows,
+                rows.iter().map(|&r| r as u32).collect::<Vec<_>>()
+            );
+            assert_eq!(data.z.len(), z[0].len());
+            for (a, b) in data.z.iter().zip(&z[0]) {
+                assert_eq!(a.to_bits(), b.to_bits());
+            }
+            assert_eq!(data.stats.0.to_bits(), stats[0].0.to_bits());
+            assert_eq!(data.stats.1.to_bits(), stats[0].1.to_bits());
+            assert_eq!(data.order, sort_order(&z[0]));
+            let ones = vec![1.0f64; rows.len()];
+            let z2: Vec<f64> = z[0].iter().map(|v| v * v).collect();
+            assert_eq!(data.bg, flat_background(&[&ones, &z[0], &z2]));
+            assert_eq!(
+                data.fit,
+                (0..rows.len())
+                    .map(|i| if i % 2 == 0 { 1 } else { 0 })
+                    .collect::<Vec<u8>>()
+            );
+        }
+        // Re-fetch the first row set after the second displaced
+        // it: the rebuild must be bit-identical too.
+        let rows = kept_rows(&values[1], &[&values[0]], 20_000);
+        let (z, _) = standardize(&rows, &[&values[0]]).unwrap();
+        let data = caches.axis(0, &rows, &values[0]).expect("axis data");
+        for (a, b) in data.z.iter().zip(&z[0]) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+    }
+
+    #[test]
+    fn axis_scan_via_cache_matches_scan_unit() {
+        // The cached-data scan entry point must return exactly
+        // the candidate the per-unit path returns.
+        let n = 900;
+        let mut seed = 99u64;
+        let x: Vec<f64> = (0..n).map(|_| lcg(&mut seed) * 10.0).collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| lcg(&mut seed) + if x[i] > 5.0 { 2.5 } else { 0.0 })
+            .collect();
+        let cols = [TypedCol::F64 {
+            vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
+        }];
+        let shared = std::sync::Arc::new(
+            crate::stride_rows(n, 20_000)
+                .into_iter()
+                .map(|r| r as usize)
+                .collect::<Vec<usize>>(),
+        );
+        let values: Vec<_> = cols
+            .iter()
+            .map(|c| NumericColumn::new(c, std::sync::Arc::clone(&shared)))
+            .collect();
+        let rows: Vec<usize> = (0..n).collect();
+        let caches = DiscCaches::new();
+        let data = caches.axis(0, &rows, &values[0]).expect("axis data");
+        let cfg = DiscConfig::default();
+        let via_cache = scan_axis_unit(&data, &y, &cfg);
+        let ones = vec![1.0f64; n];
+        let u2: Vec<f64> = data.z.iter().map(|v| v * v).collect();
+        let bg = flat_background(&[&ones, &data.z, &u2]);
+        let direct = scan_unit(&data.z, &bg, &y, &data.fit, &cfg);
+        match (via_cache, direct) {
+            (Some(a), Some(b)) => {
+                assert_eq!(a.threshold.to_bits(), b.threshold.to_bits());
+                assert_eq!(a.jump.to_bits(), b.jump.to_bits());
+                assert_eq!(a.z.to_bits(), b.z.to_bits());
+                assert_eq!(a.t_fit.to_bits(), b.t_fit.to_bits());
+                assert_eq!(a.gain.to_bits(), b.gain.to_bits());
+                assert_eq!(a.n_above, b.n_above);
+            }
+            (None, None) => panic!("planted step should be found by both scans"),
+            _ => panic!("cached and direct scans disagree"),
+        }
+    }
+
+    #[test]
+    fn axis_cache_enforces_its_byte_budget() {
+        let n = 300;
+        let mut seed = 5u64;
+        let cols = [
+            TypedCol::F64 {
+                vals: (0..n)
+                    .map(|_| Some(lcg(&mut seed) * 10.0))
+                    .collect::<Vec<_>>()
+                    .into(),
+            },
+            TypedCol::F64 {
+                vals: (0..n)
+                    .map(|_| Some(lcg(&mut seed) * 10.0))
+                    .collect::<Vec<_>>()
+                    .into(),
+            },
+        ];
+        let shared = std::sync::Arc::new(
+            crate::stride_rows(n, 20_000)
+                .into_iter()
+                .map(|r| r as usize)
+                .collect::<Vec<usize>>(),
+        );
+        let values: Vec<_> = cols
+            .iter()
+            .map(|c| NumericColumn::new(c, std::sync::Arc::clone(&shared)))
+            .collect();
+        let rows: Vec<usize> = (0..n).collect();
+        // Budget below one entry: data is served, nothing stored.
+        let caches = DiscCaches::new();
+        caches.axes.lock().unwrap().budget = 1;
+        let data = caches.axis(0, &rows, &values[0]).expect("axis data");
+        let (z, _) = standardize(&rows, &[&values[0]]).unwrap();
+        for (a, b) in data.z.iter().zip(&z[0]) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+        {
+            let cache = caches.axes.lock().unwrap();
+            assert!(cache.entries.is_empty());
+            assert_eq!(cache.bytes, 0);
+        }
+        // Budget for exactly one entry: the second column's
+        // insert clears the first; the accounting never exceeds
+        // the budget and the served data stays correct.
+        let caches = DiscCaches::new();
+        let probe = caches.axis(0, &rows, &values[0]).expect("axis data");
+        let entry_bytes = probe.bytes();
+        drop(probe);
+        caches.axes.lock().unwrap().budget = entry_bytes;
+        let data2 = caches.axis(1, &rows, &values[1]).expect("axis data");
+        let (z2, _) = standardize(&rows, &[&values[1]]).unwrap();
+        for (a, b) in data2.z.iter().zip(&z2[0]) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+        let cache = caches.axes.lock().unwrap();
+        assert!(cache.bytes <= entry_bytes);
+        assert_eq!(cache.entries.len(), 1);
+        assert!(cache.entries.contains_key(&1));
+    }
+
+    #[test]
+    fn planted_steps_survive_missingness_with_caches() {
+        // Axis step in x1 -> y_axis; diagonal step across
+        // (x1, x2) -> y_diag; each column nulls a different row
+        // pattern, so one target's units see different kept-row
+        // sets and the caches see hits, misses and
+        // mask-mismatch rebuilds within a single call.
+        let n = 1200;
+        let mut seed = 1234u64;
+        let x1: Vec<f64> = (0..n).map(|_| lcg(&mut seed)).collect();
+        let x2: Vec<f64> = (0..n).map(|_| lcg(&mut seed)).collect();
+        let y_axis: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                if i % 11 == 0 {
+                    None
+                } else {
+                    Some(if x1[i] > 0.5 { 3.0 } else { 0.0 } + (lcg(&mut seed) - 0.5) * 0.1)
+                }
+            })
+            .collect();
+        let y_diag: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                if i % 13 == 0 {
+                    None
+                } else {
+                    Some(if x1[i] + x2[i] > 1.0 { 3.0 } else { 0.0 } + (lcg(&mut seed) - 0.5) * 0.1)
+                }
+            })
+            .collect();
+        let x1c: Vec<Option<f64>> = (0..n)
+            .map(|i| if i % 7 == 0 { None } else { Some(x1[i]) })
+            .collect();
+        let x2c: Vec<Option<f64>> = (0..n)
+            .map(|i| if i % 5 == 0 { None } else { Some(x2[i]) })
+            .collect();
+        let table = TypedTable {
+            n,
+            names: vec!["x1".into(), "x2".into(), "y_axis".into(), "y_diag".into()],
+            dtypes: vec!["float64".into(); 4],
+            cols: vec![
+                TypedCol::F64 { vals: x1c.into() },
+                TypedCol::F64 { vals: x2c.into() },
+                TypedCol::F64 {
+                    vals: y_axis.into(),
+                },
+                TypedCol::F64 {
+                    vals: y_diag.into(),
+                },
+            ],
+        };
+        for cfg in [
+            DiscConfig::default(),
+            DiscConfig {
+                row_cap: 50_000,
+                max_per_target: 5,
+                ..Default::default()
+            },
+        ] {
+            let (f1, cov1) = profile_discontinuities(&table, &[], &cfg);
+            let (f2, cov2) = profile_discontinuities(&table, &[], &cfg);
+            assert_eq!(cov1, cov2);
+            let j1: Vec<String> = f1
+                .iter()
+                .map(|f| serde_json::to_string(f).unwrap())
+                .collect();
+            let j2: Vec<String> = f2
+                .iter()
+                .map(|f| serde_json::to_string(f).unwrap())
+                .collect();
+            assert_eq!(j1, j2, "repeated profile must be identical");
+            assert!(
+                f1.iter()
+                    .any(|f| f.claim.contains("y_axis steps")
+                        && f.claim.contains("where x1 crosses")),
+                "planted axis step not reported: {:?}",
+                f1.iter().map(|f| &f.claim).collect::<Vec<_>>()
+            );
+            assert!(
+                f1.iter().any(|f| f.claim.contains("y_diag steps")
+                    && f.claim.contains("diagonal boundary in x1 and x2")),
+                "planted diagonal step not reported: {:?}",
+                f1.iter().map(|f| &f.claim).collect::<Vec<_>>()
+            );
+        }
     }
 }
