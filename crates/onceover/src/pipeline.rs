@@ -1628,6 +1628,7 @@ fn keys_pk(findings: &[Finding]) -> Option<String> {
         .find(|f| {
             f.category == Category::Uniqueness
                 && f.subject.columns.len() == 1
+                && f.claim.contains("primary key candidate")
                 && f.evidence
                     .iter()
                     .any(|e| e.method.algorithm == "uniqueness")

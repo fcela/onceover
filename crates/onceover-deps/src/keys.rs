@@ -24,7 +24,10 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
     // ---- primary key ----
     if let Some(&best) = deps.single_unique.first() {
         let score = key_score(&info[best]);
-        out.pk = Some(info[best].name.clone());
+        let continuous = matches!(info[best].dtype.as_str(), "float32" | "float64");
+        if !continuous {
+            out.pk = Some(info[best].name.clone());
+        }
         let mut pk_metrics = BTreeMap::from([
             ("distinct".into(), json!(info[best].distinct)),
             ("n".into(), json!(info[best].n)),
@@ -45,10 +48,17 @@ pub fn analyze_keys(info: &[ColInfo], deps: &DepsOutcome) -> KeyOutcome {
         out.findings.push(Finding::new(
             Pattern::Uniqueness,
             BTreeMap::from([("column".into(), json!(info[best].name))]),
-            format!(
-                "{} uniquely identifies rows (primary key candidate)",
-                info[best].name
-            ),
+            if continuous {
+                format!(
+                    "{} has a distinct value in each of its {} rows (a continuous measure, not a key)",
+                    info[best].name, info[best].n
+                )
+            } else {
+                format!(
+                    "{} uniquely identifies rows (primary key candidate)",
+                    info[best].name
+                )
+            },
             EvidenceBasis::Measured,
             // Rank by the plausibility the metrics already record: an
             // integer `*_id` column keeps the top score, while an

@@ -1186,6 +1186,66 @@ struct Excursion {
     peak_z: f64,
 }
 
+/// Family-wise bar for an event's flagged points clustering by chance.
+const EVENT_ALPHA: f64 = 0.01;
+/// At or below this share of lone flagged points (or this count, on short
+/// series) the series is not heavy-tailed at the excursion bar.
+const RARE_LONE_SHARE: f64 = 0.0005;
+const RARE_LONE_FLOOR: f64 = 3.0;
+
+/// Upper tail of Binomial(trials, p) at k, in log space.
+fn ln_binomial_tail(trials: usize, k: usize, p: f64) -> f64 {
+    if k == 0 {
+        return 0.0;
+    }
+    if p >= 1.0 {
+        return 0.0;
+    }
+    let ln_p = p.ln();
+    let ln_q = (1.0 - p).ln();
+    let mut ln_term = (0..k)
+        .map(|i| ((trials - i) as f64 / (i + 1) as f64).ln())
+        .sum::<f64>()
+        + k as f64 * ln_p
+        + (trials - k) as f64 * ln_q;
+    let mut ln_sum = ln_term;
+    for j in k..trials {
+        ln_term += ((trials - j) as f64 / (j + 1) as f64).ln() + ln_p - ln_q;
+        let (hi, lo) = if ln_sum > ln_term {
+            (ln_sum, ln_term)
+        } else {
+            (ln_term, ln_sum)
+        };
+        ln_sum = hi + (lo - hi).exp().ln_1p();
+        if ln_term < ln_sum - 40.0 {
+            break;
+        }
+    }
+    ln_sum.min(0.0)
+}
+
+/// A robust z of 8 assumes roughly Gaussian tails. A heavy-tailed column
+/// clears it for up to 2% of its points with no event behind them, and in
+/// i.i.d. data those points are scattered singly or in chance pairs. So a
+/// lone flagged point counts only when the series has very few of them, and a
+/// longer run counts only when its points sit closer together than that
+/// scattered background allows (a binomial tail, Bonferroni-corrected over
+/// the series' length). Points in longer runs stay out of the background:
+/// they belong to other events.
+fn event_is_temporal(
+    span: usize,
+    in_run: usize,
+    n: usize,
+    background_points: usize,
+    lone_points: usize,
+) -> bool {
+    if in_run == 1 {
+        return lone_points as f64 <= (n as f64 * RARE_LONE_SHARE).max(RARE_LONE_FLOOR);
+    }
+    let rate = background_points.max(1) as f64 / n.max(1) as f64;
+    ln_binomial_tail(span, in_run, rate) + (n as f64).ln() < EVENT_ALPHA.ln()
+}
+
 fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) -> Vec<Excursion> {
     let n = points.len();
     if n < 50 {
@@ -1267,7 +1327,8 @@ fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) ->
         Some(p) => p,
         None => cfg.excursion_window / 2,
     };
-    let mut events: Vec<Excursion> = Vec::new();
+    // Runs of flagged points, bridging short unflagged stretches.
+    let mut runs: Vec<(usize, usize, usize)> = Vec::new();
     let mut i = 0usize;
     while i < n {
         if !flagged[i] {
@@ -1284,23 +1345,33 @@ fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) ->
             }
             j += 1;
         }
-        if last - i < max_span {
-            let peak = (i..=last)
-                .max_by(|&a, &b| {
-                    residuals[a]
-                        .abs()
-                        .partial_cmp(&residuals[b].abs())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(i);
-            events.push(Excursion {
-                start: i,
-                end: last,
-                peak,
-                peak_z: residuals[peak] / scale,
-            });
-        }
+        let in_run = flagged[i..=last].iter().filter(|f| **f).count();
+        runs.push((i, last, in_run));
         i = last + 1;
+    }
+    let lone_points = runs.iter().filter(|r| r.2 == 1).count();
+    let background_points: usize = runs.iter().filter(|r| r.2 <= 2).map(|r| r.2).sum();
+    let mut events: Vec<Excursion> = Vec::new();
+    for &(start, last, in_run) in &runs {
+        if last - start >= max_span
+            || !event_is_temporal(last - start + 1, in_run, n, background_points, lone_points)
+        {
+            continue;
+        }
+        let peak = (start..=last)
+            .max_by(|&a, &b| {
+                residuals[a]
+                    .abs()
+                    .partial_cmp(&residuals[b].abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(start);
+        events.push(Excursion {
+            start,
+            end: last,
+            peak,
+            peak_z: residuals[peak] / scale,
+        });
     }
     events.sort_by(|a, b| {
         b.peak_z
@@ -1399,6 +1470,51 @@ mod excursion_tests {
         assert_eq!(ev.len(), 1);
         assert!(ev[0].peak_z < 0.0);
         assert!((300..306).contains(&ev[0].peak));
+    }
+
+    #[test]
+    fn heavy_tailed_noise_has_no_events() {
+        // Lognormal-shaped, i.i.d.: many points clear z = 8 with no event.
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let ys: Vec<f64> = (0..3000)
+            .map(|_| {
+                let (u, v) = (next().max(1e-12), next());
+                ((-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()).exp()
+            })
+            .collect();
+        assert!(excursion_scan(&series(&ys), Axis::Date, &cfg()).is_empty());
+    }
+
+    #[test]
+    fn clustered_spike_is_an_event_in_heavy_tailed_noise() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut ys: Vec<f64> = (0..3000)
+            .map(|_| {
+                let (u, v) = (next().max(1e-12), next());
+                ((-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()).exp()
+            })
+            .collect();
+        for y in &mut ys[1000..1010] {
+            *y += 100.0;
+        }
+        let ev = excursion_scan(&series(&ys), Axis::Date, &cfg());
+        assert!(
+            ev.iter().any(|e| e.start <= 1009 && e.end >= 1000),
+            "{}",
+            ev.len()
+        );
     }
 
     #[test]
