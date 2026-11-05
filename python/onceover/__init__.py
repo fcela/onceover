@@ -43,8 +43,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (24 of the
-        31 registered detectors). Excluded unless requested: the opt-in
+        Detector IDs to select; None selects the default set (27 of the
+        34 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift" and "granularity" — each records
         a skipped coverage entry in default runs — and "target_shapes",
@@ -114,6 +114,36 @@ def _report_band(finding: dict) -> int:
     if cat in ("column_roles", "formats", "ordering", "concentration"):
         return 3
     return 4
+
+
+def _quality_line(data: dict) -> str | None:
+    """One line of exact completeness facts from the column cards and the
+    duplicate-row statement, or None when there is nothing to state."""
+    columns = data.get("columns") or {}
+    gaps = [
+        (card.get("null_fraction") or 0, name)
+        for name, card in columns.items()
+        if 0 < (card.get("null_fraction") or 0) < 1
+    ]
+    parts = []
+    if gaps:
+        rate, name = max(gaps, key=lambda g: (g[0], g[1]))
+        parts.append(
+            f"missing values in {len(gaps)} column(s), most in {name} ({rate:.1%})"
+        )
+    empty = sum(1 for card in columns.values() if card.get("role") == "all_null")
+    constant = sum(1 for card in columns.values() if card.get("role") == "constant")
+    if empty:
+        parts.append(f"{empty} empty column(s)")
+    if constant:
+        parts.append(f"{constant} constant column(s)")
+    for finding in data.get("findings") or []:
+        if finding.get("type") == "duplicate_rows":
+            claim = finding["claim"].split(" rows repeat", 1)[0]
+            if claim.isdigit():
+                parts.append(f"{claim} duplicate row(s)")
+            break
+    return "quality: " + "; ".join(parts) if parts else None
 
 
 def _account_lines(frame: dict) -> list[str]:
@@ -534,16 +564,19 @@ class ProfileReport:
         expandable with `.finding(id)`. Groups are ordered by
         report band (account, completeness, relations, column
         structure, deviations), then by that claim's
-        interestingness. When verified relationship families formed
+        interestingness. A `quality:` line after the account states
+        missing values, constant and empty columns, and duplicate rows,
+        counted over all rows. When verified relationship families formed
         (schema 0.6), the header states how many statements were
         grouped, and a family lead's rolled line carries its grouped
         member ids in a `[grouped: ...]` suffix; the lead presents
-        at the earliest band among itself and its members. When the rolled lines exceed
-        `budget_chars`, the digest keeps as many as fit and ends
-        with a line stating how many groups were omitted; it never
-        exceeds the budget (budgets under ~200 characters return a
-        truncated header). The full record stays in `.data` /
-        `to_json()`.
+        at the earliest band among itself and its members. When the
+        rolled lines exceed `budget_chars`, the digest takes lines from
+        each band in turn, strongest first, so that no band fills the
+        budget alone, then ends with a line stating what was omitted by
+        category and how to retrieve it; it never exceeds the budget
+        (budgets under ~200 characters return a truncated header). The
+        full record stays in `.data` / `to_json()`.
         """
         data = self.data
         findings = data["findings"]
@@ -556,6 +589,9 @@ class ProfileReport:
         ]
         account_lines = _account_lines(data.get("frame") or {})
         lines.extend(account_lines)
+        quality = _quality_line(data)
+        if quality:
+            lines.append(quality)
         if overview.get("headline"):
             lines.append("headline: " + overview["headline"])
         cov = data.get("coverage", {})
@@ -635,31 +671,61 @@ class ProfileReport:
                     band_of(head_finding),
                     -(head_finding.get("interestingness") or 0),
                     line,
+                    cat,
+                    len(fs_sorted),
                 )
             )
         rolled.sort(key=lambda kv: (kv[0], kv[1], kv[2]))
-        body_lines = [line for _, _, line in rolled]
+        body_lines = [entry[2] for entry in rolled]
 
-        def omission(dropped: int) -> str:
+        def omission(omitted: list[tuple]) -> str:
+            by_category: dict[str, int] = {}
+            for entry in omitted:
+                by_category[entry[3]] = by_category.get(entry[3], 0) + entry[4]
+            ordered = sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0]))
+            names = ", ".join(f"{c} {n}" for c, n in ordered[:4])
+            retrieve = (
+                f'; report.select(category="{ordered[0][0]}") retrieves them'
+                if ordered
+                else ""
+            )
             return (
-                f"... [{dropped} rolled-up finding groups omitted to fit "
-                f"{budget_chars} chars; {len(findings)} findings total]"
+                f"... [{len(omitted)} rolled-up finding groups omitted to fit "
+                f"{budget_chars} chars; {len(findings)} findings total: "
+                f"{names}{retrieve}]"
             )
 
         full = header + "\n" + "\n".join(body_lines) + "\n"
         if len(full) <= budget_chars:
             return full
-        kept: list[str] = []
-        used = len(header) + 1 + len(omission(len(body_lines))) + 1
-        for ln in body_lines:
-            if used + len(ln) + 1 > budget_chars:
-                break
-            kept.append(ln)
-            used += len(ln) + 1
-        dropped = len(body_lines) - len(kept)
-        result = header + "\n" + "\n".join(kept + [omission(dropped)]) + "\n"
-        if len(result) <= budget_chars:
-            return result
+        # Take lines from each band in turn.
+        queues: dict[int, list[int]] = {}
+        for i, entry in enumerate(rolled):
+            queues.setdefault(entry[0], []).append(i)
+        kept_order: list[int] = []
+        used = len(header) + 1 + len(omission(rolled)) + 1
+        progressed = True
+        while progressed:
+            progressed = False
+            for band in sorted(queues):
+                queue = queues[band]
+                while queue:
+                    i = queue.pop(0)
+                    if used + len(rolled[i][2]) + 1 <= budget_chars:
+                        kept_order.append(i)
+                        used += len(rolled[i][2]) + 1
+                        progressed = True
+                        break
+        # The omission line changes with what it lists, so it can come out
+        # longer than the reserve. Give back the latest lines until it fits.
+        while kept_order:
+            kept_ids = set(kept_order)
+            kept = [rolled[i][2] for i in sorted(kept_ids)]
+            omitted = [rolled[i] for i in range(len(rolled)) if i not in kept_ids]
+            result = header + "\n" + "\n".join(kept + [omission(omitted)]) + "\n"
+            if len(result) <= budget_chars:
+                return result
+            kept_order.pop()
         # Degrade the header itself: drop the category-count and
         # coverage lines, then the headline, keeping the profile
         # line and the account block — the account is the summary
@@ -676,10 +742,60 @@ class ProfileReport:
         ladder.append([lines[0]])
         for cand in ladder:
             short_header = "\n".join(cand) + "\n"
-            result = short_header + omission(len(body_lines)) + "\n"
+            result = short_header + omission(rolled) + "\n"
             if len(result) <= budget_chars:
                 return result
         return (lines[0] + "\n")[:budget_chars]
+
+    def verify(self, df):
+        """Recount this report's statements in `df` through Polars.
+
+        Returns a DataFrame with one row per checked quantity: `status` is
+        `ok`, `mismatch`, `not_checkable` (a sampled or model-based statement,
+        with nothing exact to recount) or `error`. Polars shares no code with
+        the detectors, so a claim that disagrees with the data shows up as a
+        `mismatch`. Run it on the profiled frame to audit the report, or on
+        newer data to see which statements still hold.
+        """
+        from . import _checks
+
+        data = self.data
+        return _checks.verify(
+            [*data["findings"], *(data.get("grouped_findings") or [])], df
+        )
+
+    def rows(self, finding_id: str, df):
+        """The rows behind one statement, with their positions in `__row`.
+
+        Violations for a dependency or identity, missing rows, repeated rows,
+        extreme values, rows breaking a pattern, or rows matching a rule's
+        conditions. Raises ValueError for statements with no row set.
+        """
+        from . import _checks
+
+        finding = self.finding(finding_id)
+        if finding is None:
+            raise ValueError(f"no finding with id {finding_id}")
+        return _checks.rows_of(finding, df)
+
+    def to_checks(self, fmt: str = "polars", name: str = "onceover"):
+        """Exact statements as constraints to run on new data.
+
+        `fmt="polars"` returns dicts with a Polars expression in `polars`.
+        `fmt="great_expectations"` returns an expectation suite; constraints
+        with no built-in expectation are listed under
+        `meta.unmapped_constraints`. Statements with exceptions, or measured on
+        a sample, are left out.
+        """
+        from . import _checks
+
+        data = self.data
+        findings = [*data["findings"], *(data.get("grouped_findings") or [])]
+        if fmt == "polars":
+            return _checks.constraints(findings)
+        if fmt == "great_expectations":
+            return _checks.great_expectations_suite(findings, name)
+        raise ValueError(f"unknown format {fmt!r}; use polars or great_expectations")
 
     def save(self, path: str, fmt: str = "json") -> str:
         """Write the report to `path` as json or markdown. Returns the path."""

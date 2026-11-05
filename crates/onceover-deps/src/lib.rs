@@ -3,6 +3,7 @@
 //! and sortedness checks.
 
 pub mod boundaries;
+pub mod content;
 pub mod digits;
 pub mod dupe;
 pub mod fd;
@@ -15,6 +16,7 @@ pub mod sentinels;
 pub mod sorted;
 
 pub use boundaries::boundary_mass;
+pub use content::column_content;
 pub use digits::digit_fingerprints;
 pub use dupe::{profile_duplicate_encodings, DupeConfig};
 pub use fd::{discover, DepsOutcome, FdConfig};
