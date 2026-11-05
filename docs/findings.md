@@ -28,7 +28,7 @@ used by package version 0.1.3.
 | `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level. At standard and deep budgets the wide form is profiled too and its findings are merged into the same report, tagged `source_form` in their evidence (coverage entry `pivot_profile`) |
 | `uniqueness` | Compared columns and equality criterion | Single-column or composite uniqueness, with any recorded repetitions |
 | `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison |
-| `formats` | Format counts and examples | Inconsistent representations within a field; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
+| `formats` | Format counts and examples | Inconsistent representations within a field; also type `content_anomaly` from the `content` detector, with `kind` in the evidence: `numbers_as_text`, `dates_as_text`, `booleans_as_text`, `email`, `url`, `uuid`, `ipv4` (the share of values that fit and the ones that do not), `label_variants` (labels differing only in case or spacing), `possible_misspelling` (rare labels close to a common one), `long_text`, `repeated_extreme` (one value repeated at an isolated extreme), `minority_sign`, `zero_inflation`, `two_modes`, `temporal_outlier`; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
 | `dependencies` | Type `functional` | Inputs determine a target, subject to scope, comparison, tolerance and exceptions |
 | `dependencies` | Type `predictive` | Specified inputs support prediction of a target under recorded validation |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
@@ -134,7 +134,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `duplicate_encoding` | columns | relation | exact | unconditional | atemporal | — | regularity |
 | `uniqueness` | column or columns | relation | exact | unconditional | atemporal | uniqueness | regularity |
 | `duplicate_rows` | rows | structure | exact | unconditional | atemporal | uniqueness | deviation |
-| `format_variation`, `boundary_mass` | column | distribution | exact | unconditional | atemporal | validity | deviation |
+| `format_variation`, `boundary_mass`, `content_anomaly` | column | distribution | exact | unconditional | atemporal | validity | deviation |
 | `heaping`, `digit_preference`, `benford_deviation` | column | distribution | approximate | unconditional | atemporal | validity | deviation |
 | `functional` | columns | relation | exact, or approximate when the mapping has violations | unconditional | atemporal | — | regularity |
 | `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
@@ -508,7 +508,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 24 of the 31 registered detectors. Six are
+and activation. The default set has 25 of the 32 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40
