@@ -9,6 +9,7 @@ but ranks below an unrelated exact order and below any order
 finding that reports violations.
 """
 
+import calendar
 import datetime as dt
 import random
 
@@ -45,23 +46,33 @@ def _plant(seed: int, swapped: bool):
     lo_v, hi_v = list(lo), list(hi)
     for i in rng.sample(range(n), 25):  # 0.5% violations
         lo_v[i] = hi_v[i] + rng.uniform(0.1, 5.0)
-    start = [
-        dt.datetime(2024, 1, 1) + dt.timedelta(days=rng.randrange(300))
-        for _ in range(n)
-    ]
-    end = [s + dt.timedelta(hours=rng.randrange(1, 72)) for s in start]
-    end_v = list(end)
+    # Build the timestamp columns as epoch microseconds and cast.
+    # Constructing a Datetime series from Python datetime objects
+    # raises on Polars 1.x under Python 3.15: the construction goes
+    # through Series.dt.cast_time_unit, which returns None there
+    # ('NoneType' object has no attribute '_s',
+    # polars/_utils/construction/series.py). Integer construction
+    # and the cast stay in working code paths on every supported
+    # Polars, as in tests/test_events.py. The rng draws below are in
+    # the same order and ranges as the datetime version they replace,
+    # so the planted values are unchanged.
+    base_us = calendar.timegm(dt.datetime(2024, 1, 1).timetuple()) * 1_000_000
+    day_us = 86_400 * 1_000_000
+    hour_us = 3_600 * 1_000_000
+    start_us = [base_us + day_us * rng.randrange(300) for _ in range(n)]
+    end_us = [s + hour_us * rng.randrange(1, 72) for s in start_us]
+    end_v_us = list(end_us)
     bad_end = rng.sample(range(n), 25)  # 0.5% violations
     for i in bad_end:
-        end_v[i] = start[i] - dt.timedelta(hours=rng.randrange(1, 48))
+        end_v_us[i] = start_us[i] - hour_us * rng.randrange(1, 48)
     cols = {
         "lo": lo,
         "hi": hi,
         "lo_v": lo_v,
         "hi_v": hi_v,
-        "start": start,
-        "end": end,
-        "end_v": end_v,
+        "start": pl.Series("start", start_us).cast(pl.Datetime("us")),
+        "end": pl.Series("end", end_us).cast(pl.Datetime("us")),
+        "end_v": pl.Series("end_v", end_v_us).cast(pl.Datetime("us")),
     }
     if swapped:
         cols = {k: cols[k] for k in reversed(list(cols))}
