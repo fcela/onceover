@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.5"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.6"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -19,8 +19,9 @@ in `findings.md`.
 | `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, or `year_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
+| `grouped_findings` | statements grouped under a verified relationship family's lead (schema 0.6): full finding objects, each carrying `grouped_under`; absent when no family formed. Grouped statements are not in `findings` and spend no selection or digest slot; the family semantics are defined in `docs/findings.md`, "Verified relationship families" |
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
-| `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected` |
+| `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected`, and (schema 0.6) `families` and `grouped_statements` |
 | `coverage` | object keyed by pipeline pass name (which can differ from detector ID); each entry: `status` (`ran_exact`, `ran_sampled`, `capped`, `skipped`, `not_applicable`, `error`) and `detail` (free text — can be very long on wide tables; see the context-budget note in `docs/benchmarks/2026-10-28-context-digest.md`); on timing-enabled runs (`profile(..., timing=True)`) each entry also carries `elapsed_ms`, the wall time attributed to the pass — the interval since the previous entry was recorded (passes run sequentially; the first entry also carries extraction and the column cards) |
 
 ## The frame model
@@ -96,7 +97,11 @@ changes and intervals (deviations); the selection score orders
 findings within a band. Selection itself is unchanged: the caps
 consume candidates in demotion-adjusted score order, so no
 finding is lost to the re-ranking — the band orders the report
-body, not the budget. Relation findings whose subject lies
+body, not the budget. A verified relationship family's lead
+(schema 0.6) presents at the earliest band among itself and its
+grouped members, because the lead stands for the family's
+strongest content; a duplicate-encoding lead whose members are
+dependencies therefore presents with the relations. Relation findings whose subject lies
 inside the calendar family (the axis's own columns, every column
 the axis determines exactly — measured directly, since a
 timestamp that is itself unique has no mined dependency from it
@@ -122,6 +127,8 @@ evidence metrics; the demotion counts are stated in the
 | `evidence` | list of evidence entries: `method` (`detector`, `algorithm`, `provenance`), `basis` (`measured` / `estimated` / `inferred`), `scope` (`sampling`, `population_rows`, `rows_evaluated`, `missing_values`), `validation` (`method`, `used_for_selection`, row counts), and `metrics` — the measurements, plus the finding type's bespoke evidence payload where one is defined |
 | `interestingness` | the ranking score used for selection |
 | `detector_interestingness` | the producing detector's own score before cross-detector ranking |
+| `grouped_members` | on a verified relationship family's lead only: the ids of the statements grouped under it (their full records are in `grouped_findings`); omitted otherwise |
+| `grouped_under` | on a grouped statement only: the lead finding's id; grouped statements appear in `grouped_findings`, not `findings`. Omitted otherwise |
 | `interpretation` | what the finding means / why it might matter, when the detector provides one |
 
 Findings produced from user-declared hints come from the

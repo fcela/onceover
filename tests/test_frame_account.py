@@ -71,7 +71,7 @@ def test_digest_leads_with_the_account():
 
 def test_schema_version_is_0_5():
     report = onceover.profile(panel_df())
-    assert report.data["schema_version"] == "0.5"
+    assert report.data["schema_version"] == "0.6"
 
 
 def repeating_axis_df():
@@ -118,9 +118,13 @@ def calendar_df():
 
 def test_calendar_restatements_are_demoted_not_removed():
     report = onceover.profile(calendar_df())
+    # Calendar dependencies are reported across the selected
+    # findings and the grouped statements (schema 0.6): the exact
+    # calendar derivations consolidate into verified relationship
+    # families, and every restatement stays in the report.
     fds = [
         f
-        for f in report.data["findings"]
+        for f in report.data["findings"] + (report.data.get("grouped_findings") or [])
         if f["category"] == "dependencies" and f.get("type") == "functional"
     ]
     assert fds, "the calendar dependencies are still reported"

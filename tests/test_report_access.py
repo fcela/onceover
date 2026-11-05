@@ -77,6 +77,26 @@ def test_to_json_budgeted():
     assert view["column_names"] == list(report.columns.keys())
     assert budget["full_findings"] + budget["indexed_findings"] == total
     assert budget["indexed_findings"] > 0
+    # Grouped statements (schema 0.6) carry their own accounting:
+    # full records under grouped_findings, collapsed ones under
+    # grouped_index, and the two counts sum to the report's grouped
+    # total.
+    total_grouped = len(report.grouped_findings)
+    assert (
+        budget["full_grouped_findings"] + budget["indexed_grouped_findings"]
+        == total_grouped
+    )
+    assert len(view["grouped_findings"]) == budget["full_grouped_findings"]
+    assert len(view["grouped_index"]) == budget["indexed_grouped_findings"]
+    for entry in view["grouped_index"]:
+        assert set(entry) == {
+            "id",
+            "category",
+            "type",
+            "columns",
+            "interestingness",
+            "claim",
+        }
     # Full findings are the top of the ranking, in order; index
     # entries carry the rest, also in report order.
     full_ids = [f["id"] for f in view["findings"]]

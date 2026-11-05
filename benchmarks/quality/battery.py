@@ -133,10 +133,22 @@ def run_plant(builder, seed: int, variant: str = "base") -> dict:
         target_match(f, spec) for f in det.data["findings"])
     full = profile(df, spec, restricted=False)
     findings = full.data["findings"]
+    grouped = full.data.get("grouped_findings") or []
     rec["selected_target_recall"] = any(
         target_match(f, spec) for f in findings)
     rank = first_match_rank(findings, spec)
     rec["selected_recall"] = rank is not None
+    # Explicit selection outcome (schema 0.6): a statement grouped
+    # under a verified relationship family is stated in the report
+    # but spends no selection slot, so it is recorded separately
+    # rather than folded into either "selected" or "missed".
+    grouped_hit = any_match(grouped, spec)
+    rec["grouped_recall"] = bool(grouped_hit and rank is None)
+    rec["selection_outcome"] = (
+        "selected" if rank is not None
+        else "grouped" if grouped_hit
+        else "missed")
+    rec["stated_recall"] = rec["selection_outcome"] != "missed"
     rec["rank"] = rank
     rec["top10"] = bool(rank and rank <= 10)
     rec["top25"] = bool(rank and rank <= 25)
@@ -170,6 +182,13 @@ def run_wide(builder, seed: int) -> dict:
         target_match(f, spec) for f in full.data["findings"])
     rank = first_match_rank(full.data["findings"], spec)
     rec["selected_recall"] = rank is not None
+    grouped_hit = any_match(full.data.get("grouped_findings") or [], spec)
+    rec["grouped_recall"] = bool(grouped_hit and rank is None)
+    rec["selection_outcome"] = (
+        "selected" if rank is not None
+        else "grouped" if grouped_hit
+        else "missed")
+    rec["stated_recall"] = rec["selection_outcome"] != "missed"
     rec["rank"] = rank
     rec["top10"] = bool(rank and rank <= 10)
     rec["top25"] = bool(rank and rank <= 25)
@@ -194,6 +213,7 @@ def summarize(records: list[dict]) -> dict:
     out = {}
     for key in ("detector_recall", "detector_target_recall",
                 "selected_recall", "selected_target_recall",
+                "grouped_recall", "stated_recall",
                 "top10", "top25"):
         if records and key in records[0]:
             vals = [bool(r[key]) for r in records]

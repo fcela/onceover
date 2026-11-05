@@ -160,34 +160,7 @@ CHECKERS = {
 # issue that owns the fix. When a fix merges, the entry stops
 # reproducing and this record must be edited in the same change —
 # the gate fails until it is.
-KNOWN_FAILURES: list[dict] = [
-    # Numeric extreme-cluster rendering (singleton wording over a
-    # payload that lists several extremes) had four records here;
-    # they stopped reproducing when PR #120 merged the fix for issue
-    # #111's numeric half, and were removed in the same change that
-    # re-measured this record on main 6744b051 (2026-11-04, see
-    # docs/benchmarks/2026-11-04-wheel-ci-fix.md).
-    # Categorical exception counts: the stated dominant share implies
-    # one more exception row than the claim and the payload list.
-    # Issue #111, not fixed by PR #120. The first entry is the
-    # instance the corpus registry records as a partial documented
-    # case; the other two are further instances the gate measured on
-    # the same build (2026-11-04). Re-measured on main 6744b051 after
-    # PRs #120/#138/#139/#140 merged: exactly these three reproduce,
-    # and no new contradiction appeared.
-    {"dataset": "adult-census-income", "type": "categorical_outlier",
-     "problem": "share-implied-count",
-     "claim_contains": "education = Some-college and relationship = Husband",
-     "issue": "#111"},
-    {"dataset": "adult-census-income", "type": "categorical_outlier",
-     "problem": "share-implied-count",
-     "claim_contains": "occupation = Other-service and relationship = Own-child and race = White",
-     "issue": "#111"},
-    {"dataset": "adult-census-income", "type": "categorical_outlier",
-     "problem": "share-implied-count",
-     "claim_contains": "occupation = Craft-repair and relationship = Husband",
-     "issue": "#111"},
-]
+KNOWN_FAILURES: list[dict] = []
 
 
 def _finding_key(f: dict) -> tuple:

@@ -136,7 +136,9 @@ def event_interval(f: dict) -> tuple[datetime, datetime] | None:
 
 
 def check_expectations(findings: list[dict], expectations: list[dict],
-                       coverage: dict | None = None) -> list[dict]:
+                       coverage: dict | None = None,
+                       grouped: list[dict] | None = None) -> list[dict]:
+    grouped = grouped or []
     results = []
     for exp in expectations:
         kind = exp.get("kind", "finding")
@@ -195,14 +197,28 @@ def check_expectations(findings: list[dict], expectations: list[dict],
                             "note": exp.get("note")})
             continue
         hits = [f for f in findings if match_finding(f, exp)]
+        grouped_hits = [f for f in grouped if match_finding(f, exp)]
         expect = exp.get("expect", "found")
         if expect == "found":
-            ok = len(hits) >= exp.get("min", 1)
-        else:  # known-miss tripwire
-            ok = len(hits) == 0
+            ok = len(hits) + len(grouped_hits) >= exp.get("min", 1)
+        else:  # known-miss tripwire: absence from the whole report body
+            ok = len(hits) == 0 and len(grouped_hits) == 0
+        # The selection outcome is explicit (issue #116): a matched
+        # expectation states whether the statement was selected, or
+        # grouped under a family lead (retrievable, but spending no
+        # digest slot). Grouping is never counted as a miss, and a
+        # grouped match is never reported as selected.
+        outcome = ("selected" if hits else
+                   "grouped" if grouped_hits else None)
         results.append({"kind": "finding", "expect": expect, "ok": ok,
+                        "outcome": outcome,
                         "matched": len(hits),
                         "matched_ids": [h.get("id") for h in hits[:5]],
+                        "matched_grouped": len(grouped_hits),
+                        "grouped_ids": [h.get("id") for h in grouped_hits[:5]],
+                        "lead_ids": sorted({h.get("grouped_under")
+                                            for h in grouped_hits
+                                            if h.get("grouped_under")}),
                         "predicate": {k: v for k, v in exp.items()
                                       if k not in ("kind", "expect", "min", "note")},
                         "note": exp.get("note")})
@@ -302,6 +318,8 @@ def main() -> int:
             rec["rows"], rec["cols"] = df.height, df.width
             findings = report.data["findings"]
             rec["findings"] = len(findings)
+            grouped = report.data.get("grouped_findings") or []
+            rec["grouped_findings"] = len(grouped)
             from collections import Counter
             rec["categories"] = dict(Counter(f["category"] for f in findings))
             cov_bad = {k: v for k, v in report.data["coverage"].items()
@@ -309,7 +327,7 @@ def main() -> int:
             rec["coverage_errors"] = cov_bad
             rec["expectations"] = check_expectations(
                 findings, entry.get("expectations", []),
-                coverage=report.data["coverage"])
+                coverage=report.data["coverage"], grouped=grouped)
             bad = [e for e in rec["expectations"] if e.get("ok") is False]
             rec["status"] = "ok" if not bad and not cov_bad else "expectations_failed"
             if bad or cov_bad:
