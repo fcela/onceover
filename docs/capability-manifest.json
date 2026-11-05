@@ -87,6 +87,14 @@
    "activation": "default"
   },
   {
+   "id": "missingness",
+   "categories": [
+    "missingness"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "digits",
    "categories": [
     "formats"
