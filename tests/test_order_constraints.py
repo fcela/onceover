@@ -9,7 +9,6 @@ but ranks below an unrelated exact order and below any order
 finding that reports violations.
 """
 
-import datetime as dt
 import random
 
 import polars as pl
@@ -45,15 +44,16 @@ def _plant(seed: int, swapped: bool):
     lo_v, hi_v = list(lo), list(hi)
     for i in rng.sample(range(n), 25):  # 0.5% violations
         lo_v[i] = hi_v[i] + rng.uniform(0.1, 5.0)
-    start = [
-        dt.datetime(2024, 1, 1) + dt.timedelta(days=rng.randrange(300))
-        for _ in range(n)
-    ]
-    end = [s + dt.timedelta(hours=rng.randrange(1, 72)) for s in start]
+    # Microseconds, cast to datetimes on the frame: Polars 1.x on Python 3.15
+    # can't build a Series from Python datetimes.
+    day, hour = 86_400_000_000, 3_600_000_000
+    epoch = 1_704_067_200_000_000  # 2024-01-01
+    start = [epoch + day * rng.randrange(300) for _ in range(n)]
+    end = [s + hour * rng.randrange(1, 72) for s in start]
     end_v = list(end)
     bad_end = rng.sample(range(n), 25)  # 0.5% violations
     for i in bad_end:
-        end_v[i] = start[i] - dt.timedelta(hours=rng.randrange(1, 48))
+        end_v[i] = start[i] - hour * rng.randrange(1, 48)
     cols = {
         "lo": lo,
         "hi": hi,
@@ -65,7 +65,10 @@ def _plant(seed: int, swapped: bool):
     }
     if swapped:
         cols = {k: cols[k] for k in reversed(list(cols))}
-    return pl.DataFrame(cols), bad_end
+    frame = pl.DataFrame(cols).with_columns(
+        pl.col("start", "end", "end_v").cast(pl.Datetime("us"))
+    )
+    return frame, bad_end
 
 
 def test_issue_plants_fire_in_both_positions_all_seeds():
@@ -92,7 +95,10 @@ def test_issue_plants_fire_in_both_positions_all_seeds():
             assert len(temp) == 1, (seed, swapped)
             m = _payload(temp[0])
             assert m["violations"] == 25
-            starts, ends = df["start"].to_list(), df["end_v"].to_list()
+            ticks = df.select(pl.col("start", "end_v").cast(pl.Int64)).to_dict(
+                as_series=False
+            )
+            starts, ends = ticks["start"], ticks["end_v"]
             rows = m["example_rows"]
             assert rows and all(starts[r] > ends[r] for r in rows)
             assert set(rows) <= set(bad_end)
