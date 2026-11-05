@@ -1645,8 +1645,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 62,
-     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores."
+     "value": 60,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. The schema 0.6 build (verified relationship families, issue #116) selects 60: the two education FDs are grouped under the duplicate-encoding lead and spend no selection slot."
     },
     {
      "kind": "documented_case",

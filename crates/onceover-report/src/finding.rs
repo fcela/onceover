@@ -907,6 +907,20 @@ pub struct Finding {
     /// the replacement is never silent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detector_interestingness: Option<f64>,
+    /// Ids of the statements the ledger grouped under this finding
+    /// (schema 0.6): this finding is the lead of a verified
+    /// relationship family, and the named statements — full records
+    /// in the report's `grouped_findings` — restate the same exact
+    /// relation it states. Empty for non-leads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grouped_members: Vec<String>,
+    /// The lead finding's id, when the ledger grouped this
+    /// statement under a verified relationship family (schema 0.6).
+    /// Grouped statements live in the report's `grouped_findings`,
+    /// not in `findings`: they spend no digest slot and no
+    /// selection slot, and stay retrievable by id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grouped_under: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpretation: Option<String>,
 }
@@ -1321,6 +1335,8 @@ impl Finding {
             evidence: vec![evidence],
             interestingness: score.clamp(0.0, 1.0),
             detector_interestingness: None,
+            grouped_members: Vec::new(),
+            grouped_under: None,
             interpretation,
         }
     }

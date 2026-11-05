@@ -293,6 +293,20 @@
           "minItems": 1,
           "type": "array"
         },
+        "facets": {
+          "$ref": "#/$defs/facets"
+        },
+        "grouped_members": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of the statements grouped under this finding (it is a verified relationship family's lead); the named full records are in the report's grouped_findings."
+        },
+        "grouped_under": {
+          "type": "string",
+          "description": "The lead finding's id, when this statement was grouped under a verified relationship family; grouped statements live in grouped_findings, not findings."
+        },
         "id": {
           "type": "string"
         },
@@ -313,9 +327,6 @@
         "type": {
           "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation; dependencies: functional | predictive; conditional_rules: if_then; associations: statistical | period_association; gaps: gap | sequence_gap | missing_combinations; intervals: interval_variation | extreme_value | categorical_outlier; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition.",
           "type": "string"
-        },
-        "facets": {
-          "$ref": "#/$defs/facets"
         }
       },
       "required": [
@@ -610,6 +621,14 @@
           "type": "integer"
         },
         "distinct_statements": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "families": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "grouped_statements": {
           "minimum": 0,
           "type": "integer"
         },
@@ -1130,7 +1149,7 @@
   "$id": "docs/report-schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
+  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
   "properties": {
     "columns": {
       "additionalProperties": {
@@ -1150,6 +1169,16 @@
       },
       "type": "array"
     },
+    "frame": {
+      "$ref": "#/$defs/frameInfo"
+    },
+    "grouped_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      },
+      "description": "Statements grouped under a verified relationship family's lead (schema 0.6); omitted when no family formed."
+    },
     "groups": {
       "items": {
         "$ref": "#/$defs/findingGroup"
@@ -1160,13 +1189,10 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.5"
+      "const": "0.6"
     },
     "selection": {
       "$ref": "#/$defs/selection"
-    },
-    "frame": {
-      "$ref": "#/$defs/frameInfo"
     }
   },
   "required": [
@@ -1178,6 +1204,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.5)",
+  "title": "onceover profile report (schema_version 0.6)",
   "type": "object"
 }

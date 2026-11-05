@@ -352,6 +352,7 @@ fn markdown_places_evidence_and_result_tables_beside_findings() {
         columns: BTreeMap::new(),
         groups: group_findings(&findings),
         findings,
+        grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
     };
@@ -391,6 +392,7 @@ fn report_schema_roundtrips_and_renders() {
         columns: BTreeMap::new(),
         groups: group_findings(&findings),
         findings,
+        grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
     };
@@ -563,17 +565,357 @@ fn per_detector_cap_limits_and_counts_statements() {
         max_findings_per_detector: BTreeMap::from([("functional_dependencies".to_string(), 2)]),
         ..Default::default()
     };
-    let (selected, capped) = select_findings_counted(findings, &policy);
-    assert_eq!(selected.len(), 3);
+    let outcome = select_findings_counted(findings, &policy);
+    assert_eq!(outcome.selected.len(), 3);
     assert_eq!(
-        selected
+        outcome
+            .selected
             .iter()
             .filter(|f| f.category == Category::Dependencies)
             .count(),
         2
     );
-    assert_eq!(capped.get("functional_dependencies"), Some(&2));
-    assert_eq!(capped.len(), 1);
+    assert_eq!(outcome.capped.get("functional_dependencies"), Some(&2));
+    assert_eq!(outcome.capped.len(), 1);
+}
+
+fn exact_fd(lhs: &[&str], rhs: &str, score: f64) -> Finding {
+    fd_with_violations(lhs, rhs, score, 0)
+}
+
+fn fd_with_violations(lhs: &[&str], rhs: &str, score: f64, violations: u64) -> Finding {
+    let mut subject = Subject {
+        columns: lhs
+            .iter()
+            .map(|s| s.to_string())
+            .chain([rhs.to_string()])
+            .collect(),
+        inputs: lhs.iter().map(|s| s.to_string()).collect(),
+        target: Some(rhs.to_string()),
+        unit: None,
+    };
+    subject.canonicalize();
+    Finding::from_statement(
+        Category::Dependencies,
+        Some("functional".into()),
+        subject,
+        Specification {
+            form: Some("value_mapping".into()),
+            ..Default::default()
+        },
+        format!("{} determines {}", lhs.join(", "), rhs),
+        Evidence::new(
+            Method::new("functional_dependencies", "value_mapping", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([
+                ("violations".into(), json!(violations)),
+                ("n_used".into(), json!(100)),
+            ]),
+        ),
+        score,
+        None,
+    )
+}
+
+fn bijection(a: &str, b: &str, score: f64) -> Finding {
+    let mut subject = Subject {
+        columns: vec![a.to_string(), b.to_string()],
+        ..Default::default()
+    };
+    subject.canonicalize();
+    Finding::from_statement(
+        Category::ColumnRoles,
+        Some("duplicate_encoding".into()),
+        subject,
+        Specification {
+            form: Some("duplicate_encoding".into()),
+            ..Default::default()
+        },
+        format!("{a} and {b} encode the same values"),
+        Evidence::new(
+            Method::new("duplicate_encodings", "duplicate_encoding", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([
+                ("exact".into(), json!(true)),
+                ("violations_ab".into(), json!(0)),
+                ("violations_ba".into(), json!(0)),
+            ]),
+        ),
+        score,
+        None,
+    )
+}
+
+fn identity(form: &str, inputs: &[&str], target: &str, score: f64) -> Finding {
+    let coefficients: Vec<f64> = match form {
+        "difference" => inputs
+            .iter()
+            .enumerate()
+            .map(|(i, _)| if i == 0 { 1.0 } else { -1.0 })
+            .collect(),
+        _ => vec![1.0; inputs.len()],
+    };
+    identity_with_coefficients(form, inputs, target, score, coefficients)
+}
+
+fn identity_with_coefficients(
+    form: &str,
+    inputs: &[&str],
+    target: &str,
+    score: f64,
+    coefficients: Vec<f64>,
+) -> Finding {
+    let mut subject = Subject {
+        columns: inputs
+            .iter()
+            .map(|s| s.to_string())
+            .chain([target.to_string()])
+            .collect(),
+        inputs: inputs.iter().map(|s| s.to_string()).collect(),
+        target: Some(target.to_string()),
+        unit: None,
+    };
+    subject.canonicalize();
+    let claim = format!("identity over {}", subject.columns.join(", "));
+    Finding::from_statement(
+        Category::Dependencies,
+        Some("functional".into()),
+        subject,
+        Specification {
+            form: Some(form.into()),
+            ..Default::default()
+        },
+        claim,
+        Evidence::new(
+            Method::new("identities", "multiterm_scan", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([
+                ("violations".into(), json!(0)),
+                ("form".into(), json!(form)),
+                ("terms".into(), json!(inputs)),
+                ("coefficients".into(), json!(coefficients)),
+                ("n".into(), json!(100)),
+            ]),
+        ),
+        score,
+        None,
+    )
+}
+
+#[test]
+fn bijection_family_groups_both_fd_directions() {
+    // The FDs outrank the encoding statement, so the family is
+    // triggered by its first member; the lead is admitted there.
+    // A predictive statement over the same columns is not an exact
+    // restatement and is never absorbed.
+    let predictive = Finding::from_statement(
+        Category::Dependencies,
+        Some("predictive".into()),
+        Subject {
+            columns: vec!["a".into(), "b".into()],
+            inputs: vec!["a".into()],
+            target: Some("b".into()),
+            unit: None,
+        },
+        Specification::default(),
+        "a predicts b".into(),
+        Evidence::new(
+            Method::new("gbm", "hist_gradient_boosting", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([("n".into(), json!(100))]),
+        ),
+        0.9,
+        None,
+    );
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a"], "b", 0.95),
+            exact_fd(&["b"], "a", 0.94),
+            bijection("a", "b", 0.80),
+            predictive,
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.grouped.len(), 2);
+    let lead = outcome
+        .selected
+        .iter()
+        .find(|f| f.finding_type.as_deref() == Some("duplicate_encoding"))
+        .expect("the encoding statement leads");
+    assert_eq!(lead.grouped_members.len(), 2);
+    for member in &outcome.grouped {
+        assert_eq!(member.grouped_under.as_deref(), Some(lead.id.as_str()));
+        assert!(lead.grouped_members.contains(&member.id));
+        assert_eq!(member.finding_type.as_deref(), Some("functional"));
+    }
+    let predictive = outcome
+        .selected
+        .iter()
+        .find(|f| f.finding_type.as_deref() == Some("predictive"))
+        .expect("the prediction stays selected on its own");
+    assert!(predictive.grouped_members.is_empty());
+    assert_eq!(outcome.selected.len(), 2);
+}
+
+#[test]
+fn identity_family_groups_rotations_and_fds() {
+    // cnt = casual + registered, its subtraction rotation, and the
+    // three FDs over the same columns: one family, the sum leads.
+    let outcome = select_findings_counted(
+        vec![
+            identity("sum", &["casual", "registered"], "cnt", 0.90),
+            identity("difference", &["cnt", "registered"], "casual", 0.89),
+            exact_fd(&["casual", "registered"], "cnt", 0.88),
+            exact_fd(&["cnt", "registered"], "casual", 0.87),
+            exact_fd(&["cnt", "casual"], "registered", 0.86),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 4);
+    let lead = &outcome.selected[0];
+    assert_eq!(lead.specification.form.as_deref(), Some("sum"));
+    assert_eq!(lead.grouped_members.len(), 4);
+    for member in &outcome.grouped {
+        assert_eq!(member.grouped_under.as_deref(), Some(lead.id.as_str()));
+    }
+}
+
+#[test]
+fn linear_combination_rotations_group_with_the_sum() {
+    // The scan reports the sum in one direction and fitted linear
+    // combinations in the rotated directions (b = -a + c,
+    // a = -b + c, coefficients [intercept, ...]). The coefficient
+    // vectors are proportional, so all three are one family and
+    // the sum leads.
+    let outcome = select_findings_counted(
+        vec![
+            identity("sum", &["a", "b"], "c", 0.90),
+            identity_with_coefficients(
+                "linear_combination",
+                &["a", "c"],
+                "b",
+                0.89,
+                vec![0.0, -1.0, 1.0],
+            ),
+            identity_with_coefficients(
+                "linear_combination",
+                &["b", "c"],
+                "a",
+                0.88,
+                vec![0.0, -1.0, 1.0],
+            ),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(
+        outcome.selected[0].specification.form.as_deref(),
+        Some("sum")
+    );
+    assert_eq!(outcome.grouped.len(), 2);
+}
+
+#[test]
+fn distinct_relations_over_one_column_set_do_not_merge() {
+    // c = a + b and c = 2a + b over the same columns are different
+    // relations; their coefficient vectors are not proportional,
+    // so neither groups under the other.
+    let outcome = select_findings_counted(
+        vec![
+            identity("sum", &["a", "b"], "c", 0.90),
+            identity_with_coefficients(
+                "linear_combination",
+                &["a", "b"],
+                "c",
+                0.89,
+                vec![0.0, 2.0, 1.0],
+            ),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 2);
+}
+
+#[test]
+fn fd_rotation_cluster_forms_a_family_without_an_identity() {
+    // The FD signature of an exact relation: every column is the
+    // target of an FD on the rest.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["casual", "registered"], "cnt", 0.90),
+            exact_fd(&["cnt", "registered"], "casual", 0.89),
+            exact_fd(&["cnt", "casual"], "registered", 0.88),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 2);
+}
+
+#[test]
+fn partial_fd_cluster_does_not_group() {
+    // Two of the three rotation directions: neither FD implies
+    // the other, so both stay independent statements.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["casual", "registered"], "cnt", 0.90),
+            exact_fd(&["cnt", "registered"], "casual", 0.89),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 2);
+}
+
+#[test]
+fn inexact_or_scoped_statements_do_not_group() {
+    // An FD with violations is not exact; a conditional FD is
+    // scoped. The bijection is left without exact members, so no
+    // family forms and every statement competes on its own.
+    let mut conditional = exact_fd(&["b"], "a", 0.93);
+    conditional.specification.conditions = vec![Predicate::equal("segment", json!("premium"))];
+    let outcome = select_findings_counted(
+        vec![
+            fd_with_violations(&["a"], "b", 0.95, 3),
+            conditional,
+            bijection("a", "b", 0.80),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 3);
+}
+
+#[test]
+fn cap_blocked_lead_leaves_members_independent() {
+    // The lead's detector is capped at zero: the family does not
+    // form, the lead is counted as capped, and the FDs are
+    // selected on their own merits.
+    let policy = SelectionPolicy {
+        max_findings_per_detector: BTreeMap::from([("duplicate_encodings".to_string(), 0)]),
+        ..Default::default()
+    };
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a"], "b", 0.95),
+            exact_fd(&["b"], "a", 0.94),
+            bijection("a", "b", 0.80),
+        ],
+        &policy,
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 2);
+    assert_eq!(outcome.capped.get("duplicate_encodings"), Some(&1));
 }
 
 #[test]

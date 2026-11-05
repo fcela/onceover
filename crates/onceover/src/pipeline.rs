@@ -614,8 +614,21 @@ fn profile_inner(
                             let mut cfg2 = cfg.clone();
                             cfg2.target = None;
                             let wide_report = profile_inner(&wide, &cfg2, extensions, depth + 1);
-                            let n_wide = wide_report.findings.len();
-                            for mut f in wide_report.findings {
+                            let n_wide =
+                                wide_report.findings.len() + wide_report.grouped_findings.len();
+                            // Grouped statements are lifted too (schema
+                            // 0.6): a family inside the wide profile is
+                            // still a statement about the data, and the
+                            // outer ledger re-derives the grouping over
+                            // the merged candidates, so the wide
+                            // profile's own grouping marks are cleared.
+                            for mut f in wide_report
+                                .findings
+                                .into_iter()
+                                .chain(wide_report.grouped_findings)
+                            {
+                                f.grouped_members.clear();
+                                f.grouped_under = None;
                                 for e in &mut f.evidence {
                                     e.metrics
                                         .insert("source_form".into(), json!("pivoted wide form"));
@@ -1501,8 +1514,9 @@ fn profile_inner(
     // is a ranking change declared in the findings' evidence; the
     // counts are disclosed on the frame_model entry (and repeated
     // on the selection entry when a cap also binds). The selection
-    // entry itself keeps its standing contract: it appears only
-    // when a cap binds.
+    // entry appears when a cap binds or when verified relationship
+    // families grouped statements (schema 0.6), so both mechanisms
+    // are disclosed, never silent.
     let demotions = crate::account::demote_restatements(&mut findings, &table, &frame, &deps);
     let demotion_note = if demotions.is_empty() {
         None
@@ -1523,10 +1537,23 @@ fn profile_inner(
             info.detail.push_str(note);
         }
     }
-    let (findings, capped) = select_findings_counted(findings, &cfg.selection);
-    if !capped.is_empty() {
-        // Per-detector report caps are disclosed with counts, never
-        // applied silently (the demote-never-suppress rule).
+    let outcome = select_findings_counted(findings, &cfg.selection);
+    let findings = outcome.selected;
+    let grouped = outcome.grouped;
+    let capped = outcome.capped;
+    let grouping_note = if grouped.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "{} statement(s) grouped under {} verified relationship families — each lead finding carries the grouped ids in grouped_members; the statements remain in the report under grouped_findings",
+            grouped.len(),
+            outcome.families
+        ))
+    };
+    if !capped.is_empty() || grouping_note.is_some() {
+        // Per-detector report caps and family grouping are
+        // disclosed with counts, never applied silently (the
+        // demote-never-suppress rule).
         let mut parts: Vec<String> = capped
             .iter()
             .map(|(detector, n)| {
@@ -1539,15 +1566,25 @@ fn profile_inner(
                 format!("{detector}: {n} statement(s) past the per-detector report cap of {cap} not selected")
             })
             .collect();
+        if let Some(note) = &grouping_note {
+            parts.push(note.clone());
+        }
         if let Some(note) = &demotion_note {
             parts.push(note.clone());
         }
+        let info = if capped.is_empty() {
+            // Grouping alone bound nothing: the entry is an exact
+            // run record, not a cap disclosure.
+            PassInfo::ran(parts.join("; "))
+        } else {
+            PassInfo::capped(parts.join("; "))
+        };
         stamp_insert(
             &mut coverage,
             &mut last_mark,
             timing_on,
             "selection".into(),
-            PassInfo::capped(parts.join("; ")),
+            info,
         );
     }
     let groups = group_findings(&findings);
@@ -1556,6 +1593,8 @@ fn profile_inner(
         verified_candidates: verified_count,
         distinct_statements: distinct_count,
         selected: findings.len(),
+        families: outcome.families,
+        grouped_statements: grouped.len(),
     };
     let overview = build_overview(&table, &columns, &findings, cfg);
     if deadline_hit {
@@ -1577,6 +1616,7 @@ fn profile_inner(
         overview,
         columns,
         findings,
+        grouped_findings: grouped,
         groups,
         selection,
         coverage,
