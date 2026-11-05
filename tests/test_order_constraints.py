@@ -181,14 +181,15 @@ def test_derived_pair_ranks_below_unrelated_exact_and_violations():
 def test_pair_budget_and_findings_cap_are_disclosed():
     # 40 shifted copies of one base: every pair is eligible and
     # exact, so the shared max_pairs budget (496 at standard)
-    # binds and the pass cap (25 findings) binds.
+    # binds on verification and the pass cap (25 findings) binds.
     n = 1000
     base = [float((k * 37) % 500) for k in range(n)]
     cols = {f"c{k:02d}": [x + float(k) for x in base] for k in range(40)}
     report = onceover.profile(pl.DataFrame(cols), detectors=["order_constraints"])
     entry = report.coverage["order_constraints"]
     assert entry["status"] == "capped", entry
-    assert "496 of 780 eligible column pairs" in entry["detail"], entry
+    assert "780 of 780 eligible column pairs screened" in entry["detail"], entry
+    assert "496 of 780 that stayed near-universal verified" in entry["detail"], entry
     assert len(_hits(report)) == 25
 
 
@@ -251,3 +252,15 @@ def test_order_evidence_states_the_shuffled_violations():
     metrics = _hits(report, "lo", "hi")[0]["evidence"][0]["metrics"]
     assert metrics["violations"] == 0
     assert metrics["violations_if_shuffled"] > 1000
+
+
+def test_order_past_the_first_columns_is_found_on_a_wide_table():
+    rng = random.Random(21)
+    n = 8000
+    cols = {f"noise_{k:02d}": [rng.gauss(0, 1) for _ in range(n)] for k in range(60)}
+    start = [rng.uniform(0, 100) for _ in range(n)]
+    cols["start"] = start
+    cols["noise_late"] = [rng.gauss(50, 30) for _ in range(n)]
+    cols["end"] = [v + rng.uniform(0, 10) for v in start]
+    report = onceover.profile(pl.DataFrame(cols), detectors=["order_constraints"])
+    assert _hits(report, "start", "end")

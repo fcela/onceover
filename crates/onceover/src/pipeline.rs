@@ -900,13 +900,17 @@ fn profile_inner(
                 },
             );
             let detail = format!(
-                "{} of {} eligible column pairs evaluated on the shared max_pairs budget; {} reportable order directions, {} findings",
-                out.pairs_evaluated,
+                "{} of {} eligible column pairs screened; {} of {} that stayed near-universal verified on all rows on the shared max_pairs budget; {} reportable order directions, {} findings",
+                out.pairs_screened,
                 out.pairs_total,
+                out.pairs_evaluated,
+                out.pairs_surviving,
                 out.pairs_passing,
                 out.findings.len(),
             );
-            let info = if out.pairs_evaluated < out.pairs_total {
+            let info = if out.pairs_screened < out.pairs_total
+                || out.pairs_evaluated < out.pairs_surviving
+            {
                 PassInfo::capped(detail)
             } else if out.screened {
                 PassInfo::sampled(format!(

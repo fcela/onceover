@@ -92,3 +92,29 @@ strongly correlated columns still fill the cap of 25 with orders that hold on ne
 rows, such as `ks_unemployment_rate <= ak_unemployment_rate` on 607 of 608 rows in state
 unemployment. Those are true and far from random pairing, and they say less than a
 constraint between a start and an end does.
+
+## Order constraints on large tables
+
+The pass read every value of every numeric column into memory and evaluated pairs in
+column order until the budget of 496 ran out. On the 2,000,000 × 200 fixture that took
+17.8 s, reached only the first 32 columns, and accounted for most of the memory peak. It
+now keeps a 4,096-row sample of each column, screens every eligible pair on that sample
+in parallel, nearest columns first, and loads whole columns only for the pairs that
+survive. The screen covers up to 64 times the pair budget (31,744 pairs at standard),
+and at most 496 survivors are verified on all rows.
+
+2,000,000 × 200, 4 threads, full release build, one run each:
+
+| | Before | After |
+|---|---:|---:|
+| `order_constraints` | 17.82 s | 0.45 s |
+| `row_consistency` | 0.67 s | not re-read; outside the top 8 passes |
+| Whole profile | 63.0 s | 44.2 s |
+| Peak memory added by profiling | 5.24 GiB | 1.53 GiB |
+| Pairs screened | 496 of 19,110 | 19,110 of 19,110 |
+| `late_x <= late_affine` (columns past 190) | not stated | stated |
+
+The benchmark's existing checks all pass, including the plants past column 64, and
+`late_order` is added to them. `row_consistency` does not check near-duplicate rows on
+this fixture, because 400,000,000 cells is above its 50,000,000 limit, and coverage says
+so. On 1,000,000 × 40, which is within the limit, it takes 0.54 s of a 5.35 s profile.

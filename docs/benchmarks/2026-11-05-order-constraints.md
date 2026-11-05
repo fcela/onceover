@@ -53,11 +53,13 @@ are equal wherever both are present (a duplicate-encoding
 statement), and equal nonzero counts mean the columns cross as
 often as they agree.
 
-Pairs are evaluated in column order on the shared pair budget
-(`max_pairs`, the budget that also caps the dependence screen:
-496 pairs at standard, 2,016 at deep, 0 at quick, where the
-pass records itself skipped). Coverage states how many of the
-eligible pairs were evaluated, how many directions were
+Every eligible pair is screened on the row sample, nearest columns
+first, up to 64 times the shared pair budget (`max_pairs`, the
+budget that also caps the dependence screen: 496 pairs at
+standard, 2,016 at deep, 0 at quick, where the pass records itself
+skipped). At most `max_pairs` survivors are verified on all rows.
+Coverage states how many eligible pairs were screened, how many
+survivors were verified, how many directions were
 reportable, and how many findings were emitted, and is marked
 capped when the budget or the findings cap binds. At most 25
 findings are emitted, ranked:
