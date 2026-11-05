@@ -8,6 +8,9 @@ statement and turn exact statements into constraints for new data.
 Statements fitted on a sample or by a model (predictive scores, change points,
 rules measured on a holdout) have no exact count to recompute, and report
 `not_checkable`.
+
+Counts go through frame expressions rather than Series methods: on Polars 1.x with
+Python 3.15, Series methods such as `drop_nulls` return None.
 """
 from __future__ import annotations
 
@@ -27,8 +30,12 @@ def _algorithm(f: dict) -> str:
     return f["evidence"][0]["method"]["algorithm"]
 
 
-def _is_float(df: pl.DataFrame, col: str) -> bool:
-    return df.schema[col] in (pl.Float32, pl.Float64)
+def _distinct(df: pl.DataFrame, col: str) -> int:
+    return df.select(pl.col(col).n_unique()).item()
+
+
+def _nulls(df: pl.DataFrame, col: str) -> int:
+    return df.select(pl.col(col).null_count()).item()
 
 
 def _level_expr(df: pl.DataFrame, col: str, label) -> pl.Expr:
@@ -97,15 +104,17 @@ def _check_unique(f, m, df) -> list[Triple]:
 
 
 def _check_near_unique(f, m, df) -> list[Triple]:
-    s = df[f["subject"]["columns"][0]].drop_nulls()
-    return [("repeated values", m["duplicates"], s.len() - s.n_unique())]
+    col = f["subject"]["columns"][0]
+    values = df.select(pl.col(col).drop_nulls())
+    return [("repeated values", m["duplicates"], values.height - _distinct(values, col))]
 
 
 def _check_near_key(f, m, df) -> list[Triple]:
-    s = df[f["subject"]["columns"][0]]
+    col = f["subject"]["columns"][0]
+    distinct = _distinct(df, col)
     return [
-        ("distinct values", m["distinct_values"], s.n_unique()),
-        ("rows repeating a value", m["duplicate_rows"], s.len() - s.n_unique()),
+        ("distinct values", m["distinct_values"], distinct),
+        ("rows repeating a value", m["duplicate_rows"], df.height - distinct),
     ]
 
 
@@ -157,7 +166,7 @@ def _check_duplicate_encoding(f, m, df) -> list[Triple]:
 
 def _check_missing(f, m, df) -> list[Triple]:
     col = f["subject"]["columns"][0]
-    triples: list[Triple] = [("missing rows", m["missing"], df[col].null_count())]
+    triples: list[Triple] = [("missing rows", m["missing"], _nulls(df, col))]
     triples.extend(_pattern_triples(m, df, [col]))
     return triples
 
@@ -205,7 +214,7 @@ def _check_block(f, m, df) -> list[Triple]:
 
 def _check_empty(f, m, df) -> list[Triple]:
     col = f["subject"]["columns"][0]
-    return [("missing rows", m["n"], df[col].null_count())]
+    return [("missing rows", m["n"], _nulls(df, col))]
 
 
 def _check_column_statistics(f, m, df) -> list[Triple] | None:
@@ -213,9 +222,9 @@ def _check_column_statistics(f, m, df) -> list[Triple] | None:
     if f.get("type") == "missing_values":
         return _check_empty(f, m, df)
     if "distinct" in m:
-        return [("distinct values", m["distinct"], df[col].drop_nulls().n_unique())]
+        return [("distinct values", m["distinct"], _distinct(df.drop_nulls([col]), col))]
     if "n_values" in m:
-        return [("values", m["n_values"], df[col].drop_nulls().len())]
+        return [("values", m["n_values"], df.height - _nulls(df, col))]
     return None
 
 
@@ -228,43 +237,46 @@ def _check_value_count(f, m, df, key: str) -> list[Triple]:
 def _check_content(f, m, df) -> list[Triple] | None:
     col = f["subject"]["columns"][0]
     kind = m["kind"]
-    s = df[col]
+    present = df.select(pl.col(col)).drop_nulls()
+
+    def count(expr: pl.Expr) -> int:
+        return present.select(expr.sum()).item()
+
+    c = pl.col(col)
     if kind == "repeated_extreme":
-        return [("rows at the value", m["rows"], (s == m["value"]).sum())]
+        return [("rows at the value", m["rows"], count(c == m["value"]))]
     if kind == "minority_sign":
-        v = s.drop_nulls().cast(pl.Float64)
-        rows = (v < 0).sum() if m["sign"] == "negative" else (v > 0).sum()
-        furthest = v.min() if m["sign"] == "negative" else v.max()
-        return [("rows of that sign", m["minority_rows"], rows),
+        v = c.cast(pl.Float64)
+        negative = m["sign"] == "negative"
+        furthest = present.select(v.min() if negative else v.max()).item()
+        return [("rows of that sign", m["minority_rows"], count(v < 0 if negative else v > 0)),
                 ("furthest value", m["furthest"], furthest)]
     if kind == "zero_inflation":
-        return [("rows at zero", m["zeros"], (s.drop_nulls().cast(pl.Float64) == 0).sum())]
+        return [("rows at zero", m["zeros"], count(c.cast(pl.Float64) == 0))]
     if kind == "temporal_outlier":
-        v = s.drop_nulls().cast(pl.Date).sort()
-        extreme = str(v[-1] if str(v[-1]) == m["extreme"] else v[0])
+        low, high = present.select(
+            c.cast(pl.Date).min().alias("low"), c.cast(pl.Date).max().alias("high")
+        ).row(0)
+        extreme = str(high) if str(high) == m["extreme"] else str(low)
         return [("extreme value", m["extreme"], extreme)]
     if kind == "long_text":
-        v = s.drop_nulls()
-        return [("longest", m["longest"], v.str.len_chars().max())]
+        return [("longest", m["longest"], present.select(c.str.len_chars().max()).item())]
     if kind in ("numbers_as_text", "dates_as_text", "booleans_as_text",
                 "email", "url", "uuid", "ipv4"):
-        v = s.drop_nulls()
-        listed = v.is_in(m["exception_values"]).sum()
-        triples: list[Triple] = [("values", m["n"], v.len())]
+        listed = count(c.is_in(m["exception_values"]))
+        triples: list[Triple] = [("values", m["n"], present.height)]
         if m["exceptions"] <= len(m["exception_values"]) or listed == m["exceptions"]:
             triples.append(("exceptions", m["exceptions"], listed))
         return triples
-    if kind == "label_variants":
-        counts = dict(zip(*s.value_counts(name="__n").select(col, "__n").get_columns()))
+    if kind in ("label_variants", "possible_misspelling"):
+        entries = (
+            [e for group in m["groups"] for e in group]
+            if kind == "label_variants"
+            else m["labels"]
+        )
         return [
-            (f"rows of '{entry['value']}'", entry["rows"], counts.get(entry["value"], 0))
-            for group in m["groups"] for entry in group
-        ]
-    if kind == "possible_misspelling":
-        counts = dict(zip(*s.value_counts(name="__n").select(col, "__n").get_columns()))
-        return [
-            (f"rows of '{entry['value']}'", entry["rows"], counts.get(entry["value"], 0))
-            for entry in m["labels"]
+            (f"rows of '{e['value']}'", e["rows"], count(c == e["value"]))
+            for e in entries
         ]
     return None
 
@@ -312,7 +324,7 @@ def _check_categorical_outlier(f, m, df) -> list[Triple]:
 
 def _check_extreme(f, m, df) -> list[Triple]:
     col = _unconditioned_column(f)
-    actual = [df[col][int(r)] for r in m["extreme_rows"]]
+    actual = [df.item(int(r), col) for r in m["extreme_rows"]]
     triples: list[Triple] = [("values at the stated rows", m["extreme_values"], actual)]
     scope = df.with_row_index(ROW)
     context = _context(f, df)
@@ -320,8 +332,9 @@ def _check_extreme(f, m, df) -> list[Triple]:
         scope = scope.filter(context)
     values = scope.drop_nulls([col])
     triples.append(("rows in scope", m["n"], values.height))
-    rest = values.filter(~pl.col(ROW).is_in(m["extreme_rows"]))[col].cast(pl.Float64)
-    edge = rest.max() if m["side"] == "high" else rest.min()
+    rest = values.filter(~pl.col(ROW).is_in(m["extreme_rows"]))
+    v = pl.col(col).cast(pl.Float64)
+    edge = rest.select(v.max() if m["side"] == "high" else v.min()).item()
     triples.append(("edge of the remaining values", m["bulk_edge"], edge))
     return triples
 
@@ -337,19 +350,20 @@ def _check_correlation(f, m, df) -> list[Triple] | None:
 def _check_ordering(f, m, df) -> list[Triple] | None:
     if "strictly_increasing" not in m:
         return None
-    s = df[f["subject"]["columns"][0]].drop_nulls()
-    diffs = s.to_frame("v").select(
-        (pl.col("v") >= pl.col("v").shift(1)).all().alias("up"),
-        (pl.col("v") <= pl.col("v").shift(1)).all().alias("down"),
+    col = f["subject"]["columns"][0]
+    v = pl.col("v")
+    up, down = df.select(pl.col(col).alias("v")).drop_nulls().select(
+        (v >= v.shift(1)).all().alias("up"),
+        (v <= v.shift(1)).all().alias("down"),
     ).row(0)
-    return [("sorted", True, bool(diffs[0] or diffs[1]))]
+    return [("sorted", True, bool(up or down))]
 
 
 def _check_axis_gap(f, m, df) -> list[Triple] | None:
     col = f["subject"]["columns"][0]
     if col not in df.columns or not df.schema[col].is_temporal():
         return None
-    distinct = df[col].drop_nulls().n_unique()
+    distinct = _distinct(df.drop_nulls([col]), col)
     return [("expected steps", m["expected_steps"], distinct + m["absent_steps"])]
 
 
