@@ -130,3 +130,24 @@ def test_categorical_quiet_on_ordinary_variation():
     df = pl.DataFrame({"grp": grp, "outcome": out})
     hits = categorical_outliers(onceover.profile(df))
     assert hits == []
+
+
+def test_categorical_outlier_lists_every_row_its_share_counts():
+    # Two overlapping contexts share a breaker row. The later statement
+    # still lists it, so its count agrees with its dominant share (#111).
+    n = 1200
+    region = ["north" if i % 2 else "south" for i in range(n)]
+    tier = [("a" if i % 3 else "b") for i in range(n)]
+    status = ["ok"] * n
+    for r in (1, 3, 5, 7):
+        status[r] = "bad"
+    report = onceover.profile(
+        pl.DataFrame({"region": region, "tier": tier, "status": status}),
+        detectors=["surprises"],
+    )
+    hits = [f for f in report.findings if f.get("type") == "categorical_outlier"]
+    assert hits
+    for f in hits:
+        m = f["evidence"][0]["metrics"]
+        assert m["n"] - round(m["dominant_share"] * m["n"]) == m["outlier_count"]
+        assert len(m["outlier_rows"]) == m["outlier_count"]
