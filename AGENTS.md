@@ -140,5 +140,6 @@ The full category and type reference is `docs/findings.md`.
 ## Working on this repository
 
 Build, test, benchmark, and contribution rules live in
-`docs/agents.md`. The book (usage, methodology, case studies)
+`docs/agents.md`. Read its "Claiming an issue" section before
+starting work on an issue. The book (usage, methodology, case studies)
 is under `docs/book/`.

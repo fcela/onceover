@@ -10,6 +10,34 @@ onceover profiles Polars DataFrames and reports ranked,
 evidence-backed findings. Rust workspace (`crates/`) with Python
 bindings (`python/onceover/`, PyO3/maturin).
 
+## Claiming an issue
+
+More than one agent works on this repository, on separate systems, and GitHub is the
+only channel they share. Before starting an issue, check for an existing claim:
+
+```bash
+gh pr list --state open --search "<number> in:title,body"
+git ls-remote --heads origin 'issue-<number>-*'
+```
+
+If either returns a match, the issue is taken. Pick another, or ask the person
+directing the work. If neither does, claim it before writing code:
+
+```bash
+git switch -c issue-<number>-<slug> origin/main
+git commit --allow-empty -m "Claim #<number>"
+git push -u origin HEAD
+gh pr create --draft --fill --body "Closes #<number>"
+```
+
+- Two claims on one issue: the lower PR number keeps it, and the other closes.
+- Don't push to another agent's branch, or take over a stale claim, unless the person
+  directing the work says so.
+- Keep status in the PR body. Write `Fixes #a. Fixes #b.`, since a closing keyword
+  applies only to the issue directly after it.
+- Merge `main` into a branch before asking for review, since other agents' merges can
+  conflict with it.
+
 ## Build and test
 
 - Python: use an activated virtualenv, then
