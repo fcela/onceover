@@ -1419,8 +1419,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 40,
-     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget)."
+     "value": 43,
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md)."
     },
     {
      "kind": "documented_case",
@@ -1435,10 +1435,13 @@
      "note": "No statement of span, frequency, or completeness; breaks and ordered_partitions decline because date_time loads as a string. Counts verified on the prepared file."
     },
     {
-     "kind": "documented_case",
-     "ref": "temp = 0.0 K on ten rows (2014-01-31 to 2014-02-02)",
-     "status": "missed",
-     "note": "Physically impossible Kelvin readings, evidently a sensor artifact in the source; no finding isolates them (the value appears only as the column card's minimum)."
+     "kind": "finding",
+     "category": "formats",
+     "type": "boundary_mass",
+     "columns_any": [
+      "temp"
+     ],
+     "note": "Promoted from a documented missed case (temp = 0.0 K on ten rows, 2014-01-31 to 2014-02-02) by the boundaries detector, issue #119: the finding reports boundary mass at the observed minimum with distribution evidence \u2014 10 rows at 0.0, the nearest higher value 243.39 on 1 row, the bulk spanning 243.39 to 310.07. It asserts no physical impossibility: that judgment needs a declared units/domain constraint, the hints surface has no such field, and the declared-domain leg is recorded as a follow-up on issue #119."
     },
     {
      "kind": "coverage_status",
@@ -1645,8 +1648,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 62,
-     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores."
+     "value": 72,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md)."
     },
     {
      "kind": "documented_case",
@@ -1655,16 +1658,22 @@
      "note": "No finding in the standard profile mentions missing values in any column; the counts live only in the column cards. The pattern of issue #100, on a second unseen frame. Counts measured with Polars on the raw files, 2026-11-03."
     },
     {
-     "kind": "documented_case",
-     "ref": "capital_gain top-code: the value 99,999 occurs on 244 rows (the maximum; 0 on 44,807 rows, 91.74%)",
-     "status": "missed",
-     "note": "The sentinels pass scans all 6 numeric columns and reports nothing; the concentration (91.7% zero) and digit-preference findings circle the shape without stating the ceiling mass. Counts verified on the prepared file."
+     "kind": "finding",
+     "category": "formats",
+     "type": "boundary_mass",
+     "columns_any": [
+      "capital_gain"
+     ],
+     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md."
     },
     {
-     "kind": "documented_case",
-     "ref": "capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233 (0 on 46,560 rows, 95.33%; maximum 4,356)",
-     "status": "missed",
-     "note": "No finding isolates the spikes; the concentration finding states only the zero share. Counts verified on the prepared file."
+     "kind": "finding",
+     "category": "formats",
+     "type": "boundary_mass",
+     "columns_any": [
+      "capital_loss"
+     ],
+     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file."
     },
     {
      "kind": "documented_case",
