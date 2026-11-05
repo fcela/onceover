@@ -2,6 +2,7 @@
 //! (the cheap ancestor of BACON/BHUNT-style law discovery).
 
 use onceover_report::{Method, Pattern};
+use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 use onceover_report::{EvidenceBasis, Finding};
@@ -420,6 +421,8 @@ pub struct MultitermHit {
     pub has_intercept: bool,
     pub n: usize,
     pub matched: usize,
+    /// Set on a near identity: the largest residual among matching rows.
+    pub near_within: Option<f64>,
 }
 
 fn build_multiterm_finding(hit: MultitermHit) -> Finding {
@@ -440,17 +443,25 @@ fn build_multiterm_finding(hit: MultitermHit) -> Finding {
 
     let claim = match hit.form {
         "sum" | "difference" => {
+            // Positive terms first, so `-a + b` reads `b - a`.
+            let sign = |i: usize| hit.coefficients.get(i).copied().unwrap_or(1.0) >= 0.0;
+            let order = (0..hit.predictors.len())
+                .filter(|&i| sign(i))
+                .chain((0..hit.predictors.len()).filter(|&i| !sign(i)));
             let mut terms = String::new();
-            for (i, p) in hit.predictors.iter().enumerate() {
-                if i == 0 {
-                    terms.push_str(p);
-                } else if hit.coefficients.get(i).copied().unwrap_or(1.0) >= 0.0 {
-                    terms.push_str(&format!(" + {}", p));
-                } else {
-                    terms.push_str(&format!(" - {}", p));
+            for (at, i) in order.enumerate() {
+                let p = &hit.predictors[i];
+                match (at, sign(i)) {
+                    (0, true) => terms.push_str(p),
+                    (0, false) => terms.push_str(&format!("-{}", p)),
+                    (_, true) => terms.push_str(&format!(" + {}", p)),
+                    (_, false) => terms.push_str(&format!(" - {}", p)),
                 }
             }
-            format!("{} = {} within tolerance on {}", target, terms, agreement)
+            match hit.near_within {
+                Some(band) => format!("{} = {} within {:.6} on {}", target, terms, band, agreement),
+                None => format!("{} = {} within tolerance on {}", target, terms, agreement),
+            }
         }
         "product" => {
             let p1 = hit.predictors.first().map(|s| s.as_str()).unwrap_or("");
@@ -517,12 +528,21 @@ fn build_multiterm_finding(hit: MultitermHit) -> Finding {
         "exact_fraction".to_string(),
         json!(hit.matched as f64 / hit.n.max(1) as f64),
     );
-    metrics.insert(
-        "tolerance".to_string(),
-        json!("1e-9 absolute + 1e-9 relative"),
-    );
-    metrics.insert("absolute_tolerance".to_string(), json!(1e-9));
-    metrics.insert("relative_tolerance".to_string(), json!(1e-9));
+    match hit.near_within {
+        Some(band) => {
+            metrics.insert("tolerance".to_string(), json!(format!("within {band}")));
+            metrics.insert("absolute_tolerance".to_string(), json!(band));
+            metrics.insert("relative_tolerance".to_string(), json!(0.0));
+        }
+        None => {
+            metrics.insert(
+                "tolerance".to_string(),
+                json!("1e-9 absolute + 1e-9 relative"),
+            );
+            metrics.insert("absolute_tolerance".to_string(), json!(1e-9));
+            metrics.insert("relative_tolerance".to_string(), json!(1e-9));
+        }
+    }
 
     let preds = hit.predictors.join(", ");
     let interpretation = if violations == 0 {
@@ -558,7 +578,7 @@ fn build_multiterm_finding(hit: MultitermHit) -> Finding {
 /// Two rules, both evaluated against the original, unfiltered hit list:
 ///
 /// Rule A (unused predictor): for a fitted `linear_combination`, a predictor
-/// coefficient whose absolute value is <= 1e-9 * scale (scale = 1 + sum of the
+/// coefficient whose absolute value is <= 1e-6 * scale (scale = 1 + sum of the
 /// absolute predictor coefficients) means the identity does not actually use
 /// that predictor, so the hit is a non-minimal extension of a smaller identity —
 /// drop it.
@@ -589,7 +609,7 @@ fn minimal_hits(hits: Vec<MultitermHit>) -> Vec<MultitermHit> {
             // (index 0 is the intercept; skip when there are no predictor coeffs).
             if h.form == "linear_combination" && h.coefficients.len() >= 2 {
                 let scale = 1.0 + h.coefficients[1..].iter().map(|c| c.abs()).sum::<f64>();
-                if h.coefficients[1..].iter().any(|c| c.abs() <= 1e-9 * scale) {
+                if h.coefficients[1..].iter().any(|c| c.abs() <= 1e-6 * scale) {
                     return false;
                 }
             }
@@ -612,9 +632,435 @@ fn minimal_hits(hits: Vec<MultitermHit>) -> Vec<MultitermHit> {
         .collect()
 }
 
+/// Largest number of terms the greedy sparse search will assemble.
+const MAX_SPARSE_TERMS: usize = 16;
+/// Unexplained variance share at which the greedy fit tries pruning.
+const SPARSE_PRUNE_GAP: f64 = 1e-4;
+/// Unexplained variance share of an accepted sparse fit. Rounding of a few
+/// units on a total ranging over tens of thousands sits near 1e-8.
+const SPARSE_DONE_GAP: f64 = 1e-7;
+/// Above this width the greedy search is skipped: its cost is quadratic
+/// in columns for every target. Coverage states the skip.
+const SPARSE_MAX_COLUMNS: usize = 1_000;
+/// Rows may miss the sample screen's 99% bar by at most this many out of
+/// the 512-row sample, so a sixth miss rejects a candidate immediately.
+const SAMPLE_MISSES_ALLOWED: usize = 5;
+/// Fitted combinations below this sample R² cannot pass the strict scan.
+const LINEAR_GATE_R2: f64 = 0.9;
+/// A near identity leaves residuals within this share of the target's
+/// central range (p90-p10): the size of rounding in reported totals.
+const NEAR_RESIDUAL_SHARE: f64 = 1e-3;
+
+/// Sampled values of every usable column, NaN where missing.
+struct SampleMatrix {
+    cols: Vec<Vec<f64>>,
+}
+
+impl SampleMatrix {
+    fn build(table: &onceover_core::TypedTable, numeric: &[usize], rows: &[u32]) -> Self {
+        let cols = numeric
+            .iter()
+            .map(|&c| {
+                rows.iter()
+                    .map(|&r| table.cols[c].numeric_at(r as usize).unwrap_or(f64::NAN))
+                    .collect()
+            })
+            .collect();
+        Self { cols }
+    }
+
+    /// Pearson correlation over pairwise-complete rows, using at most
+    /// `limit` rows. None when either column is constant there.
+    fn corr(&self, a: usize, b: usize, limit: usize) -> Option<f64> {
+        let (mut n, mut sx, mut sy, mut sxx, mut syy, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        for (&x, &y) in self.cols[a].iter().zip(&self.cols[b]).take(limit) {
+            if x.is_nan() || y.is_nan() {
+                continue;
+            }
+            n += 1.0;
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            syy += y * y;
+            sxy += x * y;
+        }
+        if n < 3.0 {
+            return None;
+        }
+        let vx = sxx - sx * sx / n;
+        let vy = syy - sy * sy / n;
+        (vx > 0.0 && vy > 0.0).then(|| (sxy - sx * sy / n) / (vx * vy).sqrt())
+    }
+}
+
+fn has_three_values(col: &[f64]) -> bool {
+    let mut seen: Vec<f64> = Vec::with_capacity(3);
+    for &v in col {
+        if !v.is_nan() && !seen.contains(&v) {
+            seen.push(v);
+            if seen.len() == 3 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// True unless more rows miss than the sample screen can tolerate.
+fn screen_rows(n: usize, predicted: impl Fn(usize) -> Option<f64>, y: &[f64]) -> bool {
+    let mut misses = 0;
+    for (r, &yr) in y.iter().enumerate().take(n) {
+        if yr.is_nan() {
+            continue;
+        }
+        let Some(p) = predicted(r) else { continue };
+        if p.is_nan() {
+            continue;
+        }
+        if !within_loose_tol(yr, p) {
+            misses += 1;
+            if misses > SAMPLE_MISSES_ALLOWED {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// The largest k with C(k, r) at most `budget`.
+fn pool_for_budget(budget: usize, r: usize, available: usize) -> usize {
+    let mut k = 0usize;
+    while k < available {
+        let next = match r {
+            2 => (k + 1) * k / 2,
+            _ => (k + 1) * k * k.saturating_sub(1) / 6,
+        };
+        if next > budget {
+            break;
+        }
+        k += 1;
+    }
+    k
+}
+
+/// Sample R² of target on 2 or 3 predictors from pairwise correlations.
+/// Collinear predictors return 1.0: the gate defers to the exact fit.
+fn r2_from_corr(pred_pred: &[Vec<f64>], pred_target: &[f64]) -> f64 {
+    let k = pred_target.len();
+    let mut a: Vec<Vec<f64>> = pred_pred.to_vec();
+    let mut b: Vec<f64> = pred_target.to_vec();
+    for col in 0..k {
+        let pivot = (col..k)
+            .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
+            .unwrap_or(col);
+        if a[pivot][col].abs() < 1e-10 {
+            return 1.0;
+        }
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+        let (head, tail) = a.split_at_mut(col + 1);
+        let pivot_row = &head[col];
+        for (offset, row) in tail.iter_mut().enumerate() {
+            let f = row[col] / pivot_row[col];
+            for (dst, src) in row[col..].iter_mut().zip(&pivot_row[col..]) {
+                *dst -= f * *src;
+            }
+            b[col + 1 + offset] -= f * b[col];
+        }
+    }
+    let mut x = vec![0.0; k];
+    for r in (0..k).rev() {
+        let mut v = b[r];
+        for c in r + 1..k {
+            v -= a[r][c] * x[c];
+        }
+        x[r] = v / a[r][r];
+    }
+    x.iter().zip(pred_target).map(|(c, r)| c * r).sum()
+}
+
+/// [intercept, c1, ..., ck], share of variance explained, residuals, and the
+/// rows the residuals align with.
+type SparseFit = (Vec<f64>, f64, Vec<f64>, Vec<usize>);
+
+/// Least-squares fit of the target on `selected` over rows complete in all
+/// of them.
+fn fit_selected(
+    mat: &SampleMatrix,
+    t: usize,
+    candidates: &[usize],
+    selected: &[usize],
+) -> Option<SparseFit> {
+    let y = &mat.cols[t];
+    let rows: Vec<usize> = (0..y.len())
+        .filter(|&r| {
+            !y[r].is_nan()
+                && selected
+                    .iter()
+                    .all(|&p| !mat.cols[candidates[p]][r].is_nan())
+        })
+        .collect();
+    if rows.len() < 2 * selected.len() + 50 {
+        return None;
+    }
+    let k = selected.len() + 1;
+    let mut a = vec![vec![0.0; k]; k];
+    let mut b = vec![0.0; k];
+    let mut x = Vec::with_capacity(k);
+    for &r in &rows {
+        x.clear();
+        x.push(1.0);
+        x.extend(selected.iter().map(|&p| mat.cols[candidates[p]][r]));
+        for i in 0..k {
+            for j in 0..k {
+                a[i][j] += x[i] * x[j];
+            }
+            b[i] += x[i] * y[r];
+        }
+    }
+    let coeffs = solve(a, b)?;
+    let residual: Vec<f64> = rows
+        .iter()
+        .map(|&r| {
+            let mut p = coeffs[0];
+            for (i, &q) in selected.iter().enumerate() {
+                p += coeffs[i + 1] * mat.cols[candidates[q]][r];
+            }
+            y[r] - p
+        })
+        .collect();
+    let n = rows.len() as f64;
+    let mean = rows.iter().map(|&r| y[r]).sum::<f64>() / n;
+    let var_y = rows
+        .iter()
+        .map(|&r| (y[r] - mean) * (y[r] - mean))
+        .sum::<f64>();
+    if var_y <= 0.0 {
+        return None;
+    }
+    let rss = residual.iter().map(|e| e * e).sum::<f64>();
+    Some((coeffs, 1.0 - rss / var_y, residual, rows))
+}
+
+/// Greedy sparse regression of the target over the sample: add the column
+/// most correlated with the current residual, refit, repeat. Returns the
+/// selected columns (positions in `candidates`) and [intercept, c1, ..., ck]
+/// once the fit leaves no visible residual. An exact sum of many terms
+/// surfaces here because each removed term raises the next one's
+/// correlation with what remains, including summands far smaller than the
+/// total, at a cost linear in columns per step. Correlated columns can enter
+/// on the way, so a nearly complete fit is pruned backwards: any term whose
+/// removal leaves the fit as good is dropped.
+fn greedy_sparse_fit(
+    mat: &SampleMatrix,
+    t: usize,
+    candidates: &[usize],
+) -> Option<(Vec<usize>, Vec<f64>)> {
+    let y = &mat.cols[t];
+    let mut rows: Vec<usize> = (0..y.len()).filter(|&r| !y[r].is_nan()).collect();
+    if rows.len() < 100 {
+        return None;
+    }
+    let mean = rows.iter().map(|&r| y[r]).sum::<f64>() / rows.len() as f64;
+    let mut residual: Vec<f64> = rows.iter().map(|&r| y[r] - mean).collect();
+    let mut selected: Vec<usize> = Vec::new();
+
+    for step in 0..MAX_SPARSE_TERMS.min(candidates.len()) {
+        let mut best: Option<(usize, f64)> = None;
+        for (pos, &c) in candidates.iter().enumerate() {
+            if selected.contains(&pos) {
+                continue;
+            }
+            let (mut n, mut sx, mut sxx, mut sxy, mut sr) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            for (i, &r) in rows.iter().enumerate() {
+                let x = mat.cols[c][r];
+                if x.is_nan() {
+                    continue;
+                }
+                n += 1.0;
+                sx += x;
+                sxx += x * x;
+                sxy += x * residual[i];
+                sr += residual[i];
+            }
+            if n < 50.0 {
+                continue;
+            }
+            let vx = sxx - sx * sx / n;
+            if vx <= 0.0 {
+                continue;
+            }
+            let score = (sxy - sx * sr / n).abs() / vx.sqrt();
+            if best.is_none_or(|(_, s)| score > s) {
+                best = Some((pos, score));
+            }
+        }
+        let (pos, _) = best?;
+        selected.push(pos);
+        let (_, explained, next_residual, next_rows) = fit_selected(mat, t, candidates, &selected)?;
+        residual = next_residual;
+        rows = next_rows;
+        if explained >= 1.0 - SPARSE_PRUNE_GAP {
+            let mut pruned = selected.clone();
+            let mut at = 0;
+            while at < pruned.len() && pruned.len() > 1 {
+                let mut without = pruned.clone();
+                without.remove(at);
+                match fit_selected(mat, t, candidates, &without) {
+                    Some((_, e, _, _)) if e >= 1.0 - SPARSE_DONE_GAP => pruned = without,
+                    _ => at += 1,
+                }
+            }
+            let (final_coeffs, final_explained, _, _) = fit_selected(mat, t, candidates, &pruned)?;
+            if final_explained >= 1.0 - SPARSE_DONE_GAP {
+                return Some((pruned, final_coeffs));
+            }
+        }
+        // An unrelated target never reaches a usable fit; stop paying for it.
+        if step >= 3 && explained < 0.5 {
+            return None;
+        }
+    }
+    None
+}
+
+/// Gaussian elimination with partial pivoting.
+fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+    let k = b.len();
+    for col in 0..k {
+        let pivot = (col..k).max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))?;
+        if a[pivot][col].abs() < 1e-9 {
+            return None;
+        }
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+        let (head, tail) = a.split_at_mut(col + 1);
+        let pivot_row = &head[col];
+        for (offset, row) in tail.iter_mut().enumerate() {
+            let f = row[col] / pivot_row[col];
+            for (dst, src) in row[col..].iter_mut().zip(&pivot_row[col..]) {
+                *dst -= f * *src;
+            }
+            b[col + 1 + offset] -= f * b[col];
+        }
+    }
+    let mut x = vec![0.0; k];
+    for r in (0..k).rev() {
+        let mut v = b[r];
+        for c in r + 1..k {
+            v -= a[r][c] * x[c];
+        }
+        x[r] = v / a[r][r];
+    }
+    Some(x)
+}
+
+/// Verify a greedy fit over every row. Coefficients within 1e-6 of ±1 with
+/// a negligible intercept snap to the unit-coefficient form. Exact rows use
+/// the strict tolerance; when the exact bar fails but residuals stay within
+/// the rounding-sized band, the hit records that band as `near_within`.
+fn verify_sparse(
+    table: &onceover_core::TypedTable,
+    t: usize,
+    numeric: &[usize],
+    picks: &[usize],
+    coeffs: &[f64],
+) -> Option<MultitermHit> {
+    let mut sorted: Vec<f64> = (0..table.n)
+        .filter_map(|r| table.cols[t].numeric_at(r))
+        .collect();
+    sorted.sort_by(f64::total_cmp);
+    if sorted.is_empty() {
+        return None;
+    }
+    let q = |f: f64| sorted[((f * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)];
+    let band = NEAR_RESIDUAL_SHARE * (q(0.9) - q(0.1));
+    // Least squares absorbs rounding into the coefficients and intercept;
+    // the unit form is the statement when they sit this close to it.
+    let unit = coeffs[1..].iter().all(|c| (c.abs() - 1.0).abs() <= 1e-3)
+        && coeffs[0].abs() <= band.max(1e-9);
+    let used: Vec<f64> = if unit {
+        coeffs[1..].iter().map(|c| c.signum()).collect()
+    } else {
+        coeffs[1..].to_vec()
+    };
+    let intercept = if unit { 0.0 } else { coeffs[0] };
+    let predictors: Vec<usize> = picks.iter().map(|&p| numeric[p]).collect();
+    let (mut n, mut exact) = (0usize, 0usize);
+    let mut residuals: Vec<f64> = Vec::new();
+    'rows: for r in 0..table.n {
+        let Some(y) = table.cols[t].numeric_at(r) else {
+            continue;
+        };
+        let mut p = intercept;
+        for (&c, &k) in predictors.iter().zip(&used) {
+            let Some(x) = table.cols[c].numeric_at(r) else {
+                continue 'rows;
+            };
+            p += k * x;
+        }
+        n += 1;
+        if within_tol(y, p) {
+            exact += 1;
+        }
+        residuals.push((y - p).abs());
+    }
+    if n < 100 {
+        return None;
+    }
+    let names: Vec<String> = predictors.iter().map(|&c| table.names[c].clone()).collect();
+    let target = table.names[t].clone();
+    let (form, coefficients, has_intercept) = if unit {
+        let form = if used.iter().all(|&c| c > 0.0) {
+            "sum"
+        } else {
+            "difference"
+        };
+        (form, used.clone(), false)
+    } else {
+        let mut all = vec![intercept];
+        all.extend_from_slice(&used);
+        ("linear_combination", all, true)
+    };
+    if exact as f64 / n as f64 >= 0.999 {
+        return Some(MultitermHit {
+            form,
+            target,
+            predictors: names,
+            coefficients,
+            has_intercept,
+            n,
+            matched: exact,
+            near_within: None,
+        });
+    }
+    if !unit {
+        return None;
+    }
+    residuals.sort_by(f64::total_cmp);
+    let at_bar = residuals[((0.999 * (n - 1) as f64).ceil() as usize).min(n - 1)];
+    if band <= 0.0 || at_bar > band {
+        return None;
+    }
+    let within = residuals.iter().filter(|&&d| d <= at_bar).count();
+    Some(MultitermHit {
+        form,
+        target,
+        predictors: names,
+        coefficients,
+        has_intercept,
+        n,
+        matched: within,
+        near_within: Some(at_bar),
+    })
+}
+
 /// Screen and verify multi-term identities over the table's numeric columns.
-/// Returns (findings, coverage string). Runs sequentially in deterministic order so reruns are
-/// byte-identical.
+/// Returns (findings, coverage string). `multiterm_cap` is the total
+/// candidate budget, split evenly across targets so that no column loses
+/// its turn by sitting late in the frame; when a target's combinations
+/// exceed its share, the predictors most correlated with it are tried first.
+/// Results are independent of the thread count.
 pub fn multiterm_identities(
     table: &onceover_core::TypedTable,
     multiterm_cap: usize,
@@ -657,224 +1103,414 @@ pub fn multiterm_identities(
         })
         .collect();
 
+    let mat = SampleMatrix::build(table, &numeric_cols, &sample_rows);
+    // A two-valued column is a flag: arithmetic on it is logic, and its
+    // zeros make products and ratios hold by construction.
+    let graded: Vec<bool> = mat.cols.iter().map(|c| has_three_values(c)).collect();
+    let targets: Vec<usize> = (0..numeric_cols.len())
+        .filter(|&t| graded[t] && !excluded_targets.contains(&numeric_cols[t]))
+        .collect();
+    let per_target = multiterm_cap / targets.len().max(1);
+    let width = numeric_cols.len();
+    let priority_rows = (40_000_000 / (width * width).max(1)).clamp(16, 512);
+    let run_sparse = width <= SPARSE_MAX_COLUMNS && per_target > 0;
+
+    let spare = multiterm_cap % targets.len().max(1);
+    let outcomes: Vec<(Vec<MultitermHit>, usize, usize)> = targets
+        .par_iter()
+        .enumerate()
+        .map(|(at, &t)| {
+            multiterm_for_target(
+                table,
+                &mat,
+                &numeric_cols,
+                &graded,
+                t,
+                per_target + usize::from(at < spare),
+                priority_rows,
+                run_sparse,
+                &sample_rows,
+                n_rows,
+            )
+        })
+        .collect();
+
     let mut hits: Vec<MultitermHit> = Vec::new();
-    let mut screened: usize = 0;
-
-    // Frame-role scaffolding is excluded as an identity target (the
-    // terms offered to explain other columns are unchanged).
-    for &t in &numeric_cols {
-        if excluded_targets.contains(&t) {
-            continue;
-        }
-        let others: Vec<usize> = numeric_cols.iter().copied().filter(|&c| c != t).collect();
-
-        // Pairs.
-        for w in 0..others.len() {
-            for x in (w + 1)..others.len() {
-                if screened == multiterm_cap {
-                    break;
-                }
-                let (i, j) = (others[w], others[x]);
-                screened += 1;
-                if let Some((n, matched)) = scan_fixed_linear(
-                    &table.cols[t],
-                    &[&table.cols[i], &table.cols[j]],
-                    &[1.0, 1.0],
-                    &sample_rows,
-                    n_rows,
-                ) {
-                    hits.push(MultitermHit {
-                        form: "sum",
-                        target: table.names[t].clone(),
-                        predictors: vec![table.names[i].clone(), table.names[j].clone()],
-                        coefficients: vec![1.0, 1.0],
-                        has_intercept: false,
-                        n,
-                        matched,
-                    });
-                    continue;
-                }
-                if let Some((n, matched)) = scan_fixed_linear(
-                    &table.cols[t],
-                    &[&table.cols[i], &table.cols[j]],
-                    &[1.0, -1.0],
-                    &sample_rows,
-                    n_rows,
-                ) {
-                    hits.push(MultitermHit {
-                        form: "difference",
-                        target: table.names[t].clone(),
-                        predictors: vec![table.names[i].clone(), table.names[j].clone()],
-                        coefficients: vec![1.0, -1.0],
-                        has_intercept: false,
-                        n,
-                        matched,
-                    });
-                    continue;
-                }
-                if let Some((n, matched)) = scan_product_ratio(
-                    &table.cols[t],
-                    &[&table.cols[i], &table.cols[j]],
-                    false,
-                    &sample_rows,
-                    n_rows,
-                ) {
-                    hits.push(MultitermHit {
-                        form: "product",
-                        target: table.names[t].clone(),
-                        predictors: vec![table.names[i].clone(), table.names[j].clone()],
-                        coefficients: vec![],
-                        has_intercept: false,
-                        n,
-                        matched,
-                    });
-                    continue;
-                }
-                if let Some((n, matched)) = scan_product_ratio(
-                    &table.cols[t],
-                    &[&table.cols[i], &table.cols[j]],
-                    true,
-                    &sample_rows,
-                    n_rows,
-                ) {
-                    hits.push(MultitermHit {
-                        form: "ratio",
-                        target: table.names[t].clone(),
-                        predictors: vec![table.names[i].clone(), table.names[j].clone()],
-                        coefficients: vec![],
-                        has_intercept: false,
-                        n,
-                        matched,
-                    });
-                    continue;
-                }
-                if let Some((coeffs, n, matched)) = scan_linear_combo(
-                    &table.cols[t],
-                    &[&table.cols[i], &table.cols[j]],
-                    &sample_rows,
-                    n_rows,
-                ) {
-                    hits.push(MultitermHit {
-                        form: "linear_combination",
-                        target: table.names[t].clone(),
-                        predictors: vec![table.names[i].clone(), table.names[j].clone()],
-                        coefficients: coeffs,
-                        has_intercept: true,
-                        n,
-                        matched,
-                    });
-                    continue;
-                }
-            }
-            if screened == multiterm_cap {
-                break;
-            }
-        }
-        if screened == multiterm_cap {
-            break;
-        }
-
-        // Triples.
-        for w in 0..others.len() {
-            for x in (w + 1)..others.len() {
-                for y in (x + 1)..others.len() {
-                    if screened == multiterm_cap {
-                        break;
-                    }
-                    let (i, j, k) = (others[w], others[x], others[y]);
-                    screened += 1;
-                    let preds = [
-                        table.names[i].clone(),
-                        table.names[j].clone(),
-                        table.names[k].clone(),
-                    ];
-                    if let Some((n, matched)) = scan_fixed_linear(
-                        &table.cols[t],
-                        &[&table.cols[i], &table.cols[j], &table.cols[k]],
-                        &[1.0, 1.0, 1.0],
-                        &sample_rows,
-                        n_rows,
-                    ) {
-                        hits.push(MultitermHit {
-                            form: "sum",
-                            target: table.names[t].clone(),
-                            predictors: preds.to_vec(),
-                            coefficients: vec![1.0, 1.0, 1.0],
-                            has_intercept: false,
-                            n,
-                            matched,
-                        });
-                        continue;
-                    }
-                    let mut hit = false;
-                    for coeffs in [
-                        &[1.0f64, 1.0, -1.0],
-                        &[1.0f64, -1.0, 1.0],
-                        &[-1.0f64, 1.0, 1.0],
-                    ] {
-                        if let Some((n, matched)) = scan_fixed_linear(
-                            &table.cols[t],
-                            &[&table.cols[i], &table.cols[j], &table.cols[k]],
-                            coeffs,
-                            &sample_rows,
-                            n_rows,
-                        ) {
-                            hits.push(MultitermHit {
-                                form: "difference",
-                                target: table.names[t].clone(),
-                                predictors: preds.to_vec(),
-                                coefficients: coeffs.to_vec(),
-                                has_intercept: false,
-                                n,
-                                matched,
-                            });
-                            hit = true;
-                            break;
-                        }
-                    }
-                    if hit {
-                        continue;
-                    }
-                    if let Some((coeffs, n, matched)) = scan_linear_combo(
-                        &table.cols[t],
-                        &[&table.cols[i], &table.cols[j], &table.cols[k]],
-                        &sample_rows,
-                        n_rows,
-                    ) {
-                        hits.push(MultitermHit {
-                            form: "linear_combination",
-                            target: table.names[t].clone(),
-                            predictors: preds.to_vec(),
-                            coefficients: coeffs,
-                            has_intercept: true,
-                            n,
-                            matched,
-                        });
-                        continue;
-                    }
-                }
-                if screened == multiterm_cap {
-                    break;
-                }
-            }
-            if screened == multiterm_cap {
-                break;
-            }
-        }
-        if screened == multiterm_cap {
-            break;
-        }
+    let (mut screened, mut possible) = (0usize, 0usize);
+    for (h, s, p) in outcomes {
+        hits.extend(h);
+        screened += s;
+        possible = possible.saturating_add(p);
     }
 
-    let hits = minimal_hits(hits);
+    let hits = one_statement_per_identity(minimal_hits(hits), table, &numeric_cols);
     let out: Vec<Finding> = hits.into_iter().map(build_multiterm_finding).collect();
 
-    let coverage = format!(
+    let mut coverage = format!(
         "{} multi-term candidates screened, {} multi-term identities",
         screened,
         out.len()
     );
+    if screened < possible {
+        coverage.push_str(&format!(
+            "; {possible} candidates possible, so each target tried its most correlated predictors first"
+        ));
+    }
+    if !run_sparse && per_target > 0 {
+        coverage.push_str(&format!(
+            "; sums of more than three terms not searched above {SPARSE_MAX_COLUMNS} numeric columns"
+        ));
+    }
     (out, coverage)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn multiterm_for_target(
+    table: &onceover_core::TypedTable,
+    mat: &SampleMatrix,
+    numeric_cols: &[usize],
+    graded: &[bool],
+    t: usize,
+    budget: usize,
+    priority_rows: usize,
+    run_sparse: bool,
+    sample_rows: &[u32],
+    n_rows: usize,
+) -> (Vec<MultitermHit>, usize, usize) {
+    let tc = numeric_cols[t];
+    let others: Vec<usize> = (0..numeric_cols.len()).filter(|&c| c != t).collect();
+    let m = others.len();
+    let n_pairs = m.saturating_mul(m.saturating_sub(1)) / 2;
+    let n_triples = n_pairs.saturating_mul(m.saturating_sub(2)) / 3;
+    let possible = n_pairs.saturating_add(n_triples);
+
+    // Most correlated first, column order among ties, when the budget binds.
+    let ranked: Vec<usize> = if possible > budget {
+        let mut scored: Vec<(usize, f64)> = others
+            .iter()
+            .map(|&c| {
+                let r = mat.corr(t, c, priority_rows).unwrap_or(0.0).abs();
+                (c, if r.is_nan() { 0.0 } else { r })
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        scored.into_iter().map(|(c, _)| c).collect()
+    } else {
+        others.clone()
+    };
+    let pair_k = pool_for_budget(budget, 2, m);
+    let pairs_used = pair_k * pair_k.saturating_sub(1) / 2;
+    let triple_k = pool_for_budget(budget - pairs_used, 3, m);
+
+    let y = &mat.cols[t];
+    let rows = y.len();
+    let mut hits: Vec<MultitermHit> = Vec::new();
+    let mut screened = 0usize;
+
+    let mut pair_pool: Vec<usize> = ranked[..pair_k].to_vec();
+    pair_pool.sort_unstable();
+    for (w, &a) in pair_pool.iter().enumerate() {
+        for &b in &pair_pool[w + 1..] {
+            screened += 1;
+            let (xa, xb) = (&mat.cols[a], &mat.cols[b]);
+            let (ca, cb) = (&table.cols[numeric_cols[a]], &table.cols[numeric_cols[b]]);
+            let names = || {
+                vec![
+                    table.names[numeric_cols[a]].clone(),
+                    table.names[numeric_cols[b]].clone(),
+                ]
+            };
+            let hit_fixed = |coeffs: [f64; 2], form: &'static str| {
+                if !screen_rows(rows, |r| Some(coeffs[0] * xa[r] + coeffs[1] * xb[r]), y) {
+                    return None;
+                }
+                scan_fixed_linear(&table.cols[tc], &[ca, cb], &coeffs, sample_rows, n_rows).map(
+                    |(n, matched)| MultitermHit {
+                        form,
+                        target: table.names[tc].clone(),
+                        predictors: names(),
+                        coefficients: coeffs.to_vec(),
+                        has_intercept: false,
+                        n,
+                        matched,
+                        near_within: None,
+                    },
+                )
+            };
+            if let Some(h) = hit_fixed([1.0, 1.0], "sum")
+                .or_else(|| hit_fixed([1.0, -1.0], "difference"))
+                .or_else(|| hit_fixed([-1.0, 1.0], "difference"))
+            {
+                hits.push(h);
+                continue;
+            }
+            let both_graded = graded[a] && graded[b];
+            if both_graded && screen_rows(rows, |r| Some(xa[r] * xb[r]), y) {
+                if let Some((n, matched)) =
+                    scan_product_ratio(&table.cols[tc], &[ca, cb], false, sample_rows, n_rows)
+                {
+                    hits.push(MultitermHit {
+                        form: "product",
+                        target: table.names[tc].clone(),
+                        predictors: names(),
+                        coefficients: vec![],
+                        has_intercept: false,
+                        n,
+                        matched,
+                        near_within: None,
+                    });
+                    continue;
+                }
+            }
+            let ratio_screen = |num: &[f64], den: &[f64]| {
+                screen_rows(rows, |r| (den[r] != 0.0).then(|| num[r] / den[r]), y)
+            };
+            if both_graded && ratio_screen(xa, xb) {
+                if let Some((n, matched)) =
+                    scan_product_ratio(&table.cols[tc], &[ca, cb], true, sample_rows, n_rows)
+                {
+                    hits.push(MultitermHit {
+                        form: "ratio",
+                        target: table.names[tc].clone(),
+                        predictors: names(),
+                        coefficients: vec![],
+                        has_intercept: false,
+                        n,
+                        matched,
+                        near_within: None,
+                    });
+                    continue;
+                }
+            }
+            if both_graded && ratio_screen(xb, xa) {
+                if let Some((n, matched)) =
+                    scan_product_ratio(&table.cols[tc], &[cb, ca], true, sample_rows, n_rows)
+                {
+                    hits.push(MultitermHit {
+                        form: "ratio",
+                        target: table.names[tc].clone(),
+                        predictors: vec![
+                            table.names[numeric_cols[b]].clone(),
+                            table.names[numeric_cols[a]].clone(),
+                        ],
+                        coefficients: vec![],
+                        has_intercept: false,
+                        n,
+                        matched,
+                        near_within: None,
+                    });
+                    continue;
+                }
+            }
+            let (Some(rat), Some(rbt), Some(rab)) = (
+                mat.corr(a, t, usize::MAX),
+                mat.corr(b, t, usize::MAX),
+                mat.corr(a, b, usize::MAX),
+            ) else {
+                continue;
+            };
+            if r2_from_corr(&[vec![1.0, rab], vec![rab, 1.0]], &[rat, rbt]) < LINEAR_GATE_R2 {
+                continue;
+            }
+            if let Some((coeffs, n, matched)) =
+                scan_linear_combo(&table.cols[tc], &[ca, cb], sample_rows, n_rows)
+            {
+                hits.push(MultitermHit {
+                    form: "linear_combination",
+                    target: table.names[tc].clone(),
+                    predictors: names(),
+                    coefficients: coeffs,
+                    has_intercept: true,
+                    n,
+                    matched,
+                    near_within: None,
+                });
+            }
+        }
+    }
+
+    let mut triple_pool: Vec<usize> = ranked[..triple_k].to_vec();
+    triple_pool.sort_unstable();
+    // Pairwise correlations inside the pool, computed once for the gate.
+    let pool_corr: Vec<Vec<f64>> = triple_pool
+        .iter()
+        .map(|&p| {
+            triple_pool
+                .iter()
+                .map(|&q| {
+                    if p == q {
+                        1.0
+                    } else {
+                        mat.corr(p, q, usize::MAX).unwrap_or(0.0)
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let pool_target: Vec<f64> = triple_pool
+        .iter()
+        .map(|&p| mat.corr(p, t, usize::MAX).unwrap_or(0.0))
+        .collect();
+    for w in 0..triple_pool.len() {
+        for x in w + 1..triple_pool.len() {
+            for z in x + 1..triple_pool.len() {
+                screened += 1;
+                let (i, j, k) = (triple_pool[w], triple_pool[x], triple_pool[z]);
+                let (xi, xj, xk) = (&mat.cols[i], &mat.cols[j], &mat.cols[k]);
+                let cols = [
+                    &table.cols[numeric_cols[i]],
+                    &table.cols[numeric_cols[j]],
+                    &table.cols[numeric_cols[k]],
+                ];
+                let preds = || {
+                    vec![
+                        table.names[numeric_cols[i]].clone(),
+                        table.names[numeric_cols[j]].clone(),
+                        table.names[numeric_cols[k]].clone(),
+                    ]
+                };
+                let mut found = false;
+                for (coeffs, form) in [
+                    ([1.0f64, 1.0, 1.0], "sum"),
+                    ([1.0, 1.0, -1.0], "difference"),
+                    ([1.0, -1.0, 1.0], "difference"),
+                    ([-1.0, 1.0, 1.0], "difference"),
+                ] {
+                    let ok = screen_rows(
+                        rows,
+                        |r| Some(coeffs[0] * xi[r] + coeffs[1] * xj[r] + coeffs[2] * xk[r]),
+                        y,
+                    );
+                    if !ok {
+                        continue;
+                    }
+                    if let Some((n, matched)) =
+                        scan_fixed_linear(&table.cols[tc], &cols, &coeffs, sample_rows, n_rows)
+                    {
+                        hits.push(MultitermHit {
+                            form,
+                            target: table.names[tc].clone(),
+                            predictors: preds(),
+                            coefficients: coeffs.to_vec(),
+                            has_intercept: false,
+                            n,
+                            matched,
+                            near_within: None,
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    continue;
+                }
+                let sub = [w, x, z];
+                let pp: Vec<Vec<f64>> = sub
+                    .iter()
+                    .map(|&p| sub.iter().map(|&q| pool_corr[p][q]).collect())
+                    .collect();
+                let pt: Vec<f64> = sub.iter().map(|&p| pool_target[p]).collect();
+                if r2_from_corr(&pp, &pt) < LINEAR_GATE_R2 {
+                    continue;
+                }
+                if let Some((coeffs, n, matched)) =
+                    scan_linear_combo(&table.cols[tc], &cols, sample_rows, n_rows)
+                {
+                    hits.push(MultitermHit {
+                        form: "linear_combination",
+                        target: table.names[tc].clone(),
+                        predictors: preds(),
+                        coefficients: coeffs,
+                        has_intercept: true,
+                        n,
+                        matched,
+                        near_within: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sums too long to enumerate, and near identities of any length.
+    if run_sparse && !others.is_empty() {
+        if let Some((picks, coeffs)) = greedy_sparse_fit(mat, t, &others) {
+            let chosen: Vec<usize> = picks.iter().map(|&p| others[p]).collect();
+            let duplicate = hits.iter().any(|h| {
+                h.predictors.len() == chosen.len()
+                    && chosen
+                        .iter()
+                        .all(|&c| h.predictors.contains(&table.names[numeric_cols[c]]))
+            });
+            // One term is the affine pass's statement, not a multi-term one.
+            if !duplicate && chosen.len() >= 2 {
+                if let Some(h) = verify_sparse(table, tc, numeric_cols, &chosen, &coeffs) {
+                    hits.push(h);
+                }
+            }
+        }
+    }
+    (hits, screened, possible)
+}
+
+/// `cnt = casual + registered`, `casual = cnt - registered` and
+/// `registered = cnt - casual` are one fact, as are the rotations of a fitted
+/// linear combination. Keep one statement per column set: the all-positive
+/// sum when there is one, and among equals the target with the largest
+/// typical magnitude, which is the total.
+fn one_statement_per_identity(
+    hits: Vec<MultitermHit>,
+    table: &onceover_core::TypedTable,
+    numeric_cols: &[usize],
+) -> Vec<MultitermHit> {
+    let magnitude = |name: &str| -> f64 {
+        numeric_cols
+            .iter()
+            .find(|&&c| table.names[c] == name)
+            .map(|&c| {
+                let (mut sum, mut n) = (0.0, 0.0);
+                for r in crate::stride_rows(table.n, 512) {
+                    if let Some(v) = table.cols[c].numeric_at(r as usize) {
+                        sum += v.abs();
+                        n += 1.0;
+                    }
+                }
+                if n > 0.0 {
+                    sum / n
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0)
+    };
+    let family = |h: &MultitermHit| -> Option<BTreeSet<String>> {
+        matches!(h.form, "sum" | "difference" | "linear_combination").then(|| {
+            let mut all: BTreeSet<String> = h.predictors.iter().cloned().collect();
+            all.insert(h.target.clone());
+            all
+        })
+    };
+    let mut best: BTreeMap<BTreeSet<String>, usize> = BTreeMap::new();
+    for (i, h) in hits.iter().enumerate() {
+        let Some(key) = family(h) else { continue };
+        let better = match best.get(&key) {
+            None => true,
+            Some(&j) => {
+                let other = &hits[j];
+                let rank = |x: &MultitermHit| (x.form == "sum", magnitude(&x.target));
+                let (a, b) = (rank(h), rank(other));
+                (a.0 && !b.0) || (a.0 == b.0 && a.1 > b.1)
+            }
+        };
+        if better {
+            best.insert(key, i);
+        }
+    }
+    let keep: BTreeSet<usize> = best.values().copied().collect();
+    hits.into_iter()
+        .enumerate()
+        .filter(|(i, h)| family(h).is_none() || keep.contains(i))
+        .map(|(_, h)| h)
+        .collect()
 }
 
 /// Build identity findings from strong pairs. A pair whose fitted
@@ -1127,6 +1763,94 @@ mod tests {
         let predictors: Vec<&TypedCol> = vec![&col_x1, &col_x2];
         let res = scan_linear_combo(&target, &predictors, &sample_rows, n);
         assert!(res.is_none());
+    }
+
+    #[test]
+    fn long_sum_found_past_enumeration() {
+        // Eight parts: far beyond the triples the enumeration reaches.
+        let n = 300usize;
+        let parts: Vec<Vec<f64>> = (0..8u64)
+            .map(|k| {
+                (0..n as u64)
+                    .map(|i| {
+                        let h = (i + 17 * k + 1).wrapping_mul(0x9e3779b97f4a7c15) >> 40;
+                        (h % 10_000) as f64 / (k as f64 + 1.0)
+                    })
+                    .collect()
+            })
+            .collect();
+        let total: Vec<f64> = (0..n)
+            .map(|i| parts.iter().map(|p| p[i]).sum::<f64>())
+            .collect();
+        let mut cols: Vec<TypedCol<'_>> = parts.iter().map(|p| make_col(p)).collect();
+        cols.push(make_col(&total));
+        let mut names: Vec<String> = (0..8).map(|k| format!("p{k}")).collect();
+        names.push("total".into());
+        let dtypes = vec!["float64".to_string(); 9];
+        let table = onceover_core::TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        };
+        let (findings, _) = multiterm_identities(&table, 200_000, &[]);
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.claim.starts_with("total = p0 + ") && f.claim.contains("p7")),
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn leading_negative_term_is_rendered_with_its_sign() {
+        let finding = build_multiterm_finding(MultitermHit {
+            form: "difference",
+            target: "t".into(),
+            predictors: vec!["a".into(), "b".into()],
+            coefficients: vec![-1.0, 1.0],
+            has_intercept: false,
+            n: 10,
+            matched: 10,
+            near_within: None,
+        });
+        assert!(finding.claim.starts_with("t = b - a"), "{}", finding.claim);
+    }
+
+    #[test]
+    fn budget_does_not_depend_on_column_position() {
+        // Noise columns before the sum exhausted the old column-order cap.
+        let n = 300usize;
+        let noise: Vec<Vec<f64>> = (0..30u64)
+            .map(|k| {
+                (0..n as u64)
+                    .map(|i| ((i + 31 * k + 3).wrapping_mul(0x9e3779b97f4a7c15) >> 45) as f64)
+                    .collect()
+            })
+            .collect();
+        let a: Vec<f64> = (0..n).map(|i| ((i * 37) % 101) as f64 + 0.5).collect();
+        let b: Vec<f64> = (0..n).map(|i| ((i * 53) % 97) as f64 * 3.0).collect();
+        let t: Vec<f64> = a.iter().zip(&b).map(|(x, y)| x + y).collect();
+        let mut cols: Vec<TypedCol<'_>> = noise.iter().map(|p| make_col(p)).collect();
+        cols.push(make_col(&a));
+        cols.push(make_col(&b));
+        cols.push(make_col(&t));
+        let mut names: Vec<String> = (0..30).map(|k| format!("n{k}")).collect();
+        names.extend(["a".to_string(), "b".to_string(), "t".to_string()]);
+        let dtypes = vec!["float64".to_string(); 33];
+        let table = onceover_core::TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        };
+        let (findings, _) = multiterm_identities(&table, 200_000, &[]);
+        assert!(
+            findings.iter().any(|f| f.claim.starts_with("t = a + b")),
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1437,6 +2161,7 @@ mod tests {
                 has_intercept,
                 n: 200,
                 matched: 200,
+                near_within: None,
             }
         };
         // H1: minimal; the zero is the intercept, not a predictor.

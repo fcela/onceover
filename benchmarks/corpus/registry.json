@@ -740,8 +740,8 @@
     {
      "kind": "documented_case",
      "ref": "total_due = subtotal + tax_amt + freight (exact, all 31,465 rows)",
-     "status": "missed",
-     "note": "The arithmetic identity is verified in the data (see ATTRIBUTION.md) but no identity finding reports it; the nearest signal is a 99.98% near-FD on (subtotal, online_order_flag) -> total_due whose 6 violations are cent-rounding. A known miss for the identities machinery."
+     "status": "found",
+     "note": "Found since 2026-11-04: the identity search no longer spends its budget in column order. The finding states total_due = subtotal + tax_amt + freight on all 31,465 rows."
     },
     {
      "kind": "documented_case",
@@ -919,8 +919,8 @@
      "kind": "finding",
      "form": "sum",
      "target": "TTL_MDCR_SPND",
-     "expect": "missed",
-     "note": "Known-miss tripwire: TTL_MDCR_SPND vs the sum of its 8 published parts differs by at most 2 currency units over 307 rows (measured) -- consistent with rounding in the source's per-decedent averages, below the identity detector's exactness bar."
+     "expect": "found",
+     "note": "Promoted 2026-11-04 from a known-miss tripwire: TTL_MDCR_SPND equals the sum of its 8 published parts within 2 currency units over 307 rows, rounding in the source per-decedent averages. Found by the greedy sparse fit, reported as a near identity with its measured band."
     },
     {
      "kind": "coverage_status",
@@ -1513,8 +1513,8 @@
     {
      "kind": "documented_case",
      "ref": "Additive identity cnt = casual + registered on all 17,379 rows (0 exceptions)",
-     "status": "missed",
-     "note": "The identity is the dataset's defining arithmetic (cnt is documented as the total of the two classes) but no finding states it: arithmetic_identities coverage reads '11 candidate pairs checked, 0 identities' and multiterm_identities finds none. The three pairwise FDs above are what the report offers instead. Verified on the prepared file."
+     "status": "found",
+     "note": "Found since 2026-11-04: the identity search no longer spends its budget in column order. The finding states cnt = casual + registered on all 17,379 rows."
     },
     {
      "kind": "documented_case",
