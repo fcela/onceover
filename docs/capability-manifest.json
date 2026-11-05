@@ -222,7 +222,8 @@
   {
    "id": "association_rules",
    "categories": [
-    "conditional_rules"
+    "conditional_rules",
+    "associations"
    ],
    "requires": [],
    "activation": "default"

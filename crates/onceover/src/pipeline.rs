@@ -158,6 +158,10 @@ fn profile_inner(
         .collect();
 
     let mut findings: Vec<Finding> = Vec::new();
+    // Every pair the association screens test, for the report's
+    // associations table (issue #134); filled by the dependence
+    // screen and the association pair screen below.
+    let mut association_pairs: Vec<onceover_report::AssociationPair> = Vec::new();
     let sentinel_candidates: Vec<usize> = cards
         .iter()
         .enumerate()
@@ -1154,6 +1158,21 @@ fn profile_inner(
                     PassInfo::sampled(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
+                let (pf, pair_records, pcov) = onceover_mines::pair_associations(
+                    &enc,
+                    &table,
+                    &tier.association,
+                    &scaffold_excluded,
+                );
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "association_pairs".into(),
+                    PassInfo::sampled(format!("{pcov}{exclusion_note}")),
+                );
+                findings.extend(pf);
+                association_pairs.extend(pair_records);
             }
 
             if deadline_hit || check_deadline(&mut coverage, "hotspots") {
@@ -1182,12 +1201,14 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && tier.dep_pair_cap > 0 && enabled("numeric_dependence") {
-                let (deps_pair, dep_findings, dep_cov) = onceover_mines::dep::screen_sampled(
-                    &table,
-                    tier.dep_pair_cap,
-                    tier.encode.row_cap,
-                    &scaffold_excluded,
-                );
+                let (deps_pair, dep_findings, dep_cov, dep_records) =
+                    onceover_mines::dep::screen_sampled(
+                        &table,
+                        tier.dep_pair_cap,
+                        tier.encode.row_cap,
+                        &scaffold_excluded,
+                    );
+                association_pairs.extend(dep_records);
                 let numeric = table
                     .cols
                     .iter()
@@ -1672,6 +1693,7 @@ fn profile_inner(
         groups,
         selection,
         coverage,
+        associations: association_pairs,
     }
 }
 

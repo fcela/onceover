@@ -355,6 +355,7 @@ fn markdown_places_evidence_and_result_tables_beside_findings() {
         grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
+        associations: Vec::new(),
     };
     let md = report.to_markdown();
     let claim_at = md.find("conditional statement").unwrap();
@@ -395,6 +396,7 @@ fn report_schema_roundtrips_and_renders() {
         grouped_findings: vec![],
         selection: Default::default(),
         coverage: BTreeMap::new(),
+        associations: Vec::new(),
     };
     let back: ProfileReport = serde_json::from_str(&report.to_json()).unwrap();
     assert_eq!(back, report);

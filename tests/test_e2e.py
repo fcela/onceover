@@ -90,7 +90,7 @@ def test_json_roundtrip_and_determinism():
     df=planted_df(1500)
     a=onceover.profile(df)
     assert a.to_json()==onceover.profile(df).to_json()
-    assert a.data["schema_version"]=="0.6"
+    assert a.data["schema_version"]=="0.7"
     assert a.columns["region_id"]["role"]=="categorical"
     for f in a.findings:
         assert "kind" not in f and "confidence" not in f
@@ -141,4 +141,4 @@ def test_markdown_and_save(tmp_path):
     # inheriting the locale default (cp1252 on Windows), which decodes
     # today's finding messages only by luck — the same latent pattern
     # as the notebook contract test's read.
-    assert json.loads(p.read_text(encoding='utf-8'))['schema_version']=='0.6'
+    assert json.loads(p.read_text(encoding='utf-8'))['schema_version']=='0.7'

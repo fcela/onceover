@@ -1,7 +1,8 @@
 //! Bounded pairwise association rules for nominal encoded features.
 
+use crate::dep::{assoc_tier, bh_qvalues, chi2_sf, f_sf, fmt_q, Q_BAR};
 use crate::encode::{EncodedMatrix, MISSING};
-use onceover_report::{EvidenceBasis, Finding};
+use onceover_report::{AssociationPair, EvidenceBasis, Finding};
 use onceover_report::{Method, Pattern};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -268,6 +269,353 @@ Method::new("association_rules", "nominal_pair_counts", "Pairwise nominal associ
     )
 }
 
+/// One tested pair from the pair screen: effect size, raw
+/// p-value, and the evidence extras the finding carries.
+struct PairTest {
+    /// Table column indices of the pair, for the scaffold filter.
+    cols: (usize, usize),
+    a: String,
+    b: String,
+    kind: &'static str,
+    form: &'static str,
+    n: usize,
+    /// Cramér's V (nominal) or correlation ratio η (mixed); None
+    /// when the pair is degenerate (a constant side, no variance).
+    effect: Option<f64>,
+    p_value: Option<f64>,
+    extra: Vec<(&'static str, serde_json::Value)>,
+}
+
+/// Tested pairwise associations over the encoded features
+/// (issue #134). Every nominal pair gets a G-test with Cramér's V;
+/// every nominal × numeric pair gets an F-test with the
+/// correlation ratio η, so mixed pairs no longer depend on the
+/// GBM screen to be seen at all. Benjamini–Hochberg over the
+/// pairs tested in this pass assigns the reporting tiers,
+/// mirroring the numeric dependence screen: strong at or above
+/// the 0.5 effect bar, weak below it, both at q <= 0.05. Pairs
+/// that cannot be tested (too few rows, sparse expected counts,
+/// a degenerate side) are carried in the associations table
+/// untested rather than dropped.
+pub fn pair_associations(
+    enc: &EncodedMatrix,
+    table: &onceover_core::TypedTable,
+    cfg: &AssociationConfig,
+    excluded: &[usize],
+) -> (Vec<Finding>, Vec<AssociationPair>, String) {
+    let nominal_feats: Vec<usize> = (0..enc.bins.len())
+        .filter(|&f| {
+            enc.feat_nominal.get(f) == Some(&true)
+                && enc.n_bins.get(f).copied().unwrap_or(usize::MAX) <= cfg.max_levels
+                && enc.levels.get(f).map(|x| !x.is_empty()).unwrap_or(false)
+        })
+        .collect();
+    let numeric_feats: Vec<usize> = (0..enc.bins.len())
+        .filter(|&f| {
+            enc.feat_nominal.get(f) == Some(&false)
+                && matches!(
+                    table.cols[enc.feat_cols[f]],
+                    onceover_core::TypedCol::I64 { .. }
+                        | onceover_core::TypedCol::U64 { .. }
+                        | onceover_core::TypedCol::F64 { .. }
+                )
+        })
+        .collect();
+
+    let mut tests: Vec<PairTest> = Vec::new();
+
+    // Nominal pairs: G-test on the pair-complete contingency table.
+    for (ii, &fa) in nominal_feats.iter().enumerate() {
+        for &fb in &nominal_feats[ii + 1..] {
+            let (la, lb) = (enc.n_bins[fa], enc.n_bins[fb]);
+            let mut counts = vec![vec![0usize; lb]; la];
+            let mut n = 0usize;
+            for j in 0..enc.n {
+                let (x, y) = (enc.bins[fa][j], enc.bins[fb][j]);
+                if x == MISSING || y == MISSING {
+                    continue;
+                }
+                let (x, y) = (x as usize, y as usize);
+                if x < la && y < lb {
+                    counts[x][y] += 1;
+                    n += 1;
+                }
+            }
+            let mut test = PairTest {
+                cols: (enc.feat_cols[fa], enc.feat_cols[fb]),
+                a: enc.feat_names[fa].clone(),
+                b: enc.feat_names[fb].clone(),
+                kind: "nominal",
+                form: "nominal_pair",
+                n,
+                effect: None,
+                p_value: None,
+                extra: Vec::new(),
+            };
+            if n >= 30 {
+                let rows: Vec<usize> = counts.iter().map(|r| r.iter().sum()).collect();
+                let cols: Vec<usize> = (0..lb).map(|y| counts.iter().map(|r| r[y]).sum()).collect();
+                let r_act = rows.iter().filter(|&&s| s > 0).count();
+                let c_act = cols.iter().filter(|&&s| s > 0).count();
+                if r_act >= 2 && c_act >= 2 {
+                    let nf = n as f64;
+                    let (mut chi2, mut g, mut min_e) = (0.0f64, 0.0f64, f64::INFINITY);
+                    for x in 0..la {
+                        if rows[x] == 0 {
+                            continue;
+                        }
+                        for y in 0..lb {
+                            if cols[y] == 0 {
+                                continue;
+                            }
+                            let e = rows[x] as f64 * cols[y] as f64 / nf;
+                            let o = counts[x][y] as f64;
+                            chi2 += (o - e) * (o - e) / e;
+                            if o > 0.0 {
+                                g += 2.0 * o * (o / e).ln();
+                            }
+                            min_e = min_e.min(e);
+                        }
+                    }
+                    let df = (r_act - 1) * (c_act - 1);
+                    let v = (chi2 / nf / ((r_act - 1).min(c_act - 1)) as f64).sqrt();
+                    test.effect = Some(v);
+                    test.p_value = (min_e >= 1.0).then(|| chi2_sf(g, df as f64));
+                    test.extra = vec![
+                        ("chi_square", json!(chi2)),
+                        ("g_statistic", json!(g)),
+                        ("df", json!(df)),
+                        ("levels_a", json!(r_act)),
+                        ("levels_b", json!(c_act)),
+                        ("min_expected", json!(min_e)),
+                    ];
+                }
+            }
+            tests.push(test);
+        }
+    }
+
+    // Mixed pairs: one-way F-test of the numeric column across
+    // the nominal column's levels; effect is the correlation
+    // ratio η = sqrt(SS_between / SS_total).
+    for &fa in &nominal_feats {
+        for &fb in &numeric_feats {
+            let col = &table.cols[enc.feat_cols[fb]];
+            let la = enc.n_bins[fa];
+            let mut sums = vec![0.0f64; la];
+            let mut cnts = vec![0usize; la];
+            let (mut total, mut n) = (0.0f64, 0usize);
+            for j in 0..enc.n {
+                let x = enc.bins[fa][j];
+                if x == MISSING || x as usize >= la {
+                    continue;
+                }
+                if let Some(v) = col.numeric_at(enc.rows[j] as usize) {
+                    sums[x as usize] += v;
+                    cnts[x as usize] += 1;
+                    total += v;
+                    n += 1;
+                }
+            }
+            let mut test = PairTest {
+                cols: (enc.feat_cols[fa], enc.feat_cols[fb]),
+                a: enc.feat_names[fa].clone(),
+                b: enc.feat_names[fb].clone(),
+                kind: "mixed",
+                form: "mixed_pair",
+                n,
+                effect: None,
+                p_value: None,
+                extra: Vec::new(),
+            };
+            if n >= 30 {
+                let groups: Vec<usize> = (0..la).filter(|&g| cnts[g] > 0).collect();
+                let k = groups.len();
+                if k >= 2 && n > k {
+                    let mean = total / n as f64;
+                    let (mut ssb, mut sst) = (0.0f64, 0.0f64);
+                    for j in 0..enc.n {
+                        let x = enc.bins[fa][j];
+                        if x == MISSING || x as usize >= la {
+                            continue;
+                        }
+                        if let Some(v) = col.numeric_at(enc.rows[j] as usize) {
+                            sst += (v - mean) * (v - mean);
+                        }
+                    }
+                    for &g in &groups {
+                        let gm = sums[g] / cnts[g] as f64;
+                        ssb += cnts[g] as f64 * (gm - mean) * (gm - mean);
+                    }
+                    if sst > 0.0 {
+                        let eta2 = ssb / sst;
+                        let eta = eta2.sqrt();
+                        let ssw = sst - ssb;
+                        let f = if ssw > 0.0 {
+                            (ssb / (k - 1) as f64) / (ssw / (n - k) as f64)
+                        } else {
+                            f64::INFINITY
+                        };
+                        test.effect = Some(eta);
+                        test.p_value = Some(f_sf(f, (k - 1) as f64, (n - k) as f64));
+                        test.extra = vec![
+                            ("eta_squared", json!(eta2)),
+                            ("f_statistic", json!(if f.is_finite() { f } else { 1e308 })),
+                            ("df_between", json!(k - 1)),
+                            ("df_within", json!(n - k)),
+                            ("groups", json!(k)),
+                        ];
+                    }
+                }
+            }
+            tests.push(test);
+        }
+    }
+
+    // Benjamini–Hochberg over the pairs tested in this pass.
+    let qvalues = bh_qvalues(&tests.iter().map(|t| t.p_value).collect::<Vec<_>>());
+    let records: Vec<AssociationPair> = tests
+        .iter()
+        .zip(&qvalues)
+        .map(|(t, q)| AssociationPair {
+            a: t.a.clone(),
+            b: t.b.clone(),
+            kind: t.kind.to_string(),
+            n: t.n,
+            pearson: None,
+            spearman: None,
+            xi_ab: None,
+            xi_ba: None,
+            cramers_v: if t.kind == "nominal" { t.effect } else { None },
+            eta: if t.kind == "mixed" { t.effect } else { None },
+            p_value: t.p_value,
+            q_value: *q,
+            tier: assoc_tier(t.effect.unwrap_or(0.0), 0.5, *q).to_string(),
+        })
+        .collect();
+
+    let mut findings: Vec<(usize, &'static str, Finding)> = tests
+        .iter()
+        .zip(&qvalues)
+        .enumerate()
+        .filter(|(_, (t, _))| !excluded.contains(&t.cols.0) && !excluded.contains(&t.cols.1))
+        .filter_map(|(idx, (t, q))| {
+            let effect = t.effect?;
+            let tier = assoc_tier(effect, 0.5, *q);
+            if tier == "none" {
+                return None;
+            }
+            let mut ev = BTreeMap::from([
+                ("kind".into(), json!(t.form)),
+                ("n".into(), json!(t.n)),
+                ("population_rows".into(), json!(enc.n)),
+                ("row_sampled".into(), json!(enc.n < table.n)),
+                ("p_value".into(), json!(t.p_value)),
+                ("q_value".into(), json!(q)),
+                ("tier".into(), json!(tier)),
+            ]);
+            for (k, v) in &t.extra {
+                ev.insert((*k).into(), v.clone());
+            }
+            ev.insert("variables".into(), json!([t.a, t.b]));
+            let (claim, method) = if t.kind == "nominal" {
+                ev.insert("cramers_v".into(), json!(effect));
+                ev.insert("method".into(), json!("g_test+cramers_v"));
+                let claim = if tier == "weak" {
+                    format!(
+                        "{} and {} show weak nominal association (Cramer's V {:.3}; significant after Benjamini-Hochberg correction, q = {})",
+                        t.a,
+                        t.b,
+                        effect,
+                        fmt_q(q.unwrap_or(1.0))
+                    )
+                } else {
+                    format!(
+                        "{} and {} show nominal association (Cramer's V {:.3})",
+                        t.a, t.b, effect
+                    )
+                };
+                (
+                    claim,
+                    Method::new(
+                        "association_rules",
+                        "nominal_pair_test",
+                        "G-test on the pair-complete contingency table with Cramer's V effect; Benjamini-Hochberg correction over the pairs tested in this pass",
+                    ),
+                )
+            } else {
+                ev.insert("eta".into(), json!(effect));
+                ev.insert("method".into(), json!("f_test+correlation_ratio"));
+                let claim = if tier == "weak" {
+                    format!(
+                        "{} differs weakly across the levels of {} (correlation ratio {:.3}; significant after Benjamini-Hochberg correction, q = {})",
+                        t.b,
+                        t.a,
+                        effect,
+                        fmt_q(q.unwrap_or(1.0))
+                    )
+                } else {
+                    format!(
+                        "{} differs across the levels of {} (correlation ratio {:.3})",
+                        t.b, t.a, effect
+                    )
+                };
+                (
+                    claim,
+                    Method::new(
+                        "association_rules",
+                        "mixed_pair_test",
+                        "One-way F-test of the numeric column across the nominal column's levels with correlation-ratio effect; Benjamini-Hochberg correction over the pairs tested in this pass",
+                    ),
+                )
+            };
+            let interestingness = if tier == "weak" {
+                0.10 + 0.25 * effect
+            } else {
+                0.35 + 0.4 * effect
+            };
+            let mut finding = Finding::new(
+                Pattern::StatisticalAssociation,
+                BTreeMap::from([("x".into(), json!(t.a)), ("y".into(), json!(t.b))]),
+                claim,
+                EvidenceBasis::Estimated,
+                interestingness,
+                ev,
+                None,
+                method,
+            );
+            finding.specification.form = Some(t.form.to_string());
+            Some((idx, tier, finding))
+        })
+        .collect();
+    findings.sort_by(|a, b| {
+        (a.1 != "strong").cmp(&(b.1 != "strong")).then(
+            b.2.interestingness
+                .total_cmp(&a.2.interestingness)
+                .then(a.0.cmp(&b.0)),
+        )
+    });
+    findings.truncate(20);
+    let n_pair_findings = findings.len();
+    let n_weak_pairs = findings.iter().filter(|(_, t, _)| *t == "weak").count();
+    let findings: Vec<Finding> = findings.into_iter().map(|(_, _, f)| f).collect();
+
+    let n_nominal = tests.iter().filter(|t| t.kind == "nominal").count();
+    let n_tested = tests.iter().filter(|t| t.p_value.is_some()).count();
+    let coverage = format!(
+        "{} nominal pairs, {} mixed pairs screened over {} encoded rows; {} tested with p-values, Benjamini-Hochberg over the {} tested pairs: {} strong and {} weak pair findings (q <= {}, effect bar 0.5); untested pairs are carried in the associations table",
+        n_nominal,
+        tests.len() - n_nominal,
+        enc.n,
+        n_tested,
+        n_tested,
+        n_pair_findings - n_weak_pairs,
+        n_weak_pairs,
+        Q_BAR,
+    );
+    (findings, records, coverage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +788,93 @@ mod tests {
         let mut bad = cfg();
         bad.min_confidence = f64::NAN;
         assert!(association_rules(&enc, &bad, &[]).0.is_empty());
+    }
+
+    // ---- pair_associations (issue #134) ----
+
+    use crate::encode::{encode, EncodeConfig};
+    use onceover_core::extract;
+    use polars::df;
+
+    struct Lcg(u64);
+    impl Lcg {
+        fn next_f64(&mut self) -> f64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            (self.0.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    #[test]
+    fn pair_screen_states_weak_nominal_and_strong_mixed() {
+        // 5,000 rows: a binary nominal pair with Cramer's V near
+        // 0.3 (joint [[0.325, 0.175], [0.175, 0.325]]), and a
+        // numeric column whose mean shifts by 3 across the first
+        // column's levels (correlation ratio well above 0.5).
+        let n = 5000usize;
+        let mut rng = Lcg(4242);
+        let (mut a, mut b, mut v) = (Vec::new(), Vec::new(), Vec::new());
+        for _ in 0..n {
+            let x = rng.next_f64() < 0.5;
+            let y = if rng.next_f64() < 0.65 { x } else { !x };
+            a.push(if x { "p" } else { "q" });
+            b.push(if y { "r" } else { "s" });
+            v.push(if x { 3.0 } else { 0.0 } + rng.next_f64());
+        }
+        let df = df! { "a" => a, "b" => b, "v" => v }.unwrap();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let (findings, records, coverage) =
+            pair_associations(&enc, &table, &AssociationConfig::default(), &[]);
+        assert!(
+            coverage.contains("1 nominal pairs, 2 mixed pairs"),
+            "{coverage}"
+        );
+        let nominal = records.iter().find(|r| r.kind == "nominal").unwrap();
+        let v_meas = nominal.cramers_v.unwrap();
+        assert!((0.2..0.4).contains(&v_meas), "V = {v_meas}");
+        assert_eq!(nominal.tier, "weak");
+        assert!(nominal.q_value.unwrap() <= 0.05);
+        let mixed_ab = records
+            .iter()
+            .find(|r| r.kind == "mixed" && r.a == "a" && r.b == "v")
+            .unwrap();
+        assert!(mixed_ab.eta.unwrap() > 0.5, "eta = {:?}", mixed_ab.eta);
+        assert_eq!(mixed_ab.tier, "strong");
+        // Both pairs produce findings, with the tier in evidence.
+        let weak_f = findings
+            .iter()
+            .find(|f| f.specification.form.as_deref() == Some("nominal_pair"))
+            .expect("weak nominal finding");
+        assert_eq!(weak_f.evidence[0].metrics["tier"].as_str(), Some("weak"));
+        assert!(
+            weak_f.claim.contains("weak nominal association"),
+            "{}",
+            weak_f.claim
+        );
+        assert!(findings
+            .iter()
+            .any(|f| f.specification.form.as_deref() == Some("mixed_pair")));
+    }
+
+    #[test]
+    fn pair_screen_independent_columns_earn_no_statement() {
+        let n = 4000usize;
+        let mut rng = Lcg(777);
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        for _ in 0..n {
+            a.push(if rng.next_f64() < 0.5 { "p" } else { "q" });
+            b.push(if rng.next_f64() < 0.5 { "r" } else { "s" });
+        }
+        let df = df! { "a" => a, "b" => b }.unwrap();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let (findings, records, _) =
+            pair_associations(&enc, &table, &AssociationConfig::default(), &[]);
+        assert!(findings.is_empty(), "{findings:?}");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tier, "none");
+        assert!(records[0].p_value.is_some());
     }
 }

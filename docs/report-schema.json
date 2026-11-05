@@ -1144,12 +1144,73 @@
         "shares",
         "statement"
       ]
+    },
+    "associationPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "numeric",
+            "nominal",
+            "mixed"
+          ]
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pearson": {
+          "type": "number"
+        },
+        "spearman": {
+          "type": "number"
+        },
+        "xi_ab": {
+          "type": "number"
+        },
+        "xi_ba": {
+          "type": "number"
+        },
+        "cramers_v": {
+          "type": "number"
+        },
+        "eta": {
+          "type": "number"
+        },
+        "p_value": {
+          "type": "number"
+        },
+        "q_value": {
+          "type": "number"
+        },
+        "tier": {
+          "enum": [
+            "strong",
+            "weak",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "kind",
+        "n",
+        "tier"
+      ]
     }
   },
   "$id": "docs/report-schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
+  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.7 adds the associations table: a top-level `associations` list carrying every pair the association screens tested, with effect sizes, raw p-values, Benjamini-Hochberg q-values, and reporting tiers. Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
   "properties": {
     "columns": {
       "additionalProperties": {
@@ -1179,6 +1240,13 @@
       },
       "description": "Statements grouped under a verified relationship family's lead (schema 0.6); omitted when no family formed."
     },
+    "associations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/associationPair"
+      },
+      "description": "Every pair the association screens tested (schema 0.7): effect sizes, the raw per-pair p-value, the Benjamini-Hochberg q-value over the pairs tested by the same screen in the run, and the reporting tier; omitted when no association screen ran."
+    },
     "groups": {
       "items": {
         "$ref": "#/$defs/findingGroup"
@@ -1189,7 +1257,7 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.6"
+      "const": "0.7"
     },
     "selection": {
       "$ref": "#/$defs/selection"
@@ -1204,6 +1272,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.6)",
+  "title": "onceover profile report (schema_version 0.7)",
   "type": "object"
 }

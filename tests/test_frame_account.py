@@ -71,7 +71,7 @@ def test_digest_leads_with_the_account():
 
 def test_schema_version_is_0_5():
     report = onceover.profile(panel_df())
-    assert report.data["schema_version"] == "0.6"
+    assert report.data["schema_version"] == "0.7"
 
 
 def repeating_axis_df():
