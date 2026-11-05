@@ -2,6 +2,7 @@
 //! combinations, exact/approximate functional dependencies, key ranking,
 //! and sortedness checks.
 
+pub mod boundaries;
 pub mod digits;
 pub mod dupe;
 pub mod fd;
@@ -12,6 +13,7 @@ pub mod pivot;
 pub mod sentinels;
 pub mod sorted;
 
+pub use boundaries::boundary_mass;
 pub use digits::digit_fingerprints;
 pub use dupe::{profile_duplicate_encodings, DupeConfig};
 pub use fd::{discover, DepsOutcome, FdConfig};

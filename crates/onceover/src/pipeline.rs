@@ -731,6 +731,56 @@ fn profile_inner(
         findings.extend(sent);
     }
 
+    // ---------- missingness ----------
+    if check_deadline(&mut coverage, "missingness") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("missingness") {
+        let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+        let axis = match (&ticks, &axis_name) {
+            (Some(ticks), Some(name)) => Some(onceover_mines::MissingnessAxis { name, ticks }),
+            _ => None,
+        };
+        let (mut f, detail) = onceover_mines::profile_missingness(&table, &scaffold_excluded, axis);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "missingness".into(),
+            PassInfo::ran(detail),
+        );
+        findings.append(&mut f);
+    }
+
+    // ---------- boundaries ----------
+    if check_deadline(&mut coverage, "boundaries") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("boundaries") {
+        let bnd = onceover_deps::boundary_mass(&table);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "boundaries".into(),
+            PassInfo::ran(format!(
+                "{} numeric columns scanned for boundary mass",
+                table
+                    .cols
+                    .iter()
+                    .filter(|c| matches!(
+                        c,
+                        onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::I64 { .. }
+                            | onceover_core::TypedCol::U64 { .. }
+                    ))
+                    .count()
+            )),
+        );
+        findings.extend(bnd);
+    }
+
     // ---------- digits ----------
     if check_deadline(&mut coverage, "digits") {
         deadline_hit = true;
@@ -1416,13 +1466,15 @@ fn profile_inner(
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
+                "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
+                "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
             }.to_string();
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
                     "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
-                    | "identities" => Sampling::Full,
+                    | "identities" | "missingness" => Sampling::Full,
                     "association_rules" | "prism" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample
@@ -1639,6 +1691,7 @@ fn keys_pk(findings: &[Finding]) -> Option<String> {
         .find(|f| {
             f.category == Category::Uniqueness
                 && f.subject.columns.len() == 1
+                && f.claim.contains("primary key candidate")
                 && f.evidence
                     .iter()
                     .any(|e| e.method.algorithm == "uniqueness")

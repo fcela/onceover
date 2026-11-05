@@ -75,17 +75,19 @@ def test_digest_discloses_grouping():
 
 
 def test_identity_family_retrievable():
-    n = 300
-    a = [float((i * 13) % 29) for i in range(n)]
-    b = [float((i * 7) % 17) for i in range(n)]
+    n = 1000
+    a = [(i * 13) % 29 for i in range(n)]
+    b = [(i * 7) % 11 for i in range(n)]
     df = pl.DataFrame({"a": a, "b": b, "c": [x + y for x, y in zip(a, b)]})
     report = onceover.profile(df)
     selection = report.data["selection"]
-    # The scan states the identity in all three rotations (a sum
-    # and two fitted linear combinations of the same equation);
-    # the family keeps one lead and groups the other two.
+    # The identity scan states the relation once; the three functional
+    # dependencies over the same columns restate it and group under it.
     assert selection["families"] == 1
-    assert selection["grouped_statements"] == 2
+    assert selection["grouped_statements"] == 3
+    leads = {m["grouped_under"] for m in report.grouped_findings}
+    assert len(leads) == 1
+    assert report.finding(leads.pop())["claim"].startswith("c = a + b")
     for member in report.grouped_findings:
         assert report.finding(member["id"]) is member
         lead = report.finding(member["grouped_under"])

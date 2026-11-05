@@ -58,6 +58,7 @@ pub enum Pattern {
     Heaping,
     DigitPreference,
     BenfordDeviation,
+    BoundaryMass,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
@@ -95,7 +96,8 @@ impl Pattern {
             Self::FormatVariation
             | Self::Heaping
             | Self::DigitPreference
-            | Self::BenfordDeviation => Category::Formats,
+            | Self::BenfordDeviation
+            | Self::BoundaryMass => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency
             | Self::ArithmeticIdentity
@@ -137,6 +139,7 @@ impl Pattern {
             Self::Heaping => "heaping",
             Self::DigitPreference => "digit_preference",
             Self::BenfordDeviation => "benford_deviation",
+            Self::BoundaryMass => "boundary_mass",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
@@ -628,6 +631,15 @@ impl Facets {
                 Some(Q::Validity),
                 S::Deviation,
             ),
+            Pattern::BoundaryMass => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Validity),
+                S::Deviation,
+            ),
             Pattern::FunctionalDependency => (
                 Sc::Columns,
                 O::Relation,
@@ -852,6 +864,7 @@ impl Facets {
             (Category::Formats, Some("heaping")) => Pattern::Heaping,
             (Category::Formats, Some("digit_preference")) => Pattern::DigitPreference,
             (Category::Formats, Some("benford_deviation")) => Pattern::BenfordDeviation,
+            (Category::Formats, Some("boundary_mass")) => Pattern::BoundaryMass,
             (Category::Formats, _) => Pattern::FormatVariation,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
@@ -1251,6 +1264,21 @@ impl Finding {
                         spec.definition.insert(k.into(), v.clone());
                     }
                 }
+            }
+            Pattern::BoundaryMass => {
+                // The statement is about one piled value: naming it
+                // in the definition keeps each pile its own
+                // statement (the ledger merges findings that share
+                // a canonical key).
+                for k in ["value", "boundary"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "comparison".into(),
+                    json!("exact value counts against the median count of the nearest distinct values"),
+                );
             }
             Pattern::PredictiveDependency => {
                 if metrics.get("form").and_then(Value::as_str) == Some("interaction_h") {

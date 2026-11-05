@@ -79,6 +79,22 @@
    "activation": "default"
   },
   {
+   "id": "boundaries",
+   "categories": [
+    "formats"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
+   "id": "missingness",
+   "categories": [
+    "missingness"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "digits",
    "categories": [
     "formats"

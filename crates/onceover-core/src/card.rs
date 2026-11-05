@@ -139,6 +139,32 @@ fn format_pattern(s: &str) -> Box<str> {
     Box::from(out.as_str())
 }
 
+/// Whether two format signatures are a real format difference. Run length
+/// alone is not one: `A#` and `A##` are labels with a different number of
+/// digits. Words alone are not one either: `Aaaa` and `Aaa Aaaa` are names,
+/// though a capitalization difference between them still counts (the caller
+/// marks that case cosmetic).
+fn patterns_differ(a: &str, b: &str) -> bool {
+    let collapse = |p: &str, fold: bool| -> String {
+        let mut out = String::with_capacity(p.len());
+        for c in p.chars() {
+            let c = if fold && c == 'A' { 'a' } else { c };
+            if !out.ends_with(c) {
+                out.push(c);
+            }
+        }
+        out
+    };
+    if collapse(a, false) == collapse(b, false) {
+        return false;
+    }
+    let words = |p: &str| p.chars().all(|c| matches!(c, 'A' | 'a' | ' '));
+    if words(a) && words(b) {
+        return collapse(a, true) == collapse(b, true);
+    }
+    true
+}
+
 /// Build the column card and its findings.
 pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     let n = col.len();
@@ -324,7 +350,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             let second = &list[1];
             let top_share = top.1 as f64 / n_str as f64;
             let second_share = second.1 as f64 / n_str as f64;
-            if top_share < 0.9 && second_share >= 0.05 {
+            if top_share < 0.9 && second_share >= 0.05 && patterns_differ(&top.0, &second.0) {
                 let mut format_metrics = BTreeMap::from([
                     ("n_values".into(), json!(n_str)),
                     ("n_patterns".into(), json!(list.len())),
@@ -475,21 +501,15 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         }
     }
 
-    // identifier-like
-    if distinct_ratio >= 0.98 && n_nonnull >= 100 && !counts.capped {
-        let mut role_metrics = BTreeMap::from([
+    // identifier-like. Unique floats holding fractional values are
+    // measurements; the card's distinct count already records them.
+    let fractional = matches!(dtype, "float32" | "float64")
+        && !numeric_stats.as_ref().is_some_and(|s| s.integral);
+    if distinct_ratio >= 0.98 && n_nonnull >= 100 && !counts.capped && !fractional {
+        let role_metrics = BTreeMap::from([
             ("distinct".into(), json!(distinct)),
             ("n".into(), json!(n_nonnull)),
         ]);
-        if matches!(dtype, "float32" | "float64") {
-            // A float column at ~100% distinct is a measurement, not
-            // an identifier; declare the demotion the ledger applies.
-            role_metrics.insert(
-                "triviality".into(),
-                json!("continuous_measure_key_candidate"),
-            );
-            role_metrics.insert("triviality_factor".into(), json!(0.6));
-        }
         findings.push(finding(
             Pattern::IdentifierRole,
             &[name],

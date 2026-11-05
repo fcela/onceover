@@ -7,6 +7,7 @@ the model marks as scaffolding (index, identifier, timestamp, and
 the parts of an assembled axis) are excluded as detector targets
 and as discontinuity axes, with the exclusion recorded in coverage.
 """
+import calendar
 from datetime import date, datetime, timedelta
 
 import polars as pl
@@ -169,8 +170,20 @@ def test_datetime_axis_span_is_correct_in_every_time_unit():
     # Polars defaults to microseconds. Normalizing those ticks must not
     # overflow, or the account states a 1969-1970 span for modern data.
     start = datetime(2022, 5, 30)
+    # Build the timestamp column as epoch microseconds and cast, as
+    # in tests/test_events.py: every polars path that constructs a
+    # Datetime series from Python datetime objects goes through
+    # sequence_to_pyseries, whose temporal branch gets None back
+    # (from Series.dt.cast_time_unit) on polars 1.x under Python
+    # 3.15, so list-of-datetime construction raises AttributeError
+    # there — the CI Polars-1.x leg. Integer construction and the
+    # cast stay in working code paths on every supported polars.
+    base_us = calendar.timegm(start.timetuple()) * 1_000_000 + start.microsecond
+    day_us = 86_400 * 1_000_000
     base = pl.DataFrame({
-        "ts": [start + timedelta(days=i) for i in range(400)],
+        "ts": pl.Series(
+            "ts", [base_us + day_us * i for i in range(400)]
+        ).cast(pl.Datetime("us")),
         "y": [float(i % 7) for i in range(400)],
     })
     for unit in ("ms", "us", "ns"):

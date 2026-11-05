@@ -493,12 +493,12 @@ fn make_finding(
 
 /// Per-row level codes and labels for one eligible column
 /// (2..=max_condition_levels distinct non-null levels).
-struct Coded {
-    codes: Vec<Option<u32>>,
-    labels: Vec<String>,
+pub(crate) struct Coded {
+    pub(crate) codes: Vec<Option<u32>>,
+    pub(crate) labels: Vec<String>,
 }
 
-fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<Coded> {
+pub(crate) fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) -> Option<Coded> {
     let raw = condition_levels(table, col, cfg)?;
     let mut labels: Vec<String> = Vec::new();
     let mut index: BTreeMap<String, u32> = BTreeMap::new();
@@ -996,9 +996,17 @@ pub fn profile_surprises(
         .filter(|i| !excluded.contains(i))
         .filter_map(|i| code_column(table, i, cfg).map(|coded| (i, coded)))
         .collect();
-    let mut findings: Vec<Finding> = Vec::new();
+    // Every column gets its whole-column scan. Those statements take the
+    // budget first, strongest first, so early columns' subset statements
+    // can't use up the report before later columns are reached; subset
+    // scans then share what remains.
+    let mut global_findings: Vec<Finding> = Vec::new();
+    let mut subset_findings: Vec<Finding> = Vec::new();
     let mut scanned = 0usize;
-    'targets: for &t in &numeric {
+    for (at, &t) in numeric.iter().enumerate() {
+        let spent = global_findings.len() + subset_findings.len();
+        let remaining = cfg.max_findings.saturating_sub(spent);
+        let subset_limit = subset_findings.len() + (remaining / (numeric.len() - at)).max(2);
         let mut vals = column_values(table, t);
         if vals.len() < cfg.min_rows {
             continue;
@@ -1010,6 +1018,12 @@ pub fn profile_surprises(
         }
         scanned += 1;
         let tname = table.names[t].as_str();
+        // A subset statement means an ordinary value is extreme for its
+        // subset. Beyond the column's own fence, the value is the column's
+        // tail, and which subset holds it says nothing.
+        let (q1, q3) = (quantile(&vals, 0.25), quantile(&vals, 0.75));
+        let global_lo = q1 - cfg.fence_iqr_mult * (q3 - q1);
+        let global_hi = q3 + cfg.fence_iqr_mult * (q3 - q1);
         let mut reported_rows: std::collections::BTreeSet<usize> = Default::default();
         for high in [true, false] {
             let ex = peel_presorted(&vals, high, cfg.min_rows, cfg);
@@ -1017,15 +1031,15 @@ pub fn profile_surprises(
                 for e in &ex {
                     reported_rows.insert(e.row);
                 }
-                findings.push(make_finding(tname, None, vals.len(), &ex, high, cfg));
-                if findings.len() >= cfg.max_findings {
-                    break 'targets;
-                }
+                global_findings.push(make_finding(tname, None, vals.len(), &ex, high, cfg));
             }
+        }
+        if spent >= cfg.max_findings {
+            continue;
         }
         // Subset pass: one categorical condition at a time.
         let mut tried = 0usize;
-        for (c, coded) in &conditions {
+        'conditions: for (c, coded) in &conditions {
             if *c == t || tried >= cfg.max_conditions {
                 continue;
             }
@@ -1051,12 +1065,13 @@ pub fn profile_surprises(
                     let fresh: Vec<Extreme> = ex
                         .into_iter()
                         .filter(|e| !reported_rows.contains(&e.row))
+                        .filter(|e| e.value >= global_lo && e.value <= global_hi)
                         .collect();
                     if !fresh.is_empty() {
                         for e in &fresh {
                             reported_rows.insert(e.row);
                         }
-                        findings.push(make_finding(
+                        subset_findings.push(make_finding(
                             tname,
                             Some((table.names[*c].as_str(), lvl.as_str())),
                             lvals.len(),
@@ -1064,14 +1079,18 @@ pub fn profile_surprises(
                             high,
                             cfg,
                         ));
-                        if findings.len() >= cfg.max_findings {
-                            break 'targets;
+                        if subset_findings.len() >= subset_limit {
+                            break 'conditions;
                         }
                     }
                 }
             }
         }
     }
+    global_findings.sort_by(|a, b| b.interestingness.total_cmp(&a.interestingness));
+    let mut findings = global_findings;
+    findings.append(&mut subset_findings);
+    findings.truncate(cfg.max_findings);
     let numeric_findings = findings.len();
     let (cat_findings, cat_targets, cat_contexts) = if findings.len() < cfg.max_findings {
         profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
