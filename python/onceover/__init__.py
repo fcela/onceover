@@ -31,7 +31,10 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         or "deep" (wider caps and deeper search for those passes).
     deadline_seconds : float, optional
         Soft wall-clock budget. Deterministic by default (None); when set,
-        remaining passes may be skipped and reported in `coverage`.
+        remaining passes may be skipped and reported in `coverage`, and the
+        dependence screen, the hotspots scan, and the discontinuities pass
+        stop cooperatively inside their own loops, disclosing in their
+        coverage entries how much of their search space was examined.
 
     sample_rows : int, optional
         Override row samples for relationship searches. Column summaries and

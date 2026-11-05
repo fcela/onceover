@@ -15,6 +15,7 @@
 //! alpha 0.01, on top of absolute bars (expected count, ratio,
 //! observed count, share of scanned rows).
 
+use crate::deadline::Deadline;
 use crate::encode::{EncodedMatrix, MISSING};
 use crate::fmt_float;
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
@@ -37,6 +38,13 @@ pub struct HotspotConfig {
     pub min_share: f64,
     pub max_per_combination: usize,
     pub max_findings: usize,
+    /// Cooperative deadline (issue #117, stage 2): the
+    /// evaluation loop polls it once per combination — the
+    /// pass's work quantum — and stops at the next combination
+    /// boundary when it has been reached, disclosing how much
+    /// of the combination universe was examined. Unset (the
+    /// default) the pass always runs to completion.
+    pub deadline: Deadline,
 }
 
 impl Default for HotspotConfig {
@@ -53,6 +61,7 @@ impl Default for HotspotConfig {
             min_share: 0.005,
             max_per_combination: 3,
             max_findings: 15,
+            deadline: Deadline::none(),
         }
     }
 }
@@ -71,7 +80,26 @@ struct CellHit {
 /// below it by any single feature are skipped before counting.
 const MIN_COMPLETE_ROWS: usize = 200;
 
-pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, String) {
+/// What the hotspots pass reports, including whether the
+/// deadline stopped it mid-scan (issue #117, stage 2). The
+/// pipeline reads `deadline_stopped` to mark the coverage
+/// entry `capped` and latch the profile's deadline state;
+/// the coverage string itself carries the examined counts.
+pub struct HotspotsOutcome {
+    pub findings: Vec<Finding>,
+    pub coverage: String,
+    pub deadline_stopped: bool,
+}
+
+pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> HotspotsOutcome {
+    hotspots_impl(enc, cfg, &|| cfg.deadline.exceeded())
+}
+
+fn hotspots_impl(
+    enc: &EncodedMatrix,
+    cfg: &HotspotConfig,
+    stop: &dyn Fn() -> bool,
+) -> HotspotsOutcome {
     let eligible: Vec<usize> = (0..enc.feat_names.len())
         .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= cfg.max_levels)
         .collect();
@@ -86,18 +114,30 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
     // only the current combination: O(1) combination state in
     // place of the O(combinations) list. `enumerate_combos`
     // yields pairs first, then (deep) triples, in exactly the
-    // order the list used to hold them.
+    // order the list used to hold them. The totals enumeration
+    // is arithmetic over bin counts and always completes: it
+    // defines the planned universe the deadline disclosure is
+    // measured against.
     let (n_combos, triples_examined, cells_examined) =
-        enumerate_combos(&enc.n_bins, cfg, &eligible, |_| {});
+        enumerate_combos(&enc.n_bins, cfg, &eligible, |_| true);
     if n_combos == 0 || cells_examined == 0 {
-        return (
-            Vec::new(),
-            format!(
+        return HotspotsOutcome {
+            findings: Vec::new(),
+            coverage: format!(
                 "{} eligible columns, no combinations within the cell caps",
                 eligible.len()
             ),
-        );
+            deadline_stopped: false,
+        };
     }
+    // The Bonferroni denominator is the planned universe, and
+    // a deadline stop does not reduce it: the bar a reported
+    // cell cleared is the full-universe bar whether or not the
+    // scan reached the cells past the stop. What the stop
+    // changes is which cells were examined, and that is what
+    // the coverage entry (and, on stopped runs, each finding)
+    // discloses — the correction itself is never silently
+    // weakened (issue #117).
     let z_bar = inv_normal_cdf(1.0 - 0.01 / (2.0 * cells_examined as f64));
 
     // Complete rows of a combination are a subset of any one
@@ -113,17 +153,37 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
         .map(|b| b.iter().filter(|&&c| c != MISSING).count())
         .collect();
     let mut hits: Vec<CellHit> = Vec::new();
+    // The deadline is polled once per combination — the work
+    // quantum: one combination's evaluation is a single scan
+    // of the encoded sample, so the overshoot past the
+    // deadline is bounded by that one scan. The examined set
+    // on a stopped run is a prefix of the enumeration order.
+    let mut evaluated_combos = 0usize;
+    let mut evaluated_triples = 0usize;
+    let mut evaluated_cells = 0usize;
+    let mut stopped = false;
     enumerate_combos(&enc.n_bins, cfg, &eligible, |combo| {
+        if stop() {
+            stopped = true;
+            return false;
+        }
+        evaluated_combos += 1;
+        if combo.len() == 3 {
+            evaluated_triples += 1;
+        }
+        evaluated_cells += combo.iter().map(|&f| enc.n_bins[f]).product::<usize>();
         if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
-            return;
+            return true;
         }
         evaluate_combo(enc, combo, cfg, z_bar, &mut hits);
+        true
     });
     hits.sort_by(|a, b| {
         b.z.total_cmp(&a.z)
             .then(a.feats.cmp(&b.feats))
             .then(a.codes.cmp(&b.codes))
     });
+    let stopped_cells = stopped.then_some(evaluated_cells);
     let mut per_combo: BTreeMap<Vec<usize>, usize> = BTreeMap::new();
     let mut findings = Vec::new();
     for hit in hits {
@@ -132,18 +192,38 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
             continue;
         }
         *n_in_combo += 1;
-        findings.push(render(enc, &hit, cells_examined, z_bar));
+        findings.push(render(enc, &hit, cells_examined, z_bar, stopped_cells));
     }
-    let cov = format!(
-        "{} eligible columns, {} combinations examined ({} triples), {} cells examined, z bar {:.2} (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of {} rows",
-        eligible.len(),
-        n_combos,
-        triples_examined,
-        cells_examined,
-        z_bar,
-        enc.n,
-    );
-    (findings, cov)
+    let cov = if stopped {
+        format!(
+            "{} eligible columns, {} of {} combinations examined ({} of {} triples), {} of {} cells examined before the deadline stopped the scan, z bar {:.2} (Bonferroni over the full {}-cell universe, family alpha 0.01 — the stop does not reduce the correction); counts over the encoded sample of {} rows; combinations past the stop were not examined, so the absence of a hotspot there is unmeasured, not a negative",
+            eligible.len(),
+            evaluated_combos,
+            n_combos,
+            evaluated_triples,
+            triples_examined,
+            evaluated_cells,
+            cells_examined,
+            z_bar,
+            cells_examined,
+            enc.n,
+        )
+    } else {
+        format!(
+            "{} eligible columns, {} combinations examined ({} triples), {} cells examined, z bar {:.2} (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of {} rows",
+            eligible.len(),
+            n_combos,
+            triples_examined,
+            cells_examined,
+            z_bar,
+            enc.n,
+        )
+    };
+    HotspotsOutcome {
+        findings,
+        coverage: cov,
+        deadline_stopped: stopped,
+    }
 }
 
 /// Enumerate the combinations the pass examines, in the exact
@@ -153,7 +233,9 @@ pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> (Vec<Finding>, Stri
 /// most 8 bins, in the same order, gated by the triple cell
 /// cap, stopping once `cfg.max_triples` triples have been
 /// examined (the cap check runs before each candidate, as it
-/// did in the list-building loop). Returns (combinations,
+/// did in the list-building loop). `visit` returns false to
+/// halt the enumeration early (the deadline path); totals
+/// then cover only the visited prefix. Returns (combinations,
 /// triples, cells) totals: the coverage counts and the
 /// Bonferroni denominator. Only the current combination is
 /// materialized, so enumeration state is O(1) in the number of
@@ -162,23 +244,27 @@ fn enumerate_combos(
     n_bins: &[usize],
     cfg: &HotspotConfig,
     eligible: &[usize],
-    mut visit: impl FnMut(&[usize]),
+    mut visit: impl FnMut(&[usize]) -> bool,
 ) -> (usize, usize, usize) {
     let mut n_combos = 0usize;
     let mut cells_examined = 0usize;
-    for a in 0..eligible.len() {
+    let mut halted = false;
+    'pairs: for a in 0..eligible.len() {
         for b in (a + 1)..eligible.len() {
             let (fa, fb) = (eligible[a], eligible[b]);
             let pair_cells = n_bins[fa] * n_bins[fb];
             if pair_cells <= cfg.max_cells_pair {
-                visit(&[fa, fb]);
+                if !visit(&[fa, fb]) {
+                    halted = true;
+                    break 'pairs;
+                }
                 n_combos += 1;
                 cells_examined += pair_cells;
             }
         }
     }
     let mut triples_examined = 0usize;
-    if cfg.triples {
+    if cfg.triples && !halted {
         let small: Vec<usize> = eligible
             .iter()
             .copied()
@@ -193,7 +279,9 @@ fn enumerate_combos(
                     let (fa, fb, fc) = (small[a], small[b], small[c]);
                     let triple_cells = n_bins[fa] * n_bins[fb] * n_bins[fc];
                     if triple_cells <= cfg.max_cells_triple {
-                        visit(&[fa, fb, fc]);
+                        if !visit(&[fa, fb, fc]) {
+                            break 'outer;
+                        }
                         n_combos += 1;
                         cells_examined += triple_cells;
                         triples_examined += 1;
@@ -303,7 +391,13 @@ fn cell_label(enc: &EncodedMatrix, f: usize, code: u8) -> String {
     }
 }
 
-fn render(enc: &EncodedMatrix, hit: &CellHit, cells_examined: usize, z_bar: f64) -> Finding {
+fn render(
+    enc: &EncodedMatrix,
+    hit: &CellHit,
+    cells_examined: usize,
+    z_bar: f64,
+    stopped_cells: Option<usize>,
+) -> Finding {
     let names: Vec<String> = hit
         .feats
         .iter()
@@ -317,11 +411,49 @@ fn render(enc: &EncodedMatrix, hit: &CellHit, cells_examined: usize, z_bar: f64)
         .collect();
     let ratio = hit.observed as f64 / hit.expected;
     let share = hit.observed as f64 / enc.n as f64;
+    // On a deadline-stopped run the claim says so: the bar is
+    // still the full-universe bar (`cells_examined` is its
+    // denominator), and `stopped_cells` states how far the
+    // scan actually got. Unstopped claims are unchanged.
+    let bar_clause = match stopped_cells {
+        Some(evaluated) => format!(
+            "bar {:.1} over {} cells planned; the scan stopped at the deadline after {} cells",
+            z_bar, cells_examined, evaluated
+        ),
+        None => format!("bar {:.1} over {} cells examined", z_bar, cells_examined),
+    };
+    let mut metrics = BTreeMap::from([
+        ("columns".into(), json!(names)),
+        (
+            "cell".into(),
+            json!(hit
+                .feats
+                .iter()
+                .zip(&hit.codes)
+                .map(|(&f, &c)| (enc.feat_names[f].clone(), json!(cell_label(enc, f, c))))
+                .collect::<BTreeMap<String, serde_json::Value>>()),
+        ),
+        ("observed_rows".into(), json!(hit.observed)),
+        ("expected_rows".into(), json!(hit.expected)),
+        ("ratio".into(), json!(ratio)),
+        ("share".into(), json!(share)),
+        ("z".into(), json!(hit.z)),
+        ("z_bar".into(), json!(z_bar)),
+        ("cells_examined".into(), json!(cells_examined)),
+        ("rows_scanned".into(), json!(enc.n)),
+        (
+            "method".into(),
+            json!("observed cell count vs the independence baseline from the combination's margins over complete rows of the encoded sample; a cell reports only past absolute bars (expected >= 10, ratio >= 2, observed >= 20, share > 0.5%) and a Bonferroni z bar over all examined cells at family alpha 0.01"),
+        ),
+    ]);
+    if let Some(evaluated) = stopped_cells {
+        metrics.insert("cells_evaluated".into(), json!(evaluated));
+    }
     Finding::new(
         Pattern::Hotspot,
         BTreeMap::from([("columns".into(), json!(names))]),
         format!(
-            "cell ({}) holds {} of {} scanned rows ({:.1}%) against {:.1} expected under independence of {} — {:.1}x the baseline (z = {:.1}, bar {:.1} over {} cells examined)",
+            "cell ({}) holds {} of {} scanned rows ({:.1}%) against {:.1} expected under independence of {} — {:.1}x the baseline (z = {:.1}, {})",
             cell_desc.join(", "),
             hit.observed,
             enc.n,
@@ -330,35 +462,11 @@ fn render(enc: &EncodedMatrix, hit: &CellHit, cells_examined: usize, z_bar: f64)
             names.join(", "),
             ratio,
             hit.z,
-            z_bar,
-            cells_examined,
+            bar_clause,
         ),
         EvidenceBasis::Measured,
         0.5,
-        BTreeMap::from([
-            ("columns".into(), json!(names)),
-            (
-                "cell".into(),
-                json!(hit
-                    .feats
-                    .iter()
-                    .zip(&hit.codes)
-                    .map(|(&f, &c)| (enc.feat_names[f].clone(), json!(cell_label(enc, f, c))))
-                    .collect::<BTreeMap<String, serde_json::Value>>()),
-            ),
-            ("observed_rows".into(), json!(hit.observed)),
-            ("expected_rows".into(), json!(hit.expected)),
-            ("ratio".into(), json!(ratio)),
-            ("share".into(), json!(share)),
-            ("z".into(), json!(hit.z)),
-            ("z_bar".into(), json!(z_bar)),
-            ("cells_examined".into(), json!(cells_examined)),
-            ("rows_scanned".into(), json!(enc.n)),
-            (
-                "method".into(),
-                json!("observed cell count vs the independence baseline from the combination's margins over complete rows of the encoded sample; a cell reports only past absolute bars (expected >= 10, ratio >= 2, observed >= 20, share > 0.5%) and a Bonferroni z bar over all examined cells at family alpha 0.01"),
-            ),
-        ]),
+        metrics,
         Some(
             "the combination is over-represented relative to its marginals; check for a process, segment, or recording rule concentrating rows here before treating any one column's marginal as representative"
                 .into(),
@@ -483,11 +591,122 @@ mod tests {
             .map(|c| c.iter().map(|&f| n_bins[f]).product::<usize>())
             .sum();
         let mut seen: Vec<Vec<usize>> = Vec::new();
-        let (n, t, cells) = enumerate_combos(&n_bins, &cfg, &eligible, |c| seen.push(c.to_vec()));
+        let (n, t, cells) = enumerate_combos(&n_bins, &cfg, &eligible, |c| {
+            seen.push(c.to_vec());
+            true
+        });
         assert_eq!(seen, expect);
         assert_eq!(n, expect.len());
         assert_eq!(t, triples);
         assert_eq!(cells, expect_cells);
         assert!(triples == cfg.max_triples, "cutoff exercised");
+    }
+
+    /// A small encoded matrix with one planted hotspot: 6
+    /// features of 4 bins over 400 rows; features 0 and 1 share
+    /// a concentrated cell (100 rows at code (0, 0) against
+    /// ~25 expected under independence).
+    fn planted_matrix() -> EncodedMatrix {
+        let n = 400usize;
+        let mut bins: Vec<Vec<u8>> = (0..6).map(|_| vec![0u8; n]).collect();
+        for r in 0..n {
+            for (f, col) in bins.iter_mut().enumerate() {
+                col[r] = ((r / (f + 2)) % 4) as u8;
+            }
+        }
+        // Concentrate (0, 0): the first 100 rows sit at code 0
+        // on both features 0 and 1.
+        for col in bins.iter_mut().take(2) {
+            col[..100].fill(0);
+        }
+        EncodedMatrix {
+            rows: (0..n as u32).collect(),
+            n,
+            bins,
+            n_bins: vec![4; 6],
+            feat_names: (0..6).map(|i| format!("f{i}")).collect(),
+            feat_cols: (0..6).collect(),
+            feat_dtypes: vec!["int64".into(); 6],
+            feat_nominal: vec![false; 6],
+            edges: vec![Vec::new(); 6],
+            levels: vec![Vec::new(); 6],
+        }
+    }
+
+    #[test]
+    fn deadline_already_reached_stops_before_first_combination() {
+        let enc = planted_matrix();
+        let cfg = HotspotConfig {
+            deadline: Deadline::at(std::time::Instant::now() - std::time::Duration::from_secs(1)),
+            ..HotspotConfig::default()
+        };
+        let out = hotspots(&enc, &cfg);
+        assert!(out.deadline_stopped);
+        assert!(out.findings.is_empty());
+        // 6 eligible features -> 15 pairs, 16 cells each.
+        assert!(
+            out.coverage.contains("0 of 15 combinations examined"),
+            "coverage: {}",
+            out.coverage
+        );
+        assert!(
+            out.coverage.contains("0 of 240 cells examined"),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn counting_stop_examines_exact_prefix() {
+        // The stop predicate is consulted once per combination;
+        // allowing exactly 5 consultations that return false and
+        // stopping on the 6th must examine exactly the first 5
+        // combinations of the enumeration order — the examined
+        // set is a prefix, reproducible run to run (issue #117).
+        let enc = planted_matrix();
+        let cfg = HotspotConfig::default();
+        let calls = std::cell::Cell::new(0usize);
+        let out = hotspots_impl(&enc, &cfg, &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 5
+        });
+        assert!(out.deadline_stopped);
+        assert!(
+            out.coverage.contains("5 of 15 combinations examined"),
+            "coverage: {}",
+            out.coverage
+        );
+        assert!(
+            out.coverage.contains("80 of 240 cells examined"),
+            "coverage: {}",
+            out.coverage
+        );
+        // A never-stopping run over the same matrix is the
+        // exhaustive counterpart: full counts, no stop clause.
+        let full = hotspots(&enc, &cfg);
+        assert!(!full.deadline_stopped);
+        assert!(
+            full.coverage
+                .contains("15 combinations examined (0 triples), 240 cells examined"),
+            "coverage: {}",
+            full.coverage
+        );
+    }
+
+    #[test]
+    fn future_deadline_matches_no_deadline() {
+        let enc = planted_matrix();
+        let plain = hotspots(&enc, &HotspotConfig::default());
+        let cfg = HotspotConfig {
+            deadline: Deadline::at(std::time::Instant::now() + std::time::Duration::from_secs(600)),
+            ..HotspotConfig::default()
+        };
+        let timed = hotspots(&enc, &cfg);
+        assert!(!timed.deadline_stopped);
+        assert_eq!(plain.coverage, timed.coverage);
+        assert_eq!(plain.findings.len(), timed.findings.len());
+        for (a, b) in plain.findings.iter().zip(timed.findings.iter()) {
+            assert_eq!(a.claim, b.claim);
+        }
     }
 }

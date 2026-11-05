@@ -1,6 +1,7 @@
 //! Pairwise dependence screen: Pearson, Spearman, and Chatterjee's ξ
 //! (both directions), redundancy groups, and arithmetic identity candidates.
 
+use crate::deadline::Deadline;
 use onceover_report::{Method, Pattern};
 use std::collections::BTreeMap;
 
@@ -264,13 +265,36 @@ impl Ord for TieCand {
     }
 }
 
+/// What the dependence screen reports, including whether the
+/// deadline stopped it mid-search (issue #117, stage 2). The
+/// pipeline reads `deadline_stopped` to mark the coverage
+/// entry `capped` and latch the profile's deadline state; the
+/// coverage string itself carries the examined counts.
+pub struct DepOutcome {
+    pub deps: Vec<PairDep>,
+    pub findings: Vec<Finding>,
+    pub coverage: String,
+    pub deadline_stopped: bool,
+}
+
 /// Screen all numeric pairs (rayon-parallel, deterministic order).
 pub fn screen_sampled(
     table: &onceover_core::TypedTable,
     pair_cap: usize,
     row_cap: usize,
     excluded: &[usize],
-) -> (Vec<PairDep>, Vec<Finding>, String) {
+    deadline: Deadline,
+) -> DepOutcome {
+    screen_sampled_impl(table, pair_cap, row_cap, excluded, &|| deadline.exceeded())
+}
+
+fn screen_sampled_impl(
+    table: &onceover_core::TypedTable,
+    pair_cap: usize,
+    row_cap: usize,
+    excluded: &[usize],
+    stop: &dyn Fn() -> bool,
+) -> DepOutcome {
     use rayon::prelude::*;
 
     // Frame-role scaffolding stays in the pair universe (the pairs
@@ -295,15 +319,40 @@ pub fn screen_sampled(
     const PAIR_GATE: usize = 25_000_000;
     let total_pairs = numeric.len() * numeric.len().saturating_sub(1) / 2;
     if total_pairs > PAIR_GATE {
-        return (
-            Vec::new(),
-            Vec::new(),
-            format!(
+        return DepOutcome {
+            deps: Vec::new(),
+            findings: Vec::new(),
+            coverage: format!(
                 "0 of {} numeric pairs (width-gated); pair screening skipped: {} pairs exceeds the {}-pair gate for the all-pairs stage",
                 total_pairs, total_pairs, PAIR_GATE
             ),
-        );
+            deadline_stopped: false,
+        };
     }
+    // The frame-role withholding note is part of every
+    // coverage string this function returns, including the
+    // deadline early return below, so build it once here.
+    let excluded_suffix = {
+        let excluded_numeric: Vec<&str> = excluded
+            .iter()
+            .filter(|&&i| {
+                matches!(
+                    table.cols[i],
+                    TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                )
+            })
+            .map(|&i| table.names[i].as_str())
+            .collect();
+        if excluded_numeric.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; dependence findings involving {} column(s) withheld by frame role: {}",
+                excluded_numeric.len(),
+                excluded_numeric.join(", ")
+            )
+        }
+    };
     let capped = total_pairs > pair_cap;
     // The pair universe is enumerated by ordinal, never
     // materialized: at 5,000 numeric columns it holds ~12.5M
@@ -406,6 +455,9 @@ pub fn screen_sampled(
         // in pair order and the name-smallest boundary ties.
         // Selection state is O(want); nothing is O(pairs).
         let stream_over = (pair_cap * 4).max(1024);
+        // Set by the streaming stage-1 loops when the deadline
+        // stops one of them: (which pass, pairs scored in it).
+        let mut stage1_stop: Option<(&'static str, usize)> = None;
         let mut ranked = if total_pairs <= stream_over {
             let all_pairs: Vec<(usize, usize)> =
                 (0..total_pairs).map(|k| pair_at(&numeric, k)).collect();
@@ -437,6 +489,14 @@ pub fn screen_sampled(
                 std::collections::BinaryHeap::new();
             let mut start = 0usize;
             while start < total_pairs {
+                // Deadline checkpoint (issue #117, stage 2):
+                // the work quantum is one PAIR_CHUNK of the
+                // universe, so the overshoot past the deadline
+                // is bounded by one chunk's scoring.
+                if stop() {
+                    stage1_stop = Some(("first", start));
+                    break;
+                }
                 let end = (start + PAIR_CHUNK).min(total_pairs);
                 for (_, _, score) in score_range(&stage1_rows, start, end, true) {
                     if best.len() < want {
@@ -457,7 +517,11 @@ pub fn screen_sampled(
             let mut ties: std::collections::BinaryHeap<TieCand> =
                 std::collections::BinaryHeap::new();
             let mut start = 0usize;
-            while start < total_pairs {
+            while start < total_pairs && stage1_stop.is_none() {
+                if stop() {
+                    stage1_stop = Some(("second", start));
+                    break;
+                }
                 let end = (start + PAIR_CHUNK).min(total_pairs);
                 for (k, (a, b), score) in score_range(&stage1_rows, start, end, true) {
                     if score > boundary {
@@ -486,6 +550,27 @@ pub fn screen_sampled(
             );
             top
         };
+        if let Some((pass, scored)) = stage1_stop {
+            // Survivor selection is a global ranking over the
+            // complete stage-1 screen; a partial screen cannot
+            // produce it without silently changing the
+            // selection rule. The screen therefore reports no
+            // pairs rather than a truncated ranking, and says
+            // exactly how far it got (issue #117, stage 2).
+            // The routes not covered by checkpoints are
+            // bounded by construction: the in-place route
+            // scores at most `stream_over` pairs, and stage 2
+            // rescores at most `stream_over` survivors.
+            return DepOutcome {
+                deps: Vec::new(),
+                findings: Vec::new(),
+                coverage: format!(
+                    "0 of {} numeric pairs (deadline); stage-1 screening stopped at the deadline in its {} pass after {} of {} pairs; survivor selection needs the complete screen, so no pairs were selected and no detailed statistics were computed; 0 strong pairwise, 0 redundancy links{}",
+                    total_pairs, pass, scored, total_pairs, excluded_suffix
+                ),
+                deadline_stopped: true,
+            };
+        }
         by_score(&mut ranked);
         let survivors: Vec<(usize, usize)> = ranked.into_iter().map(|(pair, _)| pair).collect();
         // Stage 2: survivors rescored on all encoded rows.
@@ -521,15 +606,43 @@ pub fn screen_sampled(
     // enumerated in ordinal chunks so the pair list is never
     // materialized; chunks concatenate in pair order, so the
     // result is identical to screening a materialized list.
-    let deps: Vec<PairDep> = if capped {
-        pair_list
-            .par_iter()
-            .map(|&(a, b)| dep_for_pair(a, b))
-            .collect()
+    // Both routes compute in bounded blocks and poll the
+    // deadline before each block (issue #117, stage 2): the
+    // work quantum is one block — DETAILED_CHUNK survivor
+    // pairs on the capped path, one PAIR_CHUNK of the universe
+    // on the uncapped path. A stop keeps the completed prefix:
+    // those pairs keep their detailed statistics and findings,
+    // and the coverage entry states how many of the selected
+    // pairs were completed.
+    const DETAILED_CHUNK: usize = 64;
+    let mut deps: Vec<PairDep> = if capped {
+        Vec::new()
     } else {
-        let mut deps: Vec<PairDep> = Vec::with_capacity(total_pairs);
+        Vec::with_capacity(total_pairs)
+    };
+    let mut detailed_stopped = false;
+    if capped {
+        let mut start = 0usize;
+        while start < pair_list.len() {
+            if stop() {
+                detailed_stopped = true;
+                break;
+            }
+            let end = (start + DETAILED_CHUNK).min(pair_list.len());
+            let chunk: Vec<PairDep> = pair_list[start..end]
+                .par_iter()
+                .map(|&(a, b)| dep_for_pair(a, b))
+                .collect();
+            deps.extend(chunk);
+            start = end;
+        }
+    } else {
         let mut start = 0usize;
         while start < total_pairs {
+            if stop() {
+                detailed_stopped = true;
+                break;
+            }
             let end = (start + PAIR_CHUNK).min(total_pairs);
             let chunk: Vec<PairDep> = (start..end)
                 .into_par_iter()
@@ -541,8 +654,7 @@ pub fn screen_sampled(
             deps.extend(chunk);
             start = end;
         }
-        deps
-    };
+    }
 
     // Findings: only strong pairs, and never a pair involving a
     // frame-role scaffolding column.
@@ -571,34 +683,44 @@ pub fn screen_sampled(
     let findings: Vec<Finding> = dep_findings.into_iter().map(|(_, f)| f).collect();
 
     let n_links = deps.iter().filter(|d| d.max_signal() >= 0.98).count();
+    // On the capped path "all pairs screened" is the stage-1
+    // statement and stays true when detailed statistics stop
+    // early; on the uncapped path screening IS the detailed
+    // pass, so a stop must not claim it completed.
+    let screened_clause = if detailed_stopped && !capped {
+        format!(
+            "{} of {} pairs screened before the deadline stopped the pass",
+            deps.len(),
+            total_pairs
+        )
+    } else {
+        format!("all {} pairs screened", total_pairs)
+    };
     let mut coverage = format!(
-        "{} of {} numeric pairs ({}); all {} pairs screened; detailed statistics over {} of {} rows; {} strong pairwise, {} redundancy links",
+        "{} of {} numeric pairs ({}); {}; detailed statistics over {} of {} rows; {} strong pairwise, {} redundancy links",
         deps.len(),
         total_pairs,
         if capped { "capped" } else { "full" },
-        total_pairs, rows.len(), table.n,
+        screened_clause, rows.len(), table.n,
         findings.len(),
         n_links,
     );
-    let excluded_numeric: Vec<&str> = excluded
-        .iter()
-        .filter(|&&i| {
-            matches!(
-                table.cols[i],
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
-            )
-        })
-        .map(|&i| table.names[i].as_str())
-        .collect();
-    if !excluded_numeric.is_empty() {
+    if detailed_stopped {
         coverage.push_str(&format!(
-            "; dependence findings involving {} column(s) withheld by frame role: {}",
-            excluded_numeric.len(),
-            excluded_numeric.join(", ")
+            "; deadline reached during detailed statistics: {} of {} {} completed",
+            deps.len(),
+            if capped { pair_list.len() } else { total_pairs },
+            if capped { "selected pairs" } else { "pairs" },
         ));
     }
+    coverage.push_str(&excluded_suffix);
 
-    (deps, findings, coverage)
+    DepOutcome {
+        deps,
+        findings,
+        coverage,
+        deadline_stopped: detailed_stopped,
+    }
 }
 
 fn dep_finding(table: &onceover_core::TypedTable, d: &PairDep, signal: f64) -> Finding {
@@ -725,5 +847,111 @@ mod tests {
         assert_eq!(pair_at(&numeric, m - 2), (0, m - 1));
         assert_eq!(pair_at(&numeric, m - 1), (1, 2));
         assert_eq!(pair_at(&numeric, total - 1), (m - 2, m - 1));
+    }
+
+    /// A table of `m` fully-observed F64 columns over `n` rows,
+    /// deterministic pseudo-varied values.
+    fn numeric_table(m: usize, n: usize) -> onceover_core::TypedTable<'static> {
+        onceover_core::TypedTable {
+            n,
+            names: (0..m).map(|j| format!("c{j}")).collect(),
+            dtypes: vec!["float64".to_string(); m],
+            cols: (0..m)
+                .map(|j| onceover_core::TypedCol::F64 {
+                    vals: (0..n)
+                        .map(|i| Some((((i * 31 + j * 17) % 89) as f64) * 0.5 + (j % 5) as f64))
+                        .collect::<Vec<_>>()
+                        .into(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn deadline_stops_stage1_streaming_after_one_chunk() {
+        // 730 columns -> 265,935 pairs: over the streaming
+        // threshold at pair_cap 496 and over one PAIR_CHUNK, so
+        // stage 1 takes the two-pass streaming route. The stop
+        // predicate is consulted once per chunk; firing on the
+        // second consultation must leave exactly one chunk
+        // scored and no selection at all (issue #117, stage 2).
+        let table = numeric_table(730, 120);
+        let calls = std::cell::Cell::new(0usize);
+        let out = screen_sampled_impl(&table, 496, 20_000, &[], &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 1
+        });
+        assert!(out.deadline_stopped);
+        assert!(out.deps.is_empty());
+        assert!(out.findings.is_empty());
+        assert!(
+            out.coverage.contains(
+                "stage-1 screening stopped at the deadline in its first pass after 262144 of 266085 pairs"
+            ),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn deadline_stops_detailed_statistics_at_block_boundary() {
+        // 30 columns -> 435 pairs; pair_cap 200 takes the
+        // capped route with an in-place stage 1 (no checkpoints
+        // there), so the stop predicate's consultations are the
+        // detailed-statistics blocks of 64: firing on the third
+        // leaves exactly 128 completed pairs.
+        let table = numeric_table(30, 200);
+        let calls = std::cell::Cell::new(0usize);
+        let out = screen_sampled_impl(&table, 200, 20_000, &[], &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 2
+        });
+        assert!(out.deadline_stopped);
+        assert_eq!(out.deps.len(), 128);
+        assert!(
+            out.coverage.contains(
+                "deadline reached during detailed statistics: 128 of 200 selected pairs completed"
+            ),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn deadline_stops_uncapped_screen_at_first_chunk() {
+        // pair_cap above the universe: uncapped route, one
+        // chunk covers all 435 pairs; a stop at the first
+        // consultation leaves zero pairs and must not claim
+        // the screen completed.
+        let table = numeric_table(30, 200);
+        let out = screen_sampled_impl(&table, 10_000, 20_000, &[], &|| true);
+        assert!(out.deadline_stopped);
+        assert!(out.deps.is_empty());
+        assert!(
+            out.coverage
+                .contains("0 of 435 pairs screened before the deadline stopped the pass"),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn no_stop_and_future_deadline_match_unbounded_run() {
+        let table = numeric_table(30, 200);
+        let base = screen_sampled_impl(&table, 200, 20_000, &[], &|| false);
+        assert!(!base.deadline_stopped);
+        let via_deadline = screen_sampled(
+            &table,
+            200,
+            20_000,
+            &[],
+            crate::deadline::Deadline::at(
+                std::time::Instant::now() + std::time::Duration::from_secs(600),
+            ),
+        );
+        assert!(!via_deadline.deadline_stopped);
+        assert_eq!(base.coverage, via_deadline.coverage);
+        assert_eq!(base.deps.len(), via_deadline.deps.len());
+        assert_eq!(base.findings.len(), via_deadline.findings.len());
     }
 }
