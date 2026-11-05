@@ -59,6 +59,8 @@ pub enum Pattern {
     DigitPreference,
     BenfordDeviation,
     BoundaryMass,
+    /// A column's values against what the column appears to hold.
+    ContentAnomaly,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
@@ -97,7 +99,8 @@ impl Pattern {
             | Self::Heaping
             | Self::DigitPreference
             | Self::BenfordDeviation
-            | Self::BoundaryMass => Category::Formats,
+            | Self::BoundaryMass
+            | Self::ContentAnomaly => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency
             | Self::ArithmeticIdentity
@@ -140,6 +143,7 @@ impl Pattern {
             Self::DigitPreference => "digit_preference",
             Self::BenfordDeviation => "benford_deviation",
             Self::BoundaryMass => "boundary_mass",
+            Self::ContentAnomaly => "content_anomaly",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
@@ -631,7 +635,7 @@ impl Facets {
                 Some(Q::Validity),
                 S::Deviation,
             ),
-            Pattern::BoundaryMass => (
+            Pattern::BoundaryMass | Pattern::ContentAnomaly => (
                 Sc::Column,
                 O::Distribution,
                 E::Exact,
@@ -865,6 +869,7 @@ impl Facets {
             (Category::Formats, Some("digit_preference")) => Pattern::DigitPreference,
             (Category::Formats, Some("benford_deviation")) => Pattern::BenfordDeviation,
             (Category::Formats, Some("boundary_mass")) => Pattern::BoundaryMass,
+            (Category::Formats, Some("content_anomaly")) => Pattern::ContentAnomaly,
             (Category::Formats, _) => Pattern::FormatVariation,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
@@ -1246,6 +1251,15 @@ impl Finding {
                     json!("exclude rows missing either column"),
                 );
                 for k in ["finer", "coarser"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::ContentAnomaly => {
+                // One column can hold several statements of different
+                // kinds, and of one kind at both ends of its range.
+                for k in ["kind", "value", "side", "extreme"] {
                     if let Some(v) = metrics.get(k) {
                         spec.definition.insert(k.into(), v.clone());
                     }

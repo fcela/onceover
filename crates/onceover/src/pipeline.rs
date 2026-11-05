@@ -740,6 +740,26 @@ fn profile_inner(
         findings.append(&mut f);
     }
 
+    // ---------- content ----------
+    if check_deadline(&mut coverage, "content") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("content") {
+        let mut f = onceover_deps::column_content(&table);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "content".into(),
+            PassInfo::ran(format!(
+                "{} columns scanned for content; {} statements",
+                table.cols.len(),
+                f.len()
+            )),
+        );
+        findings.append(&mut f);
+    }
+
     // ---------- boundaries ----------
     if check_deadline(&mut coverage, "boundaries") {
         deadline_hit = true;
@@ -1461,7 +1481,7 @@ fn profile_inner(
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
                     "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
-                    | "identities" | "missingness" => Sampling::Full,
+                    | "identities" | "missingness" | "content" => Sampling::Full,
                     "association_rules" | "prism" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample
