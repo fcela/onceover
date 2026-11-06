@@ -459,15 +459,33 @@ fn restart_run(table: &TypedTable, ci: usize, group_cols: &[usize]) -> Option<us
 
 pub(crate) const MICROS_PER_DAY: i64 = 86_400_000_000;
 
+/// Convert per-row day ticks to per-row microsecond ticks. The
+/// conversion fails as a whole when any value sits outside the
+/// range i64 microseconds can represent — |days| above
+/// 106,751,991, roughly ±292,000 years — because a partial
+/// conversion would drop exactly the extreme values and state a
+/// span the data does not have. Callers treat `None` the way they
+/// already treat a column with no tick representation at all:
+/// the axis is recorded without a measured span.
+fn day_ticks_to_micros(ticks: &[Option<i64>]) -> Option<Vec<Option<i64>>> {
+    let mut out = Vec::with_capacity(ticks.len());
+    for t in ticks {
+        out.push(match t {
+            Some(d) => Some(d.checked_mul(MICROS_PER_DAY)?),
+            None => None,
+        });
+    }
+    Some(out)
+}
+
 /// Per-row ticks of a native temporal column, normalized to
 /// microseconds since the epoch.
 fn column_ticks_micros(col: &TypedCol) -> Option<Vec<Option<i64>>> {
     match col {
-        TypedCol::Date { vals } => Some(
-            vals.iter()
-                .map(|v| v.map(|d| d as i64 * MICROS_PER_DAY))
-                .collect(),
-        ),
+        TypedCol::Date { vals } => {
+            let days: Vec<Option<i64>> = vals.iter().map(|v| v.map(i64::from)).collect();
+            day_ticks_to_micros(&days)
+        }
         TypedCol::Datetime { vals, .. } => {
             Some((0..vals.len()).map(|r| col.datetime_micros(r)).collect())
         }
@@ -484,7 +502,10 @@ pub(crate) fn modal_diff(sorted_distinct: &[i64]) -> Option<i64> {
     }
     let mut counts: Vec<(i64, usize)> = Vec::new();
     for w in sorted_distinct.windows(2) {
-        let diff = w[1] - w[0];
+        // A span wider than the i64 microsecond range has no
+        // representable step; report none rather than a wrapped
+        // difference.
+        let diff = w[1].checked_sub(w[0])?;
         match counts.iter_mut().find(|(d, _)| *d == diff) {
             Some((_, c)) => *c += 1,
             None => counts.push((diff, 1)),
@@ -597,14 +618,11 @@ pub(crate) fn axis_ticks_micros(
     frame: &FrameModel,
 ) -> Option<Vec<Option<i64>>> {
     if let Some(ticks) = &frame.axis_ticks {
-        return Some(if frame.axis_is_datetime {
-            ticks.clone()
+        return if frame.axis_is_datetime {
+            Some(ticks.clone())
         } else {
-            ticks
-                .iter()
-                .map(|t| t.map(|d| d * MICROS_PER_DAY))
-                .collect()
-        });
+            day_ticks_to_micros(ticks)
+        };
     }
     let src = frame.info.axis.as_ref()?.source_column.as_deref()?;
     let i = table.names.iter().position(|n| n == src)?;
@@ -630,10 +648,10 @@ fn measure_axis_span(
         let micros: Vec<Option<i64>> = if axis_is_datetime {
             ticks.clone()
         } else {
-            ticks
-                .iter()
-                .map(|t| t.map(|d| d * MICROS_PER_DAY))
-                .collect()
+            match day_ticks_to_micros(ticks) {
+                Some(micros) => micros,
+                None => return (None, None, None, None),
+            }
         };
         return span_from_ticks(&micros);
     }
@@ -1138,6 +1156,62 @@ mod tests {
         assert_eq!(parse_timestamp("2023-1-1"), None); // strict widths
         assert!(parse_timestamp("2012-10-02 09:00:00Z").is_some());
         assert!(parse_timestamp("2012-10-02T09:00:00.5").is_some());
+    }
+
+    #[test]
+    fn date_ticks_stop_at_the_microsecond_range() {
+        // The largest day count whose microsecond form fits in an
+        // i64 converts exactly, nulls included; one day beyond it
+        // the conversion fails as a whole rather than wrapping or
+        // dropping the extreme value.
+        let edge = i64::MAX / MICROS_PER_DAY; // 106,751,991 days
+        let col = TypedCol::Date {
+            vals: vec![Some(-(edge as i32)), None, Some(edge as i32)],
+        };
+        assert_eq!(
+            column_ticks_micros(&col),
+            Some(vec![
+                Some(-edge * MICROS_PER_DAY),
+                None,
+                Some(edge * MICROS_PER_DAY)
+            ])
+        );
+        let beyond = TypedCol::Date {
+            vals: vec![Some(0), Some((edge + 1) as i32)],
+        };
+        assert_eq!(column_ticks_micros(&beyond), None);
+        // The full Polars date range is far beyond the boundary.
+        let full = TypedCol::Date {
+            vals: vec![Some(i32::MIN), Some(i32::MAX)],
+        };
+        assert_eq!(column_ticks_micros(&full), None);
+    }
+
+    #[test]
+    fn modal_diff_of_an_unrepresentable_span_is_none() {
+        assert_eq!(modal_diff(&[i64::MIN, i64::MAX]), None);
+        assert_eq!(
+            modal_diff(&[0, MICROS_PER_DAY, 2 * MICROS_PER_DAY]),
+            Some(MICROS_PER_DAY)
+        );
+    }
+
+    #[test]
+    fn extreme_date_axis_is_recorded_without_a_span() {
+        let df =
+            DataFrame::new_infer_height(vec![Series::new("d".into(), vec![i32::MIN, i32::MAX])
+                .cast(&DataType::Date)
+                .unwrap()
+                .into()])
+            .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let axis = frame.info.axis.as_ref().expect("native date axis");
+        assert_eq!(axis.min, None);
+        assert_eq!(axis.max, None);
+        assert_eq!(axis.distinct_values, None);
+        assert_eq!(axis.step, None);
+        assert_eq!(axis_ticks_micros(&table, &frame), None);
     }
 
     #[test]
