@@ -17,7 +17,8 @@
      "category": "dependencies",
      "type": "functional",
      "target": "tsh_measured",
-     "note": "Each assay's value column determines its measured flag (missingness structure)."
+     "expect": "missed",
+     "note": "Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "finding",
@@ -153,11 +154,11 @@
      "category": "dependencies",
      "type": "functional",
      "columns_all": [
-      "leafspots_halo",
+      "leafspots_marg",
       "leafspot_size"
      ],
      "expect": "found",
-     "note": "On the bundled 683-row text-label file the profiler reports class + leafspots_halo -> leafspot_size with exactly 1 violation -- the structure GritBot's case 78 breaks."
+     "note": "On the bundled 683-row text-label file the profiler reports class + leafspots_marg -> leafspot_size (2 violations in 599 rows) -- the structure GritBot's case 78 breaks. Reselected under the chance-corrected scoring (issue #128) from the violation-tied (class, leafspots_halo) candidate: class 2 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "documented_case",
@@ -488,10 +489,11 @@
      "type": "functional",
      "columns_all": [
       "distance_from_residence_to_work_km",
-      "employee_id"
+      "body_mass_index",
+      "weight"
      ],
      "expect": "found",
-     "note": "employee_id -> distance_from_residence_to_work_km holds on 99.86% of rows (1 violation in 740)."
+     "note": "(body_mass_index, weight) -> distance_from_residence_to_work_km holds on 99.59% of rows (3 violations in 740). Reselected under the chance-corrected scoring (issue #128): the previous winner, employee_id (1 violation in 740), is a per-employee attribute, and RFI ranks the pair's information higher: class 2 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "documented_case",
@@ -735,7 +737,8 @@
      "category": "dependencies",
      "type": "functional",
      "target": "account_number",
-     "note": "credit_card_id -> account_number holds with 0 violations in the first run (one of 58 FD findings)."
+     "expect": "missed",
+     "note": "credit_card_id -> account_number holds with 0 violations (one of the exact dependencies the pass verifies). All four exact determinants of account_number are near-unique identifiers; under the chance-corrected scoring (issue #128) they score at their RFI and the statement falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "documented_case",
@@ -1484,7 +1487,8 @@
      "category": "dependencies",
      "type": "functional",
      "target": "registered",
-     "note": "(cnt, casual) -> registered holds exactly (0 violations in 17,379 rows). One direction of the cnt = casual + registered identity, verified independently in the 2026-11-03 case study; the identity itself is a documented case below."
+     "expect": "missed",
+     "note": "(cnt, casual) -> registered holds exactly (0 violations in 17,379 rows), one direction of the cnt = casual + registered identity, verified independently in the 2026-11-03 case study; the identity itself is a documented case below. The (casual, registered) -> cnt direction remains in the report; under the chance-corrected scoring (issue #128) this direction falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "finding",
