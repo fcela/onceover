@@ -187,3 +187,42 @@ acceptance check for this leg: every strong statement that
 gained a qualification (none) would have been recomputed
 independently from the raw frame before being counted as a
 genuine reversal.
+
+## Amendment, 6 November 2026: a significance bar on the within effect
+
+The criterion above requires only that every usable stratum's
+effect have the sign opposite to the pooled effect. The null
+frames above never produced a strong pair, so they did not test
+the case where the pooled association is strong and the
+within-stratum association is zero: x and y share a group mean
+shift and are independent inside each group. There the
+within-stratum effects are noise, and with two strata both come
+out opposite to the pooled sign about a quarter of the time.
+
+Measured on that frame (two levels, 2,000 rows, x and y each
+shifted by 2 in level B, unit-variance independent noise), 20
+seeds: 6 of 20 strong statements carried "the direction
+reverses within every level of g", with within-level Spearman
+rho between −0.03 and −0.06, about one standard error from zero.
+
+The criterion now adds: the combined within effect must differ
+from zero at |z| ≥ 3.84, with z = (weighted mean on the
+combining scale) × sqrt(sum of weights). The weights are the
+inverse variances already used for the combination: n − 3 for
+Pearson and point-biserial r (Fisher z), (n − 3) / 1.06 for
+Spearman's rho, and the inverse Woolf variance for log odds
+ratios. 3.84 is the two-sided normal quantile at 0.05 / 400, a
+Bonferroni bar over the screen's evaluation budget. The payload
+records the z as `within_z`.
+
+Results on the amended criterion:
+
+- The null-within frame above, 20 seeds: 0 qualifications.
+- Numeric plants, 10 seeds: 10/10 qualified. Mixed plants, 10
+  seeds: 10/10 qualified. The nominal 2×2 plant and the
+  homogeneous control behave as before (tests/test_associations.py).
+- The amendment can only withdraw qualifications. The corpus had
+  none before it (Results above), so it has none after it. The
+  corpus runner's machine-verified results are unchanged (84/89
+  on this tree, the five failures being the FD expectations that
+  PR #183 updates).

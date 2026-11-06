@@ -460,14 +460,22 @@ correlation ratio η over more than two levels are unsigned:
 they have no direction to reverse and are not checked.
 
 When every usable stratum's effect has the opposite sign to
-the pooled effect, a qualification is appended to the claim —
-the stratifier is named and the pooled and within-stratum
-effects are stated with their signs — and the finding's
-evidence gains a `simpson` payload: the statistic, the pooled
-effect, the stratum-weighted within effect (Fisher-z average
-for correlations, inverse-variance weighting for log odds
-ratios), the per-stratum levels with row counts and effects,
-the usable and total stratum counts, and the share of
+the pooled effect and the combined within-stratum effect
+differs from zero at |z| ≥ 3.84 (a Bonferroni bar at family
+alpha 0.05 over the 400-evaluation budget), a qualification is
+appended to the claim. The z bar matters when the association
+vanishes inside the strata: the within effects are then noise,
+both signs come out opposite to the pooled sign about a quarter
+of the time with two strata, and without the bar the claim would
+say the direction reverses when it does not. The qualification
+names the stratifier and states the pooled and within-stratum
+effects with their signs, and the finding's evidence gains a
+`simpson` payload: the statistic, the pooled effect, the
+stratum-weighted within effect (Fisher-z average for
+correlations, inverse-variance weighting for log odds ratios)
+and its z against zero (`within_z`), the per-stratum levels
+with row counts and effects, the usable and total stratum
+counts, and the share of
 pair-complete rows the usable strata cover. Binary statistics
 also name the level coded as 1 (`coded_level`, or
 `coded_level_a` / `coded_level_b` for the odds ratio), so the

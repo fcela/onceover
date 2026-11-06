@@ -207,6 +207,7 @@ def test_simpson_qualification_on_numeric_pair():
         assert abs(row["effect"] - by_level[lv]) < 0.05
         assert row["n"] == 2000
     assert s["pooled_effect"] * s["within_effect"] < 0
+    assert abs(s["within_z"]) >= 3.84
 
 
 def test_simpson_homogeneous_pair_gets_no_qualification():
@@ -216,6 +217,32 @@ def test_simpson_homogeneous_pair_gets_no_qualification():
     assert f is not None, "the homogeneous pair is still a strong statement"
     assert "direction reverses" not in f["claim"]
     assert _any_simpson(report) == []
+
+
+def _group_mean_pair(seed):
+    """A pooled correlation produced by the group means alone:
+    within each level of g, x and y are independent."""
+    rng = random.Random(seed)
+    x, y, g = [], [], []
+    for _ in range(2000):
+        grp = rng.random() < 0.5
+        x.append(2.0 * grp + rng.gauss(0.0, 1.0))
+        y.append(2.0 * grp + rng.gauss(0.0, 1.0))
+        g.append("B" if grp else "A")
+    return pl.DataFrame({"x": x, "y": y, "g": g})
+
+
+def test_simpson_needs_a_measured_within_effect():
+    # Within-level effects of x and y are zero by construction, so
+    # their signs are coin flips: about a quarter of seeds give both
+    # levels the sign opposite to the pooled effect. None of them
+    # may be stated as a reversal.
+    for seed in range(20):
+        report = onceover.profile(_group_mean_pair(seed))
+        f, _ = _strong_finding(report, {"x", "y"})
+        assert f is not None, "the pooled pair is a strong statement"
+        assert "direction reverses" not in f["claim"], (seed, f["claim"])
+        assert _any_simpson(report) == []
 
 
 def _simpson_mixed(seed=13):
@@ -239,6 +266,7 @@ def test_simpson_qualification_on_mixed_pair():
     assert s["statistic"] == "point_biserial"
     assert s["coded_level"] in ("ctrl", "trt")
     assert s["pooled_effect"] * s["within_effect"] < 0
+    assert abs(s["within_z"]) >= 3.84
     assert all(row["effect"] * s["pooled_effect"] < 0 for row in s["strata"])
     assert {row["level"] for row in s["strata"]} == {"A", "B"}
 
