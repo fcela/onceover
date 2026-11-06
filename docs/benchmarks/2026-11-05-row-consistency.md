@@ -12,7 +12,9 @@ Subtracting one column's hash gives the row's key without that column, so all co
 can be tested in one pass over the rows per column. A statement names the column whose
 removal makes rows repeat. It requires at least 5 extra rows and 0.1% of the table, at
 least 3 other columns, and at least half the rows distinct once the column is removed,
-which keeps coarse tables where almost every row repeats out. Exact repeats are
+which keeps coarse tables where almost every row repeats out. The repeats must also
+exceed 4 times the row pairs expected to coincide by chance on the compared columns
+(amendment below). Exact repeats are
 subtracted, so the count is the rows that differ only in the named column. At most 3
 statements per table. Tables above 50,000,000 cells are not checked, and coverage says
 so.
@@ -128,3 +130,38 @@ The benchmark's existing checks all pass, including the plants past column 64, a
 `late_order` is added to them. `row_consistency` does not check near-duplicate rows on
 this fixture, because 400,000,000 cells is above its 50,000,000 limit, and coverage says
 so. On 1,000,000 × 40, which is within the limit, it takes 0.54 s of a 5.35 s profile.
+
+## Amendment, 6 November 2026: a chance baseline for near duplicates
+
+The rule above counted rows that repeat on every column but one and stated them when
+they reached 5 rows and 0.1% of the table. It had no estimate of how often rows repeat by
+chance. Five independent answers with six levels each agree on about one row pair in
+7,800, so in 5,000 rows about 1,300 rows repeat another row on every column except a
+continuous score. On that frame the statement "1343 rows repeat another row on every
+column except score (26.86%)" was the only finding and ranked first (0.871). On a
+sales-line table where price is fixed by (store, product), 38% of rows repeated except
+`qty`, which is the table's grain, not records entered twice.
+
+The statement now also requires the repeats to exceed 4 times the pairs expected by
+chance, C(n, 2) times the product of the compared columns' collision probabilities (the
+sum of squared value shares, nulls counted as one value). The product runs only over
+columns that add resolution: columns enter coarsest first, and a column is skipped when
+it raises the distinct count of the columns already entered by 1% or less, because it is
+then fixed by them (the price in the sales table). At most 64 columns are tested; columns
+past that are left out of the product, which can only raise the estimate. The estimate is
+recorded as `expected_by_chance`.
+
+Results:
+
+| Frame | Before | After |
+|---|---|---|
+| Five six-level answers and a score, 5,000 rows, 3 seeds | 1 statement each, about 27% of rows | none |
+| Sales lines, price fixed by (store, product), 20,000 rows | 7,578 rows except `qty` | none |
+| 20 rows re-entered with a new `id` | found | found (chance 0.76 pairs) |
+| 60 orders re-entered with status `void`, 8,000 rows | found | found (chance 12.4 pairs) |
+| Corpus, all 14 near-duplicate statements | stated | stated, unchanged; the largest chance estimate is 813 pairs against Adult's 6,322 rows |
+
+A record re-entered inside a table whose compared columns coincide often by chance is
+not separable from those coincidences by this count and is not stated. On the sales
+table with 300 lines re-entered under new line ids, 1,906 rows repeat except the line id,
+1,606 of them already in the table before the re-entry, and no statement is made.
