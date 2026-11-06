@@ -274,8 +274,13 @@ def main() -> int:
     ap.add_argument("--json-out")
     args = ap.parse_args()
 
-    sys.path.insert(0, str(ROOT / "python"))
-    import onceover
+    try:
+        import onceover  # the installed package, with its built extension
+    except ImportError:
+        # Fall back to the source tree, which imports only after an
+        # in-place build (maturin develop) has put the extension there.
+        sys.path.insert(0, str(ROOT / "python"))
+        import onceover
 
     registry = json.loads((BENCH / "registry.json").read_text())
     run = {"started": datetime.now(timezone.utc).isoformat(),

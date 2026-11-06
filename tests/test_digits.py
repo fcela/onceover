@@ -57,6 +57,53 @@ def test_terminal_digit_preference_fires_without_heaping():
     assert payload["top_digit_share"] > 0.25
 
 
+def test_even_numbers_are_compared_with_even_digits():
+    # Every value is even, so only even digits can end it; against
+    # all ten digits this reads as a 20% preference for each.
+    rng = random.Random(29)
+    vals = [2 * round(rng.gauss(500, 80)) for _ in range(4000)]
+    report = onceover.profile(pl.DataFrame({"value": vals}))
+    assert _of_type(report, "digit_preference") == []
+
+
+def test_narrow_range_counts_are_not_tested():
+    # Poisson counts span 0..20: the value distribution, not the
+    # recording, decides which digits are common.
+    import math
+    rng = random.Random(31)
+
+    def poisson(lam):
+        k, p, u = 0, math.exp(-lam), rng.random()
+        s = p
+        while u > s:
+            k += 1
+            p *= lam / k
+            s += p
+        return k
+
+    vals = [poisson(5.0) for _ in range(5000)]
+    report = onceover.profile(pl.DataFrame({"count": vals, "id": range(5000)}))
+    assert _of_type(report, "digit_preference") == []
+
+
+def test_preference_within_the_even_digits_is_found():
+    rng = random.Random(37)
+    vals = []
+    for _ in range(4000):
+        v = 2 * round(rng.gauss(500, 80))
+        if rng.random() < 0.3:
+            v = v - (v % 10) + 8
+        vals.append(v)
+    report = onceover.profile(pl.DataFrame({"value": vals}))
+    hits = _of_type(report, "digit_preference")
+    assert len(hits) == 1
+    payload = hits[0]["evidence"][0]["metrics"]
+    assert payload["top_digit"] == 8
+    assert payload["grid_step"] == 2
+    assert payload["degrees_of_freedom"] == 4
+    assert "5 digits multiples of 2 can end in" in hits[0]["claim"]
+
+
 def _benford_conforming(seed: int, n: int = 4000) -> list[float]:
     rng = random.Random(seed)
     vals = []

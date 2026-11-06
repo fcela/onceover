@@ -11,10 +11,18 @@
 //!   the test). The largest unit whose pile clears 3x the
 //!   baseline at z >= 6 is reported.
 //! - **Terminal-digit preference**: the last-digit distribution
-//!   of integer-valued columns against uniformity (chi-square,
-//!   df 9). Suppressed for a column where heaping already
-//!   fired: one phenomenon, one finding — the heaping evidence
-//!   carries the 0/5 digit shares.
+//!   of integer-valued columns against the digits the column's
+//!   value grid can end in (chi-square, df = attainable digits
+//!   minus 1). The grid is the arithmetic progression from the
+//!   minimum in steps of the values' common difference, so a
+//!   column of even numbers is compared with the five even
+//!   digits, not with all ten. The test runs only when the central
+//!   90% of the values spans at least 3 cycles of the last digit;
+//!   over a narrower spread the value distribution itself fixes the
+//!   digit shares.
+//!   Suppressed for a column where heaping already fired: one
+//!   phenomenon, one finding — the heaping evidence carries the
+//!   0/5 digit shares.
 //! - **Benford deviation**: first digits of positive values
 //!   against Benford's law, only for eligible columns —
 //!   eligibility is conservative and recorded in coverage:
@@ -46,6 +54,25 @@ const MIN_DISTINCT: usize = 20;
 /// df 8 at ~3e-5 — strict per-column bars, no per-table
 /// correction needed at these levels for tens of columns.
 const CHI2_DIGIT_BAR: f64 = 44.0;
+/// The terminal-digit bar by degrees of freedom (index = df), at the
+/// tail probability of `CHI2_DIGIT_BAR` on 9 df (1.4e-6).
+const CHI2_DIGIT_BARS: [f64; 10] = [
+    f64::INFINITY,
+    23.3,
+    26.9,
+    30.0,
+    32.6,
+    35.1,
+    37.5,
+    39.7,
+    41.9,
+    CHI2_DIGIT_BAR,
+];
+/// The central 90% of the values (5th to 95th percentile) must span
+/// at least this many cycles of the last digit for the terminal-digit
+/// test to run. Over a narrower spread the shape of the distribution
+/// decides which digits are common.
+const MIN_DIGIT_CYCLES: f64 = 3.0;
 const CHI2_BENFORD_BAR: f64 = 34.0;
 const BENFORD_MAD_BAR: f64 = 0.012;
 
@@ -187,32 +214,121 @@ fn heaping(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
     false
 }
 
-fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
-    let mut counts = [0usize; 10];
-    for v in vals {
-        counts[((*v as i64).unsigned_abs() % 10) as usize] += 1;
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
     }
-    let n = vals.len() as f64;
-    let expected = n / 10.0;
-    let chi2: f64 = counts
+    a
+}
+
+/// Expected terminal-digit shares for values spread evenly over the
+/// grid lo, lo + step, ..., hi: within one cycle of the last digit
+/// (10 / gcd(step, 10) grid points) each attainable digit occurs
+/// once, and nonnegative and negative points (whose |x| ends in a
+/// different digit set) are weighted by how many of each the grid
+/// holds. Also returns the number of grid points in one digit cycle.
+fn grid_digit_shares(lo: i64, hi: i64, step: u64) -> ([f64; 10], u64) {
+    let points = ((hi as i128 - lo as i128) / step as i128 + 1) as f64;
+    // gcd(0, 10) = 10, so a step that is a multiple of 10 has
+    // period 1: every grid point ends in the same digit.
+    let period = 10 / gcd(step % 10, 10);
+    let mut shares = [0.0f64; 10];
+    // Grid points below zero and at or above zero.
+    let negative = if lo < 0 {
+        (((-1i128 - lo as i128) / step as i128) + 1).min(points as i128) as f64
+    } else {
+        0.0
+    };
+    let nonnegative = points - negative;
+    let first_nonneg = if lo >= 0 {
+        lo as i128
+    } else {
+        lo as i128 + negative as i128 * step as i128
+    };
+    for (start, weight) in [(lo as i128, negative), (first_nonneg, nonnegative)] {
+        if weight <= 0.0 {
+            continue;
+        }
+        for k in 0..period as i128 {
+            let x = start + k * step as i128;
+            shares[(x.unsigned_abs() % 10) as usize] += weight / points / period as f64;
+        }
+    }
+    (shares, period)
+}
+
+fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
+    let ints: Vec<i64> = vals.iter().map(|v| *v as i64).collect();
+    let lo = *ints.iter().min().unwrap();
+    let hi = *ints.iter().max().unwrap();
+    let step = ints
         .iter()
-        .map(|&c| (c as f64 - expected).powi(2) / expected)
-        .sum();
-    let (top_digit, top_count) = counts.iter().enumerate().max_by_key(|&(_, &c)| c).unwrap();
-    let top_share = *top_count as f64 / n;
-    if chi2 < CHI2_DIGIT_BAR || top_share < 0.15 {
+        .fold(0u64, |g, &v| gcd(g, (v as i128 - lo as i128) as u64));
+    if step == 0 {
         return;
     }
+    let (expected_share, period) = grid_digit_shares(lo, hi, step);
+    let mut sorted = ints.clone();
+    sorted.sort_unstable();
+    let q = |p: f64| sorted[((p * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)];
+    let central_points = (q(0.95) as i128 - q(0.05) as i128) as f64 / step as f64 + 1.0;
+    if central_points / (period as f64) < MIN_DIGIT_CYCLES {
+        return;
+    }
+    let mut counts = [0usize; 10];
+    for v in &ints {
+        counts[(v.unsigned_abs() % 10) as usize] += 1;
+    }
+    let n = vals.len() as f64;
+    let attainable = expected_share.iter().filter(|&&p| p > 0.0).count();
+    let chi2: f64 = counts
+        .iter()
+        .zip(expected_share)
+        .filter(|(_, p)| *p > 0.0)
+        .map(|(&c, p)| (c as f64 - n * p).powi(2) / (n * p))
+        .sum();
+    let bar = CHI2_DIGIT_BARS[attainable.saturating_sub(1)];
+    // The digit most over its expected share.
+    let (top_digit, _) = counts
+        .iter()
+        .zip(expected_share)
+        .enumerate()
+        .filter(|(_, (_, p))| *p > 0.0)
+        .map(|(d, (&c, p))| (d, c as f64 / n - p))
+        .fold((0usize, f64::NEG_INFINITY), |best, cur| {
+            if cur.1 > best.1 {
+                cur
+            } else {
+                best
+            }
+        });
+    let top_share = counts[top_digit] as f64 / n;
+    let top_expected = expected_share[top_digit];
+    if chi2 < bar || top_share < 1.5 * top_expected {
+        return;
+    }
+    let against = if attainable == 10 {
+        format!("{:.0}% under uniformity", 100.0 * top_expected)
+    } else {
+        format!(
+            "{:.0}% expected over the {} digits multiples of {} can end in",
+            100.0 * top_expected,
+            attainable,
+            step
+        )
+    };
     out.push(Finding::new(
         Pattern::DigitPreference,
         BTreeMap::from([("column".into(), json!(name))]),
         format!(
-            "column {} has a terminal-digit preference: digit {} ends {:.1}% of values against 10% under uniformity (chi-square {:.1} on 9 df, bar {:.0})",
+            "column {} has a terminal-digit preference: digit {} ends {:.1}% of values against {} (chi-square {:.1} on {} df, bar {:.1})",
             name,
             top_digit,
             100.0 * top_share,
+            against,
             chi2,
-            CHI2_DIGIT_BAR,
+            attainable - 1,
+            bar,
         ),
         EvidenceBasis::Measured,
         0.5,
@@ -224,9 +340,12 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
             ("chi_square".into(), json!(chi2)),
             ("top_digit".into(), json!(top_digit)),
             ("top_digit_share".into(), json!(top_share)),
+            ("expected_digit_shares".into(), json!(expected_share)),
+            ("grid_step".into(), json!(step)),
+            ("degrees_of_freedom".into(), json!(attainable - 1)),
             (
                 "method".into(),
-                json!("last-digit distribution over all values vs uniform; chi-square on 9 df"),
+                json!("last-digit distribution over all values vs the digits of the value grid (minimum, step = common difference); chi-square on attainable digits - 1 df; run when the range spans at least 10 digit cycles"),
             ),
         ]),
         Some(
@@ -236,7 +355,7 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
         Method::new(
             "digits",
             "terminal_digit_scan",
-            "exact last-digit counts vs uniformity (onceover v0.1)",
+            "exact last-digit counts vs the value grid's digits (onceover v0.1)",
         ),
     ));
 }
@@ -341,6 +460,31 @@ fn first_digit(v: f64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_digit_shares_follow_the_grid() {
+        // Every integer: ten digits, equal shares.
+        let (shares, period) = grid_digit_shares(0, 999, 1);
+        assert!(shares.iter().all(|p| (p - 0.1).abs() < 1e-12), "{shares:?}");
+        assert_eq!(period, 10);
+        // Even numbers: five even digits.
+        let (shares, _) = grid_digit_shares(2, 2000, 2);
+        for d in 0..10 {
+            let want = if d % 2 == 0 { 0.2 } else { 0.0 };
+            assert!((shares[d] - want).abs() < 1e-12, "{d}: {shares:?}");
+        }
+        // Multiples of 5 from 15: last digits 5 and 0.
+        let (shares, _) = grid_digit_shares(15, 1015, 5);
+        assert!((shares[0] - 0.5).abs() < 1e-12 && (shares[5] - 0.5).abs() < 1e-12);
+        // A grid straddling zero in steps of 5 from -998: the
+        // negative points end in 8 or 3, the nonnegative ones in 2
+        // or 7, weighted by how many of each there are.
+        let (shares, _) = grid_digit_shares(-998, 1002, 5);
+        let total: f64 = shares.iter().sum();
+        assert!((total - 1.0).abs() < 1e-12);
+        assert!(shares[3] > 0.0 && shares[8] > 0.0 && shares[2] > 0.0 && shares[7] > 0.0);
+        assert_eq!(shares[0] + shares[5], 0.0);
+    }
 
     #[test]
     fn first_digits() {

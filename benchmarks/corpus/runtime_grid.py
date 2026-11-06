@@ -24,8 +24,13 @@ import polars as pl
 
 BENCH = Path(__file__).parent
 ROOT = BENCH.parent.parent
-sys.path.insert(0, str(ROOT / "python"))
-import onceover  # noqa: E402
+try:
+    import onceover  # noqa: E402  the installed package, with its built extension
+except ImportError:
+    # Fall back to the source tree, which imports only after an
+    # in-place build (maturin develop) has put the extension there.
+    sys.path.insert(0, str(ROOT / "python"))
+    import onceover
 
 
 def synthetic(rows: int, cols: int) -> pl.DataFrame:

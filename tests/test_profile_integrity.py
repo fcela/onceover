@@ -195,3 +195,35 @@ def test_surprise_scan_retains_rare_unsampled_rows():
     r = onceover.profile(pl.DataFrame({"value": values}), detectors=["surprises"])
     assert any(n - 1 in e["metrics"].get("extreme_rows", [])
                for f in r.findings for e in f["evidence"])
+
+
+def test_long_values_are_shortened_in_claims_not_in_evidence():
+    # A 100,000-character cell is quoted by its first 60 characters
+    # and its length; the evidence keeps it whole for verification.
+    long_value = "x" * 100_000
+    df = pl.DataFrame({"s": [long_value] * 20 + ["y"] * 480,
+                       "v": [float(i) for i in range(500)]})
+    report = onceover.profile(df)
+    content = [f for f in report.findings if f["type"] == "content_anomaly"]
+    assert content
+    for f in content:
+        assert len(f["claim"]) < 1000, len(f["claim"])
+        assert "(100000 characters)" in f["claim"]
+        assert long_value in f["evidence"][0]["metrics"]["exception_values"]
+    # Before the claims were shortened, the budgeted JSON could not
+    # go below 204,141 characters on this frame.
+    assert len(report.to_json(max_chars=10_000)) <= 10_000
+    assert report.verify(df).filter(pl.col("status").is_in(["mismatch", "error"])).is_empty()
+
+
+def test_source_arguments_accept_numpy_integers(tmp_path):
+    np = pytest.importorskip("numpy")
+    df = pl.DataFrame({"a": list(range(1000))})
+    report = onceover.profile(df.lazy(), source_row_cap=np.int64(100),
+                              sample_seed=np.uint8(3))
+    assert report.data["source"]["rows_profiled"] == 100
+    assert report.data["source"]["sample"]["seed"] == 3
+    with pytest.raises(ValueError):
+        onceover.profile(df.lazy(), source_row_cap=10.0)
+    with pytest.raises(ValueError):
+        onceover.profile(df.lazy(), source_row_cap=True)

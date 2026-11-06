@@ -204,8 +204,13 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sys.path.insert(0, str(ROOT / "python"))
-    import onceover
+    try:
+        import onceover  # the installed package, with its built extension
+    except ImportError:
+        # Fall back to the source tree, which imports only after an
+        # in-place build (maturin develop) has put the extension there.
+        sys.path.insert(0, str(ROOT / "python"))
+        import onceover
 
     registry = json.loads((BENCH / "corpus" / "registry.json").read_text())
     entries = {d["id"]: d for d in registry["datasets"]}
