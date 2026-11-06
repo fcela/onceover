@@ -218,11 +218,31 @@ substantive ones:
   near-unique determinants out during discovery, so plain FDs rarely
   reach this rule; it binds the producers that do not screen, such as
   arithmetic identities over a key column.
-- An exact functional dependency's detector score is
-  `0.5 + 0.35 × breadth`, where breadth is the number of distinct
-  determinant tuples (`lhs_distinct` in the evidence) divided by the
-  verified rows. A mapping verified over 40 repeated inputs scores
-  lower than the same mapping verified over 600 distinct inputs.
+- An exact functional dependency's detector score is the lower of
+  `0.5 + 0.35 × breadth` and its RFI clamped to [0, 1] (next
+  bullet). Breadth is the
+  number of distinct determinant tuples (`lhs_distinct` in the
+  evidence) divided by the verified rows. A mapping verified over
+  40 repeated inputs scores lower than the same mapping verified
+  over 600 distinct inputs — and a near-unique determinant's RFI
+  is close to what chance alone predicts, so breadth by itself no
+  longer lifts such a dependency's score.
+- Functional-dependency evidence carries `fi` (the fraction of the
+  target's entropy the determinant accounts for),
+  `expected_fi_chance` (the fraction expected under independence,
+  from the exact hypergeometric expectation of the plug-in
+  estimator for the observed margins), and `rfi` = `fi −
+  expected_fi_chance`: the reliable fraction of information of
+  Mandros, Boley & Vreeken (KDD 2017). An approximate dependency's
+  detector score is `min(0.72, rfi clamped to [0, 1])`, and per
+  target the reported
+  approximate dependency is the eligible candidate with the
+  highest RFI — a column joins the determinant only when it raises
+  the chance-corrected score, not merely when it trims the
+  violation count. The dependency search reports in its coverage
+  when the standard budget widens to size-3 determinants or
+  three-column keys for a target that no smaller determinant or
+  key explains.
 - Key candidates are scored from the `plausibility_score` their
   evidence already records (type affinity, name tokens,
   completeness): the primary-key candidate's detector score is
