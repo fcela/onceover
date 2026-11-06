@@ -1096,6 +1096,8 @@ mod tests {
             n_afd: 0,
             coverage: String::new(),
             triple_key_search: false,
+            caps_bound: Vec::new(),
+            sampled: false,
         }
     }
 
