@@ -78,18 +78,20 @@ pub fn profile_regimes(
     excluded: &[usize],
     cfg: &RegimesConfig,
 ) -> (Vec<Finding>, String) {
+    let screenable = |r: &TargetResult| {
+        !r.is_categorical
+            && !excluded.contains(&r.col)
+            && table.cols.get(r.col).is_some_and(|c| c.is_numeric())
+    };
     let mut candidates: Vec<_> = targets
         .iter()
-        .filter(|r| {
-            !r.is_categorical
-                && r.metric >= 0.2
-                && !excluded.contains(&r.col)
-                && table.cols.get(r.col).is_some_and(|c| c.is_numeric())
-        })
+        .filter(|r| screenable(r) && r.metric >= 0.2)
         .collect();
     candidates.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
     let eligible = candidates.len();
+    let eligible_cols: Vec<usize> = candidates.iter().map(|r| r.col).collect();
     candidates.truncate(cfg.target_cap);
+    let n_candidates = candidates.len();
     let sampled: Vec<u32> = crate::stride_rows(enc.rows.len(), cfg.row_cap.max(1))
         .into_iter()
         .map(|p| enc.rows[p as usize])
@@ -98,9 +100,36 @@ pub fn profile_regimes(
         .cols
         .iter()
         .position(|c| matches!(c, TypedCol::Date { .. } | TypedCol::Datetime { .. }));
+    // The residual-shift scan answers a different question than the
+    // predictability bar. A target whose structure is a level shift
+    // along the date column can score below the bar once timestamp
+    // columns are withheld from the screen's predictor pool, yet the
+    // scan reads exactly that structure in the residuals of a
+    // baseline fit. When a date column is present, screened numeric
+    // targets below the bar are therefore fitted as shift-only
+    // candidates: the baseline model and the shift scan run, the
+    // piecewise finding does not. A screen result exists only when
+    // the screen measured a positive holdout score, so a shift-only
+    // candidate always has some measured structure, and the scan's
+    // own training and holdout gain bars decide whether it reports.
+    let mut shift_only: Vec<&TargetResult> = Vec::new();
+    if date.is_some() {
+        shift_only = targets
+            .iter()
+            .filter(|r| screenable(r) && r.metric < 0.2 && !eligible_cols.contains(&r.col))
+            .collect();
+        shift_only.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
+        shift_only.truncate(cfg.target_cap);
+    }
+    let shift_scanned = shift_only.len();
+    let work: Vec<(&TargetResult, bool)> = candidates
+        .iter()
+        .map(|r| (*r, false))
+        .chain(shift_only.iter().map(|r| (*r, true)))
+        .collect();
     let (mut findings, mut fitted, mut incomplete, mut skipped) =
         (Vec::new(), 0usize, 0usize, 0usize);
-    for res in &candidates {
+    for (res, shift_only) in &work {
         // Feature pool: the screen's driver shortlist when it
         // produced one, else its top-gain features.
         let pool_source: &Vec<(String, f64)> = if res.drivers.is_empty() {
@@ -188,6 +217,12 @@ pub fn profile_regimes(
                 findings.push(f);
             }
         }
+        if *shift_only {
+            // Shift-only candidates report the residual shift or
+            // nothing; the piecewise finding stays behind the
+            // predictability bar.
+            continue;
+        }
         if variance <= 1e-12 || baseline <= 1e-12 {
             continue;
         }
@@ -225,7 +260,14 @@ Some("inspect the regime conditions and equations before assuming a single globa
 Method::new("regimes", "local_linear_model_tree", "bounded M5-style tree: SDR growth, QR linear leaves, corrected-error pruning, ancestor smoothing (onceover)")
 ));
     }
-    let coverage = format!("{} of {eligible} eligible numeric targets (cap {}), {fitted} fitted over at most {} rows / {} predictors / depth {}; {} incomplete row-target cases dropped; {skipped} insufficient/invalid targets; {} findings (numeric predictors only; first date column if present; diagnostic holdout)", candidates.len(), cfg.target_cap, cfg.row_cap, cfg.model.max_features, cfg.model.max_depth, incomplete, findings.len());
+    let shift_clause = if shift_scanned > 0 {
+        format!(
+            "; {shift_scanned} further screened target(s) below the predictability bar scanned for date residual shifts only"
+        )
+    } else {
+        String::new()
+    };
+    let coverage = format!("{} of {eligible} eligible numeric targets (cap {}), {fitted} fitted over at most {} rows / {} predictors / depth {}; {} incomplete row-target cases dropped; {skipped} insufficient/invalid targets; {} findings (numeric predictors only; first date column if present; diagnostic holdout){shift_clause}", n_candidates, cfg.target_cap, cfg.row_cap, cfg.model.max_features, cfg.model.max_depth, incomplete, findings.len());
     (findings, coverage)
 }
 
@@ -615,5 +657,90 @@ mod tests {
             .expect("planted date shift");
         assert!(shift.metrics()["holdout_error_reduction"].as_f64().unwrap() > 0.9);
         assert!((shift.metrics()["breakpoint_raw"].as_i64().unwrap() - 21000).abs() < 10);
+    }
+
+    fn shift_frame(n: usize, step: f64, with_date: bool) -> TypedTable<'static> {
+        let mut rng = crate::gbm::Lcg(1234);
+        let x: Vec<_> = (0..n).map(|_| rng.next_f64()).collect();
+        let mut names = vec!["gate".into(), "x".into(), "y".into()];
+        let mut dtypes = vec!["float64".into(); 3];
+        let mut cols = vec![
+            TypedCol::F64 {
+                vals: x.iter().map(|v| Some(v * 2.0)).collect::<Vec<_>>().into(),
+            },
+            TypedCol::F64 {
+                vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
+            },
+            TypedCol::F64 {
+                vals: x
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Some(v * 3.0 + if i < n / 2 { 0.0 } else { step }))
+                    .collect::<Vec<_>>()
+                    .into(),
+            },
+        ];
+        if with_date {
+            names.push("date".into());
+            dtypes.push("date".into());
+            cols.push(TypedCol::Date {
+                vals: (0..n).map(|i| Some(20000 + i as i32)).collect(),
+            });
+        }
+        TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        }
+    }
+
+    #[test]
+    fn date_residual_shift_runs_below_the_predictability_bar() {
+        // The screen withholds timestamp columns from its predictor
+        // pool, so a target whose structure is a level shift along
+        // the date column can arrive below the eligibility bar (its
+        // non-temporal predictors explain little). Gating the shift
+        // scan on the bar loses the finding; the scan must still run
+        // for screened targets when a date column is present.
+        let table = shift_frame(2000, 5.0, true);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let mut below_bar = target();
+        below_bar.metric = 0.1;
+        let (f, _) = profile_regimes(&table, &enc, &[below_bar], &[], &Default::default());
+        assert_eq!(f.len(), 1);
+        let shift = &f[0];
+        assert_eq!(shift.category, onceover_report::Category::Changes);
+        assert!(shift.metrics()["holdout_error_reduction"].as_f64().unwrap() > 0.9);
+        assert!((shift.metrics()["breakpoint_raw"].as_i64().unwrap() - 21000).abs() < 10);
+    }
+
+    #[test]
+    fn below_bar_target_without_a_date_column_reports_nothing() {
+        // No date column: nothing relaxes the predictability bar.
+        let table = shift_frame(2000, 5.0, false);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let mut below_bar = target();
+        below_bar.metric = 0.1;
+        assert!(
+            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default())
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn below_bar_target_with_date_but_no_shift_reports_nothing() {
+        // The shift-only scan still has to earn its finding: a plain
+        // linear target with a date column reports nothing.
+        let table = shift_frame(2000, 0.0, true);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let mut below_bar = target();
+        below_bar.metric = 0.1;
+        assert!(
+            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default())
+                .0
+                .is_empty()
+        );
     }
 }

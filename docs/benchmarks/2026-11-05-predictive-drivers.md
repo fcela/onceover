@@ -172,3 +172,51 @@ clean except dependence at 0.75 findings per frame, as recorded.
 The association plants are dependence-detector territory; this
 change does not touch those detectors, and their readings on
 this tree are the recorded ones.
+
+## Follow-up: a date shift the scaffolding exclusion priced out
+
+The full Python suite on this tree failed one test that passes
+on main: `test_date_residual_shift_reaches_python_report`. The
+frame is 2,000 rows: `response = 3x` plus a +5 step halfway
+along a daily date column, with `x ~ U(0,1)` the only numeric
+predictor. The expected finding is the residual level shift
+along the date, and the branch produced no `changes` finding
+for the response at all.
+
+Mechanism: the local-regimes pass fits the models whose
+residuals the date-shift scan reads, and it admits a screened
+target to those fits only when the screen's holdout score
+reaches 0.2. On main the timestamp was in the predictor pool,
+so the step itself made the response predictable and the target
+was admitted. With timestamps excluded from the pool — the
+scaffolding change above, which stands — the response's only
+predictor is `x`, which carries the slope but not the step, and
+its screen score falls below the bar. No fit, so no residuals,
+so the shift scan never ran. The scan itself was intact: the
+same construction with a step small enough that `x` alone
+clears the bar reports the shift on the unfixed tree.
+
+Fix, in the regimes pass: when the frame has a date column,
+screened numeric targets below the bar are fitted as shift-only
+candidates — the baseline fit and the residual-shift scan run,
+and the piecewise-regime finding stays behind the bar. A screen
+result exists only when the screen measured a positive holdout
+score, so a shift-only candidate always has some measured
+structure behind it; whether anything is reported is then
+decided by the scan's own train and holdout gain bars.
+Shift-only candidates are ordered by screen score, truncated to
+the same target cap as full candidates, and the pass's coverage
+states the count ("1 further screened target(s) below the
+predictability bar scanned for date residual shifts only").
+Three unit tests pin the behaviour: a below-bar target with a
+date column and a step reports exactly the shift finding (with
+the breakpoint and holdout error reduction the Python test
+expects); the same target with no date column reports nothing;
+with a date column but no step it reports nothing.
+
+Corpus check on the fixed tree: the expectations run is
+unchanged (23 ok, 11 skipped, machine-verified expectations
+87/87), and the full report dumps match the dumps from the tree
+before this fix on all 23 profiled datasets — every report
+byte-identical, so the fix restores the priced-out shift scan
+without moving any corpus finding.
