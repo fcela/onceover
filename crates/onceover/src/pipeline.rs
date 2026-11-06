@@ -1271,10 +1271,18 @@ fn profile_inner(
                 );
                 findings.extend(f);
             }
-            if check_deadline(&mut coverage, "discontinuities") {
+            // Discontinuities polls the deadline inside its own
+            // loops, so it is exempt from the dispatch skip: it is
+            // dispatched even when the deadline has already
+            // expired, its first poll stops it, and its coverage
+            // entry discloses the stop (0 targets screened)
+            // instead of the pass vanishing from the report. The
+            // between-pass check still runs when the pass is not
+            // dispatched, so the skip record is unchanged there.
+            if !enabled("discontinuities") && check_deadline(&mut coverage, "discontinuities") {
                 deadline_hit = true;
             }
-            if !deadline_hit && enabled("discontinuities") {
+            if enabled("discontinuities") {
                 // The screen's targets and axes both come from its
                 // numeric pool, so the frame-role exclusions remove
                 // scaffolding from both roles at once. Semantic
@@ -1378,16 +1386,12 @@ fn profile_inner(
                 association_pairs.extend(pair_records);
             }
 
-            if deadline_hit || check_deadline(&mut coverage, "hotspots") {
-                deadline_hit = true;
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "hotspots".into(),
-                    PassInfo::skipped("deadline reached"),
-                );
-            } else if enabled("hotspots") {
+            // Hotspots polls the deadline inside its own scan,
+            // so it is exempt from the dispatch skip, like
+            // discontinuities above: dispatched even when the
+            // deadline has already expired, its first poll stops
+            // it, and its coverage entry discloses the stop.
+            if enabled("hotspots") {
                 let out = hotspots(&enc, &tier.hotspots);
                 if out.deadline_stopped {
                     deadline_hit = true;
@@ -1404,13 +1408,31 @@ fn profile_inner(
                     },
                 );
                 findings.extend(out.findings);
+            } else if deadline_hit || check_deadline(&mut coverage, "hotspots") {
+                deadline_hit = true;
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "hotspots".into(),
+                    PassInfo::skipped("deadline reached"),
+                );
             }
 
             // Pairwise dependence (supporting role) + identities.
-            if check_deadline(&mut coverage, "dependence_screen") {
+            // The screen polls the deadline inside its own loops,
+            // so it is exempt from the dispatch skip, like
+            // discontinuities and hotspots above: dispatched even
+            // when the deadline has already expired, its first
+            // poll stops it, and its coverage entry discloses the
+            // stop (0 pairs screened). The between-pass check
+            // still runs when the screen is not dispatched, so
+            // the skip record is unchanged there.
+            let dep_dispatched = tier.dep_pair_cap > 0 && enabled("numeric_dependence");
+            if !dep_dispatched && check_deadline(&mut coverage, "dependence_screen") {
                 deadline_hit = true;
             }
-            if !deadline_hit && tier.dep_pair_cap > 0 && enabled("numeric_dependence") {
+            if dep_dispatched {
                 let dep_out = onceover_mines::dep::screen_sampled(
                     &table,
                     tier.dep_pair_cap,
@@ -1587,6 +1609,97 @@ fn profile_inner(
                 "predictability_screen".into(),
                 PassInfo::skipped("deadline reached"),
             );
+            // The deadline had already expired when the
+            // model-based block was reached, so its passes are
+            // recorded skipped above — except the three
+            // self-limiting passes. They poll the deadline inside
+            // their own loops, so they are dispatched even now:
+            // each stops at its first poll and its coverage entry
+            // discloses the stop (0 examined) instead of the pass
+            // vanishing from the report. Their downstream
+            // consumers are not exempt and stay skipped.
+            if enabled("discontinuities") {
+                let excluded: &[usize] = &scaffold_excluded;
+                let measures: Vec<usize> = frame
+                    .roles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.as_deref() == Some("measure"))
+                    .map(|(i, _)| i)
+                    .collect();
+                let out = profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "discontinuities".into(),
+                    if out.deadline_stopped {
+                        PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                    } else {
+                        PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
+                    },
+                );
+                findings.extend(out.findings);
+            }
+            if enabled("hotspots") {
+                // The scan reads the encoded table; build it for
+                // this dispatch without stamping an encoding
+                // entry (the block that normally produces it was
+                // skipped).
+                let (enc, _) = encode(&table, &tier.encode);
+                let out = hotspots(&enc, &tier.hotspots);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "hotspots".into(),
+                    if out.deadline_stopped {
+                        PassInfo::capped(out.coverage)
+                    } else {
+                        PassInfo::sampled(out.coverage)
+                    },
+                );
+                findings.extend(out.findings);
+            }
+            if tier.dep_pair_cap > 0 && enabled("numeric_dependence") {
+                let dep_out = onceover_mines::dep::screen_sampled(
+                    &table,
+                    tier.dep_pair_cap,
+                    tier.encode.row_cap,
+                    &scaffold_excluded,
+                    pass_deadline,
+                );
+                let dep_stopped = dep_out.deadline_stopped;
+                let dep_pairs = dep_out.deps.len();
+                association_pairs.extend(dep_out.records);
+                findings.extend(dep_out.findings);
+                let numeric = table
+                    .cols
+                    .iter()
+                    .filter(|col| {
+                        matches!(
+                            col,
+                            onceover_core::TypedCol::I64 { .. }
+                                | onceover_core::TypedCol::U64 { .. }
+                                | onceover_core::TypedCol::F64 { .. }
+                        )
+                    })
+                    .count();
+                let possible_pairs = numeric * numeric.saturating_sub(1) / 2;
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "dependence_screen".into(),
+                    if dep_stopped || dep_pairs < possible_pairs {
+                        PassInfo::capped(dep_out.coverage)
+                    } else if table.n > tier.encode.row_cap {
+                        PassInfo::sampled(dep_out.coverage)
+                    } else {
+                        PassInfo::ran(dep_out.coverage)
+                    },
+                );
+            }
         }
     } else {
         for pass in [
