@@ -661,12 +661,13 @@ still returns column summaries and coverage but no detector findings.
 
 The `discontinuities` detector (standard and deep budgets) scans for
 cross-sectional step jumps: for each numeric target column, step
-indicators along every other numeric column's axis and across diagonal
-boundaries in column pairs, each fitted against a smooth background by
-OLS. Rows are split into a fit half that ranks candidates and an
-evaluation half that estimates the jump, so the reported `z` is not
-inflated by the search. A flagged candidate is reported only when its
-local level gap is scale-invariant (the gap between the nearest 60
+indicators along every other numeric column's axis and — at the deep
+budget only — across diagonal boundaries in column pairs, each fitted
+against a smooth background by OLS. Rows are split into a fit half
+that ranks candidates and an evaluation half that estimates the jump,
+so the reported `z` is not inflated by the search. A flagged
+candidate is reported only when its local level gap is
+scale-invariant (the gap between the nearest 60
 evaluation points per side vs the nearest 15 stays near 1, with the
 small-scale gap significant); a steep smooth transition, whose gap
 grows with scale, is not reported as a jump. Because the screen runs
@@ -684,11 +685,11 @@ standardized for diagonal, with `direction_deg`), `jump`, `se`, `z`,
 `t_fit`, held-out `gain`, `type_ratio`, `type_gap_t`, and `type_z`. The
 2026-11-02 battery measured this detector as the runtime outlier (0.43 s
 median marginal cost, +83.0 s of excess across 20 datasets), with the
-cost concentrated in the diagonal scan on wide tables. At the standard
-budget the diagonal scan therefore considers the 6 strongest axes per
-target on wide tables — 15 column pairs instead of 45; the deep budget
-keeps the full 10-axis search. Tables with at most 20 numeric axes
-always scan every pair and are unaffected.
+cost concentrated in the diagonal scan on wide tables. The diagonal
+scan therefore runs only at the deep budget; the standard budget scans
+axes only. At the deep budget, a table with more than 20 numeric axes
+pairs the 10 strongest axes per target — 45 column pairs; tables with
+at most 20 numeric axes scan every pair.
 
 The `drift` detector (standard and deep budgets) compares periods of a
 declared time axis. It is opt-in: select it explicitly with
