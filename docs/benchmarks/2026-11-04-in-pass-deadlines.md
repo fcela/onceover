@@ -286,3 +286,16 @@ build repeats at 23 of 23 identical, which also covers the
 dispatch exemption's no-deadline equivalence. The strict
 book build passes (49 pages, executed with `--strict`) and
 no rendered book output changes.
+
+One further defect in the same test module surfaced only
+once the race was fixed, in the latest-Python (3.15) wheel
+leg: the module imported numpy unconditionally, and that leg
+installs neither numpy nor scipy (the other legs receive
+numpy transitively through scipy), so collection of the
+module errored and the leg failed on every platform. The
+import now goes through `pytest.importorskip`, the pattern
+the sibling planted-frame modules use: without numpy the
+module skips, and with numpy all four tests run. Reproduced
+and verified locally under Python 3.15 with the leg's own
+install line (wheel plus pytest only): 340 passed, 13
+skipped, 0 failed.

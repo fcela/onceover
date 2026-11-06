@@ -25,10 +25,12 @@ onceover-mines with a counting stop predicate.
 
 import time
 
-import numpy as np
 import polars as pl
+import pytest
 
 import onceover
+
+np = pytest.importorskip("numpy", reason="planted frames need numpy")
 
 SEED = 20261104
 
