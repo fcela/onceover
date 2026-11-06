@@ -47,6 +47,11 @@ pub struct DupeConfig {
     /// encodings of one grouping; below it, as a rollup.
     pub level_share: f64,
     pub max_findings: usize,
+    /// Cooperative deadline (issue #117, stage 2): polled before
+    /// each first column of a pair. Pairs run in column order, so
+    /// the examined pairs are a prefix of that order and the
+    /// coverage detail states how many of the total were examined.
+    pub deadline: Option<std::time::Instant>,
 }
 
 impl Default for DupeConfig {
@@ -58,6 +63,7 @@ impl Default for DupeConfig {
             pair_slack: 1.02,
             level_share: 0.9,
             max_findings: 50,
+            deadline: None,
         }
     }
 }
@@ -179,8 +185,18 @@ pub fn profile_duplicate_encodings(
     info: &[ColInfo],
     cfg: &DupeConfig,
 ) -> (Vec<Finding>, String) {
+    profile_duplicate_encodings_stopped(table, info, cfg).0
+}
+
+/// `profile_duplicate_encodings`, also returning whether the
+/// deadline stopped the pair scan before every pair was examined.
+pub fn profile_duplicate_encodings_stopped(
+    table: &TypedTable,
+    info: &[ColInfo],
+    cfg: &DupeConfig,
+) -> ((Vec<Finding>, String), bool) {
     if !cfg.is_enabled() {
-        return (Vec::new(), "disabled at this budget".into());
+        return ((Vec::new(), "disabled at this budget".into()), false);
     }
     let rows = subsample_rows(table.n, cfg.row_cap);
     let sampled = rows.len() < table.n;
@@ -203,11 +219,14 @@ pub fn profile_duplicate_encodings(
     }
     if eligible.len() < 2 {
         return (
-            Vec::new(),
-            format!(
-                "{} label-like columns eligible; no pair to evaluate",
-                eligible.len()
+            (
+                Vec::new(),
+                format!(
+                    "{} label-like columns eligible; no pair to evaluate",
+                    eligible.len()
+                ),
             ),
+            false,
         );
     }
 
@@ -218,8 +237,16 @@ pub fn profile_duplicate_encodings(
     let mut n_pairs = 0usize;
     let mut n_duplicates = 0usize;
     let mut n_rollups = 0usize;
+    let total_pairs = eligible.len() * (eligible.len() - 1) / 2;
+    let mut pairs_examined = 0usize;
+    let mut stopped = false;
     'pairs: for x in 0..eligible.len() {
+        if cfg.deadline.is_some_and(|t| std::time::Instant::now() >= t) {
+            stopped = true;
+            break;
+        }
         for y in (x + 1)..eligible.len() {
+            pairs_examined += 1;
             // Hash-stage discovery over rows where both are present.
             let mut joint: FxHashMap<(u64, u64), u64> = FxHashMap::default();
             for r in 0..hashes.m {
@@ -276,7 +303,7 @@ pub fn profile_duplicate_encodings(
         }
     }
 
-    let coverage = format!(
+    let mut coverage = format!(
         "{} label-like columns, {} pairs evaluated on {} rows{}; {} duplicate encodings, {} rollups",
         eligible.len(),
         n_pairs,
@@ -285,7 +312,12 @@ pub fn profile_duplicate_encodings(
         n_duplicates,
         n_rollups
     );
-    (findings, coverage)
+    if stopped {
+        coverage.push_str(&format!(
+            "; deadline reached mid-pass: {pairs_examined} of {total_pairs} column pairs examined"
+        ));
+    }
+    ((findings, coverage), stopped)
 }
 
 fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &PairStats) -> Finding {
@@ -445,6 +477,29 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn past_deadline_examines_no_pair_and_says_so() {
+        let (codes, labels) = codes_labels(5, 200);
+        let df = df!["code" => codes, "label" => labels].unwrap();
+        let table = extract(&df);
+        let info = info_for(&table);
+        let cfg = DupeConfig {
+            deadline: Some(std::time::Instant::now() - std::time::Duration::from_secs(1)),
+            ..DupeConfig::default()
+        };
+        let ((findings, cov), stopped) = profile_duplicate_encodings_stopped(&table, &info, &cfg);
+        assert!(stopped);
+        assert!(findings.is_empty());
+        assert!(
+            cov.contains("deadline reached mid-pass: 0 of 1 column pairs examined"),
+            "{cov}"
+        );
+        let ((plain, plain_cov), plain_stopped) =
+            profile_duplicate_encodings_stopped(&table, &info, &DupeConfig::default());
+        assert!(!plain_stopped);
+        assert_eq!(plain.len(), 1, "{plain_cov}");
     }
 
     fn codes_labels(n_groups: usize, n: usize) -> (Vec<i64>, Vec<String>) {

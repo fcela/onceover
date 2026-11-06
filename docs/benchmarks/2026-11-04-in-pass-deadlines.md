@@ -299,3 +299,43 @@ module skips, and with numpy all four tests run. Reproduced
 and verified locally under Python 3.15 with the leg's own
 install line (wheel plus pytest only): 340 passed, 13
 skipped, 0 failed.
+
+## Amendment, 6 November 2026: two more passes, and coverage for every detector
+
+Two passes with long loops did not poll the deadline. On a 100,000-row table with 150
+normal, 75 six-level integer and 75 four-level string columns, `deadline_seconds=8`
+returned after 28.5 s: the surprises scan ran 21.1 s and the duplicate-encodings scan
+3.1 s past the point where the deadline had passed.
+
+- **Surprises** polls before each numeric target and before each categorical target.
+  A target that starts is scanned whole. Numeric targets run in parallel, so which of
+  them a stop leaves unscanned depends on scheduling; categorical targets run in column
+  order, so the scanned ones are a prefix. The detail adds "deadline reached mid-pass:
+  X of Y numeric targets and A of B categorical targets scanned" and the entry reads
+  `capped`.
+- **Duplicate encodings** polls before each first column of a pair. Pairs run in column
+  order. The detail adds "deadline reached mid-pass: X of Y column pairs examined" and
+  the entry reads `capped`.
+
+Neither pass is exempt from the between-pass dispatch skip: when the deadline has
+already passed before either is reached, it is recorded `skipped` as before.
+
+Measured on the table above (wall time of the whole profile):
+
+| `deadline_seconds` | before | after |
+|---|---|---|
+| 1 | 2.4 s | 2.3 s |
+| 3 | 5.5 s | 3.1 s |
+| 8 | 28.5 s | 9.3 s |
+
+The remaining overrun at 1 s is the work before the first check: extraction, column
+cards, the frame model (1.4 s on this table) and the dependency discovery (0.7 s).
+
+Coverage also gained an entry for every registered detector. Before this change a
+detector that the run did not reach could be absent from coverage altogether: under
+`budget="quick"` row consistency, interactions, surprises, discontinuities and hotspots
+had no entry; with an expired deadline, row consistency, decision tables, prism rules,
+interactions, breaks, ordered partitions, surprises and identities had none; with
+`detectors=["keys"]`, thirteen non-selected detectors had none. Each now has a
+`skipped` entry with the reason: not enabled, opt-in, quick tier, or deadline reached.
+`tests/test_deadline.py` checks seven configurations.

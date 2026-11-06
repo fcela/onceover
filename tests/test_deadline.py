@@ -121,5 +121,34 @@ def test_generous_deadline_changes_nothing():
     plain = onceover.profile(df)
     timed = onceover.profile(df, deadline_seconds=3600.0)
     assert timed.data == plain.data
-    for name in ("dependence_screen", "hotspots", "discontinuities"):
+    for name in ("dependence_screen", "hotspots", "discontinuities",
+                 "surprises", "duplicate_encodings"):
         assert "deadline" not in plain.data["coverage"][name]["detail"]
+
+
+_PASS_OF = {
+    "column_profile": "column_cards",
+    "gbm": "predictability_screen",
+    "prism": "prism_rules",
+    "numeric_dependence": "dependence_screen",
+    "identities": "arithmetic_identities",
+}
+
+
+@pytest.mark.parametrize("kwargs", [
+    {},
+    {"budget": "quick"},
+    {"budget": "deep"},
+    {"deadline_seconds": 0.0},
+    {"budget": "quick", "deadline_seconds": 0.0},
+    {"detectors": ["keys"]},
+    {"detectors": ["surprises"]},
+])
+def test_every_registered_detector_has_a_coverage_entry(kwargs):
+    # A pass that did not run says why; none is silently absent.
+    df = _float_frame(6, 400).with_columns(
+        pl.Series("g", ["a", "b", "c", "d"] * 100))
+    coverage = onceover.profile(df, **kwargs).data["coverage"]
+    missing = [d["id"] for d in onceover.available_detectors()
+               if _PASS_OF.get(d["id"], d["id"]) not in coverage]
+    assert not missing, (kwargs, missing)

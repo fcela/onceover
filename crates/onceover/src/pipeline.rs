@@ -100,6 +100,8 @@ fn profile_inner(
         });
     tier.disc.deadline = pass_deadline;
     tier.hotspots.deadline = pass_deadline;
+    tier.surprises.deadline = pass_deadline;
+    tier.dupe.deadline = cfg.deadline.map(|d| start + d);
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
     let timing_on = cfg.timing;
@@ -527,13 +529,21 @@ fn profile_inner(
         deadline_hit = true;
     }
     if !deadline_hit && enabled("duplicate_encodings") {
-        let (f, cov) = onceover_deps::profile_duplicate_encodings(&table, &info, &tier.dupe);
+        let ((f, cov), stopped) =
+            onceover_deps::profile_duplicate_encodings_stopped(&table, &info, &tier.dupe);
+        if stopped {
+            deadline_hit = true;
+        }
         stamp_insert(
             &mut coverage,
             &mut last_mark,
             timing_on,
             "duplicate_encodings".into(),
-            PassInfo::ran(cov),
+            if stopped {
+                PassInfo::capped(cov)
+            } else {
+                PassInfo::ran(cov)
+            },
         );
         findings.extend(f);
     }
@@ -1261,13 +1271,20 @@ fn profile_inner(
             }
             if !deadline_hit && enabled("surprises") {
                 let excluded: &[usize] = &scaffold_excluded;
-                let (f, cov) = profile_surprises(&table, excluded, &tier.surprises);
+                let (f, cov, stopped) = profile_surprises(&table, excluded, &tier.surprises);
+                if stopped {
+                    deadline_hit = true;
+                }
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "surprises".into(),
-                    PassInfo::ran(format!("{cov}{exclusion_note}")),
+                    if stopped {
+                        PassInfo::capped(format!("{cov}{exclusion_note}"))
+                    } else {
+                        PassInfo::ran(format!("{cov}{exclusion_note}"))
+                    },
                 );
                 findings.extend(f);
             }
@@ -1883,29 +1900,26 @@ fn profile_inner(
         .map(Finding::canonical_key)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    for (id, pass) in [
-        ("row_duplicates", "row_duplicates"),
-        ("keys", "keys"),
-        ("pivot", "pivot"),
-        ("functional_dependencies", "functional_dependencies"),
-        ("sortedness", "sortedness"),
-        ("granularity", "granularity"),
-        ("dates", "dates"),
-        ("gbm", "predictability_screen"),
-        ("decision_tables", "decision_tables"),
-        ("prism", "prism_rules"),
-        ("regimes", "regimes"),
-        ("interactions", "interactions"),
-        ("breaks", "breaks"),
-        ("association_rules", "association_rules"),
-        ("numeric_dependence", "dependence_screen"),
-        ("row_consistency", "row_consistency"),
-        ("identities", "arithmetic_identities"),
-        ("period_associations", "period_associations"),
-        ("views", "views"),
-        ("target_shapes", "target_shapes"),
-        ("drift", "drift"),
-    ] {
+    // Every registered detector has a coverage entry under its
+    // pass name, so a pass that did not run is never silently
+    // absent: the loop below records why for each one.
+    let pass_of = |id: &str| -> String {
+        match id {
+            "column_profile" => "column_cards",
+            "gbm" => "predictability_screen",
+            "prism" => "prism_rules",
+            "numeric_dependence" => "dependence_screen",
+            "identities" => "arithmetic_identities",
+            other => other,
+        }
+        .to_string()
+    };
+    let registry_passes: Vec<(String, String)> = activations
+        .keys()
+        .map(|id| (id.clone(), pass_of(id)))
+        .collect();
+    for (id, pass) in &registry_passes {
+        let (id, pass) = (id.as_str(), pass.as_str());
         if !enabled(id) {
             // A pass that did not run says why. Opt-in detectors are
             // named as such (an existing entry, e.g. a deadline skip,
@@ -1928,10 +1942,31 @@ fn profile_inner(
                     PassInfo::skipped(detail),
                 );
             }
-        } else if !selected(id) {
-            if let Some(info) = coverage.get_mut(pass) {
-                info.detail
-                    .push_str("; required as a resource; findings not selected");
+        } else {
+            if !coverage.contains_key(pass) {
+                // Enabled but not run: the tier excludes it, the
+                // deadline stopped the profile before it, or the
+                // block it runs in did not run.
+                let detail = if cfg.budget == Budget::Quick {
+                    "quick tier"
+                } else if deadline_hit {
+                    "deadline reached"
+                } else {
+                    "not run: the passes it runs after did not run on this table"
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    pass.into(),
+                    PassInfo::skipped(detail),
+                );
+            }
+            if !selected(id) {
+                if let Some(info) = coverage.get_mut(pass) {
+                    info.detail
+                        .push_str("; required as a resource; findings not selected");
+                }
             }
         }
     }

@@ -73,6 +73,11 @@ pub struct SurpriseConfig {
     /// Categorical: minimum share for a pair context to be
     /// extended to a triple.
     pub deep_share_floor: f64,
+    /// Cooperative deadline (issue #117, stage 2), polled before
+    /// each numeric and each categorical target: a target is
+    /// either scanned whole or not started, and the coverage
+    /// detail states how many of each were scanned.
+    pub deadline: crate::deadline::Deadline,
 }
 
 impl Default for SurpriseConfig {
@@ -92,6 +97,7 @@ impl Default for SurpriseConfig {
             max_deep_conditions: 12,
             context_beam: 128,
             deep_share_floor: 0.95,
+            deadline: crate::deadline::Deadline::none(),
         }
     }
 }
@@ -742,7 +748,7 @@ fn profile_categorical_surprises(
     excluded: &[usize],
     cfg: &SurpriseConfig,
     budget: usize,
-) -> (Vec<Finding>, usize, usize) {
+) -> (Vec<Finding>, usize, usize, usize) {
     let words = table.n.div_ceil(64);
     // Eligible columns coded once: conditions may be any eligible
     // column; targets are the text/bool ones.
@@ -769,8 +775,15 @@ fn profile_categorical_surprises(
         .collect();
     let mut candidates: Vec<CatCandidate> = Vec::new();
     let mut contexts_evaluated = 0usize;
+    let mut not_started = 0usize;
 
-    for &t in &targets {
+    for (at, &t) in targets.iter().enumerate() {
+        // Targets run in column order, so a deadline stop leaves
+        // the scanned targets a prefix of that order.
+        if cfg.deadline.exceeded() {
+            not_started = targets.len() - at;
+            break;
+        }
         let tcoded = coded[t].as_ref().unwrap();
         let tlevels = tcoded.labels.len();
         // Global rate of each target level (for significance).
@@ -987,7 +1000,12 @@ fn profile_categorical_surprises(
             &cand,
         ));
     }
-    (findings, targets.len(), contexts_evaluated)
+    (
+        findings,
+        targets.len() - not_started,
+        contexts_evaluated,
+        not_started,
+    )
 }
 
 struct TargetScan {
@@ -1083,11 +1101,13 @@ fn scan_target(
     Some(TargetScan { global, subset })
 }
 
+/// The surprises pass: findings, the coverage detail, and whether
+/// the deadline stopped the pass before every target was scanned.
 pub fn profile_surprises(
     table: &TypedTable,
     excluded: &[usize],
     cfg: &SurpriseConfig,
-) -> (Vec<Finding>, String) {
+) -> (Vec<Finding>, String, bool) {
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
@@ -1102,15 +1122,20 @@ pub fn profile_surprises(
     // scans then share what remains. Columns are scanned in parallel and
     // the budget is applied afterwards in column order, so the report does
     // not depend on the thread count.
-    let scans: Vec<Option<TargetScan>> = numeric
+    // Each target polls the deadline before its scan; a target that
+    // starts is scanned whole. Targets run in parallel, so which
+    // targets a stop leaves unscanned depends on scheduling; the
+    // coverage detail states how many.
+    let scans: Vec<Option<Option<TargetScan>>> = numeric
         .par_iter()
-        .map(|&t| scan_target(table, t, &conditions, cfg))
+        .map(|&t| (!cfg.deadline.exceeded()).then(|| scan_target(table, t, &conditions, cfg)))
         .collect();
+    let numeric_not_started = scans.iter().filter(|s| s.is_none()).count();
     let mut global_findings: Vec<Finding> = Vec::new();
     let mut subset_findings: Vec<Finding> = Vec::new();
     let mut scanned = 0usize;
     for (at, scan) in scans.into_iter().enumerate() {
-        let Some(scan) = scan else { continue };
+        let Some(Some(scan)) = scan else { continue };
         scanned += 1;
         let spent = global_findings.len() + subset_findings.len();
         let remaining = cfg.max_findings.saturating_sub(spent);
@@ -1125,14 +1150,15 @@ pub fn profile_surprises(
     findings.append(&mut subset_findings);
     findings.truncate(cfg.max_findings);
     let numeric_findings = findings.len();
-    let (cat_findings, cat_targets, cat_contexts) = if findings.len() < cfg.max_findings {
-        profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
-    } else {
-        (Vec::new(), 0, 0)
-    };
+    let (cat_findings, cat_targets, cat_contexts, cat_not_started) =
+        if findings.len() < cfg.max_findings {
+            profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
+        } else {
+            (Vec::new(), 0, 0, 0)
+        };
     let cat_count = cat_findings.len();
     findings.extend(cat_findings);
-    let detail = format!(
+    let mut detail = format!(
         "{} numeric columns scanned against {} conditioning columns; {} surprise findings; {} categorical columns scanned in {} contexts up to {} conditions; {} categorical surprise findings",
         scanned,
         conditions.len(),
@@ -1142,12 +1168,57 @@ pub fn profile_surprises(
         cfg.max_context_conditions,
         cat_count
     );
-    (findings, detail)
+    let stopped = numeric_not_started + cat_not_started > 0;
+    if stopped {
+        detail.push_str(&format!(
+            "; deadline reached mid-pass: {} of {} numeric targets and {} of {} categorical targets scanned",
+            numeric.len() - numeric_not_started,
+            numeric.len(),
+            cat_targets,
+            cat_targets + cat_not_started,
+        ));
+    }
+    (findings, detail, stopped)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn past_deadline_scans_no_target_and_says_so() {
+        use polars::prelude::NamedFrom;
+        let n = 200;
+        let df = polars::prelude::DataFrame::new_infer_height(vec![
+            polars::prelude::Series::new("x".into(), (0..n).map(|i| i as f64).collect::<Vec<_>>())
+                .into(),
+            polars::prelude::Series::new(
+                "g".into(),
+                (0..n)
+                    .map(|i| if i % 2 == 0 { "a" } else { "b" })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+        ])
+        .unwrap();
+        let table = onceover_core::extract(&df);
+        let cfg = SurpriseConfig {
+            deadline: crate::deadline::Deadline::at(
+                std::time::Instant::now() - std::time::Duration::from_secs(1),
+            ),
+            ..SurpriseConfig::default()
+        };
+        let (findings, detail, stopped) = profile_surprises(&table, &[], &cfg);
+        assert!(stopped);
+        assert!(findings.is_empty());
+        assert!(
+            detail.contains("deadline reached mid-pass: 0 of 1 numeric targets and 0 of 1 categorical targets scanned"),
+            "{detail}"
+        );
+        let (_, plain, plain_stopped) = profile_surprises(&table, &[], &SurpriseConfig::default());
+        assert!(!plain_stopped);
+        assert!(!plain.contains("deadline"), "{plain}");
+    }
 
     #[test]
     fn cluster_claims_cover_both_tails_and_scopes() {
@@ -1330,7 +1401,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert_eq!(
             findings.len(),
             1,
@@ -1365,7 +1436,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1397,7 +1468,7 @@ mod tests {
             400,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         // The planted context ranks first; the same row is also
         // the breaker from the other two columns' perspectives
         // (one finding per target, by design).

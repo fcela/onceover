@@ -49,8 +49,9 @@ pub struct ProfileConfig {
     /// Wall-clock budget for the whole profile. Consulted
     /// between passes (later passes are skipped and recorded)
     /// and — since issue #117 stage 2 — at work quanta inside
-    /// the dependence screen, the hotspots scan, and the
-    /// discontinuities pass, which stop cooperatively and
+    /// the dependence screen, the hotspots scan, the
+    /// discontinuities pass, the surprises scan, and the
+    /// duplicate-encodings scan, which stop cooperatively and
     /// disclose in their coverage entries how much of their
     /// search space was examined. A stopped pass reports
     /// `capped` coverage; its absence of further findings is

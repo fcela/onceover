@@ -26,7 +26,8 @@ searches further (more pairs, more periods, more rules). A
 `deadline_seconds=` argument bounds wall time; work skipped for
 time is reported in coverage, not silently dropped. The bound
 also applies inside the dependence screen, the hotspots scan,
-and the discontinuities pass: they stop at internal work quanta
+the discontinuities pass, the surprises scan, and the
+duplicate-encodings scan: they stop at internal work quanta
 and their coverage entries state how much of the search space
 was examined (pairs screened of total, combinations examined
 of total, targets fully screened of total), so a pass stopped
