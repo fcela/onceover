@@ -221,6 +221,21 @@ pub fn profile_interactions(
                 .total_cmp(&model.best_gains[a])
                 .then(a.cmp(&b))
         });
+        // The screen's drivers lead: a stable re-order puts the
+        // target's driver shortlist first, in shortlist order (gain
+        // order kept within each group), so truncating the pool
+        // cannot drop a named driver for a noise split that happened
+        // to gain more in the refit.
+        if !target.drivers.is_empty() {
+            ranked.sort_by_key(|&p| {
+                let name = &enc.feat_names[model.selected[p]];
+                target
+                    .drivers
+                    .iter()
+                    .position(|(n, _)| n == name)
+                    .unwrap_or(usize::MAX)
+            });
+        }
         ranked.truncate(cfg.top_features);
         if ranked.len() < 2 {
             continue;

@@ -100,11 +100,17 @@ pub fn prism_rules(
         }
         searched += 1;
 
-        // Feature pool: top by GBM gain; the target's own column is never
-        // a condition (in either path — self-conditions are trivial rules).
+        // Feature pool: the screen's driver shortlist when it
+        // produced one, else its top by GBM gain; the target's own
+        // column is never a condition (in either path —
+        // self-conditions are trivial rules).
         let own_feat: Option<usize> = enc.feat_cols.iter().position(|&c| c == res.col);
-        let mut feat_pool: Vec<usize> = res
-            .top_features
+        let pool_source: &Vec<(String, f64)> = if res.drivers.is_empty() {
+            &res.top_features
+        } else {
+            &res.drivers
+        };
+        let mut feat_pool: Vec<usize> = pool_source
             .iter()
             .filter_map(|(n, _)| enc.feat_names.iter().position(|f| f == n))
             .filter(|&f| Some(f) != own_feat)
@@ -344,6 +350,9 @@ mod tests {
             rounds: 1,
             inputs: Vec::new(),
             top_features: vec![],
+            drivers: Vec::new(),
+            reduced_metric: None,
+            reduced_rounds: None,
             cat_ids: Some((ids, vec!["0".into(), "1".into()])),
         };
         let cfg = PrismConfig {

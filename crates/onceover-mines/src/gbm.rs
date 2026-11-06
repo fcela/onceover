@@ -84,6 +84,55 @@ pub fn pack_row_major(enc: &EncodedMatrix) -> Vec<u8> {
     packed
 }
 
+/// Pack the given encoded-feature indices (in `feats` order) row-major,
+/// the layout the boosting loops consume.
+fn pack_features(enc: &EncodedMatrix, feats: &[usize]) -> Vec<u8> {
+    let n_feats = feats.len();
+    let mut packed = vec![MISSING; enc.n * n_feats];
+    for (f, &original) in feats.iter().enumerate() {
+        for r in 0..enc.n {
+            packed[r * n_feats + f] = enc.bins[original][r];
+        }
+    }
+    packed
+}
+
+// ---------- driver shortlist ----------
+
+/// A driver must hold at least this share of the model's total
+/// split gain...
+const DRIVER_MIN_SHARE: f64 = 0.02;
+/// ...or this fraction of the top feature's share, whichever is
+/// larger: a dominant driver raises the bar so the noise a strong
+/// fit still splits on stays out of the claim.
+const DRIVER_REL_SHARE: f64 = 0.10;
+/// The claim names at most this many drivers.
+const DRIVER_MAX: usize = 8;
+
+/// Indices into `ranked` — (position, gain) pairs in descending
+/// gain order — of the driver shortlist: the prefix whose gain
+/// share is at least max(DRIVER_MIN_SHARE, DRIVER_REL_SHARE × the
+/// top feature's share). The top feature always qualifies, even
+/// when gains are spread so thin that its share is below the
+/// absolute floor. Empty when there are no positive gains.
+fn select_driver_idx(ranked: &[(usize, f64)], total: f64) -> Vec<usize> {
+    if ranked.is_empty() || total <= 0.0 {
+        return Vec::new();
+    }
+    let floor = DRIVER_MIN_SHARE.max(DRIVER_REL_SHARE * (ranked[0].1 / total));
+    let mut idx: Vec<usize> = ranked
+        .iter()
+        .enumerate()
+        .take_while(|(_, (_, g))| g / total >= floor)
+        .map(|(i, _)| i)
+        .collect();
+    if idx.is_empty() {
+        idx.push(0);
+    }
+    idx.truncate(DRIVER_MAX);
+    idx
+}
+
 // ---------- tree ----------
 
 #[derive(Debug, Clone)]
@@ -394,8 +443,9 @@ pub fn screen(
     excluded_targets: &[usize],
 ) -> ScreenOutcome {
     // Frame-role exclusions remove scaffolding columns (index,
-    // identifier, timestamp parts) from the target set; they remain
-    // in the predictor pool, and the exclusion is stated in coverage.
+    // identifier, timestamp parts) from the target set and from
+    // every target's predictor pool, and the exclusion is stated
+    // in coverage.
     let eligible_targets: Vec<usize> = enc
         .feat_cols
         .iter()
@@ -405,7 +455,7 @@ pub fn screen(
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
-        .filter_map(|&ci| screen_target(table, enc, ci, cfg))
+        .filter_map(|&ci| screen_target(table, enc, ci, cfg, excluded_targets))
         .collect();
 
     let mut findings = Vec::new();
@@ -427,22 +477,54 @@ pub fn screen(
         } else {
             continue;
         };
-        let feats: Vec<String> = r.inputs.clone();
-        let claim = if r.is_categorical {
-            format!(
-                "{} is predictable from [{}] (holdout accuracy {:.2} vs {:.2} majority baseline)",
-                r.name,
-                feats.join(", "),
-                r.metric,
-                r.baseline
-            )
+        // The claim names the drivers — the inputs that hold the
+        // model's gain — not every input the model split on. When a
+        // refit on the drivers alone was measured, its score leads
+        // and the full model's score follows as context.
+        let claim = if r.drivers.is_empty() {
+            // No positive-gain input; unreachable for findings that
+            // clear the strength bars. Keep the full-list form.
+            if r.is_categorical {
+                format!(
+                    "{} is predictable from [{}] (holdout accuracy {:.2} vs {:.2} majority baseline)",
+                    r.name,
+                    r.inputs.join(", "),
+                    r.metric,
+                    r.baseline
+                )
+            } else {
+                format!(
+                    "{} is predictable from [{}] (holdout R² = {:.2})",
+                    r.name,
+                    r.inputs.join(", "),
+                    r.metric
+                )
+            }
         } else {
-            format!(
-                "{} is predictable from [{}] (holdout R² = {:.2})",
-                r.name,
-                feats.join(", "),
-                r.metric
-            )
+            let named = r
+                .drivers
+                .iter()
+                .map(|(n, s)| format!("{n} ({:.0}% of gain)", s * 100.0))
+                .collect::<Vec<_>>()
+                .join(", ");
+            match (r.is_categorical, r.reduced_metric) {
+                (false, None) => format!(
+                    "{} is predictable from {} (holdout R² = {:.2})",
+                    r.name, named, r.metric
+                ),
+                (false, Some(red)) => format!(
+                    "{} is predictable from {} (holdout R² = {:.2} using only these drivers; {:.2} using all inputs)",
+                    r.name, named, red, r.metric
+                ),
+                (true, None) => format!(
+                    "{} is predictable from {} (holdout accuracy {:.2} vs {:.2} majority baseline)",
+                    r.name, named, r.metric, r.baseline
+                ),
+                (true, Some(red)) => format!(
+                    "{} is predictable from {} (holdout accuracy {:.2} vs {:.2} majority baseline; {:.2} using all inputs)",
+                    r.name, named, red, r.baseline, r.metric
+                ),
+            }
         };
         findings.push(Finding::new(
             Pattern::PredictiveDependency,
@@ -476,6 +558,16 @@ pub fn screen(
                     "gain_shares".into(),
                     json!(r.top_features.iter().map(|(_, s)| s).collect::<Vec<_>>()),
                 ),
+                (
+                    "drivers".into(),
+                    json!(r.drivers.iter().map(|(name, _)| name).collect::<Vec<_>>()),
+                ),
+                (
+                    "driver_shares".into(),
+                    json!(r.drivers.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+                ),
+                ("reduced_metric".into(), json!(r.reduced_metric)),
+                ("reduced_rounds".into(), json!(r.reduced_rounds)),
                 ("rounds".into(), json!(r.rounds)),
                 ("rows_used".into(), json!(enc.n)),
             ]),
@@ -512,7 +604,7 @@ pub fn screen(
         .collect();
     if !excluded_names.is_empty() {
         coverage.push_str(&format!(
-            "; {} column(s) excluded as targets by frame role: {}",
+            "; {} column(s) excluded as targets and predictors by frame role: {}",
             excluded_names.len(),
             excluded_names.join(", ")
         ));
@@ -524,12 +616,15 @@ pub fn screen(
     }
 }
 
-/// Screen one column as a target.
+/// Screen one column as a target. Columns in `excluded_targets`
+/// (frame-role scaffolding) are withheld from the predictor pool as
+/// well as from the target set.
 pub fn screen_target(
     table: &TypedTable,
     enc: &EncodedMatrix,
     ci: usize,
     cfg: &ScreenConfig,
+    excluded_targets: &[usize],
 ) -> Option<TargetResult> {
     let target = prepare_target(table, enc, ci, cfg)?;
     let present: Vec<u32> = match &target {
@@ -565,173 +660,265 @@ pub fn screen_target(
     let min_leaf = (train.len() / 200).clamp(10, 1_000);
     let own = enc.feat_cols.iter().position(|&c| c == ci)?;
     let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
-    let mut selected: Vec<usize> = (0..enc.bins.len()).filter(|&f| f != own).collect();
+    let mut selected: Vec<usize> = (0..enc.bins.len())
+        .filter(|&f| f != own && !excluded_targets.contains(&enc.feat_cols[f]))
+        .collect();
     if selected.len() > cfg.max_predictors {
-        let scores: Vec<f64> = selected
+        // Pair each feature with its information score before
+        // sorting: `selected` is not the full feature range once
+        // exclusions apply, so scores cannot be indexed by feature
+        // position.
+        let mut scored: Vec<(usize, f64)> = selected
             .iter()
-            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .map(|&f| {
+                (
+                    f,
+                    crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows),
+                )
+            })
             .collect();
-        selected.sort_by(|&a, &b| {
-            // selected initially contains every feature except own.
-            let ai = if a < own { a } else { a - 1 };
-            let bi = if b < own { b } else { b - 1 };
-            scores[bi]
-                .total_cmp(&scores[ai])
-                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        scored.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
         });
+        selected = scored.into_iter().map(|(f, _)| f).collect();
         selected.truncate(cfg.max_predictors);
     }
     if selected.is_empty() {
         return None;
     }
     let n_feats = selected.len();
-    let mut packed = vec![MISSING; enc.n * n_feats];
-    for (f, &original) in selected.iter().enumerate() {
-        for r in 0..enc.n {
-            packed[r * n_feats + f] = enc.bins[original][r];
-        }
-    }
+    let packed = pack_features(enc, &selected);
     let own_feat: Option<usize> = None; // target excluded before packing
 
-    let finish =
-        |metric: f64, baseline: f64, rounds: usize, cum_gains: &[f64]| -> Option<TargetResult> {
-            let total: f64 = cum_gains.iter().sum();
-            let mut ranked: Vec<(usize, f64)> = cum_gains
-                .iter()
-                .enumerate()
-                .filter(|(f, _)| Some(*f) != own_feat)
-                .map(|(f, gv)| (f, *gv))
-                .collect();
-            ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
-            let top: Vec<(String, f64)> = ranked
-                .iter()
-                .take(3)
-                .filter(|(_, gv)| *gv > 0.0)
-                .map(|(f, gv)| {
-                    (
-                        enc.feat_names[selected[*f]].clone(),
-                        if total > 0.0 { gv / total } else { 0.0 },
-                    )
-                })
-                .collect();
-            Some(TargetResult {
-                col: ci,
-                name: table.names[ci].clone(),
-                is_categorical: matches!(target, TargetKind::Categorical(_, _)),
-                metric,
-                baseline,
-                n_train: train.len(),
-                n_holdout: holdout.len(),
-                rounds,
-                top_features: top,
-                inputs: cum_gains
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, gain)| **gain > 0.0)
-                    .map(|(f, _)| enc.feat_names[selected[f]].clone())
-                    .collect(),
-                cat_ids: cat_payload,
-            })
-        };
-
-    match &target {
+    // Full fit on every selected predictor.
+    let (metric, baseline, rounds, gains) = match &target {
         TargetKind::Numeric(ys) => {
-            let (metric, rounds, gains, _trees, _base) = boost_numeric(
+            let (m, r, g, _trees, _base) = boost_numeric(
                 enc.n, cfg, ys, train, holdout, &packed, n_feats, own_feat, min_leaf,
-            )?;
-            finish(metric, 0.0, rounds, &gains)
+            );
+            if m <= 0.0 {
+                return None;
+            }
+            (m, 0.0, r, g)
         }
-        TargetKind::Categorical(ids, labels) => {
-            let k = labels.len();
-            let mut class_count = vec![0u32; k];
-            for &p in train {
-                class_count[ids[p as usize] as usize] += 1;
+        TargetKind::Categorical(ids, labels) => boost_categorical(
+            enc.n,
+            cfg,
+            ids,
+            labels.len(),
+            train,
+            holdout,
+            &packed,
+            n_feats,
+            own_feat,
+            min_leaf,
+        ),
+    };
+
+    // Rank the positive-gain inputs by gain; the driver shortlist
+    // is the prefix of that ranking clearing the driver floor.
+    let total: f64 = gains.iter().sum();
+    let mut ranked: Vec<(usize, f64)> = gains
+        .iter()
+        .enumerate()
+        .filter(|(_, gv)| **gv > 0.0)
+        .map(|(f, gv)| (f, *gv))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let ranked_shares: Vec<(String, f64)> = ranked
+        .iter()
+        .map(|(f, gv)| {
+            (
+                enc.feat_names[selected[*f]].clone(),
+                if total > 0.0 { gv / total } else { 0.0 },
+            )
+        })
+        .collect();
+    let driver_idx = select_driver_idx(&ranked, total);
+    let drivers: Vec<(String, f64)> = driver_idx
+        .iter()
+        .map(|&i| ranked_shares[i].clone())
+        .collect();
+
+    // Validate the shortlist: when it is a proper subset of the
+    // inputs and the full result clears the finding bars, refit on
+    // the drivers alone (same split, same configuration) so the
+    // claim's headline score is measured on the named drivers, not
+    // inferred from their gain shares.
+    let finding_strength = if matches!(target, TargetKind::Categorical(_, _)) {
+        metric >= 0.7 && metric >= baseline + 0.05
+    } else {
+        metric >= 0.3
+    };
+    let (mut reduced_metric, mut reduced_rounds) = (None, None);
+    if finding_strength && !driver_idx.is_empty() && driver_idx.len() < ranked.len() {
+        let sub_feats: Vec<usize> = driver_idx.iter().map(|&i| selected[ranked[i].0]).collect();
+        let sub_packed = pack_features(enc, &sub_feats);
+        let (rm, rr) = match &target {
+            TargetKind::Numeric(ys) => {
+                let (m, r, _g, _t, _b) = boost_numeric(
+                    enc.n,
+                    cfg,
+                    ys,
+                    train,
+                    holdout,
+                    &sub_packed,
+                    sub_feats.len(),
+                    None,
+                    min_leaf,
+                );
+                (m, r)
             }
-            let prior: Vec<f32> = class_count
-                .iter()
-                .map(|&x| x as f32 / train.len() as f32)
-                .collect();
-            let base: Vec<f32> = prior.iter().map(|&p| (p / (1.0 - p + 1e-9)).ln()).collect();
-            let mut scores = vec![base.clone(); enc.n];
-            let baseline = prior.iter().cloned().fold(f32::MIN, f32::max) as f64;
-            let mut cum_gains = vec![0.0f64; n_feats];
-            let mut best_gains = cum_gains.clone();
-            let mut best_metric = 0.0f64;
-            let mut best_rounds = 0;
-            let mut stale = 0;
-            let max_rounds = if k > 5 {
-                cfg.max_rounds / 2
-            } else {
-                cfg.max_rounds
-            };
-            for round in 1..=max_rounds {
-                // Class-major sweeps over row-major `scores` (enc.n × k):
-                // the range loop over classes is intentional.
-                #[allow(clippy::needless_range_loop)]
-                for c in 0..k {
-                    let mut g = vec![0.0f32; enc.n];
-                    let mut h = vec![0.0f32; enc.n];
-                    for &p in train {
-                        let z = scores[p as usize][c];
-                        let pc = 1.0 / (1.0 + (-z).exp());
-                        let yc = if ids[p as usize] as usize == c {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        g[p as usize] = pc - yc;
-                        h[p as usize] = pc * (1.0 - pc);
-                    }
-                    let (root, nodes, gains) = grow_tree(
-                        &packed,
-                        n_feats,
-                        train,
-                        &g,
-                        &h,
-                        own_feat,
-                        cfg.lambda,
-                        min_leaf,
-                        cfg.max_depth,
-                    );
-                    for f in 0..gains.len() {
-                        cum_gains[f] += gains[f];
-                    }
-                    for &p in train.iter().chain(holdout.iter()) {
-                        scores[p as usize][c] += cfg.learning_rate
-                            * tree_predict(&nodes, root, &packed, n_feats, p as usize);
-                    }
-                }
-                // Holdout accuracy (argmax score).
-                let correct = holdout
-                    .iter()
-                    .filter(|&&p| {
-                        let mut best_c = 0usize;
-                        let mut best_s = f32::MIN;
-                        for (c, s) in scores[p as usize].iter().enumerate() {
-                            if *s > best_s {
-                                best_s = *s;
-                                best_c = c;
-                            }
-                        }
-                        best_c == ids[p as usize] as usize
-                    })
-                    .count();
-                let acc = correct as f64 / holdout.len().max(1) as f64;
-                if acc > best_metric + 1e-4 {
-                    best_metric = acc;
-                    best_rounds = round;
-                    best_gains = cum_gains.clone();
-                    stale = 0;
-                } else {
-                    stale += 1;
-                    if stale >= cfg.patience {
-                        break;
-                    }
-                }
+            TargetKind::Categorical(ids, labels) => {
+                let (m, _b, r, _g) = boost_categorical(
+                    enc.n,
+                    cfg,
+                    ids,
+                    labels.len(),
+                    train,
+                    holdout,
+                    &sub_packed,
+                    sub_feats.len(),
+                    None,
+                    min_leaf,
+                );
+                (m, r)
             }
-            finish(best_metric, baseline, best_rounds, &best_gains)
+        };
+        if rm.is_finite() {
+            reduced_metric = Some(rm);
+            reduced_rounds = Some(rr);
         }
     }
+
+    Some(TargetResult {
+        col: ci,
+        name: table.names[ci].clone(),
+        is_categorical: matches!(target, TargetKind::Categorical(_, _)),
+        metric,
+        baseline,
+        n_train: train.len(),
+        n_holdout: holdout.len(),
+        rounds,
+        top_features: ranked_shares.iter().take(3).cloned().collect(),
+        inputs: gains
+            .iter()
+            .enumerate()
+            .filter(|(_, gain)| **gain > 0.0)
+            .map(|(f, _)| enc.feat_names[selected[f]].clone())
+            .collect(),
+        drivers,
+        reduced_metric,
+        reduced_rounds,
+        cat_ids: cat_payload,
+    })
+}
+
+/// The categorical boosting loop: one-versus-rest logistic trees
+/// per class, early-stopped on holdout accuracy. Returns (best
+/// holdout accuracy, majority baseline, rounds at best, cumulative
+/// gains at best).
+#[allow(clippy::too_many_arguments)]
+fn boost_categorical(
+    n_rows: usize,
+    cfg: &ScreenConfig,
+    ids: &[u8],
+    k: usize,
+    train: &[u32],
+    holdout: &[u32],
+    packed: &[u8],
+    n_feats: usize,
+    own_feat: Option<usize>,
+    min_leaf: usize,
+) -> (f64, f64, usize, Vec<f64>) {
+    let mut class_count = vec![0u32; k];
+    for &p in train {
+        class_count[ids[p as usize] as usize] += 1;
+    }
+    let prior: Vec<f32> = class_count
+        .iter()
+        .map(|&x| x as f32 / train.len() as f32)
+        .collect();
+    let base: Vec<f32> = prior.iter().map(|&p| (p / (1.0 - p + 1e-9)).ln()).collect();
+    let mut scores = vec![base.clone(); n_rows];
+    let baseline = prior.iter().cloned().fold(f32::MIN, f32::max) as f64;
+    let mut cum_gains = vec![0.0f64; n_feats];
+    let mut best_gains = cum_gains.clone();
+    let mut best_metric = 0.0f64;
+    let mut best_rounds = 0;
+    let mut stale = 0;
+    let max_rounds = if k > 5 {
+        cfg.max_rounds / 2
+    } else {
+        cfg.max_rounds
+    };
+    for round in 1..=max_rounds {
+        // Class-major sweeps over row-major `scores` (n_rows × k):
+        // the range loop over classes is intentional.
+        #[allow(clippy::needless_range_loop)]
+        for c in 0..k {
+            let mut g = vec![0.0f32; n_rows];
+            let mut h = vec![0.0f32; n_rows];
+            for &p in train {
+                let z = scores[p as usize][c];
+                let pc = 1.0 / (1.0 + (-z).exp());
+                let yc = if ids[p as usize] as usize == c {
+                    1.0
+                } else {
+                    0.0
+                };
+                g[p as usize] = pc - yc;
+                h[p as usize] = pc * (1.0 - pc);
+            }
+            let (root, nodes, gains) = grow_tree(
+                packed,
+                n_feats,
+                train,
+                &g,
+                &h,
+                own_feat,
+                cfg.lambda,
+                min_leaf,
+                cfg.max_depth,
+            );
+            for f in 0..gains.len() {
+                cum_gains[f] += gains[f];
+            }
+            for &p in train.iter().chain(holdout.iter()) {
+                scores[p as usize][c] +=
+                    cfg.learning_rate * tree_predict(&nodes, root, packed, n_feats, p as usize);
+            }
+        }
+        // Holdout accuracy (argmax score).
+        let correct = holdout
+            .iter()
+            .filter(|&&p| {
+                let mut best_c = 0usize;
+                let mut best_s = f32::MIN;
+                for (c, s) in scores[p as usize].iter().enumerate() {
+                    if *s > best_s {
+                        best_s = *s;
+                        best_c = c;
+                    }
+                }
+                best_c == ids[p as usize] as usize
+            })
+            .count();
+        let acc = correct as f64 / holdout.len().max(1) as f64;
+        if acc > best_metric + 1e-4 {
+            best_metric = acc;
+            best_rounds = round;
+            best_gains = cum_gains.clone();
+            stale = 0;
+        } else {
+            stale += 1;
+            if stale >= cfg.patience {
+                break;
+            }
+        }
+    }
+    (best_metric, baseline, best_rounds, best_gains)
 }
 
 /// The numeric boosting loop, shared by `screen_target` (which
@@ -740,8 +927,9 @@ pub fn screen_target(
 /// stopping; snapshots the trees whenever the holdout R² improves,
 /// so the returned ensemble is the one that produced the returned
 /// metric. Returns (holdout R², rounds at best, cumulative gains at
-/// best, trees at best, base prediction), or None when the best
-/// holdout R² is not positive.
+/// best, trees at best, base prediction); the R² is not positive
+/// when no round improved on the mean, and callers that require a
+/// positive score check it.
 /// (best holdout metric, best round count, gains at best, trees at
 /// best, base prediction) from a numeric boosting run.
 type BoostNumeric = (f64, usize, Vec<f64>, Vec<Vec<Node>>, f32);
@@ -757,7 +945,7 @@ fn boost_numeric(
     n_feats: usize,
     own_feat: Option<usize>,
     min_leaf: usize,
-) -> Option<BoostNumeric> {
+) -> BoostNumeric {
     let base: f32 = train.iter().map(|&p| y[p as usize]).sum::<f32>() / train.len() as f32;
     let mut pred = vec![base; n_rows];
     let mut cum_gains = vec![0.0f64; n_feats];
@@ -817,10 +1005,7 @@ fn boost_numeric(
             }
         }
     }
-    if best_metric <= 0.0 {
-        return None;
-    }
-    Some((best_metric, best_rounds, best_gains, best_trees, base))
+    (best_metric, best_rounds, best_gains, best_trees, base)
 }
 
 fn tree_predict_row(nodes: &[Node], row: &[u8]) -> f32 {
@@ -1032,17 +1217,24 @@ pub fn fit_gbm_model_restricted(
         .filter(|&f| f != own && !exclude_cols.contains(&enc.feat_cols[f]))
         .collect();
     if selected.len() > cfg.max_predictors {
-        let scores: Vec<f64> = selected
+        // Pair each feature with its information score before
+        // sorting: `selected` is not the full feature range once
+        // exclusions apply, so scores cannot be indexed by feature
+        // position.
+        let mut scored: Vec<(usize, f64)> = selected
             .iter()
-            .map(|&f| crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows))
+            .map(|&f| {
+                (
+                    f,
+                    crate::screen::information(&enc.bins[own], &enc.bins[f], &screen_rows),
+                )
+            })
             .collect();
-        selected.sort_by(|&a, &b| {
-            let ai = if a < own { a } else { a - 1 };
-            let bi = if b < own { b } else { b - 1 };
-            scores[bi]
-                .total_cmp(&scores[ai])
-                .then(enc.feat_names[a].cmp(&enc.feat_names[b]))
+        scored.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
         });
+        selected = scored.into_iter().map(|(f, _)| f).collect();
         selected.truncate(cfg.max_predictors);
     }
     if selected.is_empty() {
@@ -1057,7 +1249,10 @@ pub fn fit_gbm_model_restricted(
     }
     let (metric, rounds, gains, trees, base) = boost_numeric(
         enc.n, cfg, &ys, train, holdout, &packed, n_feats, None, min_leaf,
-    )?;
+    );
+    if metric <= 0.0 {
+        return None;
+    }
     Some(FittedGbm {
         selected,
         best_gains: gains,
@@ -1219,5 +1414,152 @@ mod tests {
             .results
             .iter()
             .all(|r| r.metric < 0.5 || r.baseline > 0.0 && r.is_categorical));
+    }
+
+    #[test]
+    fn driver_rule_applies_relative_and_absolute_floors() {
+        // (position, gain) in gain order; total gain 100.
+        let ranked = vec![(0, 85.0), (1, 9.0), (2, 8.4), (3, 3.0)];
+        // Floor is max(0.02, 0.10 * 0.85) = 0.085: position 1 (0.09)
+        // qualifies, position 2 (0.084) does not.
+        assert_eq!(select_driver_idx(&ranked, 100.0), vec![0, 1]);
+    }
+
+    #[test]
+    fn driver_rule_absolute_floor_binds_when_gains_are_spread() {
+        let ranked = vec![(0, 10.0), (1, 5.0), (2, 2.1), (3, 1.9)];
+        // Top share 0.10 -> floor is max(0.02, 0.01) = 0.02:
+        // shares 0.10, 0.05, 0.021 qualify; 0.019 does not.
+        assert_eq!(select_driver_idx(&ranked, 100.0), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn driver_rule_always_keeps_the_top_feature_and_caps_at_eight() {
+        // Top share below the absolute floor (gains spread over
+        // many features): the top feature still qualifies.
+        let ranked = vec![(0, 1.5), (1, 1.4), (2, 1.3)];
+        assert_eq!(select_driver_idx(&ranked, 100.0), vec![0]);
+        // Twenty equal features: capped at DRIVER_MAX.
+        let ranked: Vec<(usize, f64)> = (0..20).map(|i| (i, 5.0)).collect();
+        assert_eq!(select_driver_idx(&ranked, 100.0).len(), DRIVER_MAX);
+        assert!(select_driver_idx(&[], 0.0).is_empty());
+    }
+
+    fn driver_frame() -> polars::prelude::DataFrame {
+        // y = x^2 plus six noise columns.
+        let mut rng = Lcg(123);
+        let mut x: Vec<Option<f64>> = Vec::new();
+        let mut y: Vec<Option<f64>> = Vec::new();
+        let mut n: Vec<Vec<Option<f64>>> = (0..6).map(|_| Vec::new()).collect();
+        for _ in 0..3000 {
+            let v = rng.next_f64();
+            x.push(Some(v));
+            y.push(Some(v * v + 0.01 * rng.next_f64()));
+            for col in n.iter_mut() {
+                col.push(Some(rng.next_f64()));
+            }
+        }
+        df! {
+            "x" => x, "y" => y,
+            "n0" => n[0].clone(), "n1" => n[1].clone(), "n2" => n[2].clone(),
+            "n3" => n[3].clone(), "n4" => n[4].clone(), "n5" => n[5].clone(),
+        }
+        .unwrap()
+    }
+
+    #[test]
+    fn screen_claim_names_only_the_planted_driver() {
+        let df = driver_frame();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
+        let res = out.results.iter().find(|r| r.name == "y").unwrap();
+        assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
+        assert_eq!(res.drivers[0].0, "x");
+        let f = out
+            .findings
+            .iter()
+            .find(|f| f.claim.starts_with("y is predictable"))
+            .expect("a predictive finding for y");
+        assert!(
+            f.claim.starts_with("y is predictable from x ("),
+            "claim: {}",
+            f.claim
+        );
+        // When the full model used more inputs than the driver set,
+        // a refit on the drivers alone is recorded and the claim
+        // reports it.
+        if res.inputs.len() > 1 {
+            let red = res.reduced_metric.expect("a refit score is recorded");
+            assert!(
+                red > res.metric - 0.1,
+                "reduced {red} vs full {}",
+                res.metric
+            );
+            assert!(f.claim.contains("using only these drivers"));
+        }
+    }
+
+    #[test]
+    fn excluded_columns_leave_the_predictor_pool() {
+        let df = driver_frame();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let x_col = table.names.iter().position(|n| n == "x").unwrap();
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col]);
+        for r in &out.results {
+            assert!(
+                !r.inputs.iter().any(|i| i == "x"),
+                "excluded column in inputs of {}: {:?}",
+                r.name,
+                r.inputs
+            );
+        }
+        // With its only driver excluded, y is not predictable.
+        assert!(out
+            .findings
+            .iter()
+            .all(|f| !f.claim.starts_with("y is predictable")));
+    }
+
+    #[test]
+    fn excluded_columns_survive_the_predictor_shortlist() {
+        // Regression: with more encoded features than the predictor
+        // cap, the shortlist sort pairs each feature with its own
+        // score; indexing scores by feature position panics once an
+        // exclusion makes the selected set non-contiguous (the
+        // state-unemployment corpus frame: 50+ features, a timestamp
+        // exclusion, index 50 into a 50-long score vector).
+        use polars::prelude::*;
+        let mut rng = Lcg(77);
+        let n = 1200;
+        let mut cols: Vec<Series> = Vec::new();
+        let mut x: Vec<f64> = Vec::new();
+        let mut y: Vec<f64> = Vec::new();
+        for _ in 0..n {
+            let v = rng.next_f64();
+            x.push(v);
+            y.push(v * v + 0.01 * rng.next_f64());
+        }
+        cols.push(Series::new("x".into(), x));
+        cols.push(Series::new("y".into(), y));
+        for i in 0..53 {
+            let vals: Vec<f64> = (0..n).map(|_| rng.next_f64()).collect();
+            cols.push(Series::new(format!("n{i}").into(), vals));
+        }
+        let df =
+            DataFrame::new_infer_height(cols.into_iter().map(|s| s.into()).collect::<Vec<_>>())
+                .unwrap();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let excluded = table.names.iter().position(|nm| nm == "n0").unwrap();
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[excluded]);
+        let res = out.results.iter().find(|r| r.name == "y").unwrap();
+        assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
+        assert_eq!(res.drivers[0].0, "x");
+        assert!(out
+            .results
+            .iter()
+            .all(|r| !r.inputs.iter().any(|i| i == "n0")));
     }
 }

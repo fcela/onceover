@@ -36,7 +36,7 @@ used by package version 0.1.3.
 | `formats` | Format counts and examples | Inconsistent representations within a field; also type `content_anomaly` from the `content` detector, with `kind` in the evidence: `numbers_as_text`, `dates_as_text`, `booleans_as_text`, `email`, `url`, `uuid`, `ipv4` (the share of values that fit and the ones that do not), `label_variants` (labels differing only in case or spacing), `possible_misspelling` (rare labels close to a common one), `long_text`, `repeated_extreme` (one value repeated at an isolated extreme), `minority_sign`, `zero_inflation`, `two_modes`, `temporal_outlier`; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
 | `dependencies` | Type `functional` | Inputs determine a target, subject to scope, comparison, tolerance and exceptions |
 | `dependencies` | Type `order_constraint` | One column is at most another on every evaluated row, or all but a small counted share of them, from the `order_constraints` detector: the two columns share a kind family (numeric, date, or datetime with the same unit) and compatible ranges; the claim names the direction, the evaluated rows, the violation count and share, the rows tied, and the worst violation with its row; pairs already tied by an exact functional dependency in either direction are stated but ranked below unrelated pairs, and violations of a near-universal order rank above exact orders |
-| `dependencies` | Type `predictive` | Specified inputs support prediction of a target under recorded validation |
+| `dependencies` | Type `predictive` | Drivers support prediction of a target under recorded validation: the claim names the driver shortlist with each driver's share of the model's split gain, and the evidence records every input the model used |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
@@ -103,6 +103,38 @@ cut. A predictor is reported only when a shape is decisive: for a step,
 for a curve, `curve_r2` ≥ 0.10 and `curvature` ≥ 0.05. The shares are of
 the target's total variance, so a weak curved term under a dominant
 second effect is not reported. At most 10 shape statements per target.
+
+A predictive statement with no form named comes from the
+predictability screen (the `gbm` detector): a histogram gradient
+boosting model fitted for the target against the other columns,
+early-stopped on a held-out quarter of the rows. The claim names
+the model's drivers, not every input the model split on. A driver
+is an input whose share of the model's total split gain is at
+least the larger of 2% and one tenth of the top driver's share;
+the list is in gain order, holds at most eight names, and always
+holds the top input. The evidence metrics are `metric` (the full
+model's holdout score: R² for a numeric target, accuracy for a
+categorical one, with `baseline` the majority-class accuracy),
+`inputs` (every input the full model split on), `top_features`
+and `gain_shares` (the top three inputs and their gain shares),
+`drivers` and `driver_shares` (the named shortlist and its
+shares), `rounds`, `n_train`, `n_holdout`, and `rows_used`. When
+the driver set is a proper subset of the inputs, the claim
+reports two scores: first the holdout score of a model refit on
+the drivers alone (also in the evidence as `reduced_metric`,
+with `reduced_rounds`), then the full model's score, so the
+statement "predictable from the drivers" is itself measured
+rather than inferred from the gain shares. Columns the frame
+model roles as scaffolding (index, identifier, timestamp, and
+timestamp parts of an assembled axis) are excluded as predictors
+as well as targets, and the exclusion is stated in the pass's
+coverage. The driver shortlist is also the feature pool the
+downstream passes start from: the decision-table and rule passes
+and the local-regime models take their candidate features from
+the target's drivers when the screen produced them, and the
+interaction pass orders its shortlist drivers-first, so no later
+statement re-expands a target's inputs back to every column the
+full model happened to split on.
 
 Gaps require a reference. A temporal gap states its assumed cadence or calendar;
 an integer-sequence detector can use the same category with a declared increment.
