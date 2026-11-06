@@ -32,6 +32,19 @@ const MIN_NEAR_DUPLICATE_SHARE: f64 = 0.001;
 /// it the remaining columns are too coarse to tell records apart.
 const MIN_DISTINCT_WITHOUT: f64 = 0.5;
 const MAX_NEAR_DUPLICATE_STATEMENTS: usize = 3;
+/// Chance must account for less than this share of the repeats:
+/// the repeats are stated only when they exceed this multiple of
+/// the coincidences expected if the compared columns were
+/// independent (see `chance_pairs`).
+const MIN_OVER_CHANCE: f64 = 4.0;
+/// A compared column enters the chance model only when it raises
+/// the distinct count of the columns already in it by more than this
+/// share; otherwise it is determined by them and adds no resolution.
+const REDUNDANT_SHARE: f64 = 0.01;
+/// At most this many compared columns are tested, coarsest first;
+/// columns past the limit are left out of the chance model, which
+/// can only raise the chance estimate.
+const MAX_RESOLUTION_TESTS: usize = 64;
 
 const MIN_PAIR_R: f64 = 0.9;
 const MAX_LINE_PAIRS: usize = 256;
@@ -88,6 +101,67 @@ fn salt_of(c: usize) -> u64 {
     (c as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)
 }
 
+/// Probability that two rows drawn at random agree on one column:
+/// the sum of squared value shares, nulls counted as one value.
+fn collision_probability(table: &TypedTable, c: usize) -> f64 {
+    let salt = salt_of(c);
+    let mut keys: Vec<u64> = (0..table.n)
+        .map(|r| value_hash(&table.cols[c], r, salt))
+        .collect();
+    keys.sort_unstable();
+    let n = table.n as f64;
+    let mut p = 0.0;
+    let mut start = 0;
+    for i in 1..=keys.len() {
+        if i == keys.len() || keys[i] != keys[start] {
+            let share = (i - start) as f64 / n;
+            p += share * share;
+            start = i;
+        }
+    }
+    p
+}
+
+/// Coincident row pairs expected on the compared columns (every
+/// column but `left_out`) if those columns were independent:
+/// C(n, 2) times the product of their collision probabilities.
+///
+/// Independence understates chance when the compared columns
+/// depend on each other — a price fixed by store and product
+/// repeats exactly when store and product do — so the product runs
+/// only over columns that add resolution. Columns enter coarsest
+/// first; a column is kept when it splits the value combinations
+/// of the columns already kept (it raises their distinct count by
+/// more than `REDUNDANT_SHARE`), and skipped otherwise, because it
+/// is then determined by the coarser columns.
+fn chance_pairs(table: &TypedTable, left_out: usize, probs: &[(usize, f64)]) -> f64 {
+    let mut order: Vec<(usize, f64)> = probs
+        .iter()
+        .copied()
+        .filter(|(c, _)| *c != left_out)
+        .collect();
+    order.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut keys = vec![0u64; table.n];
+    let mut distinct = 1usize;
+    let n = table.n as f64;
+    let mut chance = n * (n - 1.0) / 2.0;
+    for &(c, p) in order.iter().take(MAX_RESOLUTION_TESTS) {
+        let salt = salt_of(c);
+        let with: Vec<u64> = keys
+            .iter()
+            .enumerate()
+            .map(|(r, k)| k.wrapping_add(value_hash(&table.cols[c], r, salt)))
+            .collect();
+        let distinct_with = distinct_count(with.clone());
+        if distinct_with as f64 > distinct as f64 * (1.0 + REDUNDANT_SHARE) + 1.0 {
+            keys = with;
+            distinct = distinct_with;
+            chance *= p;
+        }
+    }
+    chance
+}
+
 fn hashable(col: &TypedCol) -> bool {
     !matches!(col, TypedCol::Null { .. } | TypedCol::Other { .. })
 }
@@ -113,7 +187,7 @@ fn near_duplicates(table: &TypedTable, findings: &mut Vec<Finding>) -> Option<St
     }
     let exact_repeats = table.n - distinct_count(totals.clone());
     let bar = MIN_NEAR_DUPLICATE_ROWS.max((MIN_NEAR_DUPLICATE_SHARE * table.n as f64) as usize);
-    let mut hits: Vec<(usize, usize)> = columns
+    let hits: Vec<(usize, usize)> = columns
         .par_iter()
         .filter_map(|&c| {
             let salt = salt_of(c);
@@ -130,8 +204,27 @@ fn near_duplicates(table: &TypedTable, findings: &mut Vec<Finding>) -> Option<St
             (extra >= bar).then_some((c, extra))
         })
         .collect();
+    // Repeats that chance coincidence on the compared columns would
+    // produce are not evidence of a record entered twice: five
+    // independent six-level answers already coincide on about one
+    // pair in 7,800.
+    let probs: Vec<(usize, f64)> = if hits.is_empty() {
+        Vec::new()
+    } else {
+        columns
+            .par_iter()
+            .map(|&c| (c, collision_probability(table, c)))
+            .collect()
+    };
+    let mut hits: Vec<(usize, usize, f64)> = hits
+        .par_iter()
+        .filter_map(|&(c, extra)| {
+            let chance = chance_pairs(table, c, &probs);
+            (extra as f64 > MIN_OVER_CHANCE * chance).then_some((c, extra, chance))
+        })
+        .collect();
     hits.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    for (c, extra) in hits.into_iter().take(MAX_NEAR_DUPLICATE_STATEMENTS) {
+    for (c, extra, chance) in hits.into_iter().take(MAX_NEAR_DUPLICATE_STATEMENTS) {
         let name = &table.names[c];
         findings.push(Finding::new(
             Pattern::NearDuplicateRows,
@@ -148,6 +241,7 @@ fn near_duplicates(table: &TypedTable, findings: &mut Vec<Finding>) -> Option<St
                 ("varying_column".to_string(), json!(name)),
                 ("near_duplicates".to_string(), json!(extra)),
                 ("exact_repeats".to_string(), json!(exact_repeats)),
+                ("expected_by_chance".to_string(), json!(chance)),
             ]),
             Some(format!(
                 "check whether these are one record entered twice with a different {name}"

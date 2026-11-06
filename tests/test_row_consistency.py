@@ -122,6 +122,52 @@ def test_random_columns_are_not_a_three_column_key():
     assert not [f for f in report.findings if f["evidence"][0]["method"]["algorithm"] == "composite_uniqueness"]
 
 
+def test_chance_coincidence_on_coarse_columns_is_quiet():
+    # Five independent six-level answers coincide on about one row
+    # pair in 7,800, so in 5,000 rows about 1,300 rows repeat another
+    # row on every column except the score by chance alone.
+    for seed in range(3):
+        rng = np.random.default_rng(seed + 5)
+        n = 5000
+        frame = pl.DataFrame(
+            {f"q{i}": rng.choice(list("abcdef"), size=n) for i in range(5)}
+            | {"score": rng.normal(size=n).round(3)}
+        )
+        assert not _near(_run(frame)), seed
+
+
+def test_repeats_of_a_dependent_column_are_judged_on_its_determinants():
+    # price is fixed by (store, product): rows that share a cell
+    # share a price, so their repeats are the cell's, not a record
+    # entered twice.
+    rng = np.random.default_rng(1)
+    n, k = 20000, 120
+    store = rng.integers(0, k, size=n)
+    product = rng.integers(0, k, size=n)
+    price = rng.normal(size=(k, k))[store, product]
+    frame = pl.DataFrame({"store": store, "product": product, "price": price,
+                          "qty": rng.integers(1, 9, size=n)})
+    assert not _near(_run(frame))
+
+
+def test_reentered_records_with_a_new_status_are_found():
+    rng = np.random.default_rng(9)
+    n = 8000
+    orders = pl.DataFrame({
+        "ts": np.arange(n) * 37 + rng.integers(0, 30, size=n),
+        "amount": rng.lognormal(3, 1, size=n).round(2),
+        "cust": rng.integers(0, 900, size=n),
+        "status": rng.choice(["new", "paid", "sent"], size=n),
+    })
+    again = orders.sample(60, seed=4).with_columns(pl.lit("void").alias("status"))
+    hits = _near(_run(pl.concat([orders, again])))
+    assert len(hits) == 1
+    m = hits[0]["evidence"][0]["metrics"]
+    assert m["varying_column"] == "status"
+    assert m["near_duplicates"] >= 60
+    assert m["near_duplicates"] > 4 * m["expected_by_chance"]
+
+
 def test_noise_is_quiet():
     bad = []
     for seed in range(5):
