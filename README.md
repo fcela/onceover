@@ -21,7 +21,7 @@ partial overlaps with exact orphan counts.
 pip install onceover
 ```
 
-Requires CPython 3.10+ and Polars 1.28–2.x. Binary wheels are available for
+Requires CPython 3.10+ and Polars 2.0–2.x. Binary wheels are available for
 Linux x86_64 and aarch64, macOS Intel and Apple silicon, and Windows x86_64.
 Building from source requires Rust and a C compiler.
 

@@ -110,10 +110,10 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: dist/*.whl pytest
           python -m pytest tests/ -q
-      - name: Test wheel on Polars 1.x
+      - name: Test wheel on oldest supported Polars
         if: matrix.platform.name == 'linux-x86_64'
         run: |
-          python -m pip install --only-binary=:all: dist/*.whl pytest 'scipy>=1.15' 'polars>=1.28,<2'
+          python -m pip install --only-binary=:all: dist/*.whl pytest 'scipy>=1.15' 'polars>=2.0,<2.1'
           python -m pytest tests/ -q
       - uses: actions/upload-artifact@v6
         with:
@@ -132,7 +132,7 @@ jobs:
           python-version: '3.13'
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: python -m pip install 'maturin==1.15.0' 'polars>=1.28'
+      - run: python -m pip install 'maturin==1.15.0' 'polars>=2.0'
       - run: python -m maturin build --release --locked --out dist --interpreter python
       - run: python -m pip install dist/*.whl
       - run: python benchmarks/timing_gate.py --output timing.json
