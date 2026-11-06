@@ -75,6 +75,28 @@ A report is a JSON-shaped object (contract:
   sample and the source population; read sampled numbers as
   statements about the sample, not the population.
 
+## Multiple tables
+
+`onceover.profile_many({"orders": orders, "customers": customers})`
+reads a set of tables together and reports candidate foreign keys:
+column pairs from different tables whose distinct non-null values
+are fully contained in a unique column on the other side.
+Candidates whose column names agree (case folded, underscores and
+spaces removed) form the strong tier; the rest are reported too,
+each with a chance score — how easily the containment happens by
+accident. Dense integer ranges contain each other by construction,
+so a lower-tier integer candidate with a score near 1 says the
+values alone carry no evidence either way; a score near 0 says
+chance cannot explain the containment. Partial containment into a
+unique parent is reported as an overlap with exact orphan-row
+counts (nulls are never orphans). The result is a
+`MultiTableReport` — `candidates`, `overlaps`, `coverage`,
+`to_digest()`, `to_json()`, `candidates_frame()` — separate from
+the single-table report: `profile_many` does not profile the
+individual tables, and same-table pairs are not examined. Coverage
+states how many pairs were considered at each stage and which
+columns were not examined.
+
 ## Getting findings back out
 
 ```python
