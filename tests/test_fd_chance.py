@@ -6,10 +6,12 @@ Violation counts are recomputed with Polars group-bys, independent
 of the library's own counting.
 """
 
-import numpy as np
 import polars as pl
+import pytest
 
 import onceover
+
+np = pytest.importorskip("numpy", reason="planted frames need numpy")
 
 # ------------------------------------------------------------------
 # Frame builders
