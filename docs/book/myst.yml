@@ -66,6 +66,7 @@ project:
         - file: appendix/report_contract.ipynb
         - file: appendix/glossary.ipynb
         - file: appendix/foundation_models.ipynb
+        - file: appendix/release_notes.ipynb
 site:
   template: book-theme
   options:
