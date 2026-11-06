@@ -1,5 +1,6 @@
 """Exact value identity, relationship recovery, and bounded profiling checks."""
 
+import json
 import random
 
 import polars as pl
@@ -163,6 +164,19 @@ def test_extreme_date_range_is_rejected_before_full_enumeration():
     r = onceover.profile(df, detectors=["expectations"], hints={"no_gaps": ["d"], "cadence": {"d": "daily"}})
     assert "exceeds" in r.coverage["expectations"]["detail"]
     assert not r.select(category="gaps")
+
+
+def test_extreme_date_range_reports_no_axis_span():
+    # The full Polars date range does not fit in i64 microseconds;
+    # the axis is recorded without a measured span rather than with
+    # wrapped, fabricated endpoints.
+    df = pl.DataFrame({"d": pl.Series([-(2**31), 2**31 - 1], dtype=pl.Int32).cast(pl.Date)})
+    axis = json.loads(onceover.profile(df).to_json())["frame"]["axis"]
+    assert axis["source"] == "native"
+    assert axis.get("min") is None
+    assert axis.get("max") is None
+    assert axis.get("distinct_values") is None
+    assert axis.get("step") is None
 
 
 def test_low_frequency_sentinel_outside_top_64_values_is_retained():
