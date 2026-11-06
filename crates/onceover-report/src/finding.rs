@@ -59,11 +59,20 @@ pub enum Pattern {
     DigitPreference,
     BenfordDeviation,
     BoundaryMass,
+    /// A column's values against what the column appears to hold.
+    ContentAnomaly,
+    /// What a series does over its whole span along the time axis.
+    SeriesStructure,
+    /// Rows matching another on every column but one.
+    NearDuplicateRows,
+    /// Rows that disagree with a relation between columns.
+    RowInconsistency,
     FunctionalDependency,
     AffineDependency,
     ArithmeticIdentity,
     PredictiveDependency,
     PiecewiseDependency,
+    OrderConstraint,
     ConditionalRule,
     StatisticalAssociation,
     PeriodAssociation,
@@ -92,17 +101,20 @@ impl Pattern {
             Self::ValueConcentration | Self::Hotspot => Category::Concentration,
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
-            Self::Duplicates => Category::Duplicates,
+            Self::Duplicates | Self::NearDuplicateRows => Category::Duplicates,
+            Self::RowInconsistency => Category::Intervals,
             Self::FormatVariation
             | Self::Heaping
             | Self::DigitPreference
             | Self::BenfordDeviation
-            | Self::BoundaryMass => Category::Formats,
+            | Self::BoundaryMass
+            | Self::ContentAnomaly => Category::Formats,
             Self::FunctionalDependency
             | Self::AffineDependency
             | Self::ArithmeticIdentity
             | Self::PredictiveDependency
-            | Self::PiecewiseDependency => Category::Dependencies,
+            | Self::PiecewiseDependency
+            | Self::OrderConstraint => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
@@ -119,6 +131,7 @@ impl Pattern {
             Self::DuplicateEncoding => Category::ColumnRoles,
             Self::DistributionShift => Category::Changes,
             Self::OrderedPartition => Category::Changes,
+            Self::SeriesStructure => Category::Changes,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -140,10 +153,15 @@ impl Pattern {
             Self::DigitPreference => "digit_preference",
             Self::BenfordDeviation => "benford_deviation",
             Self::BoundaryMass => "boundary_mass",
+            Self::ContentAnomaly => "content_anomaly",
+            Self::SeriesStructure => "series_structure",
+            Self::NearDuplicateRows => "near_duplicate_rows",
+            Self::RowInconsistency => "row_inconsistency",
             Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
                 "functional"
             }
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
+            Self::OrderConstraint => "order_constraint",
             Self::ConditionalRule => "if_then",
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
@@ -604,7 +622,7 @@ impl Facets {
                 Some(Q::Uniqueness),
                 S::Regularity,
             ),
-            Pattern::Duplicates => (
+            Pattern::Duplicates | Pattern::NearDuplicateRows => (
                 Sc::Rows,
                 O::Structure,
                 E::Exact,
@@ -631,7 +649,25 @@ impl Facets {
                 Some(Q::Validity),
                 S::Deviation,
             ),
-            Pattern::BoundaryMass => (
+            Pattern::RowInconsistency => (
+                Sc::Columns,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Deviation,
+            ),
+            Pattern::SeriesStructure => (
+                Sc::Column,
+                O::TemporalBehaviour,
+                E::Approximate,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
+            Pattern::BoundaryMass | Pattern::ContentAnomaly => (
                 Sc::Column,
                 O::Distribution,
                 E::Exact,
@@ -641,6 +677,15 @@ impl Facets {
                 S::Deviation,
             ),
             Pattern::FunctionalDependency => (
+                Sc::Columns,
+                O::Relation,
+                exact_or_approx,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::OrderConstraint => (
                 Sc::Columns,
                 O::Relation,
                 exact_or_approx,
@@ -860,12 +905,15 @@ impl Facets {
             (Category::ColumnRoles, Some("duplicate_encoding")) => Pattern::DuplicateEncoding,
             (Category::ColumnRoles, _) => Pattern::CategoricalRole,
             (Category::Uniqueness, _) => Pattern::Uniqueness,
+            (Category::Duplicates, Some("near_duplicate_rows")) => Pattern::NearDuplicateRows,
             (Category::Duplicates, _) => Pattern::Duplicates,
             (Category::Formats, Some("heaping")) => Pattern::Heaping,
             (Category::Formats, Some("digit_preference")) => Pattern::DigitPreference,
             (Category::Formats, Some("benford_deviation")) => Pattern::BenfordDeviation,
             (Category::Formats, Some("boundary_mass")) => Pattern::BoundaryMass,
+            (Category::Formats, Some("content_anomaly")) => Pattern::ContentAnomaly,
             (Category::Formats, _) => Pattern::FormatVariation,
+            (Category::Dependencies, Some("order_constraint")) => Pattern::OrderConstraint,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -884,10 +932,12 @@ impl Facets {
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
             (Category::Gaps, _) => Pattern::Gap,
+            (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
             (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
             (Category::Intervals, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
             (Category::Intervals, _) => Pattern::IntervalVariation,
             (Category::Ordering, _) => Pattern::ColumnOrdering,
+            (Category::Changes, Some("series_structure")) => Pattern::SeriesStructure,
             (Category::Changes, Some("level_shift")) => Pattern::LevelShift,
             (Category::Changes, Some("trend_change")) => Pattern::TrendChange,
             (Category::Changes, Some("variance_change")) => Pattern::VarianceChange,
@@ -1074,6 +1124,18 @@ impl Finding {
                 );
                 spec.definition
                     .insert("comparison".into(), json!("canonical_equality"));
+            }
+            Pattern::OrderConstraint => {
+                spec.form = Some("pairwise_order".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("exclude rows where either column is missing"),
+                );
+                spec.definition
+                    .insert("comparison".into(), json!("exact_order"));
+                if let Some(v) = metrics.get("relation") {
+                    spec.definition.insert("relation".into(), v.clone());
+                }
             }
             Pattern::CategoricalRole => {
                 spec.definition.insert("role".into(), json!("categorical"));
@@ -1265,6 +1327,36 @@ impl Finding {
                     }
                 }
             }
+            Pattern::RowInconsistency | Pattern::NearDuplicateRows => {
+                if pattern == Pattern::NearDuplicateRows {
+                    subject.unit = Some("rows".into());
+                    spec.definition
+                        .insert("comparison".into(), json!("equal on all but one column"));
+                }
+                for k in ["kind", "varying_column"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::SeriesStructure => {
+                // One column can hold several statements: a trend and a
+                // cycle, or several levels of a grouping column.
+                for k in ["kind", "value", "period"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::ContentAnomaly => {
+                // One column can hold several statements of different
+                // kinds, and of one kind at both ends of its range.
+                for k in ["kind", "value", "side", "extreme"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
             Pattern::BoundaryMass => {
                 // The statement is about one piled value: naming it
                 // in the definition keeps each pile its own
@@ -1416,9 +1508,12 @@ impl Finding {
             Category::Dependencies => {
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("functional" | "predictive")
+                    Some("functional" | "predictive" | "order_constraint")
                 ) {
-                    return Err("dependency type must be functional or predictive".into());
+                    return Err(
+                        "dependency type must be functional, predictive, or order_constraint"
+                            .into(),
+                    );
                 }
                 if self.subject.inputs.is_empty() || self.subject.target.is_none() {
                     return Err("a dependency requires inputs and a target".into());
@@ -1470,6 +1565,7 @@ impl Finding {
                     self.finding_type.as_deref(),
                     Some(
                         "residual_level"
+                            | "series_structure"
                             | "level_shift"
                             | "trend_change"
                             | "variance_change"

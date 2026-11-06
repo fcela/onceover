@@ -325,7 +325,7 @@
           "$ref": "#/$defs/subject"
         },
         "type": {
-          "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation | boundary_mass; dependencies: functional | predictive; conditional_rules: if_then; associations: statistical | period_association; gaps: gap | sequence_gap | missing_combinations; intervals: interval_variation | extreme_value | categorical_outlier; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition.",
+          "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows | near_duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation | boundary_mass | content_anomaly; dependencies: functional | predictive | order_constraint; conditional_rules: if_then; associations: statistical | period_association; gaps: gap | sequence_gap | missing_combinations; intervals: interval_variation | extreme_value | categorical_outlier | row_inconsistency; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition | series_structure.",
           "type": "string"
         }
       },
@@ -1144,12 +1144,131 @@
         "shares",
         "statement"
       ]
+    },
+    "associationPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "numeric",
+            "nominal",
+            "mixed"
+          ]
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pearson": {
+          "type": "number"
+        },
+        "spearman": {
+          "type": "number"
+        },
+        "xi_ab": {
+          "type": "number"
+        },
+        "xi_ba": {
+          "type": "number"
+        },
+        "cramers_v": {
+          "type": "number"
+        },
+        "eta": {
+          "type": "number"
+        },
+        "p_value": {
+          "type": "number"
+        },
+        "q_value": {
+          "type": "number"
+        },
+        "tier": {
+          "enum": [
+            "strong",
+            "weak",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "kind",
+        "n",
+        "tier"
+      ]
+    },
+    "sourceInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_profiled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "basis": {
+          "type": "string"
+        },
+        "sample": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sourceSample"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "rows",
+        "rows_profiled",
+        "basis"
+      ]
+    },
+    "sourceSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "method",
+        "seed",
+        "cap"
+      ]
     }
   },
   "$id": "docs/report-schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
+  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.7 adds the associations table: a top-level `associations` list carrying every pair the association screens tested, with effect sizes, raw p-values, Benjamini-Hochberg q-values, and reporting tiers. Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
   "properties": {
     "columns": {
       "additionalProperties": {
@@ -1179,6 +1298,13 @@
       },
       "description": "Statements grouped under a verified relationship family's lead (schema 0.6); omitted when no family formed."
     },
+    "associations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/associationPair"
+      },
+      "description": "Every pair the association screens tested (schema 0.7): effect sizes, the raw per-pair p-value, the Benjamini-Hochberg q-value over the pairs tested by the same screen in the run, and the reporting tier; omitted when no association screen ran."
+    },
     "groups": {
       "items": {
         "$ref": "#/$defs/findingGroup"
@@ -1189,10 +1315,13 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.6"
+      "const": "0.7"
     },
     "selection": {
       "$ref": "#/$defs/selection"
+    },
+    "source": {
+      "$ref": "#/$defs/sourceInfo"
     }
   },
   "required": [
@@ -1204,6 +1333,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.6)",
+  "title": "onceover profile report (schema_version 0.7)",
   "type": "object"
 }

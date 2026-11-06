@@ -271,6 +271,21 @@ impl<'a> TypedCol<'a> {
         }
     }
 
+    /// Nanoseconds per tick for a datetime column (1, 1_000, or
+    /// 1_000_000 by unit); `None` for other column kinds. Exact
+    /// passes that must not confuse ticks of different units read
+    /// the unit through here rather than naming the polars type.
+    pub fn datetime_unit_ns(&self) -> Option<u64> {
+        match self {
+            Self::Datetime { unit, .. } => Some(match unit {
+                TimeUnit::Nanoseconds => 1,
+                TimeUnit::Microseconds => 1_000,
+                TimeUnit::Milliseconds => 1_000_000,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

@@ -1,9 +1,14 @@
-# Finding schema 0.6
+# Finding schema 0.7
 
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
-Schema 0.6 adds verified relationship families (see "Consolidation and
+Schema 0.7 adds tested associations (see "Tested associations"
+below): association findings are stated only when a per-pair test
+is significant after Benjamini–Hochberg correction, in a strong
+tier at or above the effect bar and a weak tier below it, and the
+report gains a top-level `associations` table carrying every
+screened pair. Schema 0.6 adds verified relationship families (see "Consolidation and
 selection"): the report gains a top-level `grouped_findings` list, the
 finding object gains `grouped_members` on family leads and
 `grouped_under` on grouped statements — both omitted when unset — and
@@ -15,7 +20,7 @@ finding object itself is unchanged from schema 0.4. Schema 0.4 adds a `frame` se
 `report-schema.md`, "The frame model"); the finding object itself is
 unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
 finding (see "Facets" below); the category and type values are
-unchanged from schema 0.2, which replaced schema 0.1. Schema 0.6 is
+unchanged from schema 0.2, which replaced schema 0.1. Schema 0.7 is
 used by package version 0.1.3.
 
 ## Categories and statement definitions
@@ -27,23 +32,25 @@ used by package version 0.1.3.
 | `column_roles` | `specification.definition.role` | Suggested interpretation of a column, supported by observations |
 | `column_roles` | Type `long_format`; `specification.definition` names `index`, `attribute`, and `measure` | The frame is in long format; pivoting on the attribute gives one column per level. At standard and deep budgets the wide form is profiled too and its findings are merged into the same report, tagged `source_form` in their evidence (coverage entry `pivot_profile`) |
 | `uniqueness` | Compared columns and equality criterion | Single-column or composite uniqueness, with any recorded repetitions |
-| `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison |
-| `formats` | Format counts and examples | Inconsistent representations within a field; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
+| `duplicates` | Subject unit, compared columns, comparison criterion, missing-value policy | Repetition under a stated comparison; also type `near_duplicate_rows` from the `row_consistency` detector, for rows repeating another on every column but one, with `varying_column` and the count in the evidence |
+| `formats` | Format counts and examples | Inconsistent representations within a field; also type `content_anomaly` from the `content` detector, with `kind` in the evidence: `numbers_as_text`, `dates_as_text`, `booleans_as_text`, `email`, `url`, `uuid`, `ipv4` (the share of values that fit and the ones that do not), `label_variants` (labels differing only in case or spacing), `possible_misspelling` (rare labels close to a common one), `long_text`, `repeated_extreme` (one value repeated at an isolated extreme), `minority_sign`, `zero_inflation`, `two_modes`, `temporal_outlier`; also granularity changes in float columns — the integer-valued share switching regime at a seam row (exact split scan; `change_row` and both shares in the evidence), from the granularity detector; and recording-process fingerprints from the `digits` detector: heaping on round multiples, terminal-digit preference, and Benford first-digit deviation on eligible columns (observed shares against their baselines in the evidence); and boundary mass from the `boundaries` detector: a value piled at a numeric column's observed minimum or maximum (or, in a zero-inflated column, an unusual interior mass point) whose count dominates the median count of its nearest distinct values — the pile's count and share, the local baseline, the bulk's span and quartiles, and example rows in the evidence; the claim states the pile-up as observed and the interpretation names a recording cap or floor as one possible cause, never as the conclusion |
 | `dependencies` | Type `functional` | Inputs determine a target, subject to scope, comparison, tolerance and exceptions |
+| `dependencies` | Type `order_constraint` | One column is at most another on every evaluated row, or all but a small counted share of them, from the `order_constraints` detector: the two columns share a kind family (numeric, date, or datetime with the same unit) and compatible ranges; the claim names the direction, the evaluated rows, the violation count and share, the rows tied, and the worst violation with its row; pairs already tied by an exact functional dependency in either direction are stated but ranked below unrelated pairs, and violations of a near-universal order rank above exact orders |
 | `dependencies` | Type `predictive` | Specified inputs support prediction of a target under recorded validation |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
-| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar |
+| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns |
 | `intervals` | Observed interval statistics | Irregular spacing |
+| `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
 | `intervals` | Type `categorical_outlier`; the context (one to three condition levels), the dominant level and its share, and the pattern-breaking rows with their values in the evidence | A categorical value contradicting its context's near-universal pattern, from the surprises detector: within the context one level of the column holds at least 99% of at least 30 rows, and at most 3 rows break it. Contexts are conjunctions of levels from the conditioning columns whose single levels come closest to the bar; findings are ranked by binomial significance against the dominant level's global rate, at most 3 per column; a context is reported only when it adds a row no earlier statement about the column named, and it lists every row breaking its pattern |
 | `ordering` | Direction, strictness and missing-value policy | Order of values within the existing row sequence; also the backfill shape — a column ordered except for a late block whose values return to earlier territory (at most 3 descents, no post-seam value above the pre-seam peak), reported with the seam row and tail length in the evidence |
-| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector, kept only when the series flags few lone points or the event's flagged points cluster beyond the series' scattered background (a Bonferroni-corrected binomial tail), so a heavy-tailed column's ordinary tail is not reported as events; type `step_discontinuity` with form `step` for a cross-sectional level jump of a target column across an axis threshold or a diagonal boundary in two columns, from the discontinuities detector; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; type `ordered_partition` with form `recursive_partition` for a model-based recursive partition of a numeric response along a date, datetime, or integer-year axis — per-node level + linear-trend fits; splits in the statement definition with their F statistics and gain shares, each split either a break date on the axis or a bipartition of a categorical dimension's levels ordered by their within-level fitted level; leaves in the evidence with period, dimension conditions on the path from the root, row count, level at period start and slope per year — from the ordered_partitions detector; or cluster differences from the opt-in views pass; inspect the statement definition |
+| `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector, kept only when the series flags few lone points or the event's flagged points cluster beyond the series' scattered background (a Bonferroni-corrected binomial tail), so a heavy-tailed column's ordinary tail is not reported as events; type `step_discontinuity` with form `step` for a cross-sectional level jump of a `measure` column across a threshold in another numeric column, from the discontinuities detector, or at the deep budget across a line in two columns; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; type `ordered_partition` with form `recursive_partition` for a model-based recursive partition of a numeric response along a date, datetime, or integer-year axis — per-node level + linear-trend fits; splits in the statement definition with their F statistics and gain shares, each split either a break date on the axis or a bipartition of a categorical dimension's levels ordered by their within-level fitted level; leaves in the evidence with period, dimension conditions on the path from the root, row count, level at period start and slope per year — from the ordered_partitions detector; type `series_structure` from the `series` detector, describing a whole series along the axis, with `kind` in the evidence: `trend`, `cycle`, `persistence`, `new_level`, `ended_level`, `share_shift`; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, and `curved_shape`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, `curved_shape`, and `pairwise_order`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
 constraint.
@@ -134,9 +141,10 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `duplicate_encoding` | columns | relation | exact | unconditional | atemporal | — | regularity |
 | `uniqueness` | column or columns | relation | exact | unconditional | atemporal | uniqueness | regularity |
 | `duplicate_rows` | rows | structure | exact | unconditional | atemporal | uniqueness | deviation |
-| `format_variation`, `boundary_mass` | column | distribution | exact | unconditional | atemporal | validity | deviation |
+| `format_variation`, `boundary_mass`, `content_anomaly` | column | distribution | exact | unconditional | atemporal | validity | deviation |
 | `heaping`, `digit_preference`, `benford_deviation` | column | distribution | approximate | unconditional | atemporal | validity | deviation |
 | `functional` | columns | relation | exact, or approximate when the mapping has violations | unconditional | atemporal | — | regularity |
+| `order_constraint` | columns | relation | exact, or approximate when the order has violations | unconditional | atemporal | — | regularity |
 | `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
 | `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
@@ -339,6 +347,84 @@ The same ledger is available in four forms:
   record's `basis`, in report order. It is an index for sorting and
   filtering; the measurements themselves stay in the JSON findings.
 
+### Tested associations
+
+Association statements (`associations` category, type `statistical`)
+are tested, not bar-filtered. Three screens test pairs:
+
+- numeric pairs (the `numeric_dependence` detector): Pearson and
+  Spearman correlations with their t-approximation tests, and
+  Chatterjee's ξ in both directions with a permutation-calibrated
+  test (the permutation mean and variance of the rank-difference
+  sum in closed form, normal tail). The pair's p-value is the
+  smallest component p-value, Bonferroni-multiplied by the number
+  of components computed.
+- nominal pairs (the `association_rules` detector's pair screen):
+  a G-test on the pair-complete contingency table, effect
+  Cramér's V. A pair whose smallest expected cell count is below
+  1 is carried untested.
+- mixed pairs (a nominal column against a numeric column, same
+  screen): a one-way F-test of the numeric column across the
+  nominal column's levels, effect the correlation ratio η.
+
+Each screen Benjamini–Hochberg-corrects over the pairs it tested
+in the run (for the numeric screen under a pair cap, the tested
+family is the survivor list the detailed statistics cover; the
+coverage entry states the family size). A tested pair is stated
+as a finding in one of two tiers, recorded as `tier` in the
+evidence beside `p_value` and `q_value`:
+
+- **strong**: q ≤ 0.05 and the effect at or above the 0.5 bar
+  (maximum of |Pearson|, |Spearman|, ξ in both directions for
+  numeric pairs; V or η for the pair screens);
+- **weak**: q ≤ 0.05 and the effect below the bar. Weak findings
+  carry the full evidence in the report JSON; in the digest they
+  collapse into a single line with their count and strongest
+  examples.
+
+Every pair a screen computed statistics for — stated or not,
+tested or not — is in the report's `associations` table
+(`report.associations()` as a DataFrame): the pair, its kind, the
+pair-complete row count, its effect sizes, its raw and adjusted
+p-values, and its tier. Pairs involving frame-role scaffolding
+columns are in the table but, as before, earn no finding.
+
+Strong statements are unconditional, so they carry a Simpson
+reversal check. For a strong pair with a signed effect, the
+screen asks whether the pooled direction reverses inside every
+usable stratum of another categorical column (a stratifier:
+2–8 observed levels, not one of the pair's columns and not
+withheld by frame role; a stratum is usable with at least 30
+pair-complete rows and a defined effect, and the usable strata
+must together cover at least half of the pair-complete rows).
+Signed effects are the numeric pairs' larger correlation
+(Pearson or Spearman, checked when it reaches 0.3 in absolute
+value — below that the pair's strength is the unsigned ξ and
+there is no material direction), point-biserial correlation for
+a mixed pair whose nominal side has two observed levels, and
+the log odds ratio for a nominal pair that is 2×2 on the
+observed levels. Cramér's V beyond the 2×2 case and the
+correlation ratio η over more than two levels are unsigned:
+they have no direction to reverse and are not checked.
+
+When every usable stratum's effect has the opposite sign to
+the pooled effect, a qualification is appended to the claim —
+the stratifier is named and the pooled and within-stratum
+effects are stated with their signs — and the finding's
+evidence gains a `simpson` payload: the statistic, the pooled
+effect, the stratum-weighted within effect (Fisher-z average
+for correlations, inverse-variance weighting for log odds
+ratios), the per-stratum levels with row counts and effects,
+the usable and total stratum counts, and the share of
+pair-complete rows the usable strata cover. Binary statistics
+also name the level coded as 1 (`coded_level`, or
+`coded_level_a` / `coded_level_b` for the odds ratio), so the
+direction is interpretable. The finding is never removed,
+demoted, or re-tiered, and the associations table is unchanged.
+At most 24 stratifiers are considered per pair and 400
+pair×stratifier evaluations run per screen; when a bound stops
+a check, the screen's coverage entry says so.
+
 ## Consolidation and selection
 
 1. Enabled detectors produce candidate statements and evidence.
@@ -508,7 +594,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 24 of the 31 registered detectors. Six are
+and activation. The default set has 28 of the 35 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40

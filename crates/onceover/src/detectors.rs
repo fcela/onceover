@@ -78,6 +78,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // The detector is unchanged and runs when explicitly selected.
         make("pivot", vec![ColumnRoles], &[], OptIn),
         make("functional_dependencies", vec![Dependencies], &[], Default),
+        make("order_constraints", vec![Dependencies], &[], Default),
         make("duplicate_encodings", vec![ColumnRoles], &[], Default),
         make("sortedness", vec![Ordering], &[], Default),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
@@ -86,6 +87,14 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("sentinels", vec![Missingness], &[], Default),
         make("boundaries", vec![Formats], &[], Default),
         make("missingness", vec![Missingness], &[], Default),
+        make("content", vec![Formats], &[], Default),
+        make("series", vec![Gaps, Changes], &[], Default),
+        make(
+            "row_consistency",
+            vec![Duplicates, Intervals],
+            &["numeric_dependence"],
+            Default,
+        ),
         make("digits", vec![Formats], &[], Default),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs across two batteries (2026-10-29, 2026-11-02).
@@ -108,7 +117,12 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // rarely pass, and issue #95 tracks a panic on long-form
         // data with a time hint.
         make("drift", vec![Changes], &["gbm"], OptIn),
-        make("association_rules", vec![ConditionalRules], &[], Default),
+        make(
+            "association_rules",
+            vec![ConditionalRules, Associations],
+            &[],
+            Default,
+        ),
         make("hotspots", vec![Concentration], &[], Default),
         make("numeric_dependence", vec![Associations], &[], Default),
         make(
@@ -182,12 +196,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_24_measured_detectors() {
+    fn default_set_is_the_28_measured_detectors() {
         let active = active_detectors(None);
-        // 31 registered: 24 default (23 Default + hint-gated
+        // 35 registered: 28 default (27 Default + hint-gated
         // expectations), 6 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 31);
-        assert_eq!(active.len(), 24);
+        assert_eq!(builtin_detectors().len(), 35);
+        assert_eq!(active.len(), 28);
         for id in [
             "views",
             "dates",
@@ -218,7 +232,7 @@ mod tests {
         for d in builtin_detectors() {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&23));
+        assert_eq!(counts.get("Default"), Some(&27));
         assert_eq!(counts.get("OptIn"), Some(&6));
         assert_eq!(counts.get("HintGated"), Some(&1));
         assert_eq!(counts.get("TargetGated"), Some(&1));

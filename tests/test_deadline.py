@@ -71,9 +71,12 @@ def test_hotspots_scan_stops_mid_enumeration_and_discloses():
     wall = time.time() - t0
     entry = report.data["coverage"]["hotspots"]
     assert entry["status"] == "capped", entry
-    assert "combinations examined" in entry["detail"]
-    assert "of 179700 combinations examined" in entry["detail"]
+    assert "of 179700 pair combinations examined" in entry["detail"]
     assert "deadline stopped the scan" in entry["detail"]
+    # The stop lands in pair evaluation on this fixture, and a
+    # partial pair screen selects no triples: their selection
+    # spends the completed screen's pre-scores.
+    assert "triples were not selected or examined" in entry["detail"]
     assert wall < 12.0, wall
 
 

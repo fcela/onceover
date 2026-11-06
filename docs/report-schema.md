@@ -1,7 +1,7 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.6"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.7"` in onceover 0.1.3. The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -20,9 +20,27 @@ in `findings.md`.
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `grouped_findings` | statements grouped under a verified relationship family's lead (schema 0.6): full finding objects, each carrying `grouped_under`; absent when no family formed. Grouped statements are not in `findings` and spend no selection or digest slot; the family semantics are defined in `docs/findings.md`, "Verified relationship families" |
+| `associations` | every pair the association screens tested (schema 0.7): `a`, `b`, `kind` (`numeric`, `nominal`, `mixed`), pair-complete `n`, the effect sizes that screen computed (`pearson`, `spearman`, `xi_ab`, `xi_ba`; `cramers_v`; `eta`), the raw `p_value`, the Benjamini-Hochberg `q_value` over the pairs tested by the same screen in the run, and the reporting `tier` (`strong`, `weak`, `none`). Findings state the strong and weak pairs; this table is the full screen, including pairs that earned no statement. Absent when no association screen ran |
 | `groups` | connected findings (findings sharing columns): `id`, `columns`, `finding_ids`, `description` |
 | `selection` | how the report was selected down: `candidates`, `verified_candidates`, `distinct_statements`, `selected`, and (schema 0.6) `families` and `grouped_statements` |
 | `coverage` | object keyed by pipeline pass name (which can differ from detector ID); each entry: `status` (`ran_exact`, `ran_sampled`, `capped`, `skipped`, `not_applicable`, `error`) and `detail` (free text — can be very long on wide tables; see the context-budget note in `docs/benchmarks/2026-10-28-context-digest.md`); on timing-enabled runs (`profile(..., timing=True)`) each entry also carries `elapsed_ms`, the wall time attributed to the pass — the interval since the previous entry was recorded (passes run sequentially; the first entry also carries extraction and the column cards). When the deadline stops one of the long searches (dependence screen, hotspots, discontinuities) mid-pass, its entry reads `capped` and the detail states how much of the search space was examined — pairs, combinations, or targets completed of the total — so a partial negative is distinguishable from an exhaustive one |
+| `source` | present only when the input was a LazyFrame or a file path: `kind` (`lazyframe`, `parquet`, `csv`, or `ipc`), `rows` (rows in the full source, counted exactly), `rows_profiled` (rows the profile ran on), `basis` (`full` or `sampled`), and, when sampled, `sample` (`method`, `seed`, `cap`). Absent for in-memory DataFrame inputs; inventoried under "Source inputs" below |
+
+## Source inputs
+
+The `source` section records where the profiled rows came from
+when the input was not an in-memory DataFrame. `rows` is counted
+exactly before any sampling. When the source holds more rows than
+the source row cap (default 200,000; `source_row_cap=`), the
+profile runs on a stratified sample — one row per equal stratum of
+the source, hash-chosen within the stratum, deterministic for a
+given `sample_seed=` — and `basis` is `sampled`; `exact=True`
+collects the source whole instead. When the basis is `sampled`,
+every finding's evidence scope records `sampling: "sample"` with
+`population_rows` set to the source row count, the overview
+headline states the sample, and the coverage `input` entry records
+the sample's size and seed, so no sampled number is presented as a
+population number.
 
 ## The frame model
 
@@ -120,7 +138,7 @@ evidence metrics; the demotion counts are stated in the
 | `id` | stable finding id within the report |
 | `category` | one of `dependencies`, `conditional_rules`, `concentration`, `gaps`, `changes`, `associations`, `uniqueness`, `duplicates`, `formats`, `missingness`, `intervals`, `column_roles`, `ordering` |
 | `facets` | the finding's properties as fields: `scope` (`column`, `columns`, `rows`, `sequence`, `frame`), `object` (`distribution`, `relation`, `structure`, `temporal_behaviour`, `role`), `evidence` (`exact`, `approximate`, `model_based`, `inferred`), `conditionality` (`unconditional`, `value_conditioned`, `segment_conditioned`), `temporality` (`atemporal`, `ordered`, `change_across_segments`), `status` (`regularity`, `deviation`), and `quality_dimension` (`completeness`, `uniqueness`, `validity`; only on data-quality findings). The category is derived from the facets by the fixed table in `docs/taxonomy-v1-design.md`; the per-type assignment is tabulated in `docs/findings.md` |
-| `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the views pass (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass` (formats); `functional`, `predictive` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association` (associations); `gap`, `sequence_gap`, `missing_combinations` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier` (intervals); `column_ordering` (ordering); `residual_level`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `distribution_shift`, `ordered_partition` (changes) |
+| `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the views pass (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows`, `near_duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` (formats); `functional`, `predictive`, `order_constraint` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association` (associations); `gap`, `sequence_gap`, `missing_combinations` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier`, `row_inconsistency` (intervals); `column_ordering` (ordering); `residual_level`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `distribution_shift`, `ordered_partition`, `series_structure` (changes) |
 | `subject` | what the finding is about: `columns` (list), usually `target` and/or `inputs`, `unit` |
 | `specification` | the pattern instance: a `definition` (e.g. comparison mode) and, for typed patterns, a `form` (`value_mapping`, `sum`, `linear_combination`, `piecewise_linear`, ...) |
 | `claim` | the human-readable statement, with the measured numbers in it |

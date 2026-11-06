@@ -83,9 +83,15 @@ def main():
             "late_identity": any(f["category"]=="dependencies" and f["specification"].get("form")=="affine"
                                  and set(f["subject"]["columns"])=={"late_x","late_affine"}
                                  for f in findings),
+            # A dependency restating a one-to-one encoding is grouped under it.
             "late_dependency": any(f["category"]=="dependencies" and f.get("type")=="functional"
                                    and f["subject"].get("inputs")==["late_code"]
-                                   and f["subject"].get("target")=="late_label" for f in findings),
+                                   and f["subject"].get("target")=="late_label"
+                                   for f in [*findings, *report.data.get("grouped_findings", [])]),
+            "late_order": any(f.get("type")=="order_constraint"
+                              and f["evidence"][0]["metrics"].get("lower")=="late_x"
+                              and f["evidence"][0]["metrics"].get("upper")=="late_affine"
+                              for f in [*findings, *report.data.get("grouped_findings", [])]),
         })
     result = {
         "rows": n, "columns": args.columns, "budget": args.budget, "seed": 20241024,

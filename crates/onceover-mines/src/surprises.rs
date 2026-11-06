@@ -37,6 +37,7 @@
 
 use onceover_core::{TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
+use rayon::prelude::*;
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -687,6 +688,17 @@ fn make_categorical_finding(
     params.insert("conditions".into(), json!(conditions));
     let mut metrics: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     metrics.insert("n".into(), json!(cand.subset));
+    metrics.insert("target".into(), json!(tname));
+    metrics.insert(
+        "context".into(),
+        json!(ctx_cols
+            .iter()
+            .map(|(c, coded, lvl)| json!({
+                "column": table.names[*c],
+                "value": coded.labels[*lvl as usize],
+            }))
+            .collect::<Vec<_>>()),
+    );
     metrics.insert("dominant_level".into(), json!(dom_label));
     metrics.insert("dominant_share".into(), json!(cand.share));
     metrics.insert("outlier_count".into(), json!(cand.breakers.len()));
@@ -978,6 +990,99 @@ fn profile_categorical_surprises(
     (findings, targets.len(), contexts_evaluated)
 }
 
+struct TargetScan {
+    global: Vec<Finding>,
+    subset: Vec<Finding>,
+}
+
+/// Whole-column and subset extremes of one numeric column, or None when the
+/// column is too short or near-constant.
+fn scan_target(
+    table: &TypedTable,
+    t: usize,
+    conditions: &[(usize, Coded)],
+    cfg: &SurpriseConfig,
+) -> Option<TargetScan> {
+    let mut vals = column_values(table, t);
+    if vals.len() < cfg.min_rows {
+        return None;
+    }
+    // Near-constant columns are the concentration pass's story.
+    vals.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    if quantile(&vals, 0.75) - quantile(&vals, 0.25) <= 0.0 {
+        return None;
+    }
+    let tname = table.names[t].as_str();
+    // A subset statement means an ordinary value is extreme for its
+    // subset. Beyond the column's own fence, the value is the column's
+    // tail, and which subset holds it says nothing.
+    let (q1, q3) = (quantile(&vals, 0.25), quantile(&vals, 0.75));
+    let global_lo = q1 - cfg.fence_iqr_mult * (q3 - q1);
+    let global_hi = q3 + cfg.fence_iqr_mult * (q3 - q1);
+    let mut reported_rows: std::collections::BTreeSet<usize> = Default::default();
+    let mut global = Vec::new();
+    for high in [true, false] {
+        let ex = peel_presorted(&vals, high, cfg.min_rows, cfg);
+        if !ex.is_empty() {
+            for e in &ex {
+                reported_rows.insert(e.row);
+            }
+            global.push(make_finding(tname, None, vals.len(), &ex, high, cfg));
+        }
+    }
+    // Subset pass: one categorical condition at a time.
+    let mut subset = Vec::new();
+    let mut tried = 0usize;
+    for (c, coded) in conditions {
+        if *c == t || tried >= cfg.max_conditions {
+            continue;
+        }
+        tried += 1;
+        let mut by_level = vec![Vec::new(); coded.labels.len()];
+        for &(value, row) in &vals {
+            if let Some(code) = coded.codes[row] {
+                by_level[code as usize].push((value, row));
+            }
+        }
+        // Filtering an already sorted target preserves each subset's
+        // order. Match the original lexical context traversal exactly.
+        let mut level_order: Vec<usize> = (0..coded.labels.len()).collect();
+        level_order.sort_by_key(|&i| &coded.labels[i]);
+        for level in level_order {
+            let lvl = &coded.labels[level];
+            let lvals = &by_level[level];
+            if lvals.len() < cfg.min_subset_rows {
+                continue;
+            }
+            for high in [true, false] {
+                let ex = peel_presorted(lvals, high, cfg.min_subset_rows, cfg);
+                // The statement describes the subset's whole isolated
+                // cluster, because its edge and gap are measured against
+                // all of it. It needs a row not yet reported, and every
+                // member must be ordinary for the column as a whole.
+                let adds_a_row = ex.iter().any(|e| !reported_rows.contains(&e.row));
+                let all_ordinary = ex
+                    .iter()
+                    .all(|e| e.value >= global_lo && e.value <= global_hi);
+                if adds_a_row && all_ordinary {
+                    for e in &ex {
+                        reported_rows.insert(e.row);
+                    }
+                    subset.push(make_finding(
+                        tname,
+                        Some((table.names[*c].as_str(), lvl.as_str())),
+                        lvals.len(),
+                        &ex,
+                        high,
+                        cfg,
+                    ));
+                }
+            }
+        }
+    }
+    Some(TargetScan { global, subset })
+}
+
 pub fn profile_surprises(
     table: &TypedTable,
     excluded: &[usize],
@@ -994,92 +1099,25 @@ pub fn profile_surprises(
     // Every column gets its whole-column scan. Those statements take the
     // budget first, strongest first, so early columns' subset statements
     // can't use up the report before later columns are reached; subset
-    // scans then share what remains.
+    // scans then share what remains. Columns are scanned in parallel and
+    // the budget is applied afterwards in column order, so the report does
+    // not depend on the thread count.
+    let scans: Vec<Option<TargetScan>> = numeric
+        .par_iter()
+        .map(|&t| scan_target(table, t, &conditions, cfg))
+        .collect();
     let mut global_findings: Vec<Finding> = Vec::new();
     let mut subset_findings: Vec<Finding> = Vec::new();
     let mut scanned = 0usize;
-    for (at, &t) in numeric.iter().enumerate() {
+    for (at, scan) in scans.into_iter().enumerate() {
+        let Some(scan) = scan else { continue };
+        scanned += 1;
         let spent = global_findings.len() + subset_findings.len();
         let remaining = cfg.max_findings.saturating_sub(spent);
-        let subset_limit = subset_findings.len() + (remaining / (numeric.len() - at)).max(2);
-        let mut vals = column_values(table, t);
-        if vals.len() < cfg.min_rows {
-            continue;
-        }
-        // Near-constant columns are the concentration pass's story.
-        vals.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        if quantile(&vals, 0.75) - quantile(&vals, 0.25) <= 0.0 {
-            continue;
-        }
-        scanned += 1;
-        let tname = table.names[t].as_str();
-        // A subset statement means an ordinary value is extreme for its
-        // subset. Beyond the column's own fence, the value is the column's
-        // tail, and which subset holds it says nothing.
-        let (q1, q3) = (quantile(&vals, 0.25), quantile(&vals, 0.75));
-        let global_lo = q1 - cfg.fence_iqr_mult * (q3 - q1);
-        let global_hi = q3 + cfg.fence_iqr_mult * (q3 - q1);
-        let mut reported_rows: std::collections::BTreeSet<usize> = Default::default();
-        for high in [true, false] {
-            let ex = peel_presorted(&vals, high, cfg.min_rows, cfg);
-            if !ex.is_empty() {
-                for e in &ex {
-                    reported_rows.insert(e.row);
-                }
-                global_findings.push(make_finding(tname, None, vals.len(), &ex, high, cfg));
-            }
-        }
-        if spent >= cfg.max_findings {
-            continue;
-        }
-        // Subset pass: one categorical condition at a time.
-        let mut tried = 0usize;
-        'conditions: for (c, coded) in &conditions {
-            if *c == t || tried >= cfg.max_conditions {
-                continue;
-            }
-            tried += 1;
-            let mut by_level = vec![Vec::new(); coded.labels.len()];
-            for &(value, row) in &vals {
-                if let Some(code) = coded.codes[row] {
-                    by_level[code as usize].push((value, row));
-                }
-            }
-            // Filtering an already sorted target preserves each subset's
-            // order. Match the original lexical context traversal exactly.
-            let mut level_order: Vec<usize> = (0..coded.labels.len()).collect();
-            level_order.sort_by_key(|&i| &coded.labels[i]);
-            for level in level_order {
-                let lvl = &coded.labels[level];
-                let lvals = &by_level[level];
-                if lvals.len() < cfg.min_subset_rows {
-                    continue;
-                }
-                for high in [true, false] {
-                    let ex = peel_presorted(lvals, high, cfg.min_subset_rows, cfg);
-                    let fresh: Vec<Extreme> = ex
-                        .into_iter()
-                        .filter(|e| !reported_rows.contains(&e.row))
-                        .filter(|e| e.value >= global_lo && e.value <= global_hi)
-                        .collect();
-                    if !fresh.is_empty() {
-                        for e in &fresh {
-                            reported_rows.insert(e.row);
-                        }
-                        subset_findings.push(make_finding(
-                            tname,
-                            Some((table.names[*c].as_str(), lvl.as_str())),
-                            lvals.len(),
-                            &fresh,
-                            high,
-                            cfg,
-                        ));
-                        if subset_findings.len() >= subset_limit {
-                            break 'conditions;
-                        }
-                    }
-                }
-            }
+        let share = (remaining / (numeric.len() - at)).max(2);
+        global_findings.extend(scan.global);
+        if spent < cfg.max_findings {
+            subset_findings.extend(scan.subset.into_iter().take(share));
         }
     }
     global_findings.sort_by(|a, b| b.interestingness.total_cmp(&a.interestingness));

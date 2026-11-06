@@ -31,7 +31,7 @@ def _bijection_report():
 
 def test_bijection_family_shape():
     report = _bijection_report()
-    assert report.data["schema_version"] == "0.6"
+    assert report.data["schema_version"] == "0.7"
     selection = report.data["selection"]
     assert selection["families"] == 1
     assert selection["grouped_statements"] == 2

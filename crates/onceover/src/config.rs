@@ -76,6 +76,13 @@ pub struct ProfileConfig {
     /// nondeterministic, so default reports stay byte-reproducible.
     /// Findings are identical either way.
     pub timing: bool,
+    /// The lazy or file source the profiled frame was collected
+    /// from, when the caller materialized one (the Python layer
+    /// does for LazyFrame and path inputs). Recorded as the
+    /// report's `source` block; on a sampled basis the pipeline
+    /// also stamps every finding's evidence scope with the sample
+    /// basis and the source population.
+    pub source: Option<onceover_report::SourceInfo>,
 }
 
 impl Default for ProfileConfig {
@@ -91,6 +98,7 @@ impl Default for ProfileConfig {
             hints: None,
             target: None,
             timing: false,
+            source: None,
         }
     }
 }
@@ -197,8 +205,11 @@ impl TierConfig {
                 // 45); the deep tier keeps the full search. Tables
                 // with at most `all_pairs_max_cols` axes are
                 // unaffected: they already scan every pair.
+                // Axis scans only: on the corpus this takes the pass from
+                // 3.9 to 0.5 s and still reports 105 jumps against 112.
                 disc: DiscConfig {
                     fallback_top_axes: 6,
+                    diagonals: false,
                     ..Default::default()
                 },
                 partitions: PartitionsConfig::default(),

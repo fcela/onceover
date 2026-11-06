@@ -47,6 +47,14 @@
    "activation": "default"
   },
   {
+   "id": "order_constraints",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "duplicate_encodings",
    "categories": [
     "column_roles"
@@ -92,6 +100,34 @@
     "missingness"
    ],
    "requires": [],
+   "activation": "default"
+  },
+  {
+   "id": "content",
+   "categories": [
+    "formats"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
+   "id": "series",
+   "categories": [
+    "gaps",
+    "changes"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
+   "id": "row_consistency",
+   "categories": [
+    "duplicates",
+    "intervals"
+   ],
+   "requires": [
+    "numeric_dependence"
+   ],
    "activation": "default"
   },
   {
@@ -222,7 +258,8 @@
   {
    "id": "association_rules",
    "categories": [
-    "conditional_rules"
+    "conditional_rules",
+    "associations"
    ],
    "requires": [],
    "activation": "default"

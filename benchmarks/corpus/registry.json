@@ -76,11 +76,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "missed",
      "columns_any": [
       "tt4"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
     }
    ],
    "notes": [
@@ -125,11 +125,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "missed",
      "columns_any": [
       "shucked_weight"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
     }
    ],
    "notes": [
@@ -753,11 +753,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "missed",
      "columns_any": [
       "online_order_flag"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. Pinned to customer_id until 2026-11-04, when whole-number columns named like keys became identifiers and left the screen's targets; the pinned column now carries the top-ranked step."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. Pinned to customer_id until 2026-11-04, when whole-number columns named like keys became identifiers and left the screen's targets; the pinned column now carries the top-ranked step. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and it is a two-valued flag, no longer a jump target; the deep budget still scans diagonals."
     }
    ],
    "notes": [
@@ -803,14 +803,14 @@
     {
      "kind": "finding",
      "category": "duplicates",
-     "expect": "missed",
-     "note": "Known-miss tripwire: restatements repeat (company, concept, period_end) with different filed dates/values; no finding isolates them because rows differ in filed/form/value."
+     "expect": "found",
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for."
     },
     {
      "kind": "documented_case",
      "ref": "Restatements (EDGAR-wide behavior)",
-     "status": "missed",
-     "note": "Amended filings restate values for the same period; the bundled table keeps them all (11,543 rows) and no current finding groups them."
+     "status": "found",
+     "note": "Found since 2026-11-05: 1,970 rows repeat another row on every column except value."
     },
     {
      "kind": "finding",
@@ -932,11 +932,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "missed",
      "columns_any": [
       "RNS_REQ"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 1 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 1 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jump was across a diagonal boundary; the deep budget still scans diagonals."
     }
    ],
    "notes": [
@@ -1419,8 +1419,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 43,
-     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md)."
+     "value": 64,
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour."
     },
     {
      "kind": "documented_case",
@@ -1431,8 +1431,8 @@
     {
      "kind": "documented_case",
      "ref": "Hourly grid gaps (11,976 of 52,551 hours in the span, 22.8%, have no row)",
-     "status": "missed",
-     "note": "No statement of span, frequency, or completeness; breaks and ordered_partitions decline because date_time loads as a string. Counts verified on the prepared file."
+     "status": "found",
+     "note": "Found since 2026-11-05 by the series detector: the time axis date_time is missing 11976 of 52551 steps of 1 hour (22.79%), the longest gap 7386 steps between 2014-08-08 and 2015-06-11."
     },
     {
      "kind": "finding",
@@ -1473,6 +1473,12 @@
    "dir": "data/anomaly/bike-sharing-hourly",
    "budget": "standard",
    "expectations": [
+    {
+     "kind": "finding",
+     "category": "intervals",
+     "type": "row_inconsistency",
+     "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132)."
+    },
     {
      "kind": "finding",
      "category": "dependencies",
@@ -1585,6 +1591,12 @@
    "expectations": [
     {
      "kind": "finding",
+     "category": "duplicates",
+     "type": "near_duplicate_rows",
+     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132)."
+    },
+    {
+     "kind": "finding",
      "category": "dependencies",
      "type": "functional",
      "target": "education_num",
@@ -1648,8 +1660,8 @@
     },
     {
      "kind": "max_findings",
-     "value": 69,
-     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Re-baselined to 74 on 2026-11-05 (issue #100): the missingness detector adds two statements, the work_class/occupation block and native_country. The schema 0.6 build (verified relationship families, issue #116) grouped the two education FDs under the duplicate-encoding lead, so they spend no selection slot. Re-baselined to 69 on 2026-11-05 when that build merged with the false-alarm change (#148), which removed subset extremes beyond a column's own fence."
+     "value": 100,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Re-baselined to 74 on 2026-11-05 (issue #100): the missingness detector adds two statements, the work_class/occupation block and native_country. The schema 0.6 build (verified relationship families, issue #116) grouped the two education FDs under the duplicate-encoding lead, so they spend no selection slot. Re-baselined to 69 on 2026-11-05 when that build merged with the false-alarm change (#148), which removed subset extremes beyond a column's own fence. Raised to 100 on 2026-11-05 (issue #134): tested associations add 31 statements, and the frame now reaches the report cap. The order constraints pass (issue #132) brings the measured count to 98."
     },
     {
      "kind": "documented_case",
@@ -1678,8 +1690,8 @@
     {
      "kind": "documented_case",
      "ref": "Near-duplicates through the sampling weight: 6,374 excess rows repeat a row that differs only in final_weight (42,468 distinct rows ignoring final_weight, of 48,842)",
-     "status": "missed",
-     "note": "The duplicates finding compares all 15 columns and reports the 52 exact repeats; the weight-only duplication -- the frame's near-key structure -- is stated nowhere. final_weight is roled a plain measure and appears as a predictor in six predictive findings. Counts verified on the prepared file."
+     "status": "found",
+     "note": "Found since 2026-11-05 (issue #132): 6,322 rows repeat another row on every column except final_weight, stated by the row_consistency detector. 6,374 excess rows ignoring final_weight, less the 52 that are exact repeats of all 15 columns, is 6,322. Counts verified on the prepared file."
     },
     {
      "kind": "documented_case",

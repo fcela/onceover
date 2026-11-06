@@ -139,6 +139,36 @@ fn profile_inner(
         )),
     );
 
+    if let Some(source) = &cfg.source {
+        let detail = if source.basis == "sampled" {
+            format!(
+                "{} source of {} rows profiled on a stratified sample of {} rows (seed {}); \
+                 every finding's evidence scope records the source population",
+                source.kind,
+                source.rows,
+                source.rows_profiled,
+                source.sample.as_ref().map(|s| s.seed).unwrap_or(0),
+            )
+        } else {
+            format!(
+                "{} source: {} rows, collected in full",
+                source.kind, source.rows
+            )
+        };
+        let info = if source.basis == "sampled" {
+            PassInfo::sampled(detail)
+        } else {
+            PassInfo::ran(detail)
+        };
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "input".into(),
+            info,
+        );
+    }
+
     // ---------- column cards ----------
     use rayon::prelude::*;
     let cards: Vec<CardOut> = table
@@ -171,6 +201,10 @@ fn profile_inner(
         .collect();
 
     let mut findings: Vec<Finding> = Vec::new();
+    // Every pair the association screens test, for the report's
+    // associations table (issue #134); filled by the dependence
+    // screen and the association pair screen below.
+    let mut association_pairs: Vec<onceover_report::AssociationPair> = Vec::new();
     let sentinel_candidates: Vec<usize> = cards
         .iter()
         .enumerate()
@@ -766,6 +800,75 @@ fn profile_inner(
         findings.append(&mut f);
     }
 
+    // ---------- series ----------
+    if check_deadline(&mut coverage, "series") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("series") {
+        let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+        let columns_with_role = |role: &str| -> Vec<usize> {
+            frame
+                .roles
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.as_deref() == Some(role))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        match (&ticks, &axis_name) {
+            (Some(ticks), Some(axis_name)) => {
+                let input = onceover_mines::SeriesInput {
+                    axis_name,
+                    ticks,
+                    measures: columns_with_role("measure"),
+                    dimensions: columns_with_role("dimension"),
+                };
+                let (mut f, detail) = onceover_mines::profile_series(&table, &input);
+                // The dates detector states the same axis's gaps with its
+                // own calendar when selected.
+                if enabled("dates") {
+                    f.retain(|finding| finding.category != Category::Gaps);
+                }
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "series".into(),
+                    PassInfo::ran(detail),
+                );
+                findings.append(&mut f);
+            }
+            _ => stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "series".into(),
+                PassInfo::skipped("no date or datetime axis to describe series along".to_string()),
+            ),
+        }
+    }
+
+    // ---------- content ----------
+    if check_deadline(&mut coverage, "content") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("content") {
+        let mut f = onceover_deps::column_content(&table);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "content".into(),
+            PassInfo::ran(format!(
+                "{} columns scanned for content; {} statements",
+                table.cols.len(),
+                f.len()
+            )),
+        );
+        findings.append(&mut f);
+    }
+
     // ---------- boundaries ----------
     if check_deadline(&mut coverage, "boundaries") {
         deadline_hit = true;
@@ -792,6 +895,82 @@ fn profile_inner(
             )),
         );
         findings.extend(bnd);
+    }
+
+    // ---------- order constraints ----------
+    if check_deadline(&mut coverage, "order_constraints") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("order_constraints") {
+        if tier.dep_pair_cap == 0 {
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "order_constraints".into(),
+                PassInfo::skipped(
+                    "quick tier: the shared pair budget (max_pairs) is 0 at this tier",
+                ),
+            );
+        } else {
+            // Pairs between which an exact single-column FD holds
+            // in either direction in this run are derived from one
+            // another; the pass ranks their order findings below
+            // unrelated pairs and says so in the evidence.
+            let derived_pairs: std::collections::BTreeSet<(usize, usize)> = deps
+                .exact_fds
+                .iter()
+                .filter(|(lhs, _)| lhs.len() == 1)
+                .map(|(lhs, rhs)| (lhs[0].min(*rhs), lhs[0].max(*rhs)))
+                .collect();
+            let out = onceover_deps::order_constraints(
+                &table,
+                &onceover_deps::OrderConfig {
+                    max_pairs: tier.dep_pair_cap,
+                    derived_pairs,
+                    excluded: frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| {
+                            matches!(
+                                r.as_deref(),
+                                Some("index" | "identifier" | "timestamp_part")
+                            )
+                        })
+                        .map(|(i, _)| i)
+                        .collect(),
+                },
+            );
+            let detail = format!(
+                "{} of {} eligible column pairs screened; {} of {} that stayed near-universal verified on all rows on the shared max_pairs budget; {} reportable order directions, {} findings",
+                out.pairs_screened,
+                out.pairs_total,
+                out.pairs_evaluated,
+                out.pairs_surviving,
+                out.pairs_passing,
+                out.findings.len(),
+            );
+            let info = if out.pairs_screened < out.pairs_total
+                || out.pairs_evaluated < out.pairs_surviving
+            {
+                PassInfo::capped(detail)
+            } else if out.screened {
+                PassInfo::sampled(format!(
+                    "{detail}; pairs screened on a deterministic row sample and verified on all rows"
+                ))
+            } else {
+                PassInfo::ran(detail)
+            };
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "order_constraints".into(),
+                info,
+            );
+            findings.extend(out.findings);
+        }
     }
 
     // ---------- digits ----------
@@ -1103,7 +1282,15 @@ fn profile_inner(
                 // real-valued measurements stay eligible — the
                 // behaviour the old card-role carve-out protected.
                 let excluded: &[usize] = &scaffold_excluded;
-                let out = profile_discontinuities(&table, excluded, &tier.disc);
+                // Jumps in a flag or a label say little; targets are measures.
+                let measures: Vec<usize> = frame
+                    .roles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.as_deref() == Some("measure"))
+                    .map(|(i, _)| i)
+                    .collect();
+                let out = profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
                 if out.deadline_stopped {
                     deadline_hit = true;
                 }
@@ -1174,6 +1361,21 @@ fn profile_inner(
                     PassInfo::sampled(format!("{cov}{exclusion_note}")),
                 );
                 findings.extend(f);
+                let (pf, pair_records, pcov) = onceover_mines::pair_associations(
+                    &enc,
+                    &table,
+                    &tier.association,
+                    &scaffold_excluded,
+                );
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "association_pairs".into(),
+                    PassInfo::sampled(format!("{pcov}{exclusion_note}")),
+                );
+                findings.extend(pf);
+                association_pairs.extend(pair_records);
             }
 
             if deadline_hit || check_deadline(&mut coverage, "hotspots") {
@@ -1221,6 +1423,30 @@ fn profile_inner(
                 }
                 let (deps_pair, dep_findings, dep_cov) =
                     (dep_out.deps, dep_out.findings, dep_out.coverage);
+                association_pairs.extend(dep_out.records);
+                if enabled("row_consistency") {
+                    let measures: Vec<usize> = frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let (mut f, detail) = onceover_mines::profile_row_consistency(
+                        &table,
+                        &deps_pair,
+                        &scaffold_excluded,
+                        &measures,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "row_consistency".into(),
+                        PassInfo::ran(detail),
+                    );
+                    findings.append(&mut f);
+                }
                 let numeric = table
                     .cols
                     .iter()
@@ -1500,6 +1726,7 @@ fn profile_inner(
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
+                "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",
                 "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
@@ -1507,7 +1734,7 @@ fn profile_inner(
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
                     "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
-                    | "identities" | "missingness" => Sampling::Full,
+                    | "identities" | "missingness" | "content" => Sampling::Full,
                     "association_rules" | "prism" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample
@@ -1559,6 +1786,7 @@ fn profile_inner(
         ("breaks", "breaks"),
         ("association_rules", "association_rules"),
         ("numeric_dependence", "dependence_screen"),
+        ("row_consistency", "row_consistency"),
         ("identities", "arithmetic_identities"),
         ("period_associations", "period_associations"),
         ("views", "views"),
@@ -1623,8 +1851,22 @@ fn profile_inner(
         }
     }
     let outcome = select_findings_counted(findings, &cfg.selection);
-    let findings = outcome.selected;
-    let grouped = outcome.grouped;
+    let mut findings = outcome.selected;
+    let mut grouped = outcome.grouped;
+    if let Some(source) = &cfg.source {
+        if source.basis == "sampled" {
+            // Basis disclosure: on a sampled source no finding may
+            // present sample numbers as population numbers. Every
+            // evidence scope names the sample and the source
+            // population it was drawn from.
+            for finding in findings.iter_mut().chain(grouped.iter_mut()) {
+                for evidence in &mut finding.evidence {
+                    evidence.scope.sampling = Sampling::Sample;
+                    evidence.scope.population_rows = Some(source.rows);
+                }
+            }
+        }
+    }
     let capped = outcome.capped;
     let grouping_note = if grouped.is_empty() {
         None
@@ -1681,7 +1923,15 @@ fn profile_inner(
         families: outcome.families,
         grouped_statements: grouped.len(),
     };
-    let overview = build_overview(&table, &columns, &findings, cfg);
+    let mut overview = build_overview(&table, &columns, &findings, cfg);
+    if let Some(source) = &cfg.source {
+        if source.basis == "sampled" {
+            overview.headline.push_str(&format!(
+                "; profiled on a stratified sample from {} source rows",
+                source.rows
+            ));
+        }
+    }
     if deadline_hit {
         stamp_insert(
             &mut coverage,
@@ -1704,7 +1954,9 @@ fn profile_inner(
         grouped_findings: grouped,
         groups,
         selection,
+        source: cfg.source.clone(),
         coverage,
+        associations: association_pairs,
     }
 }
 

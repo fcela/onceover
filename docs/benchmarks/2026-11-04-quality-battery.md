@@ -134,3 +134,62 @@ granularity (one seed of twelve), not by observed spread:
 
 These tolerances are proposals recorded with the baselines; the
 issue stays open until they are reviewed.
+
+## Addendum, 2026-11-05: the dependence bar is now a test
+
+The association screens no longer report against fixed effect
+bars. Each screened pair carries a p-value (numeric pairs:
+Bonferroni combination over the Pearson, Spearman, and Chatterjee
+ξ components; nominal pairs: a G-test; mixed pairs: a one-way
+F-test), Benjamini–Hochberg adjusted over the pairs tested in the
+run, and statements split into a strong tier (adjusted q ≤ 0.05
+and the previous effect bars) and a weak tier (adjusted q ≤ 0.05,
+below the effect bars). The full measurement is recorded in
+`docs/benchmarks/2026-11-05-tested-associations.md`; the run is
+`benchmarks/quality/results/2026-11-05-full.json` (onceover
+0.1.3, tree at main 9dd66df9 plus the tested-associations change).
+
+Capability change, recorded per the promotion rule above: both
+dependence plants move from baseline 0.00 to 1.00.
+
+| plant | detector | selected | stated | top-25 | median rank |
+|---|---|---|---|---|---|
+| weak_association (ρ=0.15) | 1.00 | 1.00 | 1.00 | 1.00 | 2 |
+| association_moderate (ρ=0.4) | 1.00 | 1.00 | 1.00 | 1.00 | 2 |
+
+Both are stated as weak-tier associations (their effects are
+below the strong bars). The new baselines are 1.00, judged by the
+same 11/12 rule as the other plants. The fast-subset pin in
+`tests/test_quality_battery.py` now asserts the stated recall on
+seeds 0 and 1 instead of the old not-reported pin.
+
+One bookkeeping change in the same run, not a recall change:
+categorical_fd's statement is grouped under its relationship
+family's lead on all 12 seeds (schema 0.6 grouped statements), so
+its selected recall reads 0.00 while its stated recall — selected
+or grouped — stays 1.00 with detector recall 1.00. This is the
+first full battery recorded since grouped statements landed;
+stated recall is the comparable figure across the two runs.
+
+The null tolerance for the dependence family is revised, because
+the property it protected has changed form. A tested screen at
+q = 0.05 states a weak association on a purely null frame by
+design, at a rate the correction budgets; "any finding is a
+regression" would pin the screen to never use its stated error
+rate. The recorded run states 3 weak-tier statistical findings
+across the 12 null frames — one numeric pair (ξ component,
+effect 0.029, q = 0.042) and two mixed pairs (η = 0.057,
+q = 0.036; η = 0.066, q = 0.003) — and no strong-tier statement
+on any null frame. Counted per tested pair, that is 3
+discoveries in 336 tested null pairs (0.9%) against the 5%
+nominal level; counted per screen family, 1 of 12 frames
+(numeric) and 2 of 12 frames (nominal/mixed) carried a
+discovery, consistent with the nominal rate at this sample size
+(the probability of two or more discovery frames in 12 at an
+exact 5% rate is about 0.12). The other four families stay at
+zero findings on every null frame, under the original tolerance.
+The pin now asserts the rate form: no strong-tier or predictive
+statement on any of the 12 null frames, at most 4 weak-tier
+statistical findings across them, and zero dependency and break
+findings. A calibration failure would state dozens of weak
+findings, not five, so the bound keeps its signal.

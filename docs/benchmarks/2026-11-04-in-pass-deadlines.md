@@ -28,15 +28,15 @@ next quantum boundary:
 | --- | --- | --- |
 | Numeric dependence, stage-1 screening | one chunk of 2^18 pair ordinals | top of each chunk loop in both streaming passes |
 | Numeric dependence, detailed statistics | 64 survivor pairs (capped path); one 2^18 chunk (uncapped path) | before each detailed block |
-| Hotspots | one combination | before each combination in the evaluation enumeration |
+| Hotspots | one combination | before each pair in pair evaluation, and before each triple in triple evaluation |
 | Discontinuities | one scan unit (axis unit or diagonal pair), and one target | before each unit inside a target screen; before each target |
 
 Routes not listed are bounded by construction and carry no
 checkpoint: the dependence in-place stage-1 route scores at
 most `4 × pair_cap` pairs, stage 2 rescores at most that many
-survivors, and the hotspots totals enumeration is arithmetic
-over bin counts that defines the planned universe the
-disclosure is measured against.
+survivors, and the hotspots pair-totals enumeration is
+arithmetic over bin counts — it totals the pair universe the
+disclosure is measured against and never counts rows.
 
 Stopping leaves deterministic *state* (counts and completed
 prefixes), and two truncation rules keep a stop from silently
@@ -48,12 +48,18 @@ changing the statistics:
   how many pairs were scored in which pass. Detailed
   statistics, by contrast, are per-pair, so a stop there keeps
   the completed prefix and its findings.
-- **Hotspots** keeps the Bonferroni bar computed over the full
-  planned cell universe. The stop changes which cells were
-  examined, never the bar the examined cells had to clear.
-  Findings rendered on a stopped run say the scan stopped and
-  carry a `cells_evaluated` evidence metric beside the planned
-  `cells_examined`.
+- **Hotspots** computes the Bonferroni bar over the examined
+  cells, as the pass does on a complete run (pair cells plus
+  the selected triples' cells). The deadline is polled in
+  both phases. A stop during pair evaluation skips the
+  triples phase entirely: triple selection spends the pair
+  pre-scores, so a selection cannot rest on a partial screen.
+  A stop during triple evaluation keeps the completed
+  evaluations; their hits are filtered by the bar over the
+  cells examined at the stop point. Findings rendered on a
+  stopped run say the scan stopped, state how many cells went
+  unexamined, and carry a `cells_evaluated` evidence metric
+  giving the examined-cell denominator the bar came from.
 - **Discontinuities** withholds a stopped target's findings
   (its typing, reporting bars, and parsimony suppression all
   assume the complete flagged set) but keeps its examined unit
@@ -66,9 +72,9 @@ coverage status, and the detail string — the report's standing
 place for counts — states the examined share in the pass's own
 units. Verbatim, from the overrun fixtures below:
 
-- Dependence: `0 of 719400 numeric pairs (deadline); stage-1 screening stopped at the deadline in its first pass after 524288 of 719400 pairs; survivor selection needs the complete screen, so no pairs were selected and no detailed statistics were computed; 0 strong pairwise, 0 redundancy links`
-- Hotspots: `600 eligible columns, 16181 of 179700 combinations examined (0 of 0 triples), 1310661 of 14555700 cells examined before the deadline stopped the scan, z bar 6.17 (Bonferroni over the full 14555700-cell universe, family alpha 0.01 — the stop does not reduce the correction); counts over the encoded sample of 2000 rows; combinations past the stop were not examined, so the absence of a hotspot there is unmeasured, not a negative`
-- Discontinuities: `…; deadline reached mid-pass: 0 of 160 targets fully screened, 4 stopped mid-screen (findings withheld), 156 not started`
+- Dependence: `0 of 719400 numeric pairs (deadline); stage-1 screening stopped at the deadline in its second pass after 524288 of 719400 pairs; survivor selection needs the complete screen, so no pairs were selected and no detailed statistics were computed; 0 strong pairwise, 0 redundancy links`
+- Hotspots: `600 eligible columns, 32506 of 179700 pair combinations examined, 2632986 of 14555700 pair cells examined before the deadline stopped the scan, z bar 5.89 (Bonferroni over the examined cells, family alpha 0.01); triples were not selected or examined — selection needs the complete pair screen; counts over the encoded sample of 2000 rows`
+- Discontinuities: `…; deadline reached mid-pass: 4 of 160 targets fully screened, 1 stopped mid-screen (findings withheld), 155 not started`
 
 A stopped pass also latches the profile's deadline state, so
 the report gains the same `deadline` coverage summary entry a
@@ -89,8 +95,9 @@ are unchanged — the corpus identity run below is the
 acceptance evidence. The Rust unit tests pin the prefix
 property directly: a stop predicate that fires after exactly K
 consultations leaves exactly the first K quanta examined
-(K combinations in hotspots, K chunks scored in the dependence
-screen, K axis units in a discontinuities target).
+(K pair combinations then K triples in hotspots, K chunks
+scored in the dependence screen, K axis units in a
+discontinuities target).
 
 Deterministic work-unit budgets were considered and not
 adopted: the existing budget configuration is wall-clock
@@ -103,17 +110,23 @@ examined counts give the caller the same auditability.
 
 Synthetic frames (seed 20261104; integers uniform on 0–7 as
 float64; floats standard normal with a planted step in column
-0 along column 1),
-profiled with a single detector enabled and `timing=True`.
-Wall times are whole-profile seconds on this 4-core VM under
-agent contention, so read the unbounded column as "far beyond
-the budget", not as a benchmark.
+0 along column 1), profiled with a single detector enabled and
+`timing=True`. The unbounded walls below were measured on
+this 4-core VM while it was otherwise idle. The stopped walls
+and disclosures were measured in the same session while a
+release build ran on the same VM: at idle speeds the
+dependence fixture finishes inside its 2 s deadline (and the
+Python stop tests behave the same way — see the verification
+status), so a stop engages only once the machine is loaded,
+which is also when a deadline matters. Read the stopped
+column as "the deadline plus one quantum of work under load",
+not as a benchmark.
 
-| Fixture | Unbounded wall | Deadline | Stopped wall | Disclosure |
+| Fixture | Unbounded wall (idle) | Deadline | Stopped wall (under load) | Disclosure |
 | --- | --- | --- | --- | --- |
-| Dependence, 1,200 cols × 100 rows (719,400 pairs) | ~7 s (900-col sibling: 3.3 s) | 2.0 s | 2.10 s | stage-1 stop after 524,288 of 719,400 pairs (2 chunks) |
-| Hotspots, 600 cols × 2,000 rows (179,700 combinations) | 22.0 s | 2.0 s | 2.07 s | 16,181 of 179,700 combinations; 1,310,661 of 14,555,700 cells |
-| Discontinuities, 160 cols × 20,000 rows (160 targets) | 225.1 s | 3.0 s | 3.09 s | 0 of 160 targets fully screened; 4 stopped mid-screen; 156 not started |
+| Dependence, 1,200 cols × 100 rows (719,400 pairs) | 1.0 s | 2.0 s | 2.23 s | stage-1 stop after 524,288 of 719,400 pairs (2 chunks) |
+| Hotspots, 600 cols × 2,000 rows (179,700 pair combinations) | 2.5 s | 2.0 s | 2.01 s | 32,506 of 179,700 pair combinations; 2,632,986 of 14,555,700 pair cells; triples not selected or examined |
+| Discontinuities, 160 cols × 20,000 rows (160 targets) | 23.4 s | 3.0 s | 3.11 s | 4 of 160 targets fully screened; 1 stopped mid-screen; 155 not started |
 
 The stopped wall lands within one quantum's work of the
 deadline in every case (the residual is pre-pass pipeline time
@@ -141,28 +154,46 @@ session:
 
 | Pass fixture | Before | After | Delta |
 | --- | --- | --- | --- |
-| Dependence, 900 cols × 
+| Dependence, 900 cols × 100 rows | 503 ms | 480 ms | −5% |
+| Hotspots, 600 cols × 2,000 rows | 2,490 ms | 2,443 ms | −2% |
+| Discontinuities, 160 cols × 20,000 rows | 23,966 ms | 22,441 ms | −6% |
 
-...[truncated 1866 chars]
+The before/after pair above was measured back to back in one
+session; a second pair of runs in the same session swapped
+the ordering on the dependence pass (497 ms before vs 519 ms
+after) and stayed within a few percent on the other two
+(hotspots 2,473 ms before vs 2,493 ms after; discontinuities
+24,320 ms before vs 22,678 ms after). Run-to-run load noise is
+larger than any checkpoint cost: a checkpoint is one
+comparison against an unset value per work quantum, and the
+measurements show no overhead above that noise.
+
 ## Verification status
 
-Passed on this tree: the full Rust test suite (249 tests, 0
+Passed on this tree: the full Rust test suite (276 tests, 0
 failed), including this stage's deadline tests — stop before
 the first quantum, the exact examined prefix under a counting
-stop predicate, disclosure counts, and no-deadline versus
+stop predicate (with the stopped findings' `cells_evaluated`
+evidence pinned at 80 on a pair stop and 368 on a triple
+stop), disclosure counts, and no-deadline versus
 far-future-deadline equality for each of the three passes. One
 existing determinism test now reads the fields of
 `DiscOutcome`, the return type this change introduces; its
-assertions are unchanged. `cargo check --workspace`,
-`cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo fmt --all -- --check` are clean; the release metadata
-check passes and its tests pass (5).
-
-Still running on this tree: the corpus re-dump under the
-identity protocol above (the 23-of-23 result was measured on
-the change set before it was finalized into this tree; the
-expectation from the construction is 23 of 23 again), the
-Python test module `tests/test_deadline.py` (4 tests, passing
-on the identical change set), the full Python suite, and the
-strict book build. Each needs a release build of this tree,
-which has not completed yet.
+assertions are unchanged. `cargo clippy --workspace
+--all-targets -- -D warnings` and `cargo fmt --all -- --check`
+are clean; the release metadata check passes and its tests
+pass (5). The corpus identity run above was repeated on this
+tree: 23 of 23 identical. The Python suite passes
+`tests/test_deadline.py` (4 tests) under ordinary build load,
+and the full suite runs 413 passed, 4 skipped on this tree's
+release build; two of the deadline module's stop tests are
+wall-clock sensitive — on an idle machine their fixtures
+finish inside the 2 s deadline (the dependence fixture's
+unbounded wall above is 1.0 s), so the full-suite run on the
+idle machine records those two as failures while the module
+passes 4 of 4 under load, and the deterministic Rust counting
+tests pin the stop behavior at any machine speed. The strict
+book build passes on this tree (49 pages, executed with
+`--strict`); the book changes are notebook wording edits
+aligning the deadline description with the behavior specified
+here.
