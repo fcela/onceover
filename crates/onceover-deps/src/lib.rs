@@ -18,7 +18,7 @@ pub mod sorted;
 pub use boundaries::boundary_mass;
 pub use content::column_content;
 pub use digits::digit_fingerprints;
-pub use dupe::{profile_duplicate_encodings, DupeConfig};
+pub use dupe::{profile_duplicate_encodings, profile_duplicate_encodings_stopped, DupeConfig};
 pub use fd::{discover, DepsOutcome, FdConfig};
 pub use granularity::granularity_changes;
 pub use keys::{analyze_keys, KeyOutcome};
