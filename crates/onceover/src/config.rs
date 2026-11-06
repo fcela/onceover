@@ -198,15 +198,13 @@ impl TierConfig {
                 views: ViewsConfig::default(),
                 // The discontinuity screen is the measured runtime
                 // outlier (2026-11-02 battery: 0.43 s median marginal,
-                // +83.0 s excess, concentrated on wide tables). At the
-                // standard tier the diagonal scan — the dominant cost
-                // on wide tables — considers the 6 strongest axes per
-                // target instead of 10 (15 column pairs instead of
-                // 45); the deep tier keeps the full search. Tables
-                // with at most `all_pairs_max_cols` axes are
-                // unaffected: they already scan every pair.
-                // Axis scans only: on the corpus this takes the pass from
-                // 3.9 to 0.5 s and still reports 105 jumps against 112.
+                // +83.0 s excess, concentrated on wide tables). The
+                // diagonal scan is the dominant cost on wide tables,
+                // so the standard tier turns it off and scans axes
+                // only: on the corpus this takes the pass from 3.9 to
+                // 0.5 s and still reports 105 jumps against 112. The
+                // deep tier keeps the full search. `fallback_top_axes`
+                // takes effect only when the diagonal scan runs.
                 disc: DiscConfig {
                     fallback_top_axes: 6,
                     diagonals: false,
@@ -274,7 +272,7 @@ impl TierConfig {
                 },
                 // Deep keeps the full discontinuity search (the
                 // default 10 fallback axes per target) on more rows;
-                // only the standard tier caps the diagonal scan.
+                // the standard tier turns the diagonal scan off.
                 disc: DiscConfig {
                     row_cap: 50_000,
                     max_per_target: 5,
