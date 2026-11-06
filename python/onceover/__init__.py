@@ -6,6 +6,7 @@ keys across a set of related tables.
 """
 
 import json as _json
+import operator as _operator
 import os
 
 from onceover._many import MultiTableReport, profile_many
@@ -187,6 +188,18 @@ def _stratified_indices(n: int, cap: int, seed: int) -> list[int]:
     return out
 
 
+def _as_int(value):
+    """An integer argument as a Python int: int itself and any type
+    that implements __index__ (NumPy integers), never bool. None for
+    anything else (floats included)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return _operator.index(value)
+    except TypeError:
+        return None
+
+
 def _scan_path(path):
     """A path input as (LazyFrame, kind), via the matching scan
     constructor."""
@@ -228,14 +241,14 @@ def _materialize_source(df, *, source_row_cap, exact, sample_seed):
         )
     if source_row_cap is None:
         cap = _DEFAULT_SOURCE_ROW_CAP
-    elif (isinstance(source_row_cap, bool)
-          or not isinstance(source_row_cap, int) or source_row_cap <= 0):
-        raise ValueError("source_row_cap must be a positive integer")
     else:
-        cap = source_row_cap
-    if (isinstance(sample_seed, bool) or not isinstance(sample_seed, int)
-            or sample_seed < 0):
+        cap = _as_int(source_row_cap)
+        if cap is None or cap <= 0:
+            raise ValueError("source_row_cap must be a positive integer")
+    seed = _as_int(sample_seed)
+    if seed is None or seed < 0:
         raise ValueError("sample_seed must be a nonnegative integer")
+    sample_seed = seed
     try:
         n = lf.select(pl.len()).collect(engine="streaming").item()
     except Exception:

@@ -21,7 +21,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(ROOT / "python"))
 
 
 def rollup_key(f: dict) -> tuple:
@@ -92,7 +91,13 @@ def main() -> int:
     ap.add_argument("--detectors")
     args = ap.parse_args()
     import polars as pl
-    import onceover
+    try:
+        import onceover  # the installed package, with its built extension
+    except ImportError:
+        # Fall back to the source tree, which imports only after an
+        # in-place build (maturin develop) has put the extension there.
+        sys.path.insert(0, str(ROOT / "python"))
+        import onceover
     df = pl.read_csv(args.csv, infer_schema_length=None)
     detectors = args.detectors.split(",") if args.detectors else None
     report = onceover.profile(df, detectors=detectors)

@@ -244,10 +244,29 @@ fn exceptions<'a>(
     (bad.iter().map(|(_, c)| c).sum(), bad)
 }
 
+/// Longest value quoted whole in a claim; longer values are cut to
+/// their first `QUOTE_KEEP` characters with the full length stated.
+/// Evidence keeps every value complete (verification matches on it).
+const QUOTE_MAX: usize = 80;
+const QUOTE_KEEP: usize = 60;
+
+/// A value as a claim quotes it: whole up to `QUOTE_MAX`
+/// characters, otherwise its first `QUOTE_KEEP` characters and the
+/// full length.
+fn quoted(v: &str) -> String {
+    let chars = v.chars().count();
+    if chars <= QUOTE_MAX {
+        format!("'{v}'")
+    } else {
+        let head: String = v.chars().take(QUOTE_KEEP).collect();
+        format!("'{head}…' ({chars} characters)")
+    }
+}
+
 fn example_list(bad: &[(&str, usize)]) -> String {
     bad.iter()
         .take(MAX_EXAMPLES)
-        .map(|(v, c)| format!("'{v}' ({c})"))
+        .map(|(v, c)| format!("{} ({c})", quoted(v)))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -319,7 +338,7 @@ fn label_findings(name: &str, counts: &HashMap<&str, usize>, n: usize, out: &mut
             .take(3)
             .map(|g| {
                 g.iter()
-                    .map(|(v, c)| format!("'{v}' ({c})"))
+                    .map(|(v, c)| format!("{} ({c})", quoted(v)))
                     .collect::<Vec<_>>()
                     .join(" / ")
             })
@@ -380,7 +399,9 @@ fn label_findings(name: &str, counts: &HashMap<&str, usize>, n: usize, out: &mut
         let shown: Vec<String> = typos
             .iter()
             .take(MAX_EXAMPLES)
-            .map(|(v, c, common, cc)| format!("'{v}' ({c}) resembles '{common}' ({cc})"))
+            .map(|(v, c, common, cc)| {
+                format!("{} ({c}) resembles {} ({cc})", quoted(v), quoted(common))
+            })
             .collect();
         out.push(statement(
             name,

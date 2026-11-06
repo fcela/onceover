@@ -487,7 +487,18 @@ fn column_ticks_micros(col: &TypedCol) -> Option<Vec<Option<i64>>> {
             day_ticks_to_micros(&days)
         }
         TypedCol::Datetime { vals, .. } => {
-            Some((0..vals.len()).map(|r| col.datetime_micros(r)).collect())
+            // As for dates: a millisecond value beyond the i64
+            // microsecond range fails the whole conversion rather
+            // than dropping that row, which would state a span the
+            // data does not have.
+            let mut out = Vec::with_capacity(vals.len());
+            for (r, v) in vals.iter().enumerate() {
+                out.push(match v {
+                    Some(_) => Some(col.datetime_micros(r)?),
+                    None => None,
+                });
+            }
+            Some(out)
         }
         _ => None,
     }
@@ -1185,6 +1196,24 @@ mod tests {
             vals: vec![Some(i32::MIN), Some(i32::MAX)],
         };
         assert_eq!(column_ticks_micros(&full), None);
+    }
+
+    #[test]
+    fn millisecond_ticks_stop_at_the_microsecond_range() {
+        let edge = i64::MAX / 1000;
+        let fits = TypedCol::Datetime {
+            vals: vec![Some(-edge), None, Some(edge)],
+            unit: TimeUnit::Milliseconds,
+        };
+        assert_eq!(
+            column_ticks_micros(&fits),
+            Some(vec![Some(-edge * 1000), None, Some(edge * 1000)])
+        );
+        let beyond = TypedCol::Datetime {
+            vals: vec![Some(0), Some(edge + 1)],
+            unit: TimeUnit::Milliseconds,
+        };
+        assert_eq!(column_ticks_micros(&beyond), None);
     }
 
     #[test]
