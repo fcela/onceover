@@ -36,6 +36,18 @@ pub const MAX_EVALUATIONS_PER_SCREEN: usize = 400;
 /// statement's strength is the unsigned xi component and the pair
 /// carries no direction worth qualifying.
 pub const MIN_DIRECTIONAL_EFFECT: f64 = 0.3;
+/// The combined within-stratum effect must differ from zero at
+/// this two-sided z: a Bonferroni bar at family alpha 0.05 over
+/// the screen's 400-evaluation budget (0.05 / 400 two-sided).
+/// Strata whose effects merely share the opposite sign by chance
+/// — an association that vanishes within levels, leaving noise —
+/// do not reach it, so the claim "the direction reverses" is
+/// made only when the within-level direction is measured.
+pub const MIN_WITHIN_Z: f64 = 3.84;
+/// Variance inflation of Fisher's z for Spearman's rho relative
+/// to Pearson's r (Fieller, Hartley & Pearson 1957): the
+/// standard error is sqrt(1.06 / (n - 3)).
+const SPEARMAN_Z_VARIANCE: f64 = 1.06;
 
 /// Which signed statistic a pair's direction is read from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +111,10 @@ pub struct SimpsonHit {
     /// correlations, Woolf inverse-variance for log odds
     /// ratios); carries the reversed sign by construction.
     pub within: f64,
+    /// Two-sided z of the combined within effect against zero
+    /// (Fisher-z scale for correlations, Woolf for log odds
+    /// ratios); at least `MIN_WITHIN_Z` in magnitude.
+    pub within_z: f64,
     pub strata: Vec<StratumEffect>,
     /// Observed levels of the stratifying column.
     pub levels_total: usize,
@@ -161,8 +177,10 @@ fn log_odds_parts(pairs: &[(f64, f64)]) -> Option<(f64, f64)> {
 }
 
 /// The signed effect of one stratum, with its combination
-/// weight: (n - 3) for correlations (the Fisher-z weight), the
-/// inverse Woolf variance for log odds ratios. None when the
+/// weight — the inverse variance of the effect on its combining
+/// scale: (n - 3) for Pearson-type correlations (Fisher z),
+/// (n - 3) / 1.06 for Spearman, the inverse Woolf variance for
+/// log odds ratios. None when the
 /// effect is undefined on the stratum's rows — including the
 /// correlation helpers' own n >= 30 requirement, which is the
 /// usable-stratum row floor.
@@ -171,12 +189,18 @@ fn stratum_effect(stat: SignedStat, pairs: &[(f64, f64)]) -> Option<(f64, f64)> 
         SignedStat::Pearson | SignedStat::PointBiserial => {
             pearson(pairs).map(|r| (r, (pairs.len() as f64 - 3.0).max(1.0)))
         }
-        SignedStat::Spearman => spearman(pairs).map(|r| (r, (pairs.len() as f64 - 3.0).max(1.0))),
+        SignedStat::Spearman => {
+            spearman(pairs).map(|r| (r, (pairs.len() as f64 - 3.0).max(1.0) / SPEARMAN_Z_VARIANCE))
+        }
         SignedStat::LogOddsRatio => log_odds_parts(pairs).map(|(v, var)| (v, 1.0 / var)),
     }
 }
 
-fn combine(stat: SignedStat, effects: &[(f64, f64)]) -> f64 {
+/// The inverse-variance combination of the strata's effects and
+/// its two-sided z against zero: the weighted mean on the
+/// combining scale has variance 1 / (sum of weights), so
+/// z = mean * sqrt(sum of weights).
+fn combine(stat: SignedStat, effects: &[(f64, f64)]) -> (f64, f64) {
     let (mut num, mut den) = (0.0f64, 0.0f64);
     for &(e, w) in effects {
         if stat.is_correlation() {
@@ -187,10 +211,11 @@ fn combine(stat: SignedStat, effects: &[(f64, f64)]) -> f64 {
         den += w;
     }
     let v = num / den;
+    let z = v * den.sqrt();
     if stat.is_correlation() {
-        v.tanh()
+        (v.tanh(), z)
     } else {
-        v
+        (v, z)
     }
 }
 
@@ -262,11 +287,19 @@ pub fn reversal_for_pair(
         if usable.len() < 2 || covered as f64 * 2.0 < pair_rows as f64 {
             continue;
         }
-        // The textbook form: every usable stratum reverses.
-        if usable.iter().all(|s| s.effect * pooled < 0.0) {
+        // The textbook form: every usable stratum reverses, and
+        // the combined within effect is measurably nonzero —
+        // opposite signs alone also arise when the association
+        // vanishes within levels and only noise is left.
+        if !usable.iter().all(|s| s.effect * pooled < 0.0) {
+            continue;
+        }
+        let (within, within_z) = combine(stat, &weights);
+        if within_z.abs() >= MIN_WITHIN_Z {
             return Some(SimpsonHit {
                 stratifier: strat.name.clone(),
-                within: combine(stat, &weights),
+                within,
+                within_z,
                 strata: usable,
                 levels_total: strat.labels.len(),
                 covered_share: covered as f64 / pair_rows as f64,
@@ -309,6 +342,7 @@ pub fn simpson_payload(stat: SignedStat, pooled: f64, hit: &SimpsonHit) -> Map<S
     m.insert("stratifier".into(), json!(hit.stratifier));
     m.insert("pooled_effect".into(), json!(pooled));
     m.insert("within_effect".into(), json!(hit.within));
+    m.insert("within_z".into(), json!(hit.within_z));
     m.insert(
         "strata".into(),
         json!(hit
@@ -470,7 +504,55 @@ mod tests {
         assert_eq!(hit.stratifier, "g");
         assert_eq!(hit.strata.len(), 2);
         assert!(hit.within < 0.0);
+        assert!(hit.within_z <= -MIN_WITHIN_Z, "z = {}", hit.within_z);
         assert!((hit.covered_share - 1.0).abs() < 1e-12);
+    }
+
+    /// Two strata whose pooled correlation comes from the group
+    /// means alone: within each stratum y carries a weak negative
+    /// trend buried in noise, so every stratum's r is negative but
+    /// the combined within effect is far from significant. Opposite
+    /// signs alone must not produce a reversal.
+    #[test]
+    fn opposite_signs_without_a_measured_within_effect_do_not_fire() {
+        let mut universe = Vec::new();
+        let mut codes = Vec::new();
+        let mut state: u64 = 2;
+        let mut noise = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+        };
+        for g in 0..2u16 {
+            for i in 0..100 {
+                let x = 100.0 * g as f64 + i as f64;
+                let y = 400.0 * g as f64 - 0.2 * i as f64 + 120.0 * noise();
+                universe.push((Some(x), Some(y)));
+                codes.push(Some(g));
+            }
+        }
+        let pooled = pooled_pearson(&universe);
+        assert!(pooled > 0.3, "pooled = {pooled}");
+        for g in 0..2usize {
+            let rows: Vec<(f64, f64)> = universe[100 * g..100 * (g + 1)]
+                .iter()
+                .map(|(x, y)| (x.unwrap(), y.unwrap()))
+                .collect();
+            let r = pearson(&rows).unwrap();
+            assert!(r < 0.0 && r > -0.3, "stratum {g}: r = {r}");
+        }
+        let strat = stratifier("g", 9, &["lo", "hi"], &codes);
+        let mut budget = SimpsonBudget::new();
+        assert!(reversal_for_pair(
+            SignedStat::Pearson,
+            pooled,
+            &universe,
+            &[strat],
+            &[0, 1],
+            &mut budget
+        )
+        .is_none());
     }
 
     #[test]
@@ -611,6 +693,7 @@ mod tests {
         let hit = SimpsonHit {
             stratifier: "region".into(),
             within: -0.45,
+            within_z: -7.2,
             strata: vec![
                 StratumEffect {
                     level: "north".into(),
