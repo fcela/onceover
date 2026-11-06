@@ -1095,6 +1095,7 @@ mod tests {
             n_exact: 0,
             n_afd: 0,
             coverage: String::new(),
+            triple_key_search: false,
         }
     }
 

@@ -68,6 +68,9 @@ pub struct DepsOutcome {
     pub composite_uccs: Vec<Vec<usize>>,
     /// Single columns that are (null-free and) unique.
     pub single_unique: Vec<usize>,
+    /// True when the standard-tier size-3 key step ran (no 1- or
+    /// 2-column key existed, so 3-column combinations were screened).
+    pub triple_key_search: bool,
     pub n_exact: usize,
     pub n_afd: usize,
     pub coverage: String,
@@ -103,6 +106,175 @@ pub fn verify_fd(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) ->
         violations += (total - mx) as usize;
     }
     (n_used, violations)
+}
+
+// ---------- reliable fraction of information ----------
+//
+// Chance-corrected FD scoring after Mandros, Boley & Vreeken,
+// "Discovering Reliable Approximate Functional Dependencies"
+// (Proc. KDD 2017; arXiv:1705.09391), section 3. The plug-in
+// fraction of information FI = I(X;Y) / H(Y) overstates dependence
+// when the determinant has many distinct values: even for
+// independent X and Y the empirical mutual information is
+// positive, and it grows as the determinant groups shrink. The
+// reliable fraction of information subtracts the value expected
+// under the permutation model (the Y values randomly reassigned
+// to the X groups, margins fixed):
+//
+//   RFI = FI - b0,   b0 = m0 / H(Y),
+//   m0 = sum over cells (i, j) of E0[(c/n) * ln(c * n / (a_i * b_j))]
+//
+// where a_i, b_j are the contingency-table margins, n the number
+// of evaluated rows, and E0 is over c hypergeometric: the count
+// in cell (i, j) when a_i rows are drawn without replacement from
+// n rows of which b_j carry value j. The expectation is a closed
+// form (no sampling). b0 never decreases as X grows (theorem 4.1
+// of the paper), so an added determinant column raises RFI only
+// by carrying information beyond the refinement's chance
+// agreement. Natural log throughout; the ratios are
+// base-invariant.
+
+/// Expected plug-in mutual-information contribution of one
+/// contingency cell under the permutation model:
+/// E0[(c/n) * ln(c * n / (a * b))] for margins a, b over n rows.
+fn chance_cell(a: u64, b: u64, n: u64, cache: &mut FxHashMap<(u64, u64), f64>) -> f64 {
+    if a == 0 || b == 0 || n == 0 {
+        return 0.0;
+    }
+    if let Some(&v) = cache.get(&(a, b)) {
+        return v;
+    }
+    let v = chance_cell_uncached(a, b, n);
+    cache.insert((a, b), v);
+    v
+}
+
+fn chance_cell_uncached(a: u64, b: u64, n: u64) -> f64 {
+    let (af, bf, nf) = (a as f64, b as f64, n as f64);
+    let lo = (a + b).saturating_sub(n);
+    let hi = a.min(b);
+    let mode = (((a + 1) as u128 * (b + 1) as u128) / (n + 2) as u128) as u64;
+    let mode = mode.clamp(lo, hi);
+    let term = |k: u64| -> f64 {
+        if k == 0 {
+            0.0
+        } else {
+            let kf = k as f64;
+            (kf / nf) * (kf * nf / (af * bf)).ln()
+        }
+    };
+    // Walk the hypergeometric weights outward from the mode by the
+    // pmf recurrence; weights are <= 1 relative to the mode and
+    // shrink monotonically away from it, so cutting at 1e-17 loses
+    // far less than f64 precision on the expectation.
+    let base = nf - af - bf; // n - a - b; base + k >= 0 for k >= lo
+    let mut w_sum = 1.0f64;
+    let mut t_sum = term(mode);
+    let (mut w, mut k) = (1.0f64, mode);
+    while k < hi {
+        let ratio =
+            ((bf - k as f64) * (af - k as f64)) / ((k + 1) as f64 * (base + k as f64 + 1.0));
+        w *= ratio;
+        k += 1;
+        w_sum += w;
+        t_sum += w * term(k);
+        if w < 1e-17 {
+            break;
+        }
+    }
+    let (mut w, mut k) = (1.0f64, mode);
+    while k > lo {
+        let ratio =
+            (k as f64 * (base + k as f64)) / ((bf - k as f64 + 1.0) * (af - k as f64 + 1.0));
+        w *= ratio;
+        k -= 1;
+        w_sum += w;
+        t_sum += w * term(k);
+        if w < 1e-17 {
+            break;
+        }
+    }
+    t_sum / w_sum
+}
+
+/// Contingency statistics for one (determinant, target) pair over
+/// `rows`: the verification counts plus the chance-corrected
+/// information scores, all from the same grouping.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct FdStats {
+    pub n_used: usize,
+    pub violations: usize,
+    /// Plug-in fraction of information I(X;Y)/H(Y).
+    pub fi: f64,
+    /// Fraction of information expected under the permutation model.
+    pub expected_fi_chance: f64,
+    /// Reliable fraction of information: fi - expected_fi_chance.
+    pub rfi: f64,
+}
+
+/// Group `rows` by the determinant's canonical encodings (the same
+/// grouping verify_fd verifies) and compute FdStats.
+pub fn fd_stats(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) -> FdStats {
+    let mut groups: FxHashMap<Vec<u8>, FxHashMap<Vec<u8>, u32>> = FxHashMap::default();
+    for &rr in rows {
+        let r = rr as usize;
+        if lhs.iter().any(|&c| table.cols[c].is_null_at(r)) {
+            continue;
+        }
+        if table.cols[rhs].is_null_at(r) {
+            continue;
+        }
+        let mut key = Vec::with_capacity(16 * lhs.len());
+        for &c in lhs {
+            encode_value(&table.cols[c], r, &mut key);
+        }
+        let mut rv = Vec::with_capacity(16);
+        encode_value(&table.cols[rhs], r, &mut rv);
+        *groups.entry(key).or_default().entry(rv).or_insert(0) += 1;
+    }
+    let mut target_totals: FxHashMap<Vec<u8>, u64> = FxHashMap::default();
+    let mut stats = FdStats::default();
+    for m in groups.values() {
+        let total: u32 = m.values().sum();
+        stats.n_used += total as usize;
+        let mx = m.values().copied().max().unwrap_or(0);
+        stats.violations += (total - mx) as usize;
+        for (v, c) in m {
+            *target_totals.entry(v.clone()).or_insert(0) += *c as u64;
+        }
+    }
+    if stats.n_used == 0 {
+        return stats;
+    }
+    let n = stats.n_used as f64;
+    let hy: f64 = target_totals
+        .values()
+        .map(|&b| {
+            let p = b as f64 / n;
+            -p * p.ln()
+        })
+        .sum();
+    if hy <= 0.0 {
+        return stats;
+    }
+    let mut mi = 0.0f64;
+    let mut m0 = 0.0f64;
+    let mut cache: FxHashMap<(u64, u64), f64> = FxHashMap::default();
+    for m in groups.values() {
+        let a: u64 = m.values().map(|&c| c as u64).sum();
+        for (v, &c) in m {
+            let b = target_totals[v.as_slice()];
+            let c = c as f64;
+            mi += (c / n) * (c * n / (a as f64 * b as f64)).ln();
+        }
+        for &b in target_totals.values() {
+            m0 += chance_cell(a, b, stats.n_used as u64, &mut cache);
+        }
+    }
+    stats.fi = mi / hy;
+    stats.expected_fi_chance = m0 / hy;
+    stats.rfi = stats.fi - stats.expected_fi_chance;
+    stats
 }
 
 /// Per-value (count, first row) tallies for one determinant key.
@@ -327,11 +499,12 @@ fn fd_finding(
     table: &TypedTable,
     lhs: &[usize],
     rhs: usize,
-    violations: usize,
-    n_used: usize,
     sampled: bool,
     rows: &[u32],
+    stats: &FdStats,
 ) -> Finding {
+    let violations = stats.violations;
+    let n_used = stats.n_used;
     let lhs_names: Vec<&str> = lhs.iter().map(|&i| table.names[i].as_str()).collect();
     let rhs_name = &table.names[rhs];
     let mut subject = BTreeMap::new();
@@ -340,6 +513,15 @@ fn fd_finding(
     let mut evidence = BTreeMap::new();
     evidence.insert("violations".to_string(), json!(violations));
     evidence.insert("n_used".to_string(), json!(n_used));
+    // Chance correction (see fd_stats): the fraction of the
+    // target's information the determinant explains, the fraction
+    // chance agreement predicts, and the difference.
+    evidence.insert("fi".to_string(), json!(stats.fi));
+    evidence.insert(
+        "expected_fi_chance".to_string(),
+        json!(stats.expected_fi_chance),
+    );
+    evidence.insert("rfi".to_string(), json!(stats.rfi));
     let conf = EvidenceBasis::Measured;
     evidence.insert("sampled".into(), json!(sampled));
     evidence.insert("population_rows".into(), json!(table.n));
@@ -390,7 +572,14 @@ fn fd_finding(
                 n_used
             ),
             conf,
-            0.5 + 0.35 * breadth,
+            // The lower of the breadth score and the reliable
+            // fraction of information: where breadth already gives
+            // the lower value (every low-cardinality lookup FD) the
+            // score is unchanged; the RFI term binds only where
+            // chance agreement is doing the work, so a determinant
+            // no finer than the agreement it produces is not
+            // rewarded for its distinct count.
+            (0.5 + 0.35 * breadth).min(stats.rfi.clamp(0.0, 1.0)),
             evidence,
             Some(format!(
                 "inspect the mapping and its scope before treating {rhs_name} as derived"
@@ -416,7 +605,10 @@ fn fd_finding(
                 n_used
             ),
             conf,
-            0.72,
+            // Capped by the reliable fraction of information, like
+            // the exact score: an approximate dependency whose
+            // agreement chance predicts scores near zero.
+            0.72f64.min(stats.rfi.clamp(0.0, 1.0)),
             evidence,
             Some(format!(
                 "{} is almost determined by {}; inspect the {} violations",
@@ -513,6 +705,7 @@ pub fn discover(
     }
     let mut all_cands = Vec::new();
     let mut screened_pairs = 0usize;
+    let mut triple_targets = 0usize;
     for &rhs in &rhs_pool {
         let ranked = &mut scores[rhs];
         screened_pairs += ranked.len();
@@ -543,6 +736,20 @@ pub fn discover(
             local_cands.extend(candidates);
             local_cands.extend(approximate);
         }
+        // Standard-tier size-3 step: deep searches three-column
+        // determinants everywhere; at the standard size cap of 2, a
+        // target no exact FD explains gets the size-3 step on its
+        // own, from the same shortlisted pool deep uses.
+        if cfg.max_lhs_size == 2 && known_exact.is_empty() {
+            triple_targets += 1;
+            let pool = level3_pool(&known_exact, &lhs_slots, cfg.lhs3_cap);
+            let sets = combinations(&pool, 3);
+            let (exact, candidates, approximate) =
+                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg);
+            known_exact.extend(exact);
+            local_cands.extend(candidates);
+            local_cands.extend(approximate);
+        }
         all_cands.extend(local_cands.into_iter().map(|candidate| Cand {
             lhs: candidate.lhs.iter().map(|&slot| hash_cols[slot]).collect(),
             rhs,
@@ -550,44 +757,53 @@ pub fn discover(
     }
 
     // ---- exact verification of all candidates (parallel) ----
-    let verified: Vec<Option<(usize, usize)>> = all_cands
+    let verified: Vec<Option<FdStats>> = all_cands
         .par_iter()
         .map(|c| {
-            let lhs_orig: Vec<usize> = c.lhs.clone();
-            let rhs_orig = c.rhs;
-            let (n_used, violations) = verify_fd(table, &rows, &lhs_orig, rhs_orig);
-            if n_used < 30 {
+            let stats = fd_stats(table, &rows, &c.lhs, c.rhs);
+            if stats.n_used < 30 {
                 return None;
             }
-            Some((n_used, violations))
+            Some(stats)
         })
         .collect();
 
     // ---- classification ----
+    // Approximate candidates are selected per target by the
+    // reliable fraction of information, not by violation rate: a
+    // refinement whose lower violation count is what chance
+    // predicts for its smaller groups scores lower, not higher,
+    // so an unrelated column cannot join the determinant by
+    // splitting groups (issue #128). Ties fall to the smaller
+    // determinant, then to the lower violation rate.
+    type AfdBest = (f64, f64, Vec<usize>, FdStats);
     let mut exact_fds: Vec<(Vec<usize>, usize)> = Vec::new();
-    let mut best_afd: FxHashMap<usize, (f64, Vec<usize>, usize, usize)> = FxHashMap::default();
+    let mut best_afd: FxHashMap<usize, AfdBest> = FxHashMap::default();
     for (cand, v) in all_cands.iter().zip(verified) {
-        let Some((n_used, violations)) = v else {
+        let Some(stats) = v else {
             continue;
         };
         let lhs_orig: Vec<usize> = cand.lhs.clone();
         let rhs_orig = cand.rhs;
-        if violations == 0 {
+        if stats.violations == 0 {
             out.findings.push(fd_finding(
-                table, &lhs_orig, rhs_orig, 0, n_used, sampled, &rows,
+                table, &lhs_orig, rhs_orig, sampled, &rows, &stats,
             ));
             exact_fds.push((lhs_orig, rhs_orig));
         } else {
-            let g1 = violations as f64 / n_used as f64;
+            let g1 = stats.violations as f64 / stats.n_used as f64;
             if g1 <= cfg.afd_g1_max {
                 let better = match best_afd.get(&rhs_orig) {
-                    Some((g, l, _, _)) => {
-                        g1 < *g - 1e-12 || (g1 < *g + 1e-12 && lhs_orig.len() < l.len())
+                    Some((r, g, l, _)) => {
+                        stats.rfi > *r + 1e-12
+                            || ((stats.rfi - *r).abs() <= 1e-12
+                                && (lhs_orig.len() < l.len()
+                                    || (lhs_orig.len() == l.len() && g1 < *g - 1e-12)))
                     }
                     None => true,
                 };
                 if better {
-                    best_afd.insert(rhs_orig, (g1, lhs_orig, violations, n_used));
+                    best_afd.insert(rhs_orig, (stats.rfi, g1, lhs_orig, stats));
                 }
             }
         }
@@ -596,14 +812,14 @@ pub fn discover(
     // An exact refinement (X, Z -> Y) does not explain away exceptions
     // to a simpler dependency (X ~> Y). Suppress only AFDs already implied
     // by an exact dependency on a subset of their own determinant.
-    type AfdEntry = (usize, (f64, Vec<usize>, usize, usize));
+    type AfdEntry = (usize, AfdBest);
     let mut afd_sorted: Vec<AfdEntry> = best_afd.into_iter().collect();
     afd_sorted.sort_by(|a, b| {
         a.0.cmp(&b.0)
             .then_with(|| a.1 .0.total_cmp(&b.1 .0))
-            .then_with(|| a.1 .1.cmp(&b.1 .1))
+            .then_with(|| a.1 .2.cmp(&b.1 .2))
     });
-    for (rhs_orig, (_g1, lhs_orig, violations, n_used)) in afd_sorted {
+    for (rhs_orig, (_rfi, _g1, lhs_orig, stats)) in afd_sorted {
         if exact_fds
             .iter()
             .any(|(lhs, rhs)| *rhs == rhs_orig && lhs.iter().all(|c| lhs_orig.contains(c)))
@@ -611,7 +827,7 @@ pub fn discover(
             continue;
         }
         out.findings.push(fd_finding(
-            table, &lhs_orig, rhs_orig, violations, n_used, sampled, &rows,
+            table, &lhs_orig, rhs_orig, sampled, &rows, &stats,
         ));
         out.n_afd += 1;
     }
@@ -629,6 +845,17 @@ pub fn discover(
         rows.len(), if sampled { "stratified sample" } else { "full" },
     );
     cov.push_str(&format!("; {} exact FDs, {} AFDs; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, cfg.key_pair_cap));
+    if triple_targets > 0 {
+        cov.push_str(&format!(
+            "; size-3 determinants screened for {} of {} targets with no exact FD at size <= {} (standard-tier step)",
+            triple_targets, n_eligible_rhs, cfg.max_lhs_size
+        ));
+    }
+    if out.triple_key_search {
+        cov.push_str(
+            "; no 1- or 2-column key exists, so 3-column key combinations were screened (standard-tier step)",
+        );
+    }
     out.coverage = cov;
 
     out
@@ -847,6 +1074,8 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
     }
     // Three columns are tried when two found no key. Too many combinations
     // for the row count would be unique by chance, so they don't qualify.
+    // Below the size-3 cap this search is the standard-tier size-3
+    // key step, and `triple_key_search` discloses that it ran.
     if cfg.max_lhs_size >= 3 || composite.is_empty() {
         let base: Vec<usize> = ranked
             .iter()
@@ -857,6 +1086,9 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             })
             .take(12)
             .collect();
+        if cfg.max_lhs_size < 3 && base.len() >= 3 {
+            out.triple_key_search = true;
+        }
         let position = |c: usize| ranked.iter().position(|&x| x == c);
         for comb in combinations(&base, 3) {
             let cells: f64 = comb.iter().map(|&c| info[c].distinct as f64).product();
@@ -1125,5 +1357,213 @@ mod tests {
         let out = discover(&table, &info, &FdConfig::default(), &[]);
         assert!(out.composite_uccs.iter().any(|u| u.len() == 2));
         assert!(out.single_unique.is_empty());
+    }
+    #[test]
+    fn chance_cell_matches_brute_force() {
+        // The mode-recurrence expectation against an explicit
+        // hypergeometric pmf sum over the full support.
+        fn brute(a: u64, b: u64, n: u64) -> f64 {
+            let (af, bf, nf) = (a as f64, b as f64, n as f64);
+            let lo = (a + b).saturating_sub(n);
+            let hi = a.min(b);
+            // lf[x] = ln(x!) by prefix sums (computed once).
+            let mut lf = vec![0.0f64; (n + 1) as usize];
+            for i in 1..=n as usize {
+                lf[i] = lf[i - 1] + (i as f64).ln();
+            }
+            let log_c = |x: u64| -> f64 { lf[x as usize] };
+            let log_pmf = |k: u64| -> f64 {
+                log_c(b) - log_c(k) - log_c(b - k) + log_c(n - b)
+                    - log_c(a - k)
+                    - log_c(n - b - a + k)
+                    - (log_c(n) - log_c(a) - log_c(n - a))
+            };
+            let mut total = 0.0;
+            for k in lo..=hi {
+                if k == 0 {
+                    continue;
+                }
+                let kf = k as f64;
+                total += log_pmf(k).exp() * (kf / nf) * (kf * nf / (af * bf)).ln();
+            }
+            total
+        }
+        let mut cache = FxHashMap::default();
+        for &(a, b, n) in &[
+            (1u64, 1u64, 10u64),
+            (3, 7, 50),
+            (10, 10, 100),
+            (104, 625, 5000),
+            (500, 44_000, 48_842),
+            (2000, 3000, 5000),
+        ] {
+            let got = chance_cell(a, b, n, &mut cache);
+            let want = brute(a, b, n);
+            assert!(
+                (got - want).abs() < 1e-9 * want.abs().max(1.0),
+                "a={a} b={b} n={n}: recurrence {got} vs brute force {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn rfi_ranks_true_determinant_above_noise_refinement() {
+        // 48 zips x 104 rows; zip 5 is split 60/40 between two
+        // states (about 0.84% violations of zip -> state). The
+        // noise column (top bits of a multiplicative hash of the
+        // row index) is unrelated; splitting zip 5 by it makes the
+        // flipped rows the majority in some cells, which lowers
+        // the violation count by chance, so violation rate alone
+        // prefers the pair and RFI must not.
+        let n = 48 * 104;
+        let mut zip: Vec<Option<i64>> = Vec::new();
+        let mut state: Vec<Option<i64>> = Vec::new();
+        let mut noise: Vec<Option<i64>> = Vec::new();
+        for i in 0..n {
+            let z = (i / 104) as i64;
+            zip.push(Some(z));
+            let mut s = z % 8;
+            if z == 5 && i % 5 < 2 {
+                s = (s + 1) % 8;
+            }
+            state.push(Some(s));
+            let h = (i as u32).wrapping_mul(2_654_435_761) >> 29;
+            noise.push(Some((h % 8) as i64));
+        }
+        let df = df! {
+            "zip" => zip,
+            "state" => state,
+            "noise" => noise,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let rows: Vec<u32> = (0..n as u32).collect();
+        let zip_i = table.names.iter().position(|x| x == "zip").unwrap();
+        let state_i = table.names.iter().position(|x| x == "state").unwrap();
+        let noise_i = table.names.iter().position(|x| x == "noise").unwrap();
+        let single = fd_stats(&table, &rows, &[zip_i], state_i);
+        let pair = fd_stats(&table, &rows, &[zip_i, noise_i], state_i);
+        assert!(single.violations > 0 && single.violations <= 50);
+        assert!(
+            pair.violations < single.violations,
+            "the chance refinement must show the lower violation count \
+             ({} vs {}) for this test to test anything",
+            pair.violations,
+            single.violations
+        );
+        assert!(
+            single.rfi > pair.rfi + 0.05,
+            "RFI must separate them: single {} vs pair {}",
+            single.rfi,
+            pair.rfi
+        );
+        // And discovery reports the single-column statement.
+        let out = discover(&table, &info_for(&table), &FdConfig::default(), &[]);
+        let afd = out
+            .findings
+            .iter()
+            .find(|f| f.subject.target.as_deref() == Some("state"))
+            .expect("the planted AFD must be reported");
+        assert_eq!(afd.subject.inputs, vec!["zip"]);
+    }
+
+    #[test]
+    fn near_unique_exact_fd_has_rfi_near_zero() {
+        // Exact FD on a determinant with 4,500 distinct values over
+        // 5,000 rows: agreement is what chance predicts.
+        let n = 5000;
+        let det: Vec<Option<i64>> = (0..n).map(|i| Some((i % 4500) as i64)).collect();
+        let target: Vec<Option<i64>> = (0..n)
+            .map(|i| Some((((i % 4500) * 7) % 6) as i64))
+            .collect();
+        let df = df! {
+            "det" => det,
+            "target" => target,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let rows: Vec<u32> = (0..n as u32).collect();
+        let stats = fd_stats(&table, &rows, &[0], 1);
+        assert_eq!(stats.violations, 0);
+        assert!(stats.fi > 0.99, "exact FD: fi {}", stats.fi);
+        assert!(
+            stats.rfi < 0.15,
+            "chance-level RFI expected, got {}",
+            stats.rfi
+        );
+    }
+
+    #[test]
+    fn triple_key_triggers_at_standard_budget() {
+        // (a, b, c) jointly identify rows; no single column or pair
+        // does. The standard-tier step must run and disclose itself.
+        let i: Vec<i64> = (0..1000).collect();
+        let df = df! {
+            "a" => i.iter().map(|v| v % 10).collect::<Vec<_>>(),
+            "b" => i.iter().map(|v| (v / 10) % 10).collect::<Vec<_>>(),
+            "c" => i.iter().map(|v| (v / 100) % 10).collect::<Vec<_>>(),
+            "val" => i.iter().map(|v| (v % 7) as f64).collect::<Vec<_>>(),
+        }
+        .unwrap();
+        let table = extract(&df);
+        let out = discover(&table, &info_for(&table), &FdConfig::default(), &[]);
+        assert!(out.triple_key_search, "the size-3 key step must have run");
+        assert!(
+            out.composite_uccs.iter().any(|u| u.len() == 3),
+            "uccs: {:?}",
+            out.composite_uccs
+        );
+    }
+
+    #[test]
+    fn single_column_key_does_not_trigger_triple_search() {
+        let id: Vec<Option<i64>> = (0..500).map(Some).collect();
+        let grp: Vec<Option<i64>> = (0..500).map(|i| Some(i % 7)).collect();
+        let df = df! {
+            "row_id" => id,
+            "grp" => grp,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let out = discover(&table, &info_for(&table), &FdConfig::default(), &[]);
+        assert!(!out.triple_key_search);
+        assert!(out.composite_uccs.is_empty());
+    }
+
+    #[test]
+    fn triple_fd_triggers_at_standard_budget() {
+        // d = (a + b + c) % 4: no pair determines d, the triple
+        // does, and the triple is not a key.
+        let i: Vec<i64> = (0..5000).collect();
+        let a: Vec<i64> = i.iter().map(|v| v % 10).collect();
+        let b: Vec<i64> = i.iter().map(|v| (v / 10) % 10).collect();
+        let c: Vec<i64> = i.iter().map(|v| (v / 100) % 10).collect();
+        let d: Vec<i64> = a
+            .iter()
+            .zip(&b)
+            .zip(&c)
+            .map(|((x, y), z)| (x + y + z) % 4)
+            .collect();
+        let df = df! {
+            "a" => a,
+            "b" => b,
+            "c" => c,
+            "d" => d,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let out = discover(&table, &info_for(&table), &FdConfig::default(), &[]);
+        assert!(
+            out.exact_fds
+                .iter()
+                .any(|(lhs, rhs)| *rhs == 3 && lhs.len() == 3),
+            "exact FDs: {:?}",
+            out.exact_fds
+        );
+        assert!(
+            out.coverage.contains("size-3 determinants screened for"),
+            "coverage must disclose the step: {}",
+            out.coverage
+        );
     }
 }
