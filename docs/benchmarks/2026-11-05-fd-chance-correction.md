@@ -224,3 +224,45 @@ dependence, interaction, surprise, or breaks measurement.
 - The RFI expectation is exact (no sampling): the harness
   cross-check of the hypergeometric mode recurrence against the
   closed form passed during implementation.
+
+## Amendment, 6 November 2026: verification cost and screen-sample near-uniqueness
+
+**Cost of the chance term.** `fd_stats` summed the chance expectation over every
+(determinant group, target value) cell: O(groups × target values), which grows with the
+square of the rows when both sides are near-unique. The term depends on a cell only
+through its margins, so it is now summed over the distinct group sizes and distinct
+target counts, weighted by how many groups and values carry each (at most about
+sqrt(2n) of each). The result is unchanged; a unit test compares it with the cell-by-cell
+sum. On a (store, product) → price table with 20,000 rows and 10,816 cells, the FD pass
+took 228 ms before and 11 ms after.
+
+**Determinants dismissed on the screen sample.** The level search dropped any
+determinant whose groups numbered at least 95% of the 2,048 screen rows, treating it as
+an approximate key. A determinant can look near-unique on 2,048 rows and still be far
+from unique on the full table: (store, product) with 200 levels each has at most 40,000
+combinations, so over 50,000 rows it is a real determinant, and the exact FD
+(store, product) → price was not reported at all. Such a determinant is now dismissed
+only when the product of its columns' distinct counts reaches 95% of the verification
+rows. Otherwise it goes to exact verification on the full rows, and its exactness on the
+screen sample, which is trivial there, does not prune other candidates.
+
+| Table | Before | After |
+|---|---|---|
+| (store, product) → price, 50,000 rows, 28,564 cells | not reported | exact, 0 violations |
+| (store, product) → price, 200,000 rows, 114,226 cells | not reported | exact, 0 violations; FD pass 105 ms |
+
+The second row would have cost about 1.3 × 10^10 cell terms under the old chance sum.
+
+Corpus: the six new statements are on Metro traffic, on `date_time` (40,575 distinct
+values in 48,204 rows). The hours recorded twice agree exactly on traffic_volume,
+holiday and snow_1h, and nearly on temp (89 violations), rain_1h (13) and clouds_all
+(34). The Metro findings-count guard moves from 64 to 70. AdventureWorks reselects
+between two determinants tied at 6 violations: (subtotal, online_order_flag) replaces
+(subtotal, ship_method_id) for freight and total_due. No other functional statement in
+the corpus changes (167 before, 173 after).
+
+**Coverage status.** The pass's coverage entry read `capped` on every run. It now reads
+`capped` only when a cap removed something from the search (the per-target determinant
+shortlist, the size-3 pool, or the composite-key verification budget), and the detail
+names each cap that bound. Otherwise it reads `ran_sampled` when verification used a
+row sample, and `ran_exact` when it used every row.

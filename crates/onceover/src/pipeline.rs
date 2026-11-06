@@ -433,7 +433,13 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "functional_dependencies".into(),
-                    PassInfo::capped(format!("{}{}", d.coverage, exclusion_note)),
+                    if !d.caps_bound.is_empty() {
+                        PassInfo::capped(format!("{}{}", d.coverage, exclusion_note))
+                    } else if d.sampled {
+                        PassInfo::sampled(format!("{}{}", d.coverage, exclusion_note))
+                    } else {
+                        PassInfo::ran(format!("{}{}", d.coverage, exclusion_note))
+                    },
                 );
                 let k = analyze_keys(&info, &d);
                 let mut d = d;

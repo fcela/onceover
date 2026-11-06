@@ -71,6 +71,13 @@ pub struct DepsOutcome {
     /// True when the standard-tier size-3 key step ran (no 1- or
     /// 2-column key existed, so 3-column combinations were screened).
     pub triple_key_search: bool,
+    /// The search caps that bound this run, in the order they
+    /// apply (empty when no cap removed anything from the search):
+    /// the per-target determinant shortlist, the size-3 pool, and
+    /// the composite-key verification budget.
+    pub caps_bound: Vec<String>,
+    /// Verification ran on a stratified row sample, not all rows.
+    pub sampled: bool,
     pub n_exact: usize,
     pub n_afd: usize,
     pub coverage: String,
@@ -258,8 +265,14 @@ pub fn fd_stats(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) -> 
         return stats;
     }
     let mut mi = 0.0f64;
-    let mut m0 = 0.0f64;
-    let mut cache: FxHashMap<(u64, u64), f64> = FxHashMap::default();
+    // The chance term depends on a cell only through its margins
+    // (a, b), so it is summed over the distinct margin values
+    // weighted by how many groups and target values carry them:
+    // O(distinct group sizes x distinct target counts) instead of
+    // O(groups x target values), which grows with the square of
+    // the rows when both sides are near-unique. There are at most
+    // about sqrt(2n) distinct values of each margin.
+    let mut group_sizes: std::collections::BTreeMap<u64, u64> = Default::default();
     for m in groups.values() {
         let a: u64 = m.values().map(|&c| c as u64).sum();
         for (v, &c) in m {
@@ -267,8 +280,18 @@ pub fn fd_stats(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) -> 
             let c = c as f64;
             mi += (c / n) * (c * n / (a as f64 * b as f64)).ln();
         }
-        for &b in target_totals.values() {
-            m0 += chance_cell(a, b, stats.n_used as u64, &mut cache);
+        *group_sizes.entry(a).or_insert(0) += 1;
+    }
+    let mut target_counts: std::collections::BTreeMap<u64, u64> = Default::default();
+    for &b in target_totals.values() {
+        *target_counts.entry(b).or_insert(0) += 1;
+    }
+    let mut m0 = 0.0f64;
+    let mut cache: FxHashMap<(u64, u64), f64> = FxHashMap::default();
+    for (&a, &groups_with_a) in &group_sizes {
+        for (&b, &values_with_b) in &target_counts {
+            m0 += (groups_with_a * values_with_b) as f64
+                * chance_cell(a, b, stats.n_used as u64, &mut cache);
         }
     }
     stats.fi = mi / hy;
@@ -706,9 +729,14 @@ pub fn discover(
     let mut all_cands = Vec::new();
     let mut screened_pairs = 0usize;
     let mut triple_targets = 0usize;
+    let mut shortlist_capped = 0usize;
+    let mut pool3_capped = 0usize;
     for &rhs in &rhs_pool {
         let ranked = &mut scores[rhs];
         screened_pairs += ranked.len();
+        if ranked.len() > cfg.lhs_cap.min(62) {
+            shortlist_capped += 1;
+        }
         ranked.sort_by(|a, b| {
             a.1.total_cmp(&b.1)
                 .then(info[a.0].distinct.cmp(&info[b.0].distinct))
@@ -721,17 +749,24 @@ pub fn discover(
         let refs: Vec<_> = hash_cols.iter().map(|&c| &table.cols[c]).collect();
         let ch = build_hashes(&refs, &screen_rows);
         let lhs_slots: Vec<_> = (0..rhs_slot).collect();
+        let reach = SetReach {
+            distinct: hash_cols.iter().map(|&c| info[c].distinct).collect(),
+            rows: rows.len(),
+        };
         let mut known_exact = FxHashSet::default();
         let mut local_cands = Vec::new();
         for level in 1..=cfg.max_lhs_size {
             let pool = if level >= 3 {
+                if lhs_slots.len() > cfg.lhs3_cap {
+                    pool3_capped += 1;
+                }
                 level3_pool(&known_exact, &lhs_slots, cfg.lhs3_cap)
             } else {
                 lhs_slots.clone()
             };
             let sets = combinations(&pool, level);
             let (exact, candidates, approximate) =
-                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg);
+                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg, &reach);
             known_exact.extend(exact);
             local_cands.extend(candidates);
             local_cands.extend(approximate);
@@ -742,10 +777,13 @@ pub fn discover(
         // own, from the same shortlisted pool deep uses.
         if cfg.max_lhs_size == 2 && known_exact.is_empty() {
             triple_targets += 1;
+            if lhs_slots.len() > cfg.lhs3_cap {
+                pool3_capped += 1;
+            }
             let pool = level3_pool(&known_exact, &lhs_slots, cfg.lhs3_cap);
             let sets = combinations(&pool, 3);
             let (exact, candidates, approximate) =
-                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg);
+                run_level(&sets, &[rhs_slot], &ch, &known_exact, cfg, &reach);
             known_exact.extend(exact);
             local_cands.extend(candidates);
             local_cands.extend(approximate);
@@ -837,6 +875,28 @@ pub fn discover(
 
     // ---- UCCs ----
     discover_uccs(table, info, cfg, &mut out);
+    out.sampled = sampled;
+    if shortlist_capped > 0 {
+        out.caps_bound.insert(
+            0,
+            format!(
+                "determinant shortlist cap {} bound for {} of {} targets",
+                cfg.lhs_cap.min(62),
+                shortlist_capped,
+                n_eligible_rhs
+            ),
+        );
+    }
+    if pool3_capped > 0 {
+        let at = usize::from(shortlist_capped > 0);
+        out.caps_bound.insert(
+            at,
+            format!(
+                "size-3 pool cap {} bound for {} targets",
+                cfg.lhs3_cap, pool3_capped
+            ),
+        );
+    }
 
     // ---- coverage ----
     let mut cov = format!(
@@ -850,6 +910,9 @@ pub fn discover(
             "; size-3 determinants screened for {} of {} targets with no exact FD at size <= {} (standard-tier step)",
             triple_targets, n_eligible_rhs, cfg.max_lhs_size
         ));
+    }
+    if !out.caps_bound.is_empty() {
+        cov.push_str(&format!("; caps bound: {}", out.caps_bound.join("; ")));
     }
     if out.triple_key_search {
         cov.push_str(
@@ -910,12 +973,33 @@ fn level3_pool(
 
 /// Evaluate one level of LHS sets against all RHS candidates.
 /// Returns (new exact (rhs, lhs-mask) pairs, exact candidates, afd candidates).
+/// What the full verification rows can hold for a determinant set:
+/// each shortlisted slot's distinct count over the table, and the
+/// number of verification rows.
+struct SetReach {
+    distinct: Vec<usize>,
+    rows: usize,
+}
+
+impl SetReach {
+    /// Whether the set can be near-unique on the verification rows:
+    /// its value combinations number at most the product of its
+    /// columns' distinct counts.
+    fn can_be_near_unique(&self, lhs: &[usize]) -> bool {
+        let combos = lhs
+            .iter()
+            .fold(1.0f64, |acc, &slot| acc * self.distinct[slot] as f64);
+        combos >= 0.95 * self.rows as f64
+    }
+}
+
 fn run_level(
     sets: &[Vec<usize>],
     rhs_slots: &[usize],
     ch: &ColHashes,
     known_exact: &FxHashSet<(usize, u64)>,
     cfg: &FdConfig,
+    reach: &SetReach,
 ) -> (Vec<(usize, u64)>, Vec<Cand>, Vec<Cand>) {
     type LevelRow = Vec<Option<(usize, bool, usize, usize, usize)>>;
     let results: Vec<LevelRow> = sets
@@ -948,7 +1032,26 @@ fn run_level(
             // A near-unique LHS (approximate composite key) trivially
             // determines every RHS — that is the key story, not K spurious
             // "X, Y -> everything" findings.
+            //
+            // Near-uniqueness on the screen sample only carries over
+            // when the full rows can hold that many combinations. Two
+            // 200-level columns are near-unique on 2,048 sampled rows
+            // and hold at most 40,000 combinations over 50,000 rows,
+            // so there they are a real determinant: the candidate goes
+            // to exact verification on the full rows. Its screen-level
+            // exactness is trivial, so it is not recorded as a known
+            // exact FD and prunes nothing.
             if n_groups as f64 >= 0.95 * n_used as f64 {
+                if reach.can_be_near_unique(lhs) {
+                    continue;
+                }
+                let g1 = violations as f64 / n_used.max(1) as f64;
+                if exact || g1 <= cfg.afd_g1_max {
+                    afd_cands.push(Cand {
+                        lhs: lhs.clone(),
+                        rhs,
+                    });
+                }
                 continue;
             }
             let bits = mask_of(lhs);
@@ -1065,6 +1168,13 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             .then(info[a].name.cmp(&info[c].name))
             .then(info[b].name.cmp(&info[d].name))
     });
+    if candidates.len() > cfg.key_pair_cap {
+        out.caps_bound.push(format!(
+            "composite-key verification cap {} bound ({} candidate pairs)",
+            cfg.key_pair_cap,
+            candidates.len()
+        ));
+    }
     candidates.truncate(cfg.key_pair_cap);
     let mut composite = Vec::new();
     for (a, b) in candidates {
@@ -1465,6 +1575,54 @@ mod tests {
             .find(|f| f.subject.target.as_deref() == Some("state"))
             .expect("the planted AFD must be reported");
         assert_eq!(afd.subject.inputs, vec!["zip"]);
+    }
+
+    #[test]
+    fn chance_term_over_margins_matches_the_cell_sum() {
+        // The margin-grouped chance term must equal the sum over
+        // every (group, target value) cell, on a table with repeated
+        // group sizes and repeated target counts.
+        let n = 3000usize;
+        let mut state: u64 = 7;
+        let mut next = |m: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % m
+        };
+        let det: Vec<i64> = (0..n).map(|_| next(400) as i64).collect();
+        let target: Vec<i64> = det.iter().map(|&d| (d * 3 + next(5) as i64) % 97).collect();
+        let df = df! { "det" => det.clone(), "target" => target.clone() }.unwrap();
+        let table = extract(&df);
+        let rows: Vec<u32> = (0..n as u32).collect();
+        let stats = fd_stats(&table, &rows, &[0], 1);
+        let mut group_size: FxHashMap<i64, u64> = FxHashMap::default();
+        let mut target_count: FxHashMap<i64, u64> = FxHashMap::default();
+        for (&d, &t) in det.iter().zip(&target) {
+            *group_size.entry(d).or_insert(0) += 1;
+            *target_count.entry(t).or_insert(0) += 1;
+        }
+        let mut cache = FxHashMap::default();
+        let mut m0 = 0.0;
+        for &a in group_size.values() {
+            for &b in target_count.values() {
+                m0 += chance_cell(a, b, n as u64, &mut cache);
+            }
+        }
+        let hy: f64 = target_count
+            .values()
+            .map(|&b| {
+                let p = b as f64 / n as f64;
+                -p * p.ln()
+            })
+            .sum();
+        let expected = m0 / hy;
+        assert!(
+            (stats.expected_fi_chance - expected).abs() < 1e-9,
+            "{} vs {}",
+            stats.expected_fi_chance,
+            expected
+        );
     }
 
     #[test]
