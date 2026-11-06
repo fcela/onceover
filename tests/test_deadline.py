@@ -3,17 +3,24 @@
 Stage 1 bounded the memory of the wide searches; the deadline,
 however, used to be consulted only between passes, so one
 expensive pass could overrun the caller's budget by its whole
-runtime. These tests run synthetic frames sized so the
-dependence screen, the hotspots scan, and the discontinuities
-pass each overrun a short deadline, and assert that the pass
-stops near the budget and that its coverage entry discloses how
-much of the search space was examined. The examined counts are
-timing-dependent by nature (the deadline is the documented
-opt-in source of nondeterminism), so the assertions pin the
-disclosure's shape and the examined < total inequality, not
-exact counts; the exact-prefix determinism of the examined set
-under a deterministic stop predicate is pinned by the Rust
-unit tests in onceover-mines.
+runtime. These tests assert that a stop is disclosed in the
+pass's coverage entry with the examined share of its search
+space.
+
+The three stop tests use an already-expired deadline
+(`deadline_seconds=0.0`). The passes that poll the deadline
+inside their own loops (dependence screen, hotspots,
+discontinuities) are dispatched even then, stop at their first
+work quantum, and record the stop with 0 examined — so the
+exact disclosure strings are deterministic at any machine
+speed and are pinned verbatim. (They originally used a 2 s
+deadline and needed each pass to still be running when it
+expired; on an idle machine the fixtures finish inside 2 s and
+the stop never engaged.) A stop that lands mid-pass remains
+timing-dependent in *where* it lands; the examined set is
+always a prefix of the pass's deterministic enumeration order,
+and that property is pinned by the Rust unit tests in
+onceover-mines with a counting stop predicate.
 """
 
 import time
@@ -45,52 +52,62 @@ def _float_frame(n_cols: int, n_rows: int) -> pl.DataFrame:
     return pl.DataFrame(data)
 
 
-def test_dependence_screen_stops_inside_stage1_and_discloses():
+def test_dependence_screen_stops_at_first_quantum_and_discloses():
     df = _int_frame(1200, 100)
     t0 = time.time()
     report = onceover.profile(
-        df, detectors=["numeric_dependence"], deadline_seconds=2.0
+        df, detectors=["numeric_dependence"], deadline_seconds=0.0
     )
     wall = time.time() - t0
     entry = report.data["coverage"]["dependence_screen"]
     assert entry["status"] == "capped", entry
-    assert "stage-1 screening stopped at the deadline in its" in entry["detail"]
-    assert "of 719400 pairs" in entry["detail"]
-    # The unbounded screen takes several times the deadline on
-    # this fixture; the stopped run must land near the budget,
-    # not near the unbounded runtime.
+    assert entry["detail"] == (
+        "0 of 719400 numeric pairs (deadline); stage-1 screening "
+        "stopped at the deadline in its first pass after 0 of 719400 "
+        "pairs; survivor selection needs the complete screen, so no "
+        "pairs were selected and no detailed statistics were "
+        "computed; 0 strong pairwise, 0 redundancy links"
+    ), entry
     assert wall < 12.0, wall
     # The between-pass machinery also records the deadline.
     assert "deadline" in report.data["coverage"]
 
 
-def test_hotspots_scan_stops_mid_enumeration_and_discloses():
+def test_hotspots_scan_stops_at_first_combination_and_discloses():
     df = _int_frame(600, 2000)
     t0 = time.time()
-    report = onceover.profile(df, detectors=["hotspots"], deadline_seconds=2.0)
+    report = onceover.profile(df, detectors=["hotspots"], deadline_seconds=0.0)
     wall = time.time() - t0
     entry = report.data["coverage"]["hotspots"]
     assert entry["status"] == "capped", entry
-    assert "of 179700 pair combinations examined" in entry["detail"]
-    assert "deadline stopped the scan" in entry["detail"]
-    # The stop lands in pair evaluation on this fixture, and a
-    # partial pair screen selects no triples: their selection
-    # spends the completed screen's pre-scores.
-    assert "triples were not selected or examined" in entry["detail"]
+    assert entry["detail"] == (
+        "600 eligible columns, 0 of 179700 pair combinations "
+        "examined, 0 of 14555700 pair cells examined before the "
+        "deadline stopped the scan; triples were not selected or "
+        "examined — selection needs the complete pair screen; "
+        "counts over the encoded sample of 2000 rows"
+    ), entry
     assert wall < 12.0, wall
 
 
-def test_discontinuities_pass_stops_mid_pass_and_discloses():
+def test_discontinuities_pass_stops_before_first_target_and_discloses():
     df = _float_frame(80, 8000)
     t0 = time.time()
     report = onceover.profile(
-        df, detectors=["discontinuities"], deadline_seconds=2.0
+        df, detectors=["discontinuities"], deadline_seconds=0.0
     )
     wall = time.time() - t0
     entry = report.data["coverage"]["discontinuities"]
     assert entry["status"] == "capped", entry
-    assert "deadline reached mid-pass" in entry["detail"]
-    assert "of 80 targets fully screened" in entry["detail"]
+    assert entry["detail"] == (
+        "0 numeric targets screened over 0 axis units and 0 "
+        "diagonal units (16 directions x pairs); 0 candidates "
+        "flagged on the evaluation half (|z| >= 2, held-out gain "
+        "> 0), 0 of the typed leaders rejected as steep smooth "
+        "transitions; 0 jumps reported; deadline reached mid-pass: "
+        "0 of 80 targets fully screened, 0 stopped mid-screen "
+        "(findings withheld), 80 not started"
+    ), entry
     assert wall < 12.0, wall
 
 

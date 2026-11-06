@@ -115,9 +115,10 @@ float64; floats standard normal with a planted step in column
 this 4-core VM while it was otherwise idle. The stopped walls
 and disclosures were measured in the same session while a
 release build ran on the same VM: at idle speeds the
-dependence fixture finishes inside its 2 s deadline (and the
-Python stop tests behave the same way — see the verification
-status), so a stop engages only once the machine is loaded,
+dependence fixture finishes inside its 2 s deadline (the
+Python stop tests originally relied on the same race — see
+the follow-up below), so a stop engages only once the machine
+is loaded,
 which is also when a deadline matters. Read the stopped
 column as "the deadline plus one quantum of work under load",
 not as a benchmark.
@@ -186,14 +187,102 @@ pass (5). The corpus identity run above was repeated on this
 tree: 23 of 23 identical. The Python suite passes
 `tests/test_deadline.py` (4 tests) under ordinary build load,
 and the full suite runs 413 passed, 4 skipped on this tree's
-release build; two of the deadline module's stop tests are
+release build; two of the deadline module's stop tests were
 wall-clock sensitive — on an idle machine their fixtures
 finish inside the 2 s deadline (the dependence fixture's
-unbounded wall above is 1.0 s), so the full-suite run on the
-idle machine records those two as failures while the module
-passes 4 of 4 under load, and the deterministic Rust counting
-tests pin the stop behavior at any machine speed. The strict
+unbounded wall above is 1.0 s), so an idle full-suite run
+recorded those two as failures while the module passed 4 of 4
+under load. The follow-up below removes the race: the stop
+tests now use an already-expired deadline and pin the exact
+stop disclosures at any machine speed, and the deterministic
+Rust counting tests pin the stop behavior inside the passes. The strict
 book build passes on this tree (49 pages, executed with
 `--strict`); the book changes are notebook wording edits
 aligning the deadline description with the behavior specified
 here.
+
+## Follow-up: expired-deadline dispatch
+
+The verification above records the stop tests as wall-clock
+sensitive, and that sensitivity is what failed in continuous
+integration once this stage merged: the wheel jobs failed at
+the Python test step while the Rust checks and the timing
+gate passed. The mechanism is arithmetic, not a code defect
+in the passes. The stop tests set a 2 s deadline; measured
+unbounded on the fixtures, the dependence screen finishes in
+0.91 s and the discontinuities pass in 1.41 s, so on idle
+hardware both complete before the deadline expires and the
+stop assertions fail. The hotspots fixture (2.51 s unbounded)
+carried the same race with a margin of about half a second.
+
+One layer down, the race was structural. The pipeline anchors
+one absolute deadline and consults it before dispatching each
+pass: a pass reached after expiry was recorded as skipped and
+never ran. The three passes that poll the deadline inside
+their own loops therefore produced their stop disclosures
+only when expiry happened to land between dispatch and
+completion. Measured through `profile()` with an
+already-expired deadline (`deadline_seconds=0.0`), the three
+coverage entries were absent from the report entirely; only
+the top-level deadline record remained.
+
+The fix exempts the three self-limiting passes (dependence
+screen, discontinuities, hotspots) from the pre-dispatch
+skip, at both of their dispatch sites in the pipeline. A
+self-limiting pass is now dispatched even when the deadline
+has already expired; its first poll stops it, and its
+coverage entry records the stop with 0 examined and findings
+withheld, exactly as a mid-pass stop does. Every other pass
+keeps the skip record it had, and the deadline latch is
+unchanged: once the deadline has expired, later non-exempt
+passes still skip. With no deadline set, or with a deadline
+that has not expired at dispatch, the dispatch sequence is
+the one the previous code ran.
+
+Measured on the converted fixtures with
+`deadline_seconds=0.0`, each profile call returning in under
+0.25 s:
+
+- Dependence screen, status `capped`: "0 of 719400 numeric
+  pairs (deadline); stage-1 screening stopped at the deadline
+  in its first pass after 0 of 719400 pairs; survivor
+  selection needs the complete screen, so no pairs were
+  selected and no detailed statistics were computed; 0 strong
+  pairwise, 0 redundancy links"
+- Hotspots, status `capped`: "600 eligible columns, 0 of
+  179700 pair combinations examined, 0 of 14555700 pair cells
+  examined before the deadline stopped the scan; triples were
+  not selected or examined — selection needs the complete
+  pair screen; counts over the encoded sample of 2000 rows"
+- Discontinuities, status `capped`: "0 numeric targets
+  screened over 0 axis units and 0 diagonal units (16
+  directions x pairs); 0 candidates flagged on the evaluation
+  half (|z| >= 2, held-out gain > 0), 0 of the typed leaders
+  rejected as steep smooth transitions; 0 jumps reported;
+  deadline reached mid-pass: 0 of 80 targets fully screened,
+  0 stopped mid-screen (findings withheld), 80 not started"
+
+The three Python stop tests now use the already-expired
+deadline and pin those disclosures verbatim; the module
+passes 4 of 4 at any machine speed (three consecutive runs
+recorded). A new Rust integration test pins the same
+behavior through `profile()` at a zero deadline on a smaller
+frame (0 of 45 dependence pairs screened, 0 of 45 hotspot
+combinations examined, 0 of 4 discontinuity targets fully
+screened) and pins two later non-exempt passes (regimes,
+association rules) as still skipped under the same deadline.
+No pre-existing test pinned the old skip behavior for the
+three exempt passes; the tests that pin skip behavior for
+other passes pass unchanged.
+
+Verification on this tree, all on the release build where
+the suite needs one: `cargo test --workspace --locked` runs
+286 passed, 0 failed; `cargo clippy --workspace
+--all-targets --locked -- -D warnings` and `cargo fmt --all
+-- --check` are clean; the release metadata check passes and
+its tests pass (5). The full Python suite runs 427 passed, 4
+skipped. The corpus identity run against the pristine base
+build repeats at 23 of 23 identical, which also covers the
+dispatch exemption's no-deadline equivalence. The strict
+book build passes (49 pages, executed with `--strict`) and
+no rendered book output changes.

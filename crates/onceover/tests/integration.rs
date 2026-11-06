@@ -415,3 +415,66 @@ fn extension_detector_uses_existing_category_and_shared_context() {
         "integer_sequence"
     );
 }
+
+#[test]
+fn expired_deadline_dispatches_self_limiting_passes() {
+    // The three passes that poll the deadline inside their own
+    // loops (dependence screen, hotspots, discontinuities) are
+    // exempt from the between-pass dispatch skip: with an
+    // already-expired deadline each is still dispatched, stops at
+    // its first poll, and records its own stop disclosure (0
+    // examined) instead of vanishing from coverage. Every other
+    // pass keeps the skip record.
+    let mut rng = Rng(7);
+    let mut cols: Vec<Column> = Vec::new();
+    for j in 0..6 {
+        let values: Vec<i64> = (0..400).map(|_| rng.next_range(8) as i64).collect();
+        cols.push(Series::new(format!("i{j}").into(), values).into_column());
+    }
+    for j in 0..4 {
+        let values: Vec<f64> = (0..400).map(|_| rng.next_f64()).collect();
+        cols.push(Series::new(format!("f{j}").into(), values).into_column());
+    }
+    let df = DataFrame::new_infer_height(cols).unwrap();
+    let report = profile(
+        &df,
+        &ProfileConfig {
+            deadline: Some(std::time::Duration::ZERO),
+            ..Default::default()
+        },
+    );
+    let dep = &report.coverage["dependence_screen"];
+    assert_eq!(dep.status, "capped", "{}", dep.detail);
+    assert!(
+        dep.detail
+            .contains("0 of 45 pairs screened before the deadline stopped the pass"),
+        "{}",
+        dep.detail
+    );
+    let hot = &report.coverage["hotspots"];
+    assert_eq!(hot.status, "capped", "{}", hot.detail);
+    assert!(
+        hot.detail.contains("0 of 45 pair combinations examined"),
+        "{}",
+        hot.detail
+    );
+    assert!(
+        hot.detail.contains("deadline stopped the scan"),
+        "{}",
+        hot.detail
+    );
+    let disc = &report.coverage["discontinuities"];
+    assert_eq!(disc.status, "capped", "{}", disc.detail);
+    assert!(
+        disc.detail
+            .contains("deadline reached mid-pass: 0 of 4 targets fully screened"),
+        "{}",
+        disc.detail
+    );
+    assert!(disc.detail.contains("findings withheld"), "{}", disc.detail);
+    // Non-exempt passes still skip, and the run records the
+    // deadline summary entry.
+    assert_eq!(report.coverage["regimes"].status, "skipped");
+    assert_eq!(report.coverage["association_rules"].status, "skipped");
+    assert!(report.coverage.contains_key("deadline"));
+}
