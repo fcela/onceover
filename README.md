@@ -5,6 +5,11 @@ relationships between columns, and locate changes in how the data behaves.
 `onceover.profile(df)` returns ranked findings with their evidence, a
 summary of every column, and coverage showing what was examined.
 Computation runs in Rust, with Python and Rust APIs.
+`onceover.profile_many({"orders": df_a, "customers": df_b})` reads a
+set of related tables together and reports candidate foreign keys
+between them: a strong tier (fully contained, column names agree), a
+lower tier of contained-only candidates with chance scores, and
+partial overlaps with exact orphan counts.
 
 [Read the documentation](https://fcela.github.io/onceover/) ·
 [Explore the capabilities](docs/book/usage/capabilities.ipynb) ·

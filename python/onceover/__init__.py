@@ -1,16 +1,25 @@
 """onceover: first look at tabular data.
 
-A native Rust profiler for Polars DataFrames.
+A native Rust profiler for Polars DataFrames, plus a Python-side
+multi-table pass (`profile_many`) that reports candidate foreign
+keys across a set of related tables.
 """
 
 import json as _json
 import os
 
+from onceover._many import MultiTableReport, profile_many
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
 
 __version__ = "0.1.3"
-__all__ = ["profile", "ProfileReport", "available_detectors"]
+__all__ = [
+    "profile",
+    "ProfileReport",
+    "profile_many",
+    "MultiTableReport",
+    "available_detectors",
+]
 
 _SCHEMA_VERSION = "0.7"
 
