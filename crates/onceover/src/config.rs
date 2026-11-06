@@ -46,6 +46,15 @@ pub struct ProfileConfig {
     /// whose activation is Default or HintGated). Dependencies run as resources.
     pub detectors: Option<std::collections::BTreeSet<String>>,
     pub selection: onceover_report::SelectionPolicy,
+    /// Wall-clock budget for the whole profile. Consulted
+    /// between passes (later passes are skipped and recorded)
+    /// and — since issue #117 stage 2 — at work quanta inside
+    /// the dependence screen, the hotspots scan, and the
+    /// discontinuities pass, which stop cooperatively and
+    /// disclose in their coverage entries how much of their
+    /// search space was examined. A stopped pass reports
+    /// `capped` coverage; its absence of further findings is
+    /// a partial negative, not an exhaustive one.
     pub deadline: Option<Duration>,
     /// Override sampled relationship rows (column summaries remain exact).
     pub sample_rows: Option<usize>,

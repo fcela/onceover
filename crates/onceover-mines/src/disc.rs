@@ -14,6 +14,7 @@
 //! while a steep smooth transition's gap grows with scale (ratio ~2+).
 //! Only flagged candidates that type as jumps are reported.
 
+use crate::deadline::Deadline;
 use onceover_core::{TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
@@ -42,6 +43,13 @@ pub struct DiscConfig {
     /// evaluation-half variance: the jump must be material, not
     /// merely detectable.
     pub rel_gain_min: f64,
+    /// Cooperative deadline (issue #117, stage 2): target
+    /// screens poll it before each target and before each
+    /// scan unit, and stop at the next unit boundary when it
+    /// has been reached; the pass discloses how many targets
+    /// were fully screened. Unset (the default) the pass
+    /// always runs to completion.
+    pub deadline: Deadline,
 }
 
 impl Default for DiscConfig {
@@ -59,6 +67,7 @@ impl Default for DiscConfig {
             min_rows: 120,
             z_report: 4.0,
             rel_gain_min: 0.005,
+            deadline: Deadline::none(),
         }
     }
 }
@@ -980,6 +989,13 @@ fn flagged(cand: &DiscCandidate) -> bool {
 struct TargetOutcome {
     findings: Vec<Finding>,
     screened: bool,
+    /// The deadline stopped this target's screen mid-way; its
+    /// unit counts stand, its findings are withheld (the
+    /// per-target selection assumes a complete screen).
+    truncated: bool,
+    /// The deadline had already been reached before this
+    /// target's screen began; nothing was examined.
+    not_started: bool,
     n_axis: usize,
     n_diag: usize,
     n_flagged: usize,
@@ -991,6 +1007,8 @@ impl TargetOutcome {
         Self {
             findings: Vec::new(),
             screened: false,
+            truncated: false,
+            not_started: false,
             n_axis: 0,
             n_diag: 0,
             n_flagged: 0,
@@ -1316,8 +1334,19 @@ fn screen_target(
     pos_map: &[usize],
     cfg: &DiscConfig,
     caches: &DiscCaches,
+    stop: &(dyn Fn() -> bool + Sync),
 ) -> TargetOutcome {
     let mut out = TargetOutcome::new();
+    // Deadline checkpoints (issue #117, stage 2): before the
+    // target's screen, before each axis unit, and before each
+    // diagonal pair — the scan unit is the work quantum, so
+    // the overshoot past the deadline is bounded by one unit
+    // per in-flight target. A stopped target returns the unit
+    // counts it completed and no findings.
+    if stop() {
+        out.not_started = true;
+        return out;
+    }
     let tvals = &values[pos_map[tcol]];
     let finite_t = tvals.finite_count;
     if finite_t < cfg.min_rows {
@@ -1335,6 +1364,10 @@ fn screen_target(
     // target before issue #118); the target vector comes from
     // this call's memo.
     for &acol in &axes {
+        if stop() {
+            out.truncated = true;
+            break;
+        }
         let ap = pos_map[acol];
         let rows = kept_rows(tvals, &[&values[ap]], cfg.row_cap);
         if rows.len() < cfg.min_rows {
@@ -1365,6 +1398,10 @@ fn screen_target(
         }
     }
 
+    if out.truncated {
+        return out;
+    }
+
     // Diagonal units.
     let pair_axes: Vec<usize> = if !cfg.diagonals {
         Vec::new()
@@ -1379,8 +1416,12 @@ fn screen_target(
     } else {
         axes.clone()
     };
-    for ai in 0..pair_axes.len() {
+    'pairs: for ai in 0..pair_axes.len() {
         for bi in (ai + 1)..pair_axes.len() {
+            if stop() {
+                out.truncated = true;
+                break 'pairs;
+            }
             let (a1, a2) = (pair_axes[ai], pair_axes[bi]);
             let (p1, p2) = (pos_map[a1], pos_map[a2]);
             // Pair data (kept rows, standardized axes, fit mask,
@@ -1444,6 +1485,10 @@ fn screen_target(
                 }
             }
         }
+    }
+
+    if out.truncated {
+        return out;
     }
 
     out.n_flagged += flagged_units.len();
@@ -1555,15 +1600,30 @@ fn screen_target(
     out
 }
 
+/// What the discontinuities pass reports, including whether
+/// the deadline stopped it mid-pass (issue #117, stage 2).
+/// The pipeline reads `deadline_stopped` to mark the coverage
+/// entry `capped` and latch the profile's deadline state; the
+/// coverage string itself carries the target counts.
+pub struct DiscOutcome {
+    pub findings: Vec<Finding>,
+    pub coverage: String,
+    pub deadline_stopped: bool,
+}
+
 pub fn profile_discontinuities(
     table: &TypedTable,
     excluded: &[usize],
     targets: Option<&[usize]>,
     cfg: &DiscConfig,
-) -> (Vec<Finding>, String) {
+) -> DiscOutcome {
     use rayon::prelude::*;
     if !cfg.is_enabled() {
-        return (Vec::new(), "disabled at this budget".into());
+        return DiscOutcome {
+            findings: Vec::new(),
+            coverage: "disabled at this budget".into(),
+            deadline_stopped: false,
+        };
     }
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
@@ -1591,16 +1651,28 @@ pub fn profile_discontinuities(
         .copied()
         .filter(|c| targets.is_none_or(|t| t.contains(c)))
         .collect();
+    let stop = || cfg.deadline.exceeded();
     let outcomes: Vec<TargetOutcome> = target_columns
         .par_iter()
-        .map(|&tcol| screen_target(table, tcol, &numeric, &values, &pos_map, cfg, &caches))
+        .map(|&tcol| {
+            screen_target(
+                table, tcol, &numeric, &values, &pos_map, cfg, &caches, &stop,
+            )
+        })
         .collect();
     let mut findings: Vec<Finding> = Vec::new();
     let (mut n_targets, mut n_axis_units, mut n_diag_units, mut n_flagged, mut n_untyped) =
         (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut n_truncated, mut n_not_started) = (0usize, 0usize);
     for o in outcomes {
         if o.screened {
             n_targets += 1;
+        }
+        if o.truncated {
+            n_truncated += 1;
+        }
+        if o.not_started {
+            n_not_started += 1;
         }
         n_axis_units += o.n_axis;
         n_diag_units += o.n_diag;
@@ -1609,12 +1681,32 @@ pub fn profile_discontinuities(
         findings.extend(o.findings);
     }
 
-    let coverage = format!(
+    let mut coverage = format!(
         "{n_targets} numeric targets screened over {n_axis_units} axis units and {n_diag_units} diagonal units ({} directions x pairs); {n_flagged} candidates flagged on the evaluation half (|z| >= 2, held-out gain > 0), {n_untyped} of the typed leaders rejected as steep smooth transitions; {} jumps reported",
         cfg.directions,
         findings.len()
     );
-    (findings, coverage)
+    // Partial coverage is disclosed, never silent: which
+    // targets completed, which stopped mid-screen (their
+    // examined units are in the counts above; their findings
+    // are withheld because the per-target selection assumes a
+    // complete screen), and which never started. The total is
+    // the target set this call was asked to screen.
+    let deadline_stopped = n_truncated + n_not_started > 0;
+    if deadline_stopped {
+        coverage.push_str(&format!(
+            "; deadline reached mid-pass: {} of {} targets fully screened, {} stopped mid-screen (findings withheld), {} not started",
+            target_columns.len() - n_truncated - n_not_started,
+            target_columns.len(),
+            n_truncated,
+            n_not_started,
+        ));
+    }
+    DiscOutcome {
+        findings,
+        coverage,
+        deadline_stopped,
+    }
 }
 
 fn make_finding(
@@ -2163,8 +2255,10 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let (f1, cov1) = profile_discontinuities(&table, &[], None, &cfg);
-            let (f2, cov2) = profile_discontinuities(&table, &[], None, &cfg);
+            let out1 = profile_discontinuities(&table, &[], None, &cfg);
+            let out2 = profile_discontinuities(&table, &[], None, &cfg);
+            let (f1, cov1) = (out1.findings, out1.coverage);
+            let (f2, cov2) = (out2.findings, out2.coverage);
             assert_eq!(cov1, cov2);
             let j1: Vec<String> = f1
                 .iter()
@@ -2191,5 +2285,109 @@ mod tests {
                 f1.iter().map(|f| &f.claim).collect::<Vec<_>>()
             );
         }
+    }
+
+    /// Eight numeric columns over 600 rows: column 0 is the row
+    /// index, column 1 steps from 0 to 10 halfway along it, the
+    /// rest are smooth variations. Every target is eligible
+    /// (600 finite rows >= min_rows 120).
+    fn disc_fixture() -> TypedTable<'static> {
+        let n = 600usize;
+        let cols: Vec<TypedCol<'static>> = (0..8)
+            .map(|j| TypedCol::F64 {
+                vals: (0..n)
+                    .map(|i| {
+                        Some(match j {
+                            0 => i as f64,
+                            1 => {
+                                let base = if i < n / 2 { 0.0 } else { 10.0 };
+                                base + ((i * 13) % 7) as f64 * 0.01
+                            }
+                            _ => ((i * (j + 3)) % 97) as f64 / 97.0 + j as f64,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+            })
+            .collect();
+        TypedTable {
+            n,
+            names: (0..8).map(|j| format!("c{j}")).collect(),
+            dtypes: vec!["float64".to_string(); 8],
+            cols,
+        }
+    }
+
+    #[test]
+    fn counting_stop_truncates_target_after_exact_axis_units() {
+        // The stop predicate is consulted once before the
+        // target's screen and once before each axis unit;
+        // firing on the fifth consultation must leave exactly
+        // three axis units examined, the target truncated, and
+        // its findings withheld (issue #117, stage 2). The
+        // examined prefix is deterministic: the predicate, not
+        // the clock, decides where the screen stops.
+        let table = disc_fixture();
+        let cfg = DiscConfig::default();
+        let numeric: Vec<usize> = (0..8).collect();
+        let sample = std::sync::Arc::new(
+            crate::stride_rows(table.n, cfg.row_cap)
+                .into_iter()
+                .map(|r| r as usize)
+                .collect::<Vec<usize>>(),
+        );
+        let values: Vec<NumericColumn> = numeric
+            .iter()
+            .map(|&i| NumericColumn::new(&table.cols[i], std::sync::Arc::clone(&sample)))
+            .collect();
+        let pos_map: Vec<usize> = (0..8).collect();
+        let caches = DiscCaches::new();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let stop = || calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 4;
+        let out = screen_target(&table, 1, &numeric, &values, &pos_map, &cfg, &caches, &stop);
+        assert!(out.screened);
+        assert!(out.truncated);
+        assert!(!out.not_started);
+        assert_eq!(out.n_axis, 3);
+        assert_eq!(out.n_diag, 0);
+        assert!(out.findings.is_empty());
+    }
+
+    #[test]
+    fn past_deadline_starts_no_target_and_discloses_counts() {
+        let table = disc_fixture();
+        let cfg = DiscConfig {
+            deadline: Deadline::at(std::time::Instant::now() - std::time::Duration::from_secs(1)),
+            ..DiscConfig::default()
+        };
+        let out = profile_discontinuities(&table, &[], None, &cfg);
+        assert!(out.deadline_stopped);
+        assert!(out.findings.is_empty());
+        assert!(
+            out.coverage.contains(
+                "deadline reached mid-pass: 0 of 8 targets fully screened, 0 stopped mid-screen (findings withheld), 8 not started"
+            ),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn future_deadline_matches_no_deadline() {
+        let table = disc_fixture();
+        let plain = profile_discontinuities(&table, &[], None, &DiscConfig::default());
+        let cfg = DiscConfig {
+            deadline: Deadline::at(std::time::Instant::now() + std::time::Duration::from_secs(600)),
+            ..DiscConfig::default()
+        };
+        let timed = profile_discontinuities(&table, &[], None, &cfg);
+        assert!(!plain.deadline_stopped);
+        assert!(!timed.deadline_stopped);
+        assert_eq!(plain.coverage, timed.coverage);
+        assert_eq!(plain.findings.len(), timed.findings.len());
+        assert!(
+            !plain.findings.is_empty(),
+            "the planted step should produce a finding"
+        );
     }
 }

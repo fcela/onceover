@@ -87,6 +87,19 @@ fn profile_inner(
     if let Some(pairs) = cfg.max_pairs {
         tier.dep_pair_cap = pairs;
     }
+    // One absolute deadline for every in-pass checkpoint
+    // (issue #117, stage 2): profile start + the configured
+    // duration — the same instant the between-pass checks
+    // measure against, so a pass that starts before the
+    // deadline stops inside its own loops at that instant
+    // instead of overrunning by its whole runtime.
+    let pass_deadline = cfg
+        .deadline
+        .map_or_else(onceover_mines::Deadline::none, |d| {
+            onceover_mines::Deadline::at(start + d)
+        });
+    tier.disc.deadline = pass_deadline;
+    tier.hotspots.deadline = pass_deadline;
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
     let timing_on = cfg.timing;
@@ -1277,16 +1290,22 @@ fn profile_inner(
                     .filter(|(_, r)| r.as_deref() == Some("measure"))
                     .map(|(i, _)| i)
                     .collect();
-                let (f, cov) =
-                    profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
+                let out = profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
+                if out.deadline_stopped {
+                    deadline_hit = true;
+                }
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "discontinuities".into(),
-                    PassInfo::ran(format!("{cov}{exclusion_note}")),
+                    if out.deadline_stopped {
+                        PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                    } else {
+                        PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
+                    },
                 );
-                findings.extend(f);
+                findings.extend(out.findings);
             }
             if check_deadline(&mut coverage, "drift") {
                 deadline_hit = true;
@@ -1369,15 +1388,22 @@ fn profile_inner(
                     PassInfo::skipped("deadline reached"),
                 );
             } else if enabled("hotspots") {
-                let (f, cov) = hotspots(&enc, &tier.hotspots);
+                let out = hotspots(&enc, &tier.hotspots);
+                if out.deadline_stopped {
+                    deadline_hit = true;
+                }
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "hotspots".into(),
-                    PassInfo::sampled(cov),
+                    if out.deadline_stopped {
+                        PassInfo::capped(out.coverage)
+                    } else {
+                        PassInfo::sampled(out.coverage)
+                    },
                 );
-                findings.extend(f);
+                findings.extend(out.findings);
             }
 
             // Pairwise dependence (supporting role) + identities.
@@ -1385,14 +1411,19 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && tier.dep_pair_cap > 0 && enabled("numeric_dependence") {
-                let (deps_pair, dep_findings, dep_cov, dep_records) =
-                    onceover_mines::dep::screen_sampled(
-                        &table,
-                        tier.dep_pair_cap,
-                        tier.encode.row_cap,
-                        &scaffold_excluded,
-                    );
-                association_pairs.extend(dep_records);
+                let dep_out = onceover_mines::dep::screen_sampled(
+                    &table,
+                    tier.dep_pair_cap,
+                    tier.encode.row_cap,
+                    &scaffold_excluded,
+                    pass_deadline,
+                );
+                if dep_out.deadline_stopped {
+                    deadline_hit = true;
+                }
+                let (deps_pair, dep_findings, dep_cov) =
+                    (dep_out.deps, dep_out.findings, dep_out.coverage);
+                association_pairs.extend(dep_out.records);
                 if enabled("row_consistency") {
                     let measures: Vec<usize> = frame
                         .roles
@@ -1434,7 +1465,7 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "dependence_screen".into(),
-                    if deps_pair.len() < possible_pairs {
+                    if dep_out.deadline_stopped || deps_pair.len() < possible_pairs {
                         PassInfo::capped(dep_cov)
                     } else {
                         if table.n > tier.encode.row_cap {
