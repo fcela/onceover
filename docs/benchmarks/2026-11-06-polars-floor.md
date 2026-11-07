@@ -105,3 +105,15 @@ line, with the floor one minor behind the current release.
 No library code and no test changes: the failing test is
 correct against a supported Polars, and the floor — not the
 test — was the thing out of line.
+
+## Correction — later the same day
+
+The floor conclusion above was superseded the same day: the
+supported floor stays in the Polars 1.x line, and the remedy is
+the test fix this note did not make. The diagnosis above — the
+one failing test, its root cause, and the 2.0.0 measurement —
+stands as recorded; the range change it justified was reverted.
+See `docs/benchmarks/2026-11-06-polars-floor-correction.md` for
+the corrected outcome and its measurement: with the fixture
+built by the expression form, the full suite passes on Polars
+1.28.1, 1.44.2 and 2.1.0 alike, and the floor stays 1.28.

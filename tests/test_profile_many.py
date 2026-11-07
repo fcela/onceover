@@ -165,12 +165,15 @@ def test_float_family_and_nan_is_missing():
 
 
 def test_temporal_family_dates():
-    calendar = pl.DataFrame({
-        "day": pl.Series(["2024-01-01", "2024-01-02", "2024-01-03"]).str.to_date(),
-    })
-    visits = pl.DataFrame({
-        "day": pl.Series(["2024-01-01", "2024-01-03", "2024-01-03"]).str.to_date(),
-    })
+    # Dates are built with the expression form: the Series-namespace
+    # `Series.str.to_date()` silently returns None on Polars 1.x under
+    # Python 3.15 (see docs/benchmarks/2026-11-06-polars-floor.md).
+    calendar = pl.DataFrame(
+        {"day": ["2024-01-01", "2024-01-02", "2024-01-03"]}
+    ).select(pl.col("day").str.to_date())
+    visits = pl.DataFrame(
+        {"day": ["2024-01-01", "2024-01-03", "2024-01-03"]}
+    ).select(pl.col("day").str.to_date())
     report = profile_many({"calendar": calendar, "visits": visits})
     record = candidate(report, "visits", "day", "calendar", "day")
     assert record is not None

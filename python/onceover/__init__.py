@@ -38,7 +38,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     Parameters
     ----------
     df : polars.DataFrame, polars.LazyFrame, str, or os.PathLike
-        The table to profile (Arrow interchange; Polars 2.0–2.x), a
+        The table to profile (Arrow interchange; Polars 1.28–2.x), a
         lazy frame, or a path to a Parquet, CSV, or IPC file — see
         ``source_row_cap`` for how lazy and file inputs are
         collected.
