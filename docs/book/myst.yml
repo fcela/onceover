@@ -34,6 +34,7 @@ project:
         - file: methodology/expectations.ipynb
         - file: methodology/column_cards.ipynb
         - file: methodology/sentinel_values.ipynb
+        - file: methodology/boundary_mass.ipynb
         - file: methodology/keys_duplicates.ipynb
         - file: methodology/functional_dependencies.ipynb
         - file: methodology/predictability_screen.ipynb
