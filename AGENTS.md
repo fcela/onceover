@@ -110,6 +110,10 @@ report.select(type="functional", column="x") # category, type,
                                              # conditionality=, ...)
 report.to_digest(budget_chars=8_000)                # rollup for triage
 report.to_json()                             # full report
+report.to_html()                             # self-contained HTML
+        # rendering of the same report (needs the `html` extra:
+        # pip install 'onceover[html]'); charts are Altair with
+        # the Vega bundle inlined, so the file opens offline
 report.to_json(max_chars=12_000)             # budgeted view; a
         # `budget` record in the output states what was cut
 report.findings_frame()                      # Polars DataFrame
@@ -133,6 +137,24 @@ report.to_checks()                           # exact statements as
 
 `findings_frame()` is an index (one row per finding), not the
 evidence; fetch the full finding by `id` when a row matters.
+
+## Command line
+
+Installing the package also installs an `onceover` command:
+
+```sh
+onceover data.parquet                  # digest of the file's profile
+onceover data.parquet --digest 4000    # digest with a character budget
+onceover data.parquet --format json    # the full report as JSON
+onceover data.parquet --format html -o report.html
+onceover orders.parquet customers.parquet   # several files: the
+        # multi-table report (candidate foreign keys), digest or JSON
+```
+
+The flags mirror the renderings plus the file-input controls
+(`--budget`, `--deadline-seconds`, `--source-row-cap`, `--exact`,
+`--sample-seed`, `--target`). The HTML format needs the `html`
+extra, like `report.to_html()`.
 
 ## Hints
 

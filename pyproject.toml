@@ -26,8 +26,12 @@ classifiers = [
 Repository = "https://github.com/fcela/onceover"
 Issues = "https://github.com/fcela/onceover/issues"
 
+[project.scripts]
+onceover = "onceover._cli:main"
+
 [project.optional-dependencies]
 test = ["pytest>=8"]
+html = ["altair>=6,<7", "vl-convert-python>=1.9"]
 notebook = ["jupyterlab>=4", "altair>=6,<7", "vl-convert-python>=1.9", "great_tables>=1.1,<2", "numpy>=2", "nbconvert>=7"]
 benchmark = ["numpy>=2", "psutil>=7"]
 

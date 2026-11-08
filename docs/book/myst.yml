@@ -19,6 +19,7 @@ project:
         - file: usage/coverage.ipynb
         - file: usage/large_tables.ipynb
         - file: usage/serialization.ipynb
+        - file: usage/cli.ipynb
         - file: usage/api.ipynb
     - title: Part II — Case studies
       children:

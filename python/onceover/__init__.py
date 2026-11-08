@@ -369,9 +369,11 @@ class ProfileReport:
     column=, target=)` and one finding by id via `.finding(id)`, the same
     findings as a Polars DataFrame via `.findings_frame()`, a
     context-budgeted digest via `.to_digest(chars)`, a size-budgeted
-    JSON view via `.to_json(max_chars=...)`, the one-glance summary via
-    `.overview`, per-column cards via `.columns`, and pass coverage
-    via `.coverage`. The report's contract is `docs/report-schema.json`.
+    JSON view via `.to_json(max_chars=...)`, a self-contained HTML
+    rendering via `.to_html()` (needs the `html` extra), the
+    one-glance summary via `.overview`, per-column cards via
+    `.columns`, and pass coverage via `.coverage`. The report's
+    contract is `docs/report-schema.json`.
     """
 
     def __init__(self, native: _NativeProfileReport):
@@ -1070,9 +1072,37 @@ class ProfileReport:
             return _checks.great_expectations_suite(findings, name)
         raise ValueError(f"unknown format {fmt!r}; use polars or great_expectations")
 
+    def to_html(self) -> str:
+        """The report as one self-contained HTML document.
+
+        A rendering of the same report object `.data` / `.to_json()`
+        define — every claim and number is read from the report, and
+        nothing is recomputed from the source table. Charts are
+        Altair / Vega-Lite with the Vega bundle inlined once, so the
+        file opens offline and makes no external requests. Requires
+        the optional `html` extra (`pip install 'onceover[html]'`);
+        without it, raises ImportError naming the extra.
+        """
+        from . import _html
+
+        return _html.render(self.data, version=__version__)
+
     def save(self, path: str, fmt: str = "json") -> str:
-        """Write the report to `path` as json or markdown. Returns the path."""
-        text = self.to_json() if fmt == "json" else self.to_markdown()
+        """Write the report to `path` as json, markdown or html.
+
+        The html format needs the optional `html` extra (see
+        `to_html`). Returns the path.
+        """
+        if fmt == "json":
+            text = self.to_json()
+        elif fmt == "markdown":
+            text = self.to_markdown()
+        elif fmt == "html":
+            text = self.to_html()
+        else:
+            raise ValueError(
+                f"unknown format {fmt!r}; use json, markdown or html"
+            )
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
         return path
