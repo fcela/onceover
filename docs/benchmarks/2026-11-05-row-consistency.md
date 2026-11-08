@@ -90,13 +90,13 @@ made none before or after.
 On the corpus the statements a reader would expect remain: `casual <= cnt` and
 `registered <= cnt` in bike sharing, `freight <= subtotal` in AdventureWorks, and the
 abalone measurement orders — nine, among them `diameter <= length` and each part
-weight under `whole_weight`. Three more statements hold on their tables but the
-corpus run does not produce them. `Perigee_km <= Apogee_km` and
-`Dry_Mass_kg <= Launch_Mass_kg` hold on the satellites table with 0 violations, and
-the pass states both when it runs there — run on its own it screens 23 of 23 eligible
-column pairs and reports 3 orders — but the table's registry entry names the
-detectors to run and does not include `order_constraints`, so its corpus profile has
-no order-constraint findings and no coverage entry for the pass. `period_end <=
+weight under `whole_weight`. The satellites table's three orders are stated by its
+corpus profile since the registry amendment of 2026-11-08: the table's entry names
+the detectors to run and now includes `order_constraints`; the pass screens 23 of 23
+eligible column pairs there and reports `Perigee_km <= Apogee_km`,
+`Period_minutes <= Apogee_km`, and `Dry_Mass_kg <= Launch_Mass_kg`, each holding
+with 0 violations, and the entry's expectations pin all three. One more statement
+holds on its table but the corpus run does not produce it: `period_end <=
 filed` compares two dates, but the corpus read takes both EDGAR columns as text; the
 pass pairs only numeric and date columns, so its coverage on that table reports 0 of
 0 eligible column pairs screened. Tables of
