@@ -39,6 +39,7 @@ project:
         - file: methodology/predictability_screen.ipynb
         - file: methodology/rules_tables.ipynb
         - file: methodology/associations.ipynb
+        - file: methodology/tested_associations.ipynb
         - file: methodology/dependence_measures.ipynb
         - file: methodology/target_shapes.ipynb
         - file: methodology/interactions.ipynb
