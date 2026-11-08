@@ -36,6 +36,7 @@ project:
         - file: methodology/sentinel_values.ipynb
         - file: methodology/keys_duplicates.ipynb
         - file: methodology/functional_dependencies.ipynb
+        - file: methodology/order_constraints.ipynb
         - file: methodology/predictability_screen.ipynb
         - file: methodology/rules_tables.ipynb
         - file: methodology/associations.ipynb
