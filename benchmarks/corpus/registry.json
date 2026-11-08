@@ -1203,6 +1203,45 @@
       "Launch_Mass_kg"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 15 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "order_constraint",
+     "expect": "found",
+     "columns_all": [
+      "Perigee_km",
+      "Apogee_km"
+     ],
+     "note": "Added 2026-11-08 with the order-constraints recording: Perigee_km <= Apogee_km on all 1,163 rows where both are recorded (0 violations; the two are equal on 17), verified against the bundled file."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "order_constraint",
+     "expect": "found",
+     "columns_all": [
+      "Period_minutes",
+      "Apogee_km"
+     ],
+     "note": "Added 2026-11-08 with the order-constraints recording: Period_minutes <= Apogee_km on all 1,162 rows where both are recorded (0 violations; the tightest margin is 226.39), verified against the bundled file."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "order_constraint",
+     "expect": "found",
+     "columns_all": [
+      "Dry_Mass_kg",
+      "Launch_Mass_kg"
+     ],
+     "note": "Added 2026-11-08 with the order-constraints recording: Dry_Mass_kg <= Launch_Mass_kg on all 480 rows where both are recorded (0 violations; the two are equal on 13), verified against the bundled file."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "order_constraints",
+     "status": "ran_exact",
+     "note": "Added 2026-11-08 with the order-constraints recording: the entry's detector list includes order_constraints; the pass screens 23 of 23 eligible column pairs on this table, and the three orders it reports are pinned above."
     }
    ],
    "notes": [
@@ -1214,6 +1253,7 @@
     "keys",
     "pivot",
     "functional_dependencies",
+    "order_constraints",
     "sortedness",
     "dates",
     "gbm",
