@@ -13,7 +13,7 @@
 //! or metrics (runtime is the caller's to measure, never embedded).
 
 use onceover_core::{sample_rows, TypedCol, TypedTable};
-use onceover_report::{Category, Evidence, EvidenceBasis, Finding, Method};
+use onceover_report::{Category, Evidence, EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -1085,6 +1085,82 @@ fn make_evidence(metrics: BTreeMap<String, serde_json::Value>) -> Evidence {
     e
 }
 
+/// A finding stating that the views pass did not examine a set of
+/// columns: past the column cap (`reason == "column_cap"`, kept set
+/// chosen by the pairwise-dependence pre-screen), or left outside
+/// the search when the work budget ran out (`reason ==
+/// "work_budget"`). `pool` is the set the limit applied to: all
+/// eligible columns for the cap, the kept columns for the budget.
+/// The full dropped list lives in the evidence metrics and in the
+/// statement definition; the claim names at most 25 columns and
+/// counts the rest.
+fn unexamined_columns_finding(
+    dropped_names: &[String],
+    reason: &str,
+    cfg: &ViewsConfig,
+    pool: usize,
+    table: &TypedTable,
+    n_sample: usize,
+) -> Finding {
+    let named = if dropped_names.len() > 25 {
+        format!(
+            "{} and {} more",
+            dropped_names[..25].join(", "),
+            dropped_names.len() - 25
+        )
+    } else {
+        dropped_names.join(", ")
+    };
+    let claim = if reason == "column_cap" {
+        format!(
+            "The views pass did not examine {} of {} eligible columns past its {}-column cap: {}. The kept columns were ranked by strongest pairwise dependence; the named columns carry no views findings either way.",
+            dropped_names.len(),
+            pool,
+            cfg.max_columns,
+            named
+        )
+    } else {
+        format!(
+            "The views search stopped on its work budget before examining {} columns: {}. Those columns are in no view and carry no views findings either way.",
+            dropped_names.len(),
+            named
+        )
+    };
+    let mut metrics = BTreeMap::new();
+    metrics.insert("n".to_string(), json!(n_sample));
+    metrics.insert("population_rows".to_string(), json!(table.n));
+    metrics.insert("sampled".to_string(), json!(n_sample < table.n));
+    metrics.insert("pass".to_string(), json!("views"));
+    metrics.insert("reason".to_string(), json!(reason));
+    if reason == "column_cap" {
+        metrics.insert("cap".to_string(), json!(cfg.max_columns));
+    } else {
+        metrics.insert("work_budget".to_string(), json!(cfg.work_budget));
+    }
+    metrics.insert("n_eligible".to_string(), json!(pool));
+    metrics.insert("n_examined".to_string(), json!(pool - dropped_names.len()));
+    metrics.insert("dropped_columns".to_string(), json!(dropped_names));
+    let mut raw = BTreeMap::new();
+    raw.insert("columns".to_string(), json!(dropped_names));
+    Finding::new(
+        Pattern::UnexaminedColumns,
+        raw,
+        claim,
+        EvidenceBasis::Measured,
+        0.65,
+        metrics,
+        Some(
+            "Columns a pass did not examine are absent from its findings; profile the named columns separately or raise the cap to examine them."
+                .to_string(),
+        ),
+        Method::new(
+            "views",
+            "greedy_view_cluster",
+            "deterministic greedy view/cluster partition; marginal-likelihood scores, not posterior probabilities",
+        ),
+    )
+}
+
 /// Run the views pass on an extracted table. Returns findings and an
 /// outcome summary (no wall-clock values: determinism).
 pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, ViewsOutcome) {
@@ -1127,6 +1203,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     };
     let n_eligible = all_cols.len();
     let (cols, cap_dropped, prescreened) = select_columns(all_cols, &search_pos, cfg, &mut work);
+    let cap_dropped_names = cap_dropped.clone();
     dropped.extend(cap_dropped);
     let views = views_search(&cols, &search_pos, cfg, &mut work);
     // A budget hit mid-singleton drops tail columns from the search
@@ -1144,6 +1221,29 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         }
     }
     let mut findings: Vec<Finding> = Vec::new();
+    // Columns the pass did not examine are stated as a finding, not
+    // only in coverage: a reader of the findings alone must be able
+    // to tell that part of the table went unexamined (issue #214).
+    if prescreened && !cap_dropped_names.is_empty() {
+        findings.push(unexamined_columns_finding(
+            &cap_dropped_names,
+            "column_cap",
+            cfg,
+            n_eligible,
+            table,
+            n_sample,
+        ));
+    }
+    if !budget_dropped.is_empty() {
+        findings.push(unexamined_columns_finding(
+            &budget_dropped,
+            "work_budget",
+            cfg,
+            cols.len(),
+            table,
+            n_sample,
+        ));
+    }
     let mut total_score = 0.0;
     let penalty_full = cfg.gamma * (n_sample.max(1) as f64).ln();
     for view in &views {
@@ -2140,6 +2240,113 @@ mod tests {
                 && f.subject.columns.contains(&"signal_a".to_string())
                 && f.subject.columns.contains(&"signal_b".to_string())),
             "the kept pair must merge into one view"
+        );
+    }
+
+    #[test]
+    fn cap_drop_is_stated_as_a_finding() {
+        // Same fixture shape as the prescreen test above: 70
+        // eligible columns at cap 64, so six noise columns drop.
+        // The drop must appear as a finding of its own (issue
+        // #214), naming the dropped columns, not only in coverage.
+        let mut s = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let n = 400usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..68 {
+            names.push(format!("noise_{i}"));
+            let vals: Vec<Option<f64>> = (0..n).map(|_| Some(next() * 10.0)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        let regime: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                let base = if i < n / 2 { 0.0 } else { 10.0 };
+                Some(base + next() * 0.01)
+            })
+            .collect();
+        for name in ["signal_a", "signal_b"] {
+            names.push(name.to_string());
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(regime.clone()),
+            });
+        }
+        let table = TypedTable {
+            n,
+            names,
+            dtypes: vec!["float64".to_string(); 70],
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 400,
+            ..Default::default()
+        };
+        let (findings, outcome) = views_pass(&table, &cfg);
+        let hits: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type.as_deref() == Some("unexamined_columns"))
+            .collect();
+        assert_eq!(hits.len(), 1, "findings = {findings:?}");
+        let hit = hits[0];
+        assert_eq!(hit.category, Category::Gaps);
+        assert!(hit.validate().is_ok(), "{:?}", hit.validate());
+        assert_eq!(hit.subject.columns.len(), 6);
+        for name in &hit.subject.columns {
+            assert!(
+                outcome.dropped_columns.contains(name),
+                "{name} must be a dropped column"
+            );
+            assert!(
+                hit.claim.contains(name.as_str()),
+                "claim must name {name}: {}",
+                hit.claim
+            );
+        }
+        assert_eq!(hit.metrics()["reason"], serde_json::json!("column_cap"));
+        assert_eq!(hit.metrics()["cap"], serde_json::json!(64));
+    }
+
+    #[test]
+    fn no_cap_drop_no_unexamined_finding() {
+        // A table at under the cap produces no unexamined-columns
+        // finding.
+        let n = 200usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..6 {
+            names.push(format!("c{i}"));
+            let vals: Vec<Option<f64>> =
+                (0..n).map(|r| Some(((r * (i + 3)) % 17) as f64)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        let table = TypedTable {
+            n,
+            names,
+            dtypes: vec!["float64".to_string(); 6],
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 200,
+            ..Default::default()
+        };
+        let (findings, outcome) = views_pass(&table, &cfg);
+        assert!(outcome.dropped_columns.is_empty());
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.finding_type.as_deref() == Some("unexamined_columns")),
+            "findings = {findings:?}"
         );
     }
 

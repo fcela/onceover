@@ -142,7 +142,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // Opt-in: experimental until its criterion review closes.
         make(
             "views",
-            vec![Associations, Changes, Concentration],
+            vec![Associations, Changes, Concentration, Gaps],
             &[],
             OptIn,
         ),

@@ -305,7 +305,8 @@
    "categories": [
     "associations",
     "changes",
-    "concentration"
+    "concentration",
+    "gaps"
    ],
    "requires": [],
    "activation": "opt_in"

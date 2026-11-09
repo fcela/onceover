@@ -79,6 +79,10 @@ pub enum Pattern {
     Gap,
     SequenceGap,
     MissingCombinations,
+    /// Columns a pass did not examine because a cap bound the set it
+    /// could take (the views column cap, or columns left outside the
+    /// search when its work budget ran out).
+    UnexaminedColumns,
     IntervalVariation,
     ColumnOrdering,
     ResidualShift,
@@ -118,7 +122,9 @@ impl Pattern {
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
-            Self::SequenceGap | Self::MissingCombinations => Category::Gaps,
+            Self::SequenceGap | Self::MissingCombinations | Self::UnexaminedColumns => {
+                Category::Gaps
+            }
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
             Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
@@ -168,6 +174,7 @@ impl Pattern {
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
+            Self::UnexaminedColumns => "unexamined_columns",
             Self::IntervalVariation => "interval_variation",
             Self::ColumnOrdering => "column_ordering",
             Self::ResidualShift => "residual_level",
@@ -766,6 +773,15 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Deviation,
             ),
+            Pattern::UnexaminedColumns => (
+                Sc::Frame,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Completeness),
+                S::Deviation,
+            ),
             Pattern::IntervalVariation => (
                 Sc::Sequence,
                 O::Distribution,
@@ -931,6 +947,7 @@ impl Facets {
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
+            (Category::Gaps, Some("unexamined_columns")) => Pattern::UnexaminedColumns,
             (Category::Gaps, _) => Pattern::Gap,
             (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
             (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
@@ -1197,6 +1214,17 @@ impl Finding {
                     json!({"axis": metrics.get("axis"), "cadence": metrics.get("cadence"), "source": "declared"}),
                 );
                 if let Some(v) = metrics.get("absent_values") {
+                    spec.definition.insert("absent_values".into(), v.clone());
+                }
+            }
+            Pattern::UnexaminedColumns => {
+                subject.unit = Some("columns".into());
+                spec.definition.insert("domain".into(), json!("columns"));
+                spec.definition.insert(
+                    "reference".into(),
+                    json!({"source": "pass limit", "reason": metrics.get("reason"), "pass": metrics.get("pass"), "cap": metrics.get("cap"), "eligible": metrics.get("n_eligible"), "examined": metrics.get("n_examined")}),
+                );
+                if let Some(v) = raw.get("columns") {
                     spec.definition.insert("absent_values".into(), v.clone());
                 }
             }
