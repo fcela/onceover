@@ -40,7 +40,7 @@ used by package version 0.1.3.
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
-| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns |
+| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns) |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
@@ -183,6 +183,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
+| `unexamined_columns` | frame | structure | exact | unconditional | atemporal | completeness | deviation |
 | `interval_variation` | sequence | distribution | exact | unconditional | ordered | — | deviation |
 | `extreme_value` | column | distribution | exact | unconditional; `value_conditioned` within a categorical subset | atemporal | — | deviation |
 | `categorical_outlier` | columns | distribution | approximate | value_conditioned | atemporal | — | deviation |
