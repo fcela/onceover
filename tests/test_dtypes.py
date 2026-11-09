@@ -5,8 +5,12 @@ UInt16), Decimal, Struct and fixed-size Array is feature-gated in the
 Rust polars build; with the gates off, ingestion raised
 ``ComputeError: cannot create series from <dtype>`` (and panicked for
 Decimal) before any detector ran. Narrow integers must be profiled as
-numbers; Decimal/Struct/Array columns are opaque to the profiler but
-must not break the profile of the rest of the frame.
+numbers; Struct/Array columns are opaque to the profiler but must not
+break the profile of the rest of the frame.
+
+Issue #211: Decimal columns must be analysed as numbers — a numeric
+card, a measure role, and visibility to the numeric passes — not
+merely accepted and left opaque.
 """
 
 import datetime
@@ -50,9 +54,6 @@ def test_integer_widths_carry_values(dtype):
 
 def _opaque_frames():
     return {
-        "decimal": pl.DataFrame(
-            {"x": pl.Series(["1.50", "2.50", "3.50"], dtype=pl.Decimal(10, 2))}
-        ),
         "struct": pl.DataFrame({"x": pl.Series([{"a": 1}, {"a": 2}, {"a": 3}])}),
         "array": pl.DataFrame(
             {"x": pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))}
@@ -60,12 +61,66 @@ def _opaque_frames():
     }
 
 
-@pytest.mark.parametrize("kind", ["decimal", "struct", "array"])
+@pytest.mark.parametrize("kind", ["struct", "array"])
 def test_opaque_dtypes_profile_without_error(kind):
     df = _opaque_frames()[kind]
     other = pl.DataFrame({"y": [10, 20, 30]})
     rep = onceover.profile(df.hstack(other), budget="quick")
     assert set(rep.columns) == {"x", "y"}
+
+
+def test_decimal_profiles_as_a_number():
+    # 120 money-like values: 40 distinct quarter steps, each seen
+    # 3 times, so the column reads as a measure.
+    values = [f"{(i % 40) * 0.25 + 0.5:.2f}" for i in range(120)]
+    df = pl.DataFrame({"price": pl.Series(values, dtype=pl.Decimal(10, 2))})
+    rep = onceover.profile(df, budget="standard")
+    card = rep.columns["price"]
+    assert card["dtype"] == "decimal"
+    assert card["role"] == "continuous"
+    assert card["semantic_role"] == "measure"
+    assert card["distinct"] == 40
+    stats = card["numeric_stats"]
+    assert stats["min"] == 0.5
+    assert stats["max"] == 10.25
+    assert stats["mean"] == pytest.approx(5.375)
+
+
+def test_decimal_nulls_are_counted():
+    series = pl.Series(
+        ["1.50", None, "2.50", None, "3.50", "4.50"], dtype=pl.Decimal(10, 2)
+    )
+    rep = onceover.profile(pl.DataFrame({"price": series}), budget="standard")
+    card = rep.columns["price"]
+    assert card["n"] == 6
+    assert card["null_count"] == 2
+    assert card["distinct"] == 4
+    assert card["numeric_stats"]["mean"] == pytest.approx(3.0)
+
+
+def test_decimal_affine_identity_is_detected():
+    from _findings import select
+
+    # double_price = 2 * price exactly, both decimal: the identity
+    # pass must see the pair, as it does for float columns.
+    prices = [((i * 37) % 40) * 0.25 + 1.0 for i in range(240)]
+    df = pl.DataFrame(
+        {
+            "price": pl.Series([f"{p:.2f}" for p in prices], dtype=pl.Decimal(10, 2)),
+            "double_price": pl.Series(
+                [f"{2 * p:.2f}" for p in prices], dtype=pl.Decimal(10, 2)
+            ),
+        }
+    )
+    report = onceover.profile(df)
+    assert select(
+        report,
+        "dependencies",
+        subtype="functional",
+        form="affine",
+        column="double_price",
+        include_grouped=True,
+    )
 
 
 @pytest.mark.parametrize(

@@ -109,6 +109,7 @@ pub enum TypedCol<'a> {
         vals: NumericValues<'a, u64>,
     },
     /// Floats (NaN/inf treated as null; -0.0 normalized to +0.0).
+    /// Decimal columns are converted into this variant at extraction.
     F64 {
         vals: NumericValues<'a, f64>,
     },
@@ -323,6 +324,7 @@ pub fn dtype_name(dtype: &DataType) -> String {
         DataType::UInt64 => "uint64",
         DataType::Float32 => "float32",
         DataType::Float64 => "float64",
+        DataType::Decimal(_, _) => "decimal",
         DataType::String => "string",
         DataType::Categorical(_, _) => "categorical",
         DataType::Enum(_, _) => "enum",
@@ -505,6 +507,24 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             }
             TypedCol::F64 { vals: vals.into() }
         }
+        DataType::Decimal(_, scale) => {
+            // A decimal value is a scaled integer: the stored i128
+            // divided by 10^scale. Convert to f64 at extraction — the
+            // same projection polars itself applies in a decimal-to-
+            // float cast — so every downstream pass analyses the
+            // column as a number. Digits beyond f64 precision are not
+            // retained, as with the u64 -> f64 projection.
+            let divisor = 10f64.powi(*scale as i32);
+            let mut vals = Vec::with_capacity(s.len());
+            for av in s.iter() {
+                vals.push(match av {
+                    AnyValue::Decimal(v, _, _) => norm_f64(v as f64 / divisor),
+                    AnyValue::Null => None,
+                    _ => None,
+                });
+            }
+            TypedCol::F64 { vals: vals.into() }
+        }
         DataType::String => {
             let mut vals = Vec::with_capacity(s.len());
             for av in s.iter() {
@@ -608,6 +628,57 @@ mod tests {
         match t {
             TypedCol::Date { vals } => assert_eq!(vals, vec![Some(100), Some(101), Some(102)]),
             _ => panic!("expected Date"),
+        }
+    }
+
+    #[test]
+    fn extracts_decimal_as_float() {
+        // Decimal(10, 2): the stored integers are the values x100.
+        let s = Series::new(
+            "d".into(),
+            &[
+                Some("1.50"),
+                Some("2.50"),
+                None,
+                Some("-0.25"),
+                Some("100.00"),
+            ],
+        )
+        .cast(&DataType::Decimal(10, 2))
+        .unwrap();
+        assert_eq!(dtype_name(s.dtype()), "decimal");
+        let t = extract_series(&s);
+        match &t {
+            TypedCol::F64 { vals } => {
+                assert_eq!(
+                    vals,
+                    &vec![Some(1.5f64), Some(2.5), None, Some(-0.25), Some(100.0)]
+                );
+            }
+            _ => panic!("decimal should extract as F64"),
+        }
+        assert!(t.is_numeric());
+        assert_eq!(t.null_count(), 1);
+        assert_eq!(t.numeric_at(3), Some(-0.25));
+    }
+
+    #[test]
+    fn extracts_decimal_with_zero_and_large_scales() {
+        let whole = Series::new("w".into(), &["7", "42"])
+            .cast(&DataType::Decimal(10, 0))
+            .unwrap();
+        match extract_series(&whole) {
+            TypedCol::F64 { vals } => assert_eq!(vals, vec![Some(7.0f64), Some(42.0)]),
+            _ => panic!("scale-0 decimal should extract as F64"),
+        }
+        let fine = Series::new("f".into(), &["0.000001", "1.000001"])
+            .cast(&DataType::Decimal(12, 6))
+            .unwrap();
+        match extract_series(&fine) {
+            TypedCol::F64 { vals } => {
+                assert_eq!(vals, vec![Some(0.000001f64), Some(1.000001)]);
+            }
+            _ => panic!("scale-6 decimal should extract as F64"),
         }
     }
 }
