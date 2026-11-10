@@ -2010,12 +2010,25 @@ fn profile_inner(
                 // budget-truncated run reports as capped, like the
                 // other truncated passes, not as a complete run.
                 let mut detail = vout.coverage.clone();
-                if !vout.dropped_columns.is_empty() {
+                // Cap drops and extraction drops are stated
+                // separately, each under its own wording and count:
+                // extraction-dropped columns were never eligible,
+                // so they were never subject to the cap, and
+                // attributing them to it would overstate the cap's
+                // share and misstate why they went unexamined.
+                if !vout.cap_dropped_columns.is_empty() {
                     detail.push_str(&format!(
                         "; dropped {} column(s) past the {}-column cap: {}",
-                        vout.dropped_columns.len(),
+                        vout.cap_dropped_columns.len(),
                         tier.views.max_columns,
-                        vout.dropped_columns.join(", ")
+                        vout.cap_dropped_columns.join(", ")
+                    ));
+                }
+                if !vout.extraction_dropped_columns.is_empty() {
+                    detail.push_str(&format!(
+                        "; dropped {} column(s) at extraction (unsupported type or no non-null values): {}",
+                        vout.extraction_dropped_columns.len(),
+                        vout.extraction_dropped_columns.join(", ")
                     ));
                 }
                 stamp_insert(
