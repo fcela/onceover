@@ -204,7 +204,9 @@ def test_hierarchy_lead_verifies_against_the_data():
     lead = _hierarchy_lead(report)
     rows = report.verify(df).filter(pl.col("id") == lead["id"])
     assert rows.height > 0
-    assert set(rows["status"].unique()) == {"ok"}
+    # Series.unique() returns None on Polars 1.x with Python 3.15;
+    # the frame-expression form works on every supported version.
+    assert set(rows.select(pl.col("status").unique()).to_series()) == {"ok"}
 
 
 def test_hierarchy_lead_fails_verification_when_the_chain_breaks():

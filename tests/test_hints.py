@@ -187,7 +187,9 @@ def test_declared_hierarchy_statements_verify_against_the_data():
         result = report.verify(df)
         rows = result.filter(pl.col("id") == hits[0]["id"])
         assert rows.height > 0
-        assert set(rows["status"].unique()) == {"ok"}
+        # Series.unique() returns None on Polars 1.x with Python 3.15;
+        # the frame-expression form works on every supported version.
+        assert set(rows.select(pl.col("status").unique()).to_series()) == {"ok"}
 
 
 def test_declared_hierarchy_fails_verification_on_changed_data():
