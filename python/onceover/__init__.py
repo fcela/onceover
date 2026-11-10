@@ -65,13 +65,14 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (29 of the
-        36 registered detectors). Excluded unless requested: the opt-in
+        Detector IDs to select; None selects the default set (30 of the
+        37 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift" and "granularity" — each records
         a skipped coverage entry in default runs — and "target_shapes",
-        which runs when a target is designated. "expectations" is in
-        the default set but engages only when `hints` are declared.
+        which runs when a target is designated. "expectations" and
+        "group_contrast" are in the default set but engage only when
+        `hints` declare what they check.
         Required detectors can run as resources without contributing
         their own findings. `available_detectors()` reports each
         detector's activation.
@@ -105,8 +106,14 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         identity. A label that names a different column, one label
         declared for two columns, an empty label, or a label for an
         unknown column is not applied: the raw name is kept and the
-        ``labels`` coverage entry states each case). Unknown columns or unusable types
-        are reported in the pass coverage, not raised. The column the
+        ``labels`` coverage entry states each case), and ``contrast``
+        (a group contrast: ``{"column": name, "value": scalar}``
+        declares one subset of the rows — the rows where the column
+        equals the value, or a boolean column's true rows when
+        ``value`` is omitted — and the "group_contrast" pass profiles
+        that subset against the rest of the table, column by column).
+        Unknown columns or unusable types are reported in the pass
+        coverage, not raised. The column the
         frame model assembles as the report's time axis is excluded
         from target roles and from being profiled as a measure by the
         series pass by structure, whatever its assigned role; a

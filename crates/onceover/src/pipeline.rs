@@ -1386,6 +1386,53 @@ fn profile_inner(
         }
     }
 
+    // ---------- declared group contrast ----------
+    // One declared subset of the rows against the rest, column by
+    // column. Hint-gated like expectations: without a declared
+    // contrast the pass records itself skipped, and a declaration
+    // that cannot name two populations (unknown column, empty
+    // group, whole-table group) is a coverage entry, not an error.
+    if check_deadline(&mut coverage, "group_contrast") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("group_contrast") {
+        match cfg.hints.as_ref().and_then(|h| h.contrast.as_ref()) {
+            Some(spec) => {
+                let out = onceover_mines::group_contrast(&table, spec);
+                match out.skipped {
+                    Some(reason) => {
+                        stamp_insert(
+                            &mut coverage,
+                            &mut last_mark,
+                            timing_on,
+                            "group_contrast".into(),
+                            PassInfo::skipped(reason),
+                        );
+                    }
+                    None => {
+                        stamp_insert(
+                            &mut coverage,
+                            &mut last_mark,
+                            timing_on,
+                            "group_contrast".into(),
+                            PassInfo::ran(out.detail),
+                        );
+                        findings.extend(out.findings);
+                    }
+                }
+            }
+            None => {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "group_contrast".into(),
+                    PassInfo::skipped("no group contrast declared".to_string()),
+                );
+            }
+        }
+    }
+
     // ---------- model-based passes (standard / deep) ----------
     if cfg.budget != Budget::Quick {
         if check_deadline(&mut coverage, "predictability_screen") {
@@ -2180,6 +2227,7 @@ fn profile_inner(
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
+                "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",

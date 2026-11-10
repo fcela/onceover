@@ -165,6 +165,14 @@
    "activation": "default"
   },
   {
+   "id": "group_contrast",
+   "categories": [
+    "associations"
+   ],
+   "requires": [],
+   "activation": "hint_gated"
+  },
+  {
    "id": "gbm",
    "categories": [
     "dependencies"
