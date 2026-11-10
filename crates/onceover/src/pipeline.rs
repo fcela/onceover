@@ -219,19 +219,40 @@ fn profile_inner(
         .iter()
         .filter(|d| d.as_str() == "other")
         .count();
+    // Time-of-day columns are counted but not analysed, by decision:
+    // a time of day is a circular quantity, so the order statistics
+    // the analysed kinds receive would mislead. State it here, at
+    // the point of extraction, rather than leaving the columns
+    // silently opaque.
+    let time_columns: Vec<&str> = table
+        .dtypes
+        .iter()
+        .zip(table.names.iter())
+        .filter(|(d, _)| d.as_str() == "time")
+        .map(|(_, n)| n.as_str())
+        .collect();
     stamp_insert(
         &mut coverage,
         &mut last_mark,
         timing_on,
         "extraction".into(),
         PassInfo::ran(format!(
-            "{} rows × {} columns{}",
+            "{} rows × {} columns{}{}",
             table.n,
             table.cols.len(),
             if unsupported > 0 {
                 format!(" ({unsupported} unsupported column type(s) opaque to the profiler)")
             } else {
                 String::new()
+            },
+            if time_columns.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; {} time-of-day column(s) counted but not analysed (a time of day is a circular quantity, so order statistics would mislead): {}",
+                    time_columns.len(),
+                    time_columns.join(", ")
+                )
             }
         )),
     );
