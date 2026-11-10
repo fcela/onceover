@@ -19,15 +19,34 @@ import onceover
 N = 400
 DAYS = [date(2021, 1, 1) + timedelta(days=i) for i in range(N)]
 SHIFTED = [f"shift_{k:02d}" for k in range(16)]
-FLAT = [f"flat_{k:02d}" for k in range(4)]
+QUIET = [f"quiet_{k:02d}" for k in range(4)]
 
 
-def _frame(n_shifted: int, n_flat: int) -> pl.DataFrame:
+class _Lcg:
+    """Deterministic platform-independent noise source."""
+
+    def __init__(self, seed: int):
+        self.x = seed
+
+    def next(self) -> float:
+        self.x = (6364136223846793005 * self.x + 1442695040888963407) % (1 << 64)
+        return ((self.x >> 11) / float(1 << 53)) - 0.5
+
+
+def _frame(n_shifted: int, n_quiet: int) -> pl.DataFrame:
+    # The shifted series step from 0 to 10 halfway (prescore close
+    # to 1). The quiet series are small-amplitude noise around 1
+    # (prescore close to 0), so the prescore ranking — and the set
+    # the cap leaves unscanned — is known. Quiet series must carry
+    # noise rather than a constant value: constant columns are
+    # excluded from the pass's targets upstream by their frame
+    # role, so they never reach the cap at all.
     cols: dict[str, list] = {"day": DAYS}
     for k in range(n_shifted):
         cols[f"shift_{k:02d}"] = [0.0] * (N // 2) + [10.0] * (N // 2)
-    for k in range(n_flat):
-        cols[f"flat_{k:02d}"] = [1.0] * N
+    for k in range(n_quiet):
+        rng = _Lcg(1000 + k)
+        cols[f"quiet_{k:02d}"] = [1.0 + rng.next() * 0.1 for _ in range(N)]
     return pl.DataFrame(cols)
 
 
@@ -50,6 +69,8 @@ def test_cap_binds_states_unscanned_series_with_prescores():
     assert f["facets"]["quality_dimension"] == "completeness"
     assert "4 of 20 eligible series" in f["claim"]
     assert "16-series cap" in f["claim"]
+    for name in QUIET:
+        assert name in f["claim"]
     m = _metrics(f)
     assert m["pass"] == "breaks"
     assert m["reason"] == "series_cap"
@@ -58,15 +79,19 @@ def test_cap_binds_states_unscanned_series_with_prescores():
     assert m["n_examined"] == 16
     assert m["n_unscanned"] == 4
     payload = m["unscanned_series"]
-    assert [row["series"] for row in payload] == FLAT
-    assert all(row["prescore"] == 0.0 for row in payload)
+    assert sorted(row["series"] for row in payload) == QUIET
+    scores = [row["prescore"] for row in payload]
+    # Evidence is in prescore order, highest first, and every
+    # unscanned series scored far below the shifted series' ~1.
+    assert scores == sorted(scores, reverse=True)
+    assert all(0.0 <= s < 0.5 for s in scores)
     # The statement definition and the subject name the same series.
-    assert f["specification"]["definition"]["absent_values"] == FLAT
-    assert sorted(f["subject"]["columns"]) == FLAT
+    assert sorted(f["specification"]["definition"]["absent_values"]) == QUIET
+    assert sorted(f["subject"]["columns"]) == QUIET
     # Coverage names the same set under "not scanned:".
     detail = report.data["coverage"]["breaks"]["detail"]
     tail = detail.split("not scanned: ", 1)[1]
-    assert all(name in tail for name in FLAT)
+    assert all(name in tail for name in QUIET)
 
 
 def test_unscanned_series_survives_serialization_and_verify():
