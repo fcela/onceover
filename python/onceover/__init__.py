@@ -382,6 +382,101 @@ def available_detectors():
     return _json.loads(_available())
 
 
+# Card quantities the report diff compares, in report order. Every
+# one is computed by the column pass on the full extracted table,
+# before budget gating and detector selection, so two profiles of
+# the same data carry the same values whatever budget or detector
+# set produced them. The card carries no sum, so none is compared;
+# the rest of the card (quartiles, top values, concentration,
+# format patterns) is distribution detail the diff does not track.
+_CARD_QUANTITIES = ("n", "null_count", "null_fraction", "distinct")
+_CARD_NUMERIC_QUANTITIES = ("mean", "min", "max")
+
+
+def _quantity_change(before, after) -> dict:
+    """One card quantity that moved: the two values and the size of
+    the move. `delta` is after minus before; `relative` is delta
+    over before, carried only when before is a non-zero number (a
+    move off zero has no meaningful relative size)."""
+    entry = {"before": before, "after": after}
+    if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+        entry["delta"] = after - before
+        if before != 0:
+            entry["relative"] = (after - before) / before
+    return entry
+
+
+def _card_changes(base_card: dict, other_card: dict) -> dict:
+    """The compared quantities that moved between two cards for the
+    same column, keyed by quantity name."""
+    changes = {}
+    for key in _CARD_QUANTITIES:
+        before, after = base_card.get(key), other_card.get(key)
+        if before != after:
+            changes[key] = _quantity_change(before, after)
+    base_stats = base_card.get("numeric_stats") or {}
+    other_stats = other_card.get("numeric_stats") or {}
+    for key in _CARD_NUMERIC_QUANTITIES:
+        before, after = base_stats.get(key), other_stats.get(key)
+        if before != after:
+            changes[key] = _quantity_change(before, after)
+    return changes
+
+
+def _column_diff(base_columns: dict, other_columns: dict) -> dict:
+    """Compare two reports' column cards, matched by column name.
+
+    A column present on one side only is `added` or `removed`, so a
+    renamed column reads as a removal plus an addition: identity is
+    by name and renames are not guessed. A column present on both
+    sides whose card dtype changed is `retyped`, stated distinctly
+    from a removal plus an addition, and its quantities are not
+    compared across the change. Any other shared column is
+    `changed` when one of the compared card quantities moved, and
+    counts towards `unchanged` when none did.
+    """
+    def brief(name, card):
+        return {
+            "name": name,
+            "dtype": card.get("dtype"),
+            "role": card.get("role"),
+        }
+
+    added, removed, retyped, changed = [], [], [], []
+    unchanged = 0
+    for name in sorted(set(base_columns) | set(other_columns)):
+        if name not in base_columns:
+            added.append(brief(name, other_columns[name]))
+        elif name not in other_columns:
+            removed.append(brief(name, base_columns[name]))
+        else:
+            base_card = base_columns[name]
+            other_card = other_columns[name]
+            if base_card.get("dtype") != other_card.get("dtype"):
+                retyped.append(
+                    {
+                        "name": name,
+                        "dtype": [
+                            base_card.get("dtype"),
+                            other_card.get("dtype"),
+                        ],
+                    }
+                )
+            else:
+                changes = _card_changes(base_card, other_card)
+                if changes:
+                    changed.append({"name": name, "changes": changes})
+                else:
+                    unchanged += 1
+    return {
+        "added": added,
+        "removed": removed,
+        "retyped": retyped,
+        "changed": changed,
+        "unchanged": unchanged,
+    }
+
+
 class ProfileReport:
     """Profiling results and evidence.
 
@@ -539,6 +634,28 @@ class ProfileReport:
         reported per pass. Evidence internals are not diffed: a
         finding whose evidence changed but whose claim and score
         held counts as unchanged.
+
+        The column cards are compared as well, under `columns`,
+        matched by column name: `added` and `removed` columns
+        (entries carry the name, card dtype, and card role; the
+        full card is `.columns[name]` on the report that holds
+        it), `retyped` columns (present in both, with a different
+        card dtype — stated distinctly from a removal plus an
+        addition, with the dtype pair, and not quantity-compared
+        across the change), and `changed` entries for the shared
+        columns whose compared card quantities moved, each
+        quantity carrying its before and after values and the
+        size of the move. The compared quantities are the card
+        pass's exact counts — rows, nulls and their share,
+        distinct values — and, for numeric columns, the mean,
+        minimum, and maximum the card carries; the card carries
+        no sum, so none is reported, and the rest of the card is
+        not diffed. Those quantities are computed on the full
+        table before budget gating, so profiles taken at
+        different budgets or with different detector sets do not
+        manufacture card differences. Column identity is by name:
+        a renamed column reads as a removal plus an addition.
+        Row-level changes are not compared.
         """
         def brief(f):
             subject = f.get("subject") or {}
@@ -582,6 +699,7 @@ class ProfileReport:
             "changed": sorted(changed, key=lambda c: -abs(c["interestingness"][1] - c["interestingness"][0])),
             "unchanged": len(base.keys() & new.keys()) - len(changed),
             "coverage_changes": coverage_changes,
+            "columns": _column_diff(self.columns or {}, other.columns or {}),
         }
 
     def findings_frame(self):

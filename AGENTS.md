@@ -127,6 +127,8 @@ report.associations()                        # Polars DataFrame of
 report.diff(other)                           # findings added /
         # removed / changed between two profiles of a table,
         # matched by stable id, plus coverage status changes
+        # and a column-card comparison (columns added, removed,
+        # retyped, and the card quantities that moved)
 report.verify(df)                            # recount statements
         # through Polars: ok, mismatch, or not_checkable
 report.rows("<id>", df)                      # the rows behind a
