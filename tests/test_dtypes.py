@@ -225,9 +225,11 @@ def test_time_is_counted_but_not_analysed():
     assert card["n"] == 4
     assert card["null_count"] == 1
     # No statistics and no measure treatment: a time of day is a
-    # circular quantity, so order statistics would mislead.
-    assert card["numeric_stats"] is None
-    assert card["semantic_role"] is None
+    # circular quantity, so order statistics would mislead. The card
+    # carries no numeric_stats entry at all.
+    assert "numeric_stats" not in card
+    assert "semantic_role" not in card
+    assert card["role"] == "other"
     # Coverage states the treatment plainly, naming the column.
     detail = rep.coverage["extraction"]["detail"]
     assert "time-of-day" in detail
