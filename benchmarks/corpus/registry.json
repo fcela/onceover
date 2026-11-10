@@ -678,7 +678,7 @@
      "category": "dependencies",
      "type": "functional",
      "target": "billing_address",
-     "note": "Address structure is functionally determined (e.g. billing_postal_code -> billing_address, 0 violations; 19 FD findings in the first run)."
+     "note": "Address structure is functionally determined (e.g. billing_postal_code -> billing_address, 0 violations; 19 FD findings in the first run). Since the hierarchy-chain consolidation the block's exact dependencies collapse into one hierarchy family (31 grouped statements), so this predicate matches in grouped_findings and the selected count fell from 24 to 10."
     },
     {
      "kind": "finding",
@@ -696,7 +696,7 @@
       "customer_id",
       "billing_address"
      ],
-     "note": "customer_id and the billing-address block encode the same 59-customer grouping one-to-one on all 412 rows."
+     "note": "customer_id and the billing-address block encode the same 59-customer grouping one-to-one on all 412 rows. The matching selected statement is now the hierarchy lead over the billing block (billing_address, billing_postal_code and customer_id form its first level; then billing_city, billing_state, billing_country)."
     }
    ],
    "notes": [

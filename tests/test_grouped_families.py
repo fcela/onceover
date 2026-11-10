@@ -115,3 +115,153 @@ def test_grouped_report_validates_against_schema():
     assert not errors, "\n".join(
         f"{'.'.join(str(p) for p in e.path)}: {e.message}" for e in errors[:10]
     )
+
+
+def _hierarchy_df():
+    rows = []
+    for u in range(24):
+        team = u // 3
+        division = team // 2
+        company = division // 2
+        for r in range(100):
+            rows.append(
+                {
+                    "unit": f"unit_{u:02d}",
+                    "team": f"team_{team}",
+                    "division": f"division_{division}",
+                    "company": f"company_{company}",
+                    "revenue": 100.0 + ((u * 37 + r * 11) % 89),
+                    "channel": ["web", "store", "partner"][r % 3],
+                }
+            )
+    return pl.DataFrame(rows)
+
+
+def test_hierarchy_chain_collapses_to_one_lead():
+    # Issue #207: on the unmodified build this table's hierarchy is
+    # stated nine times — six exact statements selected, three
+    # grouped under rollup leads. After the change, one constructed
+    # lead states the chain and all nine group under it.
+    report = onceover.profile(_hierarchy_df())
+    hier_cols = {"unit", "team", "division", "company"}
+    leads = [
+        f
+        for f in report.findings
+        if (f.get("specification") or {}).get("form") == "hierarchy"
+    ]
+    assert len(leads) == 1
+    lead = leads[0]
+    assert set(lead["subject"]["columns"]) == hier_cols
+    metrics = lead["evidence"][0]["metrics"]
+    assert metrics["hierarchy_levels"] == [
+        ["unit"],
+        ["team"],
+        ["division"],
+        ["company"],
+    ]
+    assert [(m["finer"], m["coarser"]) for m in metrics["hierarchy_mappings"]] == [
+        (["unit"], ["team"]),
+        (["team"], ["division"]),
+        (["division"], ["company"]),
+    ]
+    assert all(m["rows_evaluated"] == 2400 for m in metrics["hierarchy_mappings"])
+    # The member relations ride in the lead's evidence, one per
+    # grouped statement.
+    assert len(metrics["member_relations"]) == 9
+    assert len(lead["grouped_members"]) == 9
+    assert len(report.grouped_findings) == 9
+    for member in report.grouped_findings:
+        assert set(member["subject"]["columns"]) <= hier_cols
+        assert member["grouped_under"] == lead["id"]
+        assert report.finding(member["id"]) is member
+    # No exact pairwise statement over the hierarchy columns is
+    # selected any more.
+    stray = [
+        f
+        for f in report.findings
+        if f["id"] != lead["id"]
+        and set(f["subject"]["columns"]) <= hier_cols
+        and f.get("type") in ("functional", "duplicate_encoding")
+    ]
+    assert stray == []
+    assert report.data["selection"]["families"] == 1
+    assert report.data["selection"]["grouped_statements"] == 9
+
+
+def _hierarchy_lead(report):
+    leads = [
+        f
+        for f in report.findings
+        if (f.get("specification") or {}).get("form") == "hierarchy"
+    ]
+    assert len(leads) == 1
+    return leads[0]
+
+
+def test_hierarchy_lead_verifies_against_the_data():
+    df = _hierarchy_df()
+    report = onceover.profile(df)
+    lead = _hierarchy_lead(report)
+    rows = report.verify(df).filter(pl.col("id") == lead["id"])
+    assert rows.height > 0
+    assert set(rows["status"].unique()) == {"ok"}
+
+
+def test_hierarchy_lead_fails_verification_when_the_chain_breaks():
+    df = _hierarchy_df()
+    report = onceover.profile(df)
+    lead = _hierarchy_lead(report)
+    # Move unit_0's rows to a new division: team_0 then maps to two
+    # divisions, so the team → division mapping no longer holds.
+    broken = df.with_columns(
+        pl.when(pl.int_range(pl.len()) < 100)
+        .then(pl.lit("division_elsewhere"))
+        .otherwise(pl.col("division"))
+        .alias("division")
+    )
+    rows = report.verify(broken).filter(
+        (pl.col("id") == lead["id"]) & (pl.col("status") == "mismatch")
+    )
+    assert rows.height > 0
+
+
+def test_two_independent_hierarchies_stay_two_leads():
+    rows = []
+    for i in range(600):
+        a2 = (i // 5) % 6
+        b2 = (i // 5) % 5
+        rows.append(
+            {
+                "a1": f"a1_{i % 30}",
+                "a2": f"a2_{a2}",
+                "a3": f"a3_{a2 // 2}",
+                "b1": f"b1_{i % 25}",
+                "b2": f"b2_{b2}",
+                "b3": f"b3_{b2 // 2}",
+                "x": float((i * 13) % 17),
+            }
+        )
+    report = onceover.profile(pl.DataFrame(rows))
+    leads = [
+        f
+        for f in report.findings
+        if (f.get("specification") or {}).get("form") == "hierarchy"
+    ]
+    assert len(leads) == 2
+    col_sets = {tuple(sorted(f["subject"]["columns"])) for f in leads}
+    assert col_sets == {("a1", "a2", "a3"), ("b1", "b2", "b3")}
+
+
+def test_hierarchy_report_validates_against_schema():
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads(
+        (Path(__file__).resolve().parent.parent / "docs" / "report-schema.json")
+        .read_text()
+    )
+    report = onceover.profile(_hierarchy_df())
+    assert report.grouped_findings, "expected the chain family on this frame"
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(report.data), key=lambda e: list(e.path))
+    assert not errors, "\n".join(
+        f"{'.'.join(str(p) for p in e.path)}: {e.message}" for e in errors[:10]
+    )

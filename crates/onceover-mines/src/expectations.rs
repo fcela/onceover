@@ -1,12 +1,13 @@
 //! Declared-expectation checks: the user states a table's intended
 //! structure through hints (time axis, row ordering, gap-free columns,
-//! cadences, dimensions, measures); this pass verifies the statements
-//! exactly. Every finding's evidence is tagged
+//! cadences, dimensions, measures, hierarchies); this pass verifies
+//! the statements exactly. Every finding's evidence is tagged
 //! `reference_source: "declared"` — the counterpart to the dates
 //! pass's `"inferred"`. Checks that inference cannot do at all:
 //! monthly-cadence gaps, gap checks below the inference floor,
-//! integer-sequence completeness, ordering *violations*, and panel
-//! completeness over declared dimensions × periods.
+//! integer-sequence completeness, ordering *violations*, panel
+//! completeness over declared dimensions × periods, and declared
+//! hierarchies (each level determines the next).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -869,6 +870,218 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
     vec![finding]
 }
 
+/// Declared-hierarchy verification over one `hierarchies` entry:
+/// the level columns, ordered finest to coarsest, must satisfy
+/// "each level determines the next" exactly. Every adjacent
+/// mapping is checked on the rows where both levels are present
+/// (the functional-dependency pass's incomplete-row handling).
+/// A hierarchy that holds yields one structural statement —
+/// the ledger groups the inferred restatements of the chain
+/// under it. A hierarchy that does not hold yields one deviation
+/// statement naming every broken mapping. Unusable declarations
+/// are noted, not raised, like every other hint.
+fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String>) -> Vec<Finding> {
+    let joined = levels.join(", ");
+    if levels.len() < 2 {
+        notes.push(format!(
+            "hierarchy check on ({joined}) ignored: a hierarchy needs at least two levels"
+        ));
+        return Vec::new();
+    }
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for name in levels {
+        if !seen.insert(name.as_str()) {
+            notes.push(format!(
+                "hierarchy check on ({joined}) ignored: column '{name}' is listed twice"
+            ));
+            return Vec::new();
+        }
+    }
+    let mut cols: Vec<usize> = Vec::with_capacity(levels.len());
+    for name in levels {
+        match col_index(table, name) {
+            None => {
+                notes.push(format!(
+                    "hierarchy check on ({joined}) ignored: column '{name}' not in table"
+                ));
+                return Vec::new();
+            }
+            Some(i) => {
+                if !matches!(
+                    table.cols[i],
+                    TypedCol::I64 { .. }
+                        | TypedCol::U64 { .. }
+                        | TypedCol::F64 { .. }
+                        | TypedCol::Str { .. }
+                        | TypedCol::StrOwned { .. }
+                        | TypedCol::Bool { .. }
+                        | TypedCol::Date { .. }
+                        | TypedCol::Datetime { .. }
+                ) {
+                    notes.push(format!(
+                        "hierarchy check on ({joined}) skipped: column '{name}' has an unsupported type"
+                    ));
+                    return Vec::new();
+                }
+                cols.push(i);
+            }
+        }
+    }
+    struct Edge {
+        finer: String,
+        coarser: String,
+        rows_evaluated: usize,
+        violating_rows: usize,
+        split_levels: usize,
+        finer_levels: usize,
+    }
+    let mut edges: Vec<Edge> = Vec::new();
+    for (j, w) in cols.windows(2).enumerate() {
+        let (fi, ci) = (w[0], w[1]);
+        // First coarser value seen per finer value, and every
+        // coarser value seen: a row violates when its finer value
+        // was first seen with a different coarser value.
+        let mut first: BTreeMap<String, String> = BTreeMap::new();
+        let mut all: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut rows_evaluated = 0usize;
+        let mut violating_rows = 0usize;
+        for r in 0..table.n {
+            let (Some(fv), Some(cv)) = (
+                cell_value(&table.cols[fi], r),
+                cell_value(&table.cols[ci], r),
+            ) else {
+                continue;
+            };
+            rows_evaluated += 1;
+            let fk = fv.to_string();
+            let ck = cv.to_string();
+            match first.get(&fk) {
+                None => {
+                    first.insert(fk.clone(), ck.clone());
+                }
+                Some(prev) if *prev != ck => {
+                    violating_rows += 1;
+                }
+                _ => {}
+            }
+            all.entry(fk).or_default().insert(ck);
+        }
+        let split_levels = all.values().filter(|s| s.len() > 1).count();
+        edges.push(Edge {
+            finer: levels[j].clone(),
+            coarser: levels[j + 1].clone(),
+            rows_evaluated,
+            violating_rows,
+            split_levels,
+            finer_levels: all.len(),
+        });
+    }
+    if edges.iter().any(|e| e.rows_evaluated == 0) {
+        notes.push(format!(
+            "hierarchy check on ({joined}) skipped: no rows where adjacent levels are both present"
+        ));
+        return Vec::new();
+    }
+    let chain = levels.join(" → ");
+    let raw_subject = BTreeMap::from([
+        ("columns".into(), json!(levels)),
+        ("column".into(), json!(levels[0])),
+    ]);
+    let min_support = edges.iter().map(|e| e.rows_evaluated).min().unwrap_or(0);
+    let broken: Vec<&Edge> = edges.iter().filter(|e| e.violating_rows > 0).collect();
+    if broken.is_empty() {
+        let edge_labels: Vec<String> = edges
+            .iter()
+            .map(|e| format!("{} → {} on {} rows", e.finer, e.coarser, e.rows_evaluated))
+            .collect();
+        let metrics = BTreeMap::from([
+            ("form".into(), json!("hierarchy")),
+            ("reference_source".into(), json!("declared")),
+            ("violations".into(), json!(0)),
+            ("n".into(), json!(table.n)),
+            ("n_used".into(), json!(min_support)),
+            ("hierarchy_levels".into(), json!(levels)),
+            (
+                "hierarchy_edges".into(),
+                json!(edges
+                    .iter()
+                    .map(|e| json!({
+                        "finer": e.finer,
+                        "coarser": e.coarser,
+                        "rows_evaluated": e.rows_evaluated,
+                        "finer_levels": e.finer_levels,
+                    }))
+                    .collect::<Vec<_>>()),
+            ),
+        ]);
+        vec![Finding::new(
+            Pattern::DuplicateEncoding,
+            raw_subject,
+            format!(
+                "declared hierarchy {chain} holds: each level determines the next ({})",
+                edge_labels.join("; ")
+            ),
+            EvidenceBasis::Measured,
+            0.5,
+            metrics,
+            Some(
+                "the declared structure is present in the data; the inferred statements \
+                 that restate this chain are grouped under this finding"
+                    .into(),
+            ),
+            method("declared_hierarchy"),
+        )]
+    } else {
+        let total_violations: usize = broken.iter().map(|e| e.violating_rows).sum();
+        let broken_labels: Vec<String> = broken
+            .iter()
+            .map(|e| {
+                format!(
+                    "{} → {} is broken by {} rows ({} {} values map to more than one {})",
+                    e.finer, e.coarser, e.violating_rows, e.split_levels, e.finer, e.coarser
+                )
+            })
+            .collect();
+        let metrics = BTreeMap::from([
+            ("form".into(), json!("hierarchy")),
+            ("reference_source".into(), json!("declared")),
+            ("violations".into(), json!(total_violations)),
+            ("n".into(), json!(table.n)),
+            ("n_used".into(), json!(min_support)),
+            ("hierarchy_levels".into(), json!(levels)),
+            (
+                "broken_mappings".into(),
+                json!(broken
+                    .iter()
+                    .map(|e| json!({
+                        "finer": e.finer,
+                        "coarser": e.coarser,
+                        "violating_rows": e.violating_rows,
+                        "split_levels": e.split_levels,
+                    }))
+                    .collect::<Vec<_>>()),
+            ),
+        ]);
+        vec![Finding::new(
+            Pattern::DuplicateEncoding,
+            raw_subject,
+            format!(
+                "declared hierarchy {chain} does not hold: {}",
+                broken_labels.join("; ")
+            ),
+            EvidenceBasis::Measured,
+            0.55,
+            metrics,
+            Some(
+                "the declaration may be wrong, or rows were assigned to the wrong level \
+                 after the declaration was written"
+                    .into(),
+            ),
+            method("declared_hierarchy"),
+        )]
+    }
+}
+
 /// Display form of a dimension value: dates stored as day counts are
 /// rendered as ISO dates when the column is temporal.
 fn display_value(table: &TypedTable, name: &str, v: &Value) -> Value {
@@ -1019,6 +1232,14 @@ pub fn analyze_expectations(table: &TypedTable, hints: &ProfileHints) -> Expecta
         findings.extend(f);
     }
 
+    for levels in &hints.hierarchies {
+        let f = hierarchy_check(table, levels, &mut notes);
+        if !f.is_empty() {
+            checks.push(format!("hierarchy on ({})", levels.join(", ")));
+        }
+        findings.extend(f);
+    }
+
     let mut coverage = format!(
         "{} checks run ({}), {} findings",
         checks.len(),
@@ -1164,6 +1385,112 @@ mod tests {
         let absent = f.metrics()["absent_values"].to_string();
         assert!(absent.contains("E1") && absent.contains("2021"), "{absent}");
         assert!(f.validate().is_ok(), "{:?}", f.validate());
+    }
+
+    fn hierarchy_table(broken: bool) -> TypedTable<'static> {
+        // unit -> team -> division; when `broken`, team_1 also maps
+        // to division_1 on its last rows.
+        let mut units = Vec::new();
+        let mut teams = Vec::new();
+        let mut divisions = Vec::new();
+        for u in 0..6 {
+            let team = u / 2;
+            for _ in 0..4 {
+                units.push(format!("unit_{u}"));
+                teams.push(format!("team_{team}"));
+                divisions.push(format!("division_{}", team / 2));
+            }
+        }
+        if broken {
+            // team_1's first block claims division_1 instead of
+            // division_0, so its second block (still division_0)
+            // breaks the team -> division mapping on 4 rows.
+            for d in divisions.iter_mut().take(12).skip(8) {
+                *d = "division_1".to_string();
+            }
+        }
+        let n = units.len();
+        table(
+            vec!["unit", "team", "division"],
+            vec![
+                TypedCol::StrOwned {
+                    vals: units.into_iter().map(Some).collect(),
+                },
+                TypedCol::StrOwned {
+                    vals: teams.into_iter().map(Some).collect(),
+                },
+                TypedCol::StrOwned {
+                    vals: divisions.into_iter().map(Some).collect(),
+                },
+            ],
+            n,
+        )
+    }
+
+    #[test]
+    fn declared_hierarchy_holds_as_one_statement() {
+        let t = hierarchy_table(false);
+        let out = analyze_expectations(
+            &t,
+            &hints(json!({"hierarchies": [["unit", "team", "division"]]})),
+        );
+        assert_eq!(out.findings.len(), 1, "{}", out.coverage);
+        assert!(out.coverage.contains("hierarchy on (unit, team, division)"));
+        let f = &out.findings[0];
+        assert_eq!(f.category, onceover_report::Category::ColumnRoles);
+        assert_eq!(f.specification.form.as_deref(), Some("hierarchy"));
+        assert_eq!(f.metrics()["reference_source"], json!("declared"));
+        assert_eq!(f.metrics()["violations"], json!(0));
+        assert_eq!(
+            f.metrics()["hierarchy_levels"],
+            json!(["unit", "team", "division"])
+        );
+        let edges = f.metrics()["hierarchy_edges"].as_array().unwrap();
+        assert_eq!(edges.len(), 2);
+        assert_eq!(edges[0]["finer"], json!("unit"));
+        assert_eq!(edges[0]["rows_evaluated"], json!(24));
+        assert!(f.claim.contains("holds"), "{}", f.claim);
+        assert!(f.validate().is_ok(), "{:?}", f.validate());
+    }
+
+    #[test]
+    fn declared_hierarchy_deviation_names_the_broken_mapping() {
+        let t = hierarchy_table(true);
+        let out = analyze_expectations(
+            &t,
+            &hints(json!({"hierarchies": [["unit", "team", "division"]]})),
+        );
+        assert_eq!(out.findings.len(), 1, "{}", out.coverage);
+        let f = &out.findings[0];
+        assert_eq!(f.metrics()["reference_source"], json!("declared"));
+        assert_eq!(f.metrics()["violations"], json!(4));
+        let broken = f.metrics()["broken_mappings"].as_array().unwrap();
+        assert_eq!(broken.len(), 1);
+        assert_eq!(broken[0]["finer"], json!("team"));
+        assert_eq!(broken[0]["coarser"], json!("division"));
+        assert_eq!(broken[0]["violating_rows"], json!(4));
+        assert_eq!(broken[0]["split_levels"], json!(1));
+        assert!(f.claim.contains("does not hold"), "{}", f.claim);
+        assert!(f.validate().is_ok(), "{:?}", f.validate());
+    }
+
+    #[test]
+    fn declared_hierarchy_problems_are_noted_not_fatal() {
+        let t = hierarchy_table(false);
+        let out = analyze_expectations(
+            &t,
+            &hints(
+                json!({"hierarchies": [["unit", "team", "region"], ["unit"], ["unit", "unit"]]}),
+            ),
+        );
+        assert!(out.findings.is_empty(), "{}", out.coverage);
+        assert!(out.coverage.contains("region"), "{}", out.coverage);
+        assert!(
+            out.coverage.contains("at least two levels"),
+            "{}",
+            out.coverage
+        );
+        assert!(out.coverage.contains("listed twice"), "{}", out.coverage);
     }
 
     #[test]

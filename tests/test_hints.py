@@ -111,3 +111,190 @@ def test_no_hints_no_expectations():
     report = onceover.profile(df)
     assert report.coverage["expectations"]["status"] == "skipped"
     assert declared(report) == []
+
+
+def _org_df(broken=False):
+    rows = []
+    for u in range(12):
+        team = u // 3
+        division = team // 2
+        for r in range(50):
+            rows.append(
+                {
+                    "unit": f"unit_{u:02d}",
+                    "team": f"team_{team}",
+                    "division": f"division_{division}",
+                    "revenue": 10.0 + ((u * 17 + r * 7) % 31),
+                }
+            )
+    df = pl.DataFrame(rows)
+    if broken:
+        # team_1's rows in unit_04 claim division_1 as well.
+        df = df.with_columns(
+            pl.when((pl.col("unit") == "unit_04"))
+            .then(pl.lit("division_1"))
+            .otherwise(pl.col("division"))
+            .alias("division")
+        )
+    return df
+
+
+def test_declared_hierarchy_holds_and_leads():
+    report = onceover.profile(
+        _org_df(), hints={"hierarchies": [["unit", "team", "division"]]}
+    )
+    hits = declared(report, "column_roles")
+    assert len(hits) == 1
+    lead = hits[0]
+    metrics = lead["evidence"][0]["metrics"]
+    assert metrics["violations"] == 0
+    assert metrics["hierarchy_levels"] == ["unit", "team", "division"]
+    assert [e["finer"] for e in metrics["hierarchy_edges"]] == ["unit", "team"]
+    assert "holds" in lead["claim"]
+    # The inferred restatements of the same chain group under the
+    # declared statement instead of standing as their own findings.
+    assert lead["grouped_members"], "expected grouped restatements"
+    for member in report.grouped_findings:
+        assert member["grouped_under"] == lead["id"]
+        assert set(member["subject"]["columns"]) <= {"unit", "team", "division"}
+    detail = report.coverage["expectations"]["detail"]
+    assert "hierarchy on (unit, team, division)" in detail
+
+
+def test_declared_hierarchy_deviation_is_one_statement():
+    report = onceover.profile(
+        _org_df(broken=True), hints={"hierarchies": [["unit", "team", "division"]]}
+    )
+    hits = declared(report, "column_roles")
+    assert len(hits) == 1
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["violations"] == 50
+    broken = metrics["broken_mappings"]
+    assert len(broken) == 1
+    assert broken[0]["finer"] == "team"
+    assert broken[0]["coarser"] == "division"
+    assert broken[0]["split_levels"] == 1
+    assert "does not hold" in hits[0]["claim"]
+
+
+def test_declared_hierarchy_statements_verify_against_the_data():
+    hints = {"hierarchies": [["unit", "team", "division"]]}
+    for broken in (False, True):
+        df = _org_df(broken=broken)
+        report = onceover.profile(df, hints=hints)
+        hits = declared(report, "column_roles")
+        assert len(hits) == 1
+        result = report.verify(df)
+        rows = result.filter(pl.col("id") == hits[0]["id"])
+        assert rows.height > 0
+        assert set(rows["status"].unique()) == {"ok"}
+
+
+def test_declared_hierarchy_fails_verification_on_changed_data():
+    hints = {"hierarchies": [["unit", "team", "division"]]}
+    report = onceover.profile(_org_df(), hints=hints)
+    hits = declared(report, "column_roles")
+    result = report.verify(_org_df(broken=True))
+    rows = result.filter(
+        (pl.col("id") == hits[0]["id"]) & (pl.col("status") == "mismatch")
+    )
+    assert rows.height > 0
+
+
+def test_declared_hierarchy_problems_are_noted_not_raised():
+    report = onceover.profile(
+        _org_df(),
+        hints={"hierarchies": [["unit", "team", "region"], ["unit"]]},
+    )
+    detail = report.coverage["expectations"]["detail"]
+    assert "region" in detail
+    assert "at least two levels" in detail
+    assert declared(report, "column_roles") == []
+
+
+def test_exclude_columns_removes_them_everywhere():
+    df = _org_df().with_columns(
+        (pl.col("revenue") * 2).alias("revenue_double")
+    )
+    report = onceover.profile(df, hints={"exclude_columns": ["revenue_double"]})
+    assert "revenue_double" not in report.data["columns"]
+    assert "revenue" in report.data["columns"]
+    named = [
+        f
+        for f in list(report.findings) + list(report.grouped_findings)
+        if "revenue_double" in f["subject"]["columns"]
+    ]
+    assert named == []
+    detail = report.coverage["column_exclusions"]["detail"]
+    assert "revenue_double" in detail
+    assert "hints.exclude_columns" in detail
+
+
+def test_exclude_columns_unknown_names_are_stated():
+    df = _org_df()
+    report = onceover.profile(df, hints={"exclude_columns": ["nope"]})
+    detail = report.coverage["column_exclusions"]["detail"]
+    assert "nope" in detail and "ignored" in detail
+    # Nothing was excluded: the table profiles in full.
+    assert set(report.data["columns"]) == {"unit", "team", "division", "revenue"}
+
+
+def test_bare_string_hint_values_raise():
+    df = _org_df()
+    for hints in ({"exclude_columns": "unit"}, {"hierarchies": "unit"}):
+        try:
+            onceover.profile(df, hints=hints)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {hints}")
+
+
+def _week_df():
+    rows = []
+    for e in range(12):
+        for w in range(1, 41):
+            if (e * 7 + w) % 13 == 0:
+                continue  # gaps, so week is no per-group consecutive run
+            rows.append(
+                {
+                    "entity": f"site_{e}",
+                    "week": w,
+                    "value": 50.0 + ((e * 31 + w * 7) % 41)
+                    + (30.0 if w > 25 else 0.0),
+                }
+            )
+    return pl.DataFrame(rows)
+
+
+def test_week_axis_is_not_a_target():
+    # Issue #207: the bare week integer is the declared time axis
+    # but keeps the inferred measure role. On the unmodified build
+    # it stays target-eligible and draws a predictive finding; the
+    # structural axis exclusion removes it from target roles, and
+    # coverage says so.
+    report = onceover.profile(_week_df(), hints={"time": "week"})
+    assert report.data["frame"]["axis"]["source_column"] == "week"
+    targeting = [
+        f for f in report.findings if (f["subject"].get("target") == "week")
+    ]
+    assert targeting == []
+    details = " ".join(
+        entry["detail"] for entry in report.coverage.values()
+    )
+    assert "time axis" in details and "week" in details
+
+
+def test_week_axis_role_declaration_overrides_the_exclusion():
+    # User declaration wins over the structural default: declaring
+    # the axis column's role explicitly makes it target-eligible
+    # again, exactly as on the unmodified build.
+    report = onceover.profile(
+        _week_df(), hints={"time": "week", "roles": {"week": "measure"}}
+    )
+    targeting = [
+        f
+        for f in report.findings
+        if (f["subject"].get("target") == "week") and f.get("type") == "predictive"
+    ]
+    assert len(targeting) == 1

@@ -175,6 +175,13 @@ report = onceover.profile(df, hints={
                                     # identifier | index | timestamp |
                                     # timestamp_part | dimension |
                                     # measure | text
+    "hierarchies": [["unit", "team", "division"]],
+                                    # known hierarchy, levels finest
+                                    # to coarsest; verified exactly,
+                                    # stated once (or once as a
+                                    # deviation naming broken mappings)
+    "exclude_columns": ["note"],    # columns not profiled at all;
+                                    # stated in coverage as user-declared
 })
 ```
 

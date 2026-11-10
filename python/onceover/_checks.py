@@ -137,6 +137,8 @@ def _violators_fd(f, df) -> pl.DataFrame:
 
 
 def _check_fd(f, m, df) -> list[Triple] | None:
+    if m.get("form") == "hierarchy":
+        return _check_hierarchy(f, m, df)
     if m.get("sampled"):
         return None
     return [("violations", m["violations"], _violators_fd(f, df).height)]
@@ -152,7 +154,86 @@ def _check_identity(f, m, df) -> list[Triple]:
     ]
 
 
+def _as_cols(v) -> list[str]:
+    return [v] if isinstance(v, str) else list(v)
+
+
+def _split_values(df, finer: list[str], coarser: list[str]) -> int:
+    """Tuples of `finer` paired with more than one tuple of `coarser`."""
+    rows = df.drop_nulls(finer + coarser)
+    if rows.height == 0:
+        return 0
+    pairs = rows.select(finer + coarser).unique()
+    return pairs.height - pairs.select(finer).unique().height
+
+
+def _hierarchy_levels(m) -> list[list[str]]:
+    raw = m.get("hierarchy_levels") or []
+    return [_as_cols(c) for c in raw]
+
+
+def _check_hierarchy(f, m, df) -> list[Triple]:
+    """Recount a hierarchy statement: every level determines the next.
+
+    A mapping holds exactly when no finer tuple pairs with more than
+    one coarser tuple (a "split" tuple), so splits are the recountable
+    quantity, alongside each mapping's complete-row support. Columns
+    sharing a level must determine each other the same way. A level
+    side of a mapping may name several columns (an equivalence class);
+    a declared mapping names one column per side.
+    """
+    triples: list[Triple] = []
+
+    def mapping_triples(finer, coarser, stated_rows=None, stated_splits=0, stated_levels=None):
+        label = f"{'+'.join(finer)} → {'+'.join(coarser)}"
+        if stated_rows is not None:
+            rows = df.drop_nulls(finer + coarser).height
+            triples.append((f"complete rows ({label})", stated_rows, rows))
+        triples.append(
+            (f"split {finer[0]} values ({label})", stated_splits, _split_values(df, finer, coarser))
+        )
+        if stated_levels is not None and len(finer) == 1:
+            actual = df.drop_nulls(finer).select(finer).unique().height
+            triples.append((f"distinct {finer[0]} values", stated_levels, actual))
+
+    mappings = m.get("hierarchy_mappings") or m.get("hierarchy_edges") or []
+    for e in mappings:
+        # A mapping between levels is stated on the support of its
+        # widest witness pair (recorded as `witness`): a level with
+        # several columns is complete on fewer rows than any one of
+        # its columns, so the recount uses the witness columns.
+        witness = e.get("witness") or {}
+        finer = _as_cols(witness.get("finer", e["finer"]))
+        coarser = _as_cols(witness.get("coarser", e["coarser"]))
+        mapping_triples(
+            finer,
+            coarser,
+            stated_rows=e["rows_evaluated"],
+            stated_levels=e.get("finer_levels"),
+        )
+    levels = _hierarchy_levels(m)
+    for level in levels:
+        for a in level:
+            for b in level:
+                if a != b:
+                    triples.append(
+                        (f"split {a} values within level", 0, _split_values(df, [a], [b]))
+                    )
+    if not mappings and levels:
+        # A deviation statement carries only its broken mappings; the
+        # adjacent pairs it does not name are claimed to hold.
+        broken = {(e["finer"], e["coarser"]): e for e in m.get("broken_mappings") or []}
+        flat = [level[0] for level in levels if len(level) == 1]
+        for finer, coarser in zip(flat, flat[1:]):
+            e = broken.get((finer, coarser))
+            stated = e["split_levels"] if e is not None else 0
+            mapping_triples([finer], [coarser], stated_splits=stated)
+    return triples
+
+
 def _check_duplicate_encoding(f, m, df) -> list[Triple]:
+    if m.get("form") == "hierarchy":
+        return _check_hierarchy(f, m, df)
     a, b = m.get("finer"), m.get("coarser")
     if a is None:
         a, b = f["subject"]["columns"]
@@ -419,6 +500,7 @@ CHECKS: dict[str, Callable] = {
     "ols_residual_scan": _check_identity,
     "multiterm_scan": _check_identity,
     "pair contingency + majority mapping, exact verification": _check_duplicate_encoding,
+    "declared_hierarchy": _check_hierarchy,
     "missing_rate_scan": _check_missing,
     "co_missing_blocks": _check_block,
     "column_statistics": _check_column_statistics,

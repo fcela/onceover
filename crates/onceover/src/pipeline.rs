@@ -3,7 +3,7 @@
 //! (unless an opt-in wall-clock deadline fires, which is reported honestly).
 
 use onceover_report::{Method, Pattern};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
@@ -117,6 +117,59 @@ fn profile_inner(
         false
     };
 
+    // ---------- declared column exclusions (issue #207) ----------
+    // Columns named by `hints.exclude_columns` are removed before
+    // extraction, so no pass ever sees them: an excluded column
+    // gets no card, no role, and no finding can name it. The
+    // exclusion and its source are stated in the
+    // `column_exclusions` coverage entry below; declared names
+    // that are not columns of the table are ignored and stated
+    // there too.
+    let mut exclusion_detail: Option<String> = None;
+    let df_storage: DataFrame;
+    let df: &DataFrame = match cfg.hints.as_ref() {
+        Some(hints) if !hints.exclude_columns.is_empty() => {
+            let present: Vec<String> = df.columns().iter().map(|c| c.name().to_string()).collect();
+            let mut excluded: Vec<String> = Vec::new();
+            let mut unknown: Vec<String> = Vec::new();
+            for name in &hints.exclude_columns {
+                if excluded.contains(name) || unknown.contains(name) {
+                    continue;
+                }
+                if present.contains(name) {
+                    excluded.push(name.clone());
+                } else {
+                    unknown.push(name.clone());
+                }
+            }
+            let kept: Vec<_> = df
+                .columns()
+                .iter()
+                .filter(|c| !excluded.iter().any(|e| e == c.name().as_str()))
+                .cloned()
+                .collect();
+            df_storage =
+                DataFrame::new_infer_height(kept).expect("filtering columns preserves the frame");
+            let mut detail = format!(
+                "excluded by user declaration (hints.exclude_columns): {}",
+                if excluded.is_empty() {
+                    "none".to_string()
+                } else {
+                    excluded.join(", ")
+                }
+            );
+            if !unknown.is_empty() {
+                detail.push_str(&format!(
+                    "; declared names ignored (not columns of the table): {}",
+                    unknown.join(", ")
+                ));
+            }
+            exclusion_detail = Some(detail);
+            &df_storage
+        }
+        _ => df,
+    };
+
     // ---------- extraction ----------
     let table = extract(df);
     let unsupported = table
@@ -140,6 +193,16 @@ fn profile_inner(
             }
         )),
     );
+
+    if let Some(detail) = &exclusion_detail {
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "column_exclusions".into(),
+            PassInfo::ran(detail.clone()),
+        );
+    }
 
     if let Some(source) = &cfg.source {
         let detail = if source.basis == "sampled" {
@@ -259,7 +322,7 @@ fn profile_inner(
     let temporal_table = temporal_df.as_ref().map(|d| extract(d));
     let ttable: &TypedTable = temporal_table.as_ref().unwrap_or(&table);
     let frame_time_hint: Option<&str> = frame.axis_name.as_deref();
-    let scaffold_excluded: Vec<usize> = (0..table.cols.len())
+    let role_excluded: Vec<usize> = (0..table.cols.len())
         .filter(|&i| {
             matches!(info[i].role.as_str(), "constant" | "all_null")
                 || matches!(
@@ -270,6 +333,42 @@ fn profile_inner(
                     && frame.axis_parts.contains(&table.names[i]))
         })
         .collect();
+    // The time axis is scaffolding by structure, not only by role
+    // (issue #207): the column(s) the frame model assembled as the
+    // report's time axis are excluded from target roles whatever
+    // role they were assigned — a bare week integer can carry the
+    // measure role and would otherwise stay target-eligible, and a
+    // native timestamp was only protected because its role happens
+    // to say so. A `hints.roles` entry for the axis column is an
+    // explicit user declaration and wins over the structural
+    // default.
+    let axis_source_columns: Vec<String> = frame
+        .info
+        .axis
+        .as_ref()
+        .map(|axis| {
+            let mut cols: Vec<String> = axis.parts.clone();
+            if let Some(src) = &axis.source_column {
+                if !cols.contains(src) {
+                    cols.push(src.clone());
+                }
+            }
+            cols
+        })
+        .unwrap_or_default();
+    let axis_excluded: Vec<usize> = (0..table.cols.len())
+        .filter(|&i| {
+            axis_source_columns.contains(&table.names[i])
+                && !role_excluded.contains(&i)
+                && !cfg
+                    .hints
+                    .as_ref()
+                    .is_some_and(|h| h.roles.contains_key(&table.names[i]))
+        })
+        .collect();
+    let mut scaffold_excluded = role_excluded;
+    scaffold_excluded.extend(axis_excluded.iter().copied());
+    scaffold_excluded.sort_unstable();
     let exclusion_note = if scaffold_excluded.is_empty() {
         String::new()
     } else {
@@ -283,7 +382,20 @@ fn profile_inner(
                 )
             })
             .collect();
-        format!("; frame-role target exclusions: {}", parts.join(", "))
+        let mut note = format!("; frame-role target exclusions: {}", parts.join(", "));
+        if !axis_excluded.is_empty() {
+            let names: Vec<String> = axis_excluded
+                .iter()
+                .map(|&i| table.names[i].clone())
+                .collect();
+            note.push_str(&format!(
+                "; of these, {} excluded as the report's time axis (structural, \
+                 regardless of assigned role; a hints.roles entry for the column \
+                 overrides it)",
+                names.join(", ")
+            ));
+        }
+        note
     };
 
     // ---------- duplicate rows ----------
@@ -834,13 +946,35 @@ fn profile_inner(
         };
         match (&ticks, &axis_name) {
             (Some(ticks), Some(axis_name)) => {
+                // The axis column is never profiled as a measure of
+                // its own series (issue #207): the structural
+                // exclusion applies here by column, not by role, so
+                // a measure-role axis column is removed by name. A
+                // hints.roles declaration for the column already
+                // kept it out of `axis_excluded`, so a declared
+                // measure axis stays measurable.
+                let mut measures = columns_with_role("measure");
+                let axis_measures: Vec<String> = measures
+                    .iter()
+                    .filter(|i| axis_excluded.contains(i))
+                    .map(|&i| table.names[i].clone())
+                    .collect();
+                measures.retain(|i| !axis_excluded.contains(i));
                 let input = onceover_mines::SeriesInput {
                     axis_name,
                     ticks,
-                    measures: columns_with_role("measure"),
+                    measures,
                     dimensions: columns_with_role("dimension"),
                 };
-                let (mut f, detail) = onceover_mines::profile_series(&table, &input);
+                let (mut f, mut detail) = onceover_mines::profile_series(&table, &input);
+                if !axis_measures.is_empty() {
+                    detail.push_str(&format!(
+                        "; the time axis column {} is not profiled as a measure \
+                         (structural exclusion; a hints.roles entry for the column \
+                         overrides it)",
+                        axis_measures.join(", ")
+                    ));
+                }
                 // The dates detector states the same axis's gaps with its
                 // own calendar when selected.
                 if enabled("dates") {
@@ -939,26 +1073,37 @@ fn profile_inner(
                 .filter(|(lhs, _)| lhs.len() == 1)
                 .map(|(lhs, rhs)| (lhs[0].min(*rhs), lhs[0].max(*rhs)))
                 .collect();
+            // The pass's own role-based exclusions, plus the
+            // structural time-axis exclusion (issue #207): pairs
+            // involving the axis column are not order statements
+            // about the data.
+            let mut oc_excluded: BTreeSet<usize> = frame
+                .roles
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| {
+                    matches!(
+                        r.as_deref(),
+                        Some("index" | "identifier" | "timestamp_part")
+                    )
+                })
+                .map(|(i, _)| i)
+                .collect();
+            let oc_axis: Vec<String> = axis_excluded
+                .iter()
+                .filter(|i| !oc_excluded.contains(i))
+                .map(|&i| table.names[i].clone())
+                .collect();
+            oc_excluded.extend(axis_excluded.iter().copied());
             let out = onceover_deps::order_constraints(
                 &table,
                 &onceover_deps::OrderConfig {
                     max_pairs: tier.dep_pair_cap,
                     derived_pairs,
-                    excluded: frame
-                        .roles
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, r)| {
-                            matches!(
-                                r.as_deref(),
-                                Some("index" | "identifier" | "timestamp_part")
-                            )
-                        })
-                        .map(|(i, _)| i)
-                        .collect(),
+                    excluded: oc_excluded,
                 },
             );
-            let detail = format!(
+            let mut detail = format!(
                 "{} of {} eligible column pairs screened; {} of {} that stayed near-universal verified on all rows on the shared max_pairs budget; {} reportable order directions, {} findings",
                 out.pairs_screened,
                 out.pairs_total,
@@ -967,6 +1112,13 @@ fn profile_inner(
                 out.pairs_passing,
                 out.findings.len(),
             );
+            if !oc_axis.is_empty() {
+                detail.push_str(&format!(
+                    "; pairs involving the time axis column {} excluded \
+                     (structural; a hints.roles entry for the column overrides it)",
+                    oc_axis.join(", ")
+                ));
+            }
             let info = if out.pairs_screened < out.pairs_total
                 || out.pairs_evaluated < out.pairs_surviving
             {

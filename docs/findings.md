@@ -49,7 +49,7 @@ used by package version 0.1.3.
 | `changes` | Type `residual_level`; reference model and compared groups. Types `level_shift`, `trend_change`, `variance_change`; breakpoint in the statement definition. Type `transient_excursion`; event start, end and peak in the statement definition | Dated residual shifts; level, trend, and variance breaks in a series itself along a date, datetime, or integer-year axis from the breaks detector; short excursions from a local baseline (seasonal or rolling-median) from the same detector, kept only when the series flags few lone points or the event's flagged points cluster beyond the series' scattered background (a Bonferroni-corrected binomial tail), so a heavy-tailed column's ordinary tail is not reported as events; type `step_discontinuity` with form `step` for a cross-sectional level jump of a `measure` column across a threshold in another numeric column, from the discontinuities detector, or at the deep budget across a line in two columns; type `distribution_shift` with form `drift` for drift of a target's predictors along a declared time axis, from the drift detector; type `ordered_partition` with form `recursive_partition` for a model-based recursive partition of a numeric response along a date, datetime, or integer-year axis — per-node level + linear-trend fits; splits in the statement definition with their F statistics and gain shares, each split either a break date on the axis or a bipartition of a categorical dimension's levels ordered by their within-level fitted level; leaves in the evidence with period, dimension conditions on the path from the root, row count, level at period start and slope per year — from the ordered_partitions detector; type `series_structure` from the `series` detector, describing a whole series along the axis, with `kind` in the evidence: `trend`, `cycle`, `persistence`, `new_level`, `ended_level`, `share_shift`; or cluster differences from the opt-in views pass; inspect the statement definition |
 
 The mathematical form is separate from dependency type. Current forms include
-`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, and `interaction_h`. A decision-table algorithm can
+`value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `hierarchy`, and `interaction_h`. A decision-table algorithm can
 `value_mapping`, `affine`, `piecewise_linear`, `period_split`, `pivot`, `isolation_gap`, `excursion`, `step_shape`, `curved_shape`, and `pairwise_order`. A decision-table algorithm can
 support a predictive dependency without establishing an exact functional
 constraint. A high predictive score never upgrades a statement to an exact
@@ -557,6 +557,28 @@ pass recorded zero violations (for a duplicate encoding, an exact
 one-to-one pairing; for a rollup, zero exceptions) and the statement
 carries no conditions. The seed cases are:
 
+- A declared hierarchy that holds (see Declared expectations) leads,
+  and every exact statement internal to its level columns groups
+  under it: the declaration asserts the levels form one structure,
+  so any exact relation among them restates it.
+- A hierarchy chain: a connected set of at least three columns whose
+  exact pairwise relations (single-input functional dependencies,
+  rollups, duplicate encodings) totally order their equivalence
+  classes by determination — columns that determine each other form
+  one level, and each level determines the next. The lead is a
+  constructed statement (type `duplicate_encoding`, form `hierarchy`)
+  naming the levels in order, finest to coarsest, with each adjacent
+  mapping's row support and every member relation in its evidence
+  (`hierarchy_levels`, `hierarchy_mappings`, `member_relations`).
+  Members are the exact statements internal to the chain's columns
+  that respect its direction: pairwise statements, which built the
+  chain, and multi-input dependencies whose target is no finer than
+  every input and strictly coarser than at least one. A single
+  equivalence class of three or more columns — one grouping stated
+  by several mutually determining columns — collapses the same way.
+  A structure that branches or merges (two incomparable levels both
+  determining a third) is not a chain: nothing is grouped by this
+  seed, and the statements fall through to the seeds below.
 - An exact duplicate encoding leads, and the exact functional
   dependencies over its column pair, in both directions, group under
   it.
@@ -596,6 +618,12 @@ standing caps and counters, charged exactly as if it had been reached
 at its own position. If the lead is admitted, the remaining members
 are grouped. If the lead is turned away, the family does not form and
 every member competes on its own, exactly as before families existed.
+A hierarchy chain's lead is constructed by the ledger rather than
+produced by a detector: it is charged to the detector of the member
+it was built from (a rollup member when the chain has one), and if
+that detector's cap turns it away, the refusal is not counted among
+the detector's capped statements — the lead was never a candidate
+statement of its own.
 A lead presents at the earliest report band among itself and its
 grouped members, because the lead stands for the family's strongest
 content: a duplicate-encoding lead whose members are dependencies
@@ -614,11 +642,14 @@ Callers can declare structure the profiler cannot infer, through the
 - `cadence`: per-column cadence — `daily`, `business_day`, `weekly`,
   `monthly`, or a fixed day/step count;
 - `dimensions`, `measures`: the panel's declared dimension and measure
-  columns.
+  columns;
+- `hierarchies`: known hierarchies — each entry is one hierarchy's
+  level columns, ordered finest to coarsest;
+- `exclude_columns`: columns to leave out of the profile entirely.
 
 The `expectations` pass checks the declarations exactly and tags its
 evidence `reference_source: "declared"`, against the dates pass's
-`"inferred"`. Four checks run:
+`"inferred"`. Five checks run:
 
 - **Declared-cadence gaps** on temporal columns, against the declared
   cadence (monthly included) with no minimum-series floor. A declared
@@ -638,12 +669,37 @@ evidence `reference_source: "declared"`, against the dates pass's
   worst groups and up to 10 absent cells in the evidence; when
   measures are declared, present cells null on every measure are
   counted separately as `measure_null_cells`.
+- **Declared hierarchies**: every adjacent mapping of a declared
+  hierarchy (each level determines the next) is verified exactly, on
+  the rows where both levels are present. A hierarchy that holds
+  yields one structural statement (type `duplicate_encoding`, form
+  `hierarchy`; the declared levels and each mapping's row support in
+  the evidence), and the inferred statements that restate the chain
+  group under it as a verified relationship family. A hierarchy that
+  does not hold yields one deviation statement naming every broken
+  mapping, with the violating rows and the split levels per mapping
+  in `broken_mappings`. The rule is symmetric with ordering: a
+  satisfied declaration is stated once, a violated one is stated
+  once, and neither is restated pair by pair.
 
 Hints naming columns that are missing, or columns of an unusable type
 for the check, are ignored with the reason recorded in the
 `expectations` coverage entry; malformed hint values raise an error
-at the API boundary. Declarations drive the expectations pass only —
-column cards keep their inferred roles.
+at the API boundary.
+
+Two declarations act outside the expectations pass. `exclude_columns`
+is applied before any pass runs: an excluded column gets no column
+card and no finding can name it, and the `column_exclusions` coverage
+entry states the excluded columns, their source (user-declared), and
+any declared names that are not columns of the table. And the column
+the frame model assembles as the report's time axis is excluded from
+target roles and from being profiled as a measure by the series pass
+by structure, whatever role it was assigned — the protection no
+longer depends on the axis column happening to carry the timestamp
+role, so a bare week integer with the measure role is not a target.
+The passes' coverage entries state the exclusion. A `roles` entry
+for the axis column is an explicit user declaration and wins over
+the structural default; `time` chooses which column the axis is.
 
 ## Detectors and extensions
 
