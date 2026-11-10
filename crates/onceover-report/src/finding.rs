@@ -85,6 +85,9 @@ pub enum Pattern {
     Gap,
     SequenceGap,
     MissingCombinations,
+    /// An observed period on the time axis carrying a fraction of
+    /// the typical period's volume (rows, entities).
+    PartialPeriod,
     /// Columns a pass did not examine because a cap bound the set it
     /// could take (the views column cap, or columns left outside the
     /// search when its work budget ran out).
@@ -134,9 +137,10 @@ impl Pattern {
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
-            Self::SequenceGap | Self::MissingCombinations | Self::UnexaminedColumns => {
-                Category::Gaps
-            }
+            Self::SequenceGap
+            | Self::MissingCombinations
+            | Self::UnexaminedColumns
+            | Self::PartialPeriod => Category::Gaps,
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
             Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
@@ -188,6 +192,7 @@ impl Pattern {
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
+            Self::PartialPeriod => "partial_period",
             Self::UnexaminedColumns => "unexamined_columns",
             Self::IntervalVariation => "interval_variation",
             Self::ColumnOrdering => "column_ordering",
@@ -797,6 +802,15 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Deviation,
             ),
+            Pattern::PartialPeriod => (
+                Sc::Sequence,
+                O::Structure,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                Some(Q::Completeness),
+                S::Deviation,
+            ),
             Pattern::UnexaminedColumns => (
                 Sc::Frame,
                 O::Structure,
@@ -972,6 +986,7 @@ impl Facets {
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
+            (Category::Gaps, Some("partial_period")) => Pattern::PartialPeriod,
             (Category::Gaps, Some("unexamined_columns")) => Pattern::UnexaminedColumns,
             (Category::Gaps, _) => Pattern::Gap,
             (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
@@ -1241,6 +1256,18 @@ impl Finding {
                 );
                 if let Some(v) = metrics.get("absent_values") {
                     spec.definition.insert("absent_values".into(), v.clone());
+                }
+            }
+            Pattern::PartialPeriod => {
+                subject.unit = Some("periods".into());
+                spec.definition.insert("domain".into(), json!("temporal"));
+                spec.definition.insert(
+                    "reference".into(),
+                    json!({"source": "observed_periods", "typical": "median of the observed periods"}),
+                );
+                if let Some(v) = metrics.get("period") {
+                    spec.definition.insert("from".into(), v.clone());
+                    spec.definition.insert("to".into(), v.clone());
                 }
             }
             Pattern::OneWayFlag => {

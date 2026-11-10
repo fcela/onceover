@@ -102,6 +102,10 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // Hint-gated: a default-set member that engages only on
         // declared hints and otherwise records itself skipped.
         make("expectations", vec![Gaps, Ordering], &[], HintGated),
+        // Per-period coverage on the frame's time axis: observed
+        // periods whose row (or entity) volume falls far below the
+        // typical period's, stated with their position.
+        make("panel_coverage", vec![Gaps], &[], Default),
         make("gbm", vec![Dependencies], &[], Default),
         make("decision_tables", vec![Dependencies], &["gbm"], Default),
         make("prism", vec![ConditionalRules], &["gbm"], Default),
@@ -198,10 +202,10 @@ mod tests {
     #[test]
     fn default_set_is_the_28_measured_detectors() {
         let active = active_detectors(None);
-        // 35 registered: 28 default (27 Default + hint-gated
+        // 36 registered: 29 default (28 Default + hint-gated
         // expectations), 6 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 35);
-        assert_eq!(active.len(), 28);
+        assert_eq!(builtin_detectors().len(), 36);
+        assert_eq!(active.len(), 29);
         for id in [
             "views",
             "dates",
@@ -232,7 +236,7 @@ mod tests {
         for d in builtin_detectors() {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&27));
+        assert_eq!(counts.get("Default"), Some(&28));
         assert_eq!(counts.get("OptIn"), Some(&6));
         assert_eq!(counts.get("HintGated"), Some(&1));
         assert_eq!(counts.get("TargetGated"), Some(&1));

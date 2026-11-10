@@ -41,7 +41,7 @@ used by package version 0.1.3.
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
-| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns) |
+| `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns); also type `partial_period` from the `panel_coverage` detector: an observed period on the frame's time axis whose volume falls far below the typical period's — below 75% of the median period's row count and short by at least 4 rows, or below 75% of the median entity count and short by at least 2 entities, where the entity axis is the grain's non-axis factors or the frame's single identifier column — stated with its position (first, last, or interior), its own counts, the typical counts, and the full per-period table in the evidence. A period with no rows at all is a gap, not a partial period, and is not reported here; when the caller declares the same columns as `dimensions` hints, the declared panel check owns entity completeness and this statement reports row volume only. Periods are singled out only when they make up at most a quarter of all periods; past that share the median names no typical full period and the coverage entry reports the spread instead |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
 | `intervals` | Type `extreme_value`; extreme values and their row indices, the bulk edge and the isolation gap in the evidence | A value isolated from the bulk of its column, or from the bulk within one categorical subset, from the surprises detector; the claim states the gap as a multiple of the subset's central spread (p90-p10) |
@@ -184,6 +184,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
+| `partial_period` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
 | `unexamined_columns` | frame | structure | exact | unconditional | atemporal | completeness | deviation |
 | `interval_variation` | sequence | distribution | exact | unconditional | ordered | — | deviation |
@@ -742,7 +743,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 28 of the 35 registered detectors. Six are
+and activation. The default set has 29 of the 36 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40

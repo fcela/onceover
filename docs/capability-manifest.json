@@ -157,6 +157,14 @@
    "activation": "hint_gated"
   },
   {
+   "id": "panel_coverage",
+   "categories": [
+    "gaps"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "gbm",
    "categories": [
     "dependencies"

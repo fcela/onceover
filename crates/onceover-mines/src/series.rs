@@ -686,11 +686,9 @@ fn entity_series(table: &TypedTable, input: &SeriesInput, measures: &[usize]) ->
     // Per-entity per-tick means of the principal measure.
     let mut by_entity: HashMap<u32, BTreeMap<i64, (f64, usize)>> = HashMap::new();
     for (r, code) in codes.iter().enumerate() {
-        if let (Some(c), Some(t), Some(v)) = (
-            *code,
-            input.ticks[r],
-            table.cols[principal].numeric_at(r),
-        ) {
+        if let (Some(c), Some(t), Some(v)) =
+            (*code, input.ticks[r], table.cols[principal].numeric_at(r))
+        {
             if v.is_finite() {
                 let e = by_entity.entry(c).or_default().entry(t).or_insert((0.0, 0));
                 e.0 += v;

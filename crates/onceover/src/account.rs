@@ -107,7 +107,7 @@ fn render_value(col: &TypedCol, r: usize) -> String {
 
 /// The columns the axis occupies in the profiled frame: its part
 /// columns, or its single source column.
-fn axis_subject_columns(frame: &FrameModel) -> Vec<String> {
+pub(crate) fn axis_subject_columns(frame: &FrameModel) -> Vec<String> {
     let Some(axis) = &frame.info.axis else {
         return Vec::new();
     };

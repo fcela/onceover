@@ -684,6 +684,31 @@ fn profile_inner(
         );
     }
 
+    // ---------- per-period coverage ----------
+    // Observed periods on the frame's axis whose volume falls far
+    // below the typical period's. Runs on the account's grain (set
+    // on the frame above) for its entity axis; a frame with no
+    // time axis records the pass as skipped with the reason.
+    if check_deadline(&mut coverage, "panel_coverage") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("panel_coverage") {
+        let pc = crate::panel::panel_coverage(&table, &frame, cfg.hints.as_ref());
+        let info = match pc.status {
+            crate::panel::PanelCoverageStatus::Ran(d) => PassInfo::ran(d),
+            crate::panel::PanelCoverageStatus::Capped(d) => PassInfo::capped(d),
+            crate::panel::PanelCoverageStatus::Skipped(d) => PassInfo::skipped(d),
+        };
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "panel_coverage".into(),
+            info,
+        );
+        findings.extend(pc.findings);
+    }
+
     // ---------- duplicate encodings ----------
     if check_deadline(&mut coverage, "duplicate_encodings") {
         deadline_hit = true;
