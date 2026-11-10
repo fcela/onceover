@@ -92,6 +92,12 @@ pub enum Pattern {
     /// could take (the views column cap, or columns left outside the
     /// search when its work budget ran out).
     UnexaminedColumns,
+    /// Series a pass prescored but did not scan in depth because
+    /// its series cap bound the set it could take (the breaks
+    /// series cap). The named series were partially examined — the
+    /// prescore read each one over its full span — and each series'
+    /// prescore rides in the evidence.
+    UnscannedSeries,
     IntervalVariation,
     ColumnOrdering,
     ResidualShift,
@@ -173,6 +179,7 @@ impl Pattern {
             Self::SequenceGap
             | Self::MissingCombinations
             | Self::UnexaminedColumns
+            | Self::UnscannedSeries
             | Self::PartialPeriod => Category::Gaps,
             Self::IntervalVariation => Category::Intervals,
             Self::ColumnOrdering => Category::Ordering,
@@ -230,6 +237,7 @@ impl Pattern {
             Self::MissingCombinations => "missing_combinations",
             Self::PartialPeriod => "partial_period",
             Self::UnexaminedColumns => "unexamined_columns",
+            Self::UnscannedSeries => "unscanned_series",
             Self::IntervalVariation => "interval_variation",
             Self::ColumnOrdering => "column_ordering",
             Self::ResidualShift => "residual_level",
@@ -879,7 +887,7 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Deviation,
             ),
-            Pattern::UnexaminedColumns => (
+            Pattern::UnexaminedColumns | Pattern::UnscannedSeries => (
                 Sc::Frame,
                 O::Structure,
                 E::Exact,
@@ -1061,6 +1069,7 @@ impl Facets {
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
             (Category::Gaps, Some("partial_period")) => Pattern::PartialPeriod,
             (Category::Gaps, Some("unexamined_columns")) => Pattern::UnexaminedColumns,
+            (Category::Gaps, Some("unscanned_series")) => Pattern::UnscannedSeries,
             (Category::Gaps, _) => Pattern::Gap,
             (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
             (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
@@ -1417,6 +1426,17 @@ impl Finding {
             Pattern::UnexaminedColumns => {
                 subject.unit = Some("columns".into());
                 spec.definition.insert("domain".into(), json!("columns"));
+                spec.definition.insert(
+                    "reference".into(),
+                    json!({"source": "pass limit", "reason": metrics.get("reason"), "pass": metrics.get("pass"), "cap": metrics.get("cap"), "eligible": metrics.get("n_eligible"), "examined": metrics.get("n_examined")}),
+                );
+                if let Some(v) = raw.get("columns") {
+                    spec.definition.insert("absent_values".into(), v.clone());
+                }
+            }
+            Pattern::UnscannedSeries => {
+                subject.unit = Some("series".into());
+                spec.definition.insert("domain".into(), json!("series"));
                 spec.definition.insert(
                     "reference".into(),
                     json!({"source": "pass limit", "reason": metrics.get("reason"), "pass": metrics.get("pass"), "cap": metrics.get("cap"), "eligible": metrics.get("n_eligible"), "examined": metrics.get("n_examined")}),

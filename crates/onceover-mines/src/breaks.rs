@@ -970,6 +970,77 @@ fn prescore(values: &[f64]) -> f64 {
     level.max(variance).max(excursion)
 }
 
+/// A finding stating that the breaks pass did not scan a set of
+/// series in depth: the series cap bound, and the scanned set was
+/// chosen by prescore. Unlike a cap drop, the named series were
+/// partially examined — every eligible series was prescored over
+/// its full span before the cap bound — so the finding carries
+/// each series' prescore in the evidence: the statement is what
+/// the prescore saw, plus the fact that no in-depth scan followed.
+/// `unscanned` is in prescore order (highest first, ties by column
+/// position), the order the cap cut from. The full list lives in
+/// the evidence metrics and in the statement definition; the claim
+/// names at most 25 series and counts the rest.
+fn unscanned_series_finding(
+    unscanned: &[(String, f64)],
+    cfg: &BreaksConfig,
+    eligible: usize,
+    scanned: usize,
+    rows: usize,
+) -> Finding {
+    let names: Vec<&str> = unscanned.iter().map(|(n, _)| n.as_str()).collect();
+    let named = if names.len() > 25 {
+        format!("{} and {} more", names[..25].join(", "), names.len() - 25)
+    } else {
+        names.join(", ")
+    };
+    let claim = format!(
+        "The breaks pass did not scan {} of {} eligible series in depth past its {}-series cap: {}. \
+         Every eligible series was prescored over its full span and the scanned set was chosen by that \
+         prescore, not by column order; each named series' prescore is in the evidence. The named \
+         series carry no breaks findings either way.",
+        unscanned.len(),
+        eligible,
+        cfg.series_cap,
+        named
+    );
+    let payload: Vec<serde_json::Value> = unscanned
+        .iter()
+        .map(|(name, score)| json!({"series": name, "prescore": score}))
+        .collect();
+    let mut metrics = BTreeMap::new();
+    metrics.insert("n".to_string(), json!(rows));
+    metrics.insert("pass".to_string(), json!("breaks"));
+    metrics.insert("reason".to_string(), json!("series_cap"));
+    metrics.insert("cap".to_string(), json!(cfg.series_cap));
+    metrics.insert("n_eligible".to_string(), json!(eligible));
+    metrics.insert("n_examined".to_string(), json!(scanned));
+    metrics.insert("n_unscanned".to_string(), json!(unscanned.len()));
+    metrics.insert("unscanned_series".to_string(), json!(payload));
+    let mut raw = BTreeMap::new();
+    raw.insert(
+        "columns".to_string(),
+        json!(names.iter().map(|s| s.to_string()).collect::<Vec<_>>()),
+    );
+    Finding::new(
+        Pattern::UnscannedSeries,
+        raw,
+        claim,
+        EvidenceBasis::Measured,
+        0.65,
+        metrics,
+        Some(
+            "Series a pass did not scan in depth are absent from its findings; profile the named series separately or raise the series cap to scan them."
+                .to_string(),
+        ),
+        Method::new(
+            "breaks",
+            "prescore_ranking",
+            "whole-population prescore under the series cap (onceover)",
+        ),
+    )
+}
+
 pub fn profile_breaks(
     table: &TypedTable,
     excluded: &[usize],
@@ -1123,6 +1194,25 @@ pub fn profile_breaks(
             &points,
             had_global_level,
             cfg,
+        ));
+    }
+
+    // Series the cap left unscanned in depth are stated as a
+    // finding, not only in coverage: a reader of the findings
+    // alone must be able to tell which series were not scanned.
+    // The tail of `scored` past the cap is exactly that set, in
+    // prescore order, and each entry still carries its prescore.
+    if capped {
+        let unscanned: Vec<(String, f64)> = scored[cfg.series_cap..]
+            .iter()
+            .map(|&(col, score)| (table.names[col].clone(), score))
+            .collect();
+        findings.push(unscanned_series_finding(
+            &unscanned,
+            cfg,
+            eligible,
+            scanned_count,
+            timed.len(),
         ));
     }
 
@@ -1335,6 +1425,109 @@ mod tests {
             prescore(&spike),
             prescore(&noise)
         );
+    }
+
+    /// A table with a date axis and `n_shifted + n_flat` numeric
+    /// series: the shifted ones step from 0 to 10 halfway (prescore
+    /// near 1), the flat ones are constant (prescore exactly 0), so
+    /// the prescore ranking — and therefore the set the series cap
+    /// leaves unscanned — is known exactly.
+    fn cap_table(n_shifted: usize, n_flat: usize) -> TypedTable<'static> {
+        let n = 300usize;
+        let mut rng = Lcg(7);
+        let mut names: Vec<String> = vec!["day".to_string()];
+        let mut cols: Vec<TypedCol<'static>> = vec![TypedCol::Date {
+            vals: (0..n).map(|d| Some(d as i32)).collect(),
+        }];
+        for k in 0..n_shifted {
+            names.push(format!("shift_{k:02}"));
+            let vals: Vec<Option<f64>> = (0..n)
+                .map(|i| {
+                    let base = if i < n / 2 { 0.0 } else { 10.0 };
+                    Some(base + rng.noise(0.5))
+                })
+                .collect();
+            cols.push(TypedCol::F64 { vals: vals.into() });
+        }
+        for k in 0..n_flat {
+            names.push(format!("flat_{k:02}"));
+            let vals: Vec<Option<f64>> = (0..n).map(|_| Some(1.0)).collect();
+            cols.push(TypedCol::F64 { vals: vals.into() });
+        }
+        TypedTable {
+            n,
+            names,
+            dtypes: vec!["float64".to_string(); n_shifted + n_flat + 1],
+            cols,
+        }
+    }
+
+    #[test]
+    fn cap_binds_states_unscanned_series_with_prescores() {
+        // 20 eligible series against the default cap of 16: the
+        // four constant series rank last on prescore and are the
+        // ones left unscanned.
+        let table = cap_table(16, 4);
+        let (findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None);
+        let hits: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type.as_deref() == Some("unscanned_series"))
+            .collect();
+        assert_eq!(hits.len(), 1, "findings: {findings:?}");
+        let f = hits[0];
+        assert_eq!(f.category, onceover_report::Category::Gaps);
+        f.validate().unwrap();
+        assert!(f.claim.contains("4 of 20 eligible series"));
+        assert!(f.claim.contains("16-series cap"));
+        let m = f.metrics();
+        assert_eq!(m["pass"], json!("breaks"));
+        assert_eq!(m["reason"], json!("series_cap"));
+        assert_eq!(m["cap"], json!(16));
+        assert_eq!(m["n_eligible"], json!(20));
+        assert_eq!(m["n_examined"], json!(16));
+        assert_eq!(m["n_unscanned"], json!(4));
+        let payload = m["unscanned_series"].as_array().unwrap();
+        let named: Vec<&str> = payload
+            .iter()
+            .map(|r| r["series"].as_str().unwrap())
+            .collect();
+        assert_eq!(named, vec!["flat_00", "flat_01", "flat_02", "flat_03"]);
+        for row in payload {
+            assert_eq!(row["prescore"], json!(0.0));
+        }
+        // The statement definition names the same series as absent.
+        assert_eq!(
+            f.specification.definition["absent_values"],
+            json!(["flat_00", "flat_01", "flat_02", "flat_03"])
+        );
+        // Coverage names the same set under "not scanned:".
+        let tail = coverage.split("not scanned: ").nth(1).unwrap();
+        for name in ["flat_00", "flat_01", "flat_02", "flat_03"] {
+            assert!(tail.contains(name), "coverage: {coverage}");
+        }
+        // The finding survives a serialization round trip with its
+        // type, category, claim, and evidence intact.
+        let back: Finding = serde_json::from_str(&serde_json::to_string(f).unwrap()).unwrap();
+        assert_eq!(back.finding_type.as_deref(), Some("unscanned_series"));
+        assert_eq!(back.category, f.category);
+        assert_eq!(back.claim, f.claim);
+        assert_eq!(back.metrics()["unscanned_series"], m["unscanned_series"]);
+        back.validate().unwrap();
+    }
+
+    #[test]
+    fn cap_not_reached_states_nothing() {
+        // Exactly at the cap: every eligible series is scanned, so
+        // no finding and no cap wording in coverage.
+        let table = cap_table(12, 4);
+        let (findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None);
+        assert!(
+            findings
+                .iter()
+                .all(|f| f.finding_type.as_deref() != Some("unscanned_series")),
+            "findings: {findings:?}"
+        );
+        assert!(!coverage.contains("series cap"), "coverage: {coverage}");
     }
 
     #[test]
