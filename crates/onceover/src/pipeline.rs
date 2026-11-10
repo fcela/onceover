@@ -1167,6 +1167,57 @@ fn profile_inner(
         }
     }
 
+    // ---------- panel concentration ----------
+    // Where a measure's mass sits among entities on the frame's
+    // entity × time grain: the top entities' share of each
+    // period's total (high in level, or rising), and entities
+    // whose total sits far outside the other entities' totals.
+    // Like the one-way flags it rides on the series detector's
+    // enablement and records its own coverage entry, including
+    // the no-grain case, where it does not apply.
+    if check_deadline(&mut coverage, "panel_concentration") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("series") {
+        let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+        match (&ticks, &axis_name) {
+            (Some(ticks), Some(axis_name)) => {
+                let input = onceover_mines::PanelInput {
+                    axis_name,
+                    ticks,
+                    entities: panel_entity_columns(&table, &frame, &card_facts),
+                    measures: frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect(),
+                };
+                let (mut f, detail) = onceover_mines::panel_concentration(&table, &input);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "panel_concentration".into(),
+                    PassInfo::ran(detail),
+                );
+                findings.append(&mut f);
+            }
+            _ => stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "panel_concentration".into(),
+                PassInfo::skipped(
+                    "no entity × time grain: the frame has no time axis with per-row ticks"
+                        .to_string(),
+                ),
+            ),
+        }
+    }
+
     // ---------- content ----------
     if check_deadline(&mut coverage, "content") {
         deadline_hit = true;
@@ -2699,6 +2750,48 @@ fn build_overview(
         role_counts,
         top_findings: findings.iter().take(5).map(|f| f.claim.clone()).collect(),
     }
+}
+
+/// Entity columns for the panel passes, in priority order: the
+/// grain's single non-axis factor when the account found one,
+/// then identifier-role columns, then dimension-role columns. An
+/// entity axis needs at least 10 distinct values — the passes'
+/// own floor for the entities they follow — which also keeps
+/// two-valued flag columns (dimension role, by cardinality) from
+/// being mistaken for an axis.
+fn panel_entity_columns(
+    table: &TypedTable,
+    frame: &crate::frame::FrameModel,
+    card_facts: &[CardFacts],
+) -> Vec<usize> {
+    let axis_name = frame.info.axis.as_ref().map(|a| a.name.as_str());
+    let mut entities: Vec<usize> = Vec::new();
+    if let Some(grain) = &frame.info.grain {
+        let non_axis: Vec<(&str, usize)> = grain
+            .factorization
+            .iter()
+            .map(|f| (f.column.as_str(), f.distinct))
+            .filter(|(c, _)| Some(*c) != axis_name)
+            .collect();
+        if non_axis.len() == 1 && non_axis[0].1 >= 10 {
+            if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
+                entities.push(i);
+            }
+        }
+    }
+    for role in ["identifier", "dimension"] {
+        for (i, r) in frame.roles.iter().enumerate() {
+            if r.as_deref() == Some(role)
+                && card_facts[i].distinct >= 10
+                && !entities.contains(&i)
+                && Some(table.names[i].as_str()) != axis_name
+            {
+                entities.push(i);
+            }
+        }
+    }
+    entities.truncate(3);
+    entities
 }
 
 /// Record a pass's coverage entry with its attributed wall time:

@@ -1310,6 +1310,724 @@ pub fn panel_dynamics(table: &TypedTable, input: &PanelInput) -> (Vec<Finding>, 
     (findings, detail)
 }
 
+// ---------- concentration over time and outlier entities ----------
+//
+// Two further readings on the same entity × time grain, both about
+// where a measure's mass sits among entities — the tail the
+// whole-column concentration check cannot see, because it pools
+// the periods and never aggregates to the entity.
+//
+// Concentration over time: for each period, the share of the
+// period's total held by the largest entities (the top group:
+// ceil(1% of the entities), at least one). Only periods in
+// which at least half of the entities are active count — on a
+// frame whose periods are near-unique timestamps (one invoice
+// per date) every period's top share is 100% by construction.
+// The statement fires when that share is high in level (the
+// median period's share is at least 30%) or when it rises
+// materially (the mean share over the last third of periods
+// exceeds the first third by at least 10 points and reaches at
+// least 20%).
+//
+// Outlier entities: the measure summed per entity over all
+// periods. An entity is reported when its total is at least 10
+// times the typical entity's total (the median, or the upper
+// quartile when the median is zero) and above the upper quartile
+// plus three interquartile ranges. No single cell needs to be
+// extreme — every row of such an entity is.
+//
+// Shares need a non-negative measure with a positive total, and
+// a two-valued column is a flag, not a volume: both are excluded
+// here and counted in the coverage detail. Below 20 entities one
+// entity's share is mechanical, so neither statement fires.
+
+/// Smallest number of entities before per-entity shares mean
+/// anything.
+const MIN_TAIL_ENTITIES: usize = 20;
+/// Share-bearing periods needed before a concentration movement
+/// is stated (the pass itself runs from MIN_PERIODS periods).
+const MIN_CONC_PERIODS: usize = 4;
+/// A period counts toward the concentration reading only when
+/// at least this fraction of the entities are active in it. A
+/// period a single entity occupies alone has a top share of
+/// 100% by construction; shares rest on periods the entities
+/// share.
+const MIN_ACTIVE_FRACTION: f64 = 0.5;
+/// The top group is the largest entities making up this fraction
+/// of the entity count (at least one entity).
+const TOP_GROUP_FRACTION: f64 = 0.01;
+/// Median-period top-group share at or above which concentration
+/// is high in level.
+const LEVEL_SHARE: f64 = 0.30;
+/// Rise in top-group share (last third of periods minus first
+/// third, in share points) that counts as material movement.
+const RISE_POINTS: f64 = 0.10;
+/// The late-period share a rise must reach to be stated.
+const RISE_FLOOR: f64 = 0.20;
+/// An entity total at or above this multiple of the typical
+/// entity's total is a tail candidate.
+const OUTLIER_MULTIPLE: f64 = 10.0;
+/// ... and it must also clear the upper quartile by this many
+/// interquartile ranges.
+const OUTLIER_FENCE_IQRS: f64 = 3.0;
+/// Entities named in one outlier statement's evidence.
+const MAX_NAMED_OUTLIERS: usize = 10;
+/// Measures examined per entity grain.
+const MAX_TAIL_MEASURES: usize = 12;
+/// Findings emitted by this pass per profile, both kinds.
+const MAX_TAIL_FINDINGS: usize = 10;
+
+fn fmt_num(v: f64) -> String {
+    if v == v.trunc() && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        let s = format!("{v:.4}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+fn fmt_pct(share: f64) -> String {
+    format!("{:.1}%", 100.0 * share)
+}
+
+fn quantile(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    sorted[((q * (sorted.len() - 1) as f64).round() as usize).min(sorted.len() - 1)]
+}
+
+/// One measure column's eligibility facts for the tail checks.
+struct MeasureFacts {
+    values: usize,
+    total: f64,
+    negative: bool,
+    two_valued: bool,
+}
+
+fn measure_facts(table: &TypedTable, col: usize) -> MeasureFacts {
+    let mut facts = MeasureFacts {
+        values: 0,
+        total: 0.0,
+        negative: false,
+        two_valued: true,
+    };
+    if matches!(table.cols[col], TypedCol::Bool { .. }) {
+        return facts;
+    }
+    for r in 0..table.n {
+        if let Some(v) = table.cols[col].numeric_at(r) {
+            facts.values += 1;
+            facts.total += v;
+            if v < 0.0 {
+                facts.negative = true;
+            }
+            if v != 0.0 && v != 1.0 {
+                facts.two_valued = false;
+            }
+        }
+    }
+    facts
+}
+
+/// A multiple as claims print it: whole at 100x and above, one
+/// decimal from 10x, two below.
+fn fmt_ratio(x: f64) -> String {
+    if x >= 100.0 {
+        format!("{x:.0}")
+    } else if x >= 10.0 {
+        format!("{x:.1}")
+    } else {
+        fmt_num((x * 100.0).round() / 100.0)
+    }
+}
+
+/// Display label per entity code: the value at the first row the
+/// code appears on, formatted as the column's values print.
+fn entity_labels(
+    table: &TypedTable,
+    col: usize,
+    codes: &[Option<u32>],
+    distinct: usize,
+) -> Vec<String> {
+    let mut labels: Vec<Option<String>> = vec![None; distinct];
+    for (r, code) in codes.iter().enumerate() {
+        let Some(c) = code else { continue };
+        let slot = &mut labels[*c as usize];
+        if slot.is_none() {
+            *slot = Some(match &table.cols[col] {
+                TypedCol::Str { vals } => vals[r].unwrap_or("").to_string(),
+                TypedCol::StrOwned { vals } => vals[r].clone().unwrap_or_default(),
+                TypedCol::I64 { vals } => vals.at(r).map(|v| v.to_string()).unwrap_or_default(),
+                TypedCol::U64 { vals } => vals.at(r).map(|v| v.to_string()).unwrap_or_default(),
+                TypedCol::F64 { vals } => vals.at(r).map(fmt_num).unwrap_or_default(),
+                TypedCol::Bool { vals } => vals[r].map(|v| v.to_string()).unwrap_or_default(),
+                TypedCol::Date { vals } => vals[r]
+                    .map(|v| onceover_core::dateutil::iso_date(v as i64))
+                    .unwrap_or_default(),
+                TypedCol::Datetime { vals, unit } => vals[r]
+                    .map(|v| {
+                        onceover_core::dateutil::iso_date(onceover_core::dateutil::timestamp_days(
+                            v, *unit,
+                        ))
+                    })
+                    .unwrap_or_default(),
+                _ => String::new(),
+            });
+        }
+    }
+    labels.into_iter().map(|l| l.unwrap_or_default()).collect()
+}
+
+/// Check concentration over time and outlier entities for every
+/// eligible measure on every entity grain the input names.
+pub fn panel_concentration(table: &TypedTable, input: &PanelInput) -> (Vec<Finding>, String) {
+    // Period indices over the axis's distinct ticks.
+    let mut ticks: Vec<i64> = input.ticks.iter().flatten().copied().collect();
+    ticks.sort_unstable();
+    ticks.dedup();
+    if ticks.len() < MIN_PERIODS {
+        return (
+            vec![],
+            format!(
+                "{} has {} distinct periods; the panel concentration checks need at least {MIN_PERIODS}",
+                input.axis_name,
+                ticks.len()
+            ),
+        );
+    }
+    let period_index: HashMap<i64, usize> =
+        ticks.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+    let period_of: Vec<Option<usize>> = input
+        .ticks
+        .iter()
+        .map(|t| t.and_then(|t| period_index.get(&t).copied()))
+        .collect();
+
+    if input.entities.is_empty() {
+        return (
+            vec![],
+            format!(
+                "no entity columns along {}; nothing to check",
+                input.axis_name
+            ),
+        );
+    }
+
+    // Eligible measures: numeric, non-negative, positive total,
+    // not two-valued, and not the axis itself.
+    let mut notes: Vec<String> = Vec::new();
+    let mut eligible: Vec<usize> = Vec::new();
+    let (mut n_flags, mut n_negative, mut n_nonpositive) = (0usize, 0usize, 0usize);
+    for &m in &input.measures {
+        if table.names[m] == input.axis_name {
+            continue;
+        }
+        let facts = measure_facts(table, m);
+        if facts.values == 0 {
+            continue;
+        }
+        if facts.two_valued {
+            n_flags += 1;
+        } else if facts.negative {
+            n_negative += 1;
+        } else if facts.total <= 0.0 {
+            n_nonpositive += 1;
+        } else {
+            eligible.push(m);
+        }
+    }
+    if n_flags > 0 {
+        notes.push(format!(
+            "{n_flags} two-valued measures not examined (they are flags, not volumes)"
+        ));
+    }
+    if n_negative > 0 {
+        notes.push(format!(
+            "{n_negative} measures with negative values not examined (shares need a non-negative measure)"
+        ));
+    }
+    if n_nonpositive > 0 {
+        notes.push(format!(
+            "{n_nonpositive} measures with no positive total not examined"
+        ));
+    }
+    if eligible.len() > MAX_TAIL_MEASURES {
+        notes.push(format!(
+            "{} further measures beyond the {MAX_TAIL_MEASURES} examined",
+            eligible.len() - MAX_TAIL_MEASURES
+        ));
+        eligible.truncate(MAX_TAIL_MEASURES);
+    }
+    if eligible.is_empty() {
+        let mut detail = format!(
+            "no eligible measures along {}; nothing to check",
+            input.axis_name
+        );
+        for note in notes.iter().take(6) {
+            detail.push_str("; ");
+            detail.push_str(note);
+        }
+        return (vec![], detail);
+    }
+
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut grains_checked = 0usize;
+    for &entity in &input.entities {
+        let (codes, distinct) = match entity_codes(table, entity) {
+            Ok(v) => v,
+            Err(EntitySkip::TooMany) => {
+                notes.push(format!(
+                    "{} has more than {MAX_ENTITIES} distinct values and is not followed as an entity column",
+                    table.names[entity]
+                ));
+                continue;
+            }
+            Err(EntitySkip::TooFew) => continue,
+        };
+        if distinct < MIN_TAIL_ENTITIES {
+            notes.push(format!(
+                "{} has {distinct} distinct values; the panel concentration checks need at least {MIN_TAIL_ENTITIES} entities",
+                table.names[entity]
+            ));
+            continue;
+        }
+        grains_checked += 1;
+        let labels = entity_labels(table, entity, &codes, distinct);
+        for &measure in &eligible {
+            if measure == entity {
+                continue;
+            }
+            let (conc, out) = scan_measure(
+                table,
+                input,
+                entity,
+                measure,
+                &codes,
+                distinct,
+                &labels,
+                &period_of,
+                ticks.len(),
+            );
+            findings.extend(conc);
+            findings.extend(out);
+        }
+    }
+    findings.sort_by(|a, b| {
+        b.interestingness
+            .total_cmp(&a.interestingness)
+            .then_with(|| a.claim.cmp(&b.claim))
+    });
+    let (mut n_conc, mut n_out) = (0usize, 0usize);
+    for f in &findings {
+        match f.finding_type.as_deref() {
+            Some("concentration_over_time") => n_conc += 1,
+            Some("outlier_entity") => n_out += 1,
+            _ => {}
+        }
+    }
+    if findings.len() > MAX_TAIL_FINDINGS {
+        notes.push(format!(
+            "{} further panel concentration statements beyond the {MAX_TAIL_FINDINGS} reported",
+            findings.len() - MAX_TAIL_FINDINGS
+        ));
+        findings.truncate(MAX_TAIL_FINDINGS);
+    }
+    let mut detail = format!(
+        "{} measures checked on {} entity columns along {}; {} concentration and {} outlier statements",
+        eligible.len(),
+        grains_checked,
+        input.axis_name,
+        n_conc,
+        n_out
+    );
+    for note in notes.iter().take(6) {
+        detail.push_str("; ");
+        detail.push_str(note);
+    }
+    (findings, detail)
+}
+
+/// One (entity grain, measure) scan: accumulate per-(entity,
+/// period) sums once, then read both statements off them.
+#[allow(clippy::too_many_arguments)]
+fn scan_measure(
+    table: &TypedTable,
+    input: &PanelInput,
+    entity: usize,
+    measure: usize,
+    codes: &[Option<u32>],
+    distinct: usize,
+    labels: &[String],
+    period_of: &[Option<usize>],
+    n_periods: usize,
+) -> (Option<Finding>, Option<Finding>) {
+    let mut cells: HashMap<(u32, u32), f64> = HashMap::new();
+    let mut totals = vec![0.0f64; distinct];
+    let mut observed = vec![false; distinct];
+    let mut rows_used = 0usize;
+    for r in 0..table.n {
+        let (Some(code), Some(period)) = (codes[r], period_of[r]) else {
+            continue;
+        };
+        let Some(v) = table.cols[measure].numeric_at(r) else {
+            continue;
+        };
+        rows_used += 1;
+        *cells.entry((code, period as u32)).or_default() += v;
+        totals[code as usize] += v;
+        observed[code as usize] = true;
+    }
+    let n_entities = observed.iter().filter(|o| **o).count();
+    if n_entities < MIN_TAIL_ENTITIES {
+        return (None, None);
+    }
+    let concentration = concentration_finding(
+        table, input, entity, measure, labels, &cells, n_entities, n_periods, rows_used,
+    );
+    let outlier = outlier_finding(
+        table, input, entity, measure, labels, &totals, &observed, rows_used,
+    );
+    (concentration, outlier)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn concentration_finding(
+    table: &TypedTable,
+    input: &PanelInput,
+    entity: usize,
+    measure: usize,
+    labels: &[String],
+    cells: &HashMap<(u32, u32), f64>,
+    n_entities: usize,
+    n_periods: usize,
+    rows_used: usize,
+) -> Option<Finding> {
+    let mut by_period: Vec<Vec<(u32, f64)>> = vec![Vec::new(); n_periods];
+    for (&(code, period), &sum) in cells {
+        by_period[period as usize].push((code, sum));
+    }
+    let top_k = ((n_entities as f64 * TOP_GROUP_FRACTION).ceil() as usize).max(1);
+    let mut shares: Vec<f64> = Vec::new();
+    let mut share_periods: Vec<usize> = Vec::new();
+    let mut sparse_periods = 0usize;
+    for (p, sums) in by_period.iter().enumerate() {
+        if sums.is_empty() {
+            continue;
+        }
+        let total: f64 = sums.iter().map(|(_, s)| *s).sum();
+        if total <= 0.0 {
+            continue;
+        }
+        if (sums.len() as f64) < n_entities as f64 * MIN_ACTIVE_FRACTION {
+            sparse_periods += 1;
+            continue;
+        }
+        let mut vals: Vec<f64> = sums.iter().map(|(_, s)| *s).collect();
+        vals.sort_by(|a, b| b.total_cmp(a));
+        let top: f64 = vals.iter().take(top_k).sum();
+        shares.push(top / total);
+        share_periods.push(p);
+    }
+    if shares.len() < MIN_CONC_PERIODS {
+        return None;
+    }
+    let mut sorted = shares.clone();
+    sorted.sort_by(f64::total_cmp);
+    let median_share = quantile(&sorted, 0.5);
+    let third = ((shares.len() as f64) / 3.0).ceil() as usize;
+    let early = shares[..third].iter().sum::<f64>() / third as f64;
+    let late = shares[shares.len() - third..].iter().sum::<f64>() / third as f64;
+    let level = median_share >= LEVEL_SHARE;
+    let rising = late - early >= RISE_POINTS && late >= RISE_FLOOR;
+    if !level && !rising {
+        return None;
+    }
+    let measure_name = &table.names[measure];
+    let entity_name = &table.names[entity];
+    // The head of the top group in the last share-bearing period.
+    let last_p = *share_periods.last().unwrap();
+    let mut last_sums = by_period[last_p].clone();
+    last_sums.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let last_total: f64 = last_sums
+        .iter()
+        .map(|(_, s)| *s)
+        .sum::<f64>()
+        .max(f64::MIN_POSITIVE);
+    let top_named: Vec<serde_json::Value> = last_sums
+        .iter()
+        .take(3)
+        .map(|(code, s)| {
+            json!({
+                "entity": labels[*code as usize],
+                "share": s / last_total,
+            })
+        })
+        .collect();
+    let named_text: Vec<String> = last_sums
+        .iter()
+        .take(3)
+        .map(|(code, s)| format!("{} ({})", labels[*code as usize], fmt_pct(s / last_total)))
+        .collect();
+    let verb = if top_k == 1 { "holds" } else { "hold" };
+    let movement = if level && rising {
+        format!(
+            "{verb} {} of each {} period's {} (median period), up from {} in the first periods to {} in the last",
+            fmt_pct(median_share),
+            input.axis_name,
+            measure_name,
+            fmt_pct(early),
+            fmt_pct(late),
+        )
+    } else if level {
+        format!(
+            "{verb} {} of each {} period's {} (median period; {} in the first period, {} in the last)",
+            fmt_pct(median_share),
+            input.axis_name,
+            measure_name,
+            fmt_pct(shares[0]),
+            fmt_pct(*shares.last().unwrap()),
+        )
+    } else {
+        format!(
+            "held {} of each {} period's {} in the first periods and {} in the last (median period {})",
+            fmt_pct(early),
+            input.axis_name,
+            measure_name,
+            fmt_pct(late),
+            fmt_pct(median_share),
+        )
+    };
+    let claim = format!(
+        "the top {} of {} {} (the top 1%) {}; an equal split over {} {} would give the top {} {}; the largest in the last period: {}",
+        top_k,
+        n_entities,
+        entity_name,
+        movement,
+        n_entities,
+        entity_name,
+        top_k,
+        fmt_pct(top_k as f64 / n_entities as f64),
+        named_text.join(", "),
+    );
+    let level_score = 0.55 + 0.40 * median_share.min(1.0);
+    let rise_score = 0.55 + 0.40 * ((late - early) * 2.5).min(1.0);
+    let score = if level && rising {
+        level_score.max(rise_score)
+    } else if level {
+        level_score
+    } else {
+        rise_score
+    };
+    let metrics = BTreeMap::from([
+        ("measure".into(), json!(measure_name)),
+        ("entity_column".into(), json!(entity_name)),
+        ("time_column".into(), json!(input.axis_name)),
+        ("entities".into(), json!(n_entities)),
+        ("periods".into(), json!(shares.len())),
+        (
+            "periods_set_aside_sparse".into(),
+            json!(sparse_periods),
+        ),
+        ("top_group_size".into(), json!(top_k)),
+        ("top_group_fraction".into(), json!(TOP_GROUP_FRACTION)),
+        ("median_top_share".into(), json!(median_share)),
+        ("first_period_top_share".into(), json!(shares[0])),
+        (
+            "last_period_top_share".into(),
+            json!(*shares.last().unwrap()),
+        ),
+        ("early_top_share".into(), json!(early)),
+        ("late_top_share".into(), json!(late)),
+        ("top_share_rise".into(), json!(late - early)),
+        (
+            "equal_split_top_share".into(),
+            json!(top_k as f64 / n_entities as f64),
+        ),
+        ("period_top_shares".into(), json!(shares)),
+        ("top_entities_last_period".into(), json!(top_named)),
+        ("n".into(), json!(rows_used)),
+        ("population_rows".into(), json!(table.n)),
+        (
+            "method".into(),
+            json!("per-period top-share scan on the entity × time grain: for each period with a positive total, the share of the period's total held by the largest entities (the top group: ceil(1% of the entities), at least one); reported when the median period share is at least 30%, or the mean share over the last third of periods exceeds the first third by at least 10 share points and reaches at least 20%; at least 20 entities and 4 share-bearing periods are required; measures with negative values, a non-positive total, or only 0/1 values are not examined"),
+        ),
+    ]);
+    let interpretation = format!(
+        "a share statement about the {entity_name} × {} grain that the whole-frame concentration check cannot make, because it pools the periods: the centre of mass of {measure_name} sits in the top group of {entity_name}{}, so period totals describe the top group more than the typical {entity_name}",
+        input.axis_name,
+        if rising && !level {
+            " and is moving further into it"
+        } else {
+            ""
+        },
+    );
+    Some(Finding::new(
+        Pattern::ConcentrationOverTime,
+        BTreeMap::from([
+            ("columns".into(), json!([measure_name, entity_name])),
+            ("time_column".into(), json!(input.axis_name)),
+        ]),
+        claim,
+        EvidenceBasis::Measured,
+        score,
+        metrics,
+        Some(interpretation),
+        Method::new(
+            "series",
+            "panel_concentration_scan",
+            "entity × time top-share scan (onceover v0.1)",
+        ),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn outlier_finding(
+    table: &TypedTable,
+    input: &PanelInput,
+    entity: usize,
+    measure: usize,
+    labels: &[String],
+    totals: &[f64],
+    observed: &[bool],
+    rows_used: usize,
+) -> Option<Finding> {
+    let mut sorted: Vec<f64> = totals
+        .iter()
+        .zip(observed.iter())
+        .filter(|(_, o)| **o)
+        .map(|(t, _)| *t)
+        .collect();
+    sorted.sort_by(f64::total_cmp);
+    let n_entities = sorted.len();
+    let median = quantile(&sorted, 0.5);
+    let q1 = quantile(&sorted, 0.25);
+    let q3 = quantile(&sorted, 0.75);
+    let typical = if median > 0.0 { median } else { q3 };
+    if typical <= 0.0 {
+        return None;
+    }
+    let fence = q3 + OUTLIER_FENCE_IQRS * (q3 - q1);
+    let grand: f64 = sorted.iter().sum();
+    if grand <= 0.0 {
+        return None;
+    }
+    let mut outliers: Vec<(u32, f64)> = totals
+        .iter()
+        .enumerate()
+        .filter(|(i, t)| observed[*i] && **t >= OUTLIER_MULTIPLE * typical && **t > fence)
+        .map(|(i, t)| (i as u32, *t))
+        .collect();
+    if outliers.is_empty() {
+        return None;
+    }
+    outliers.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let combined: f64 = outliers.iter().map(|(_, t)| t).sum();
+    let measure_name = &table.names[measure];
+    let entity_name = &table.names[entity];
+    let named: Vec<serde_json::Value> = outliers
+        .iter()
+        .take(MAX_NAMED_OUTLIERS)
+        .map(|(code, t)| {
+            json!({
+                "entity": labels[*code as usize],
+                "total": t,
+                "ratio_to_typical": t / typical,
+                "share": t / grand,
+            })
+        })
+        .collect();
+    let named_text: Vec<String> = outliers
+        .iter()
+        .take(3)
+        .map(|(code, t)| {
+            format!(
+                "{} (total {}, {}x the typical {})",
+                labels[*code as usize],
+                fmt_num(*t),
+                fmt_ratio(t / typical),
+                entity_name,
+            )
+        })
+        .collect();
+    let mut claim = if outliers.len() == 1 {
+        format!(
+            "one {} sits far outside the {} distribution of total {}: {}; it holds {} of all {}",
+            entity_name,
+            entity_name,
+            measure_name,
+            named_text.join(", "),
+            fmt_pct(combined / grand),
+            measure_name,
+        )
+    } else {
+        format!(
+            "{} {} sit far outside the {} distribution of total {}: {}; together they hold {} of all {}",
+            outliers.len(),
+            entity_name,
+            entity_name,
+            measure_name,
+            named_text.join(", "),
+            fmt_pct(combined / grand),
+            measure_name,
+        )
+    };
+    if outliers.len() > 3 {
+        claim.push_str(&format!(
+            "; {} more are in the evidence",
+            outliers.len() - 3
+        ));
+    }
+    claim.push_str(&format!(
+        "; the typical {} totals {}",
+        entity_name,
+        fmt_num(typical),
+    ));
+    let max_ratio = outliers[0].1 / typical;
+    let score = (0.55 + 0.20 * max_ratio.log10()).min(0.95);
+    let metrics = BTreeMap::from([
+        ("measure".into(), json!(measure_name)),
+        ("entity_column".into(), json!(entity_name)),
+        ("time_column".into(), json!(input.axis_name)),
+        ("entities".into(), json!(n_entities)),
+        ("outlier_entities".into(), json!(outliers.len())),
+        ("typical_total".into(), json!(typical)),
+        ("median_total".into(), json!(median)),
+        ("upper_quartile_total".into(), json!(q3)),
+        ("fence_total".into(), json!(fence)),
+        ("multiple_of_typical".into(), json!(OUTLIER_MULTIPLE)),
+        ("grand_total".into(), json!(grand)),
+        ("outlier_share".into(), json!(combined / grand)),
+        ("outliers".into(), json!(named)),
+        ("n".into(), json!(rows_used)),
+        ("population_rows".into(), json!(table.n)),
+        (
+            "method".into(),
+            json!("entity-total tail scan on the entity × time grain: the measure is summed per entity over all periods; an entity is reported when its total is at least 10 times the typical entity's total (the median total, or the upper quartile when the median is zero) and above the upper quartile plus three interquartile ranges; at least 20 entities are required"),
+        ),
+    ]);
+    let interpretation = format!(
+        "a statement about {entity_name}, not about cells: no single {measure_name} value needs to be extreme — the {entity_name}'s ordinary rows add up to a level the other {entity_name} never approach, so a rule written per row cannot state what a per-entity rule states in one line",
+    );
+    Some(Finding::new(
+        Pattern::OutlierEntity,
+        BTreeMap::from([
+            ("columns".into(), json!([measure_name, entity_name])),
+            ("time_column".into(), json!(input.axis_name)),
+        ]),
+        claim,
+        EvidenceBasis::Measured,
+        score,
+        metrics,
+        Some(interpretation),
+        Method::new(
+            "series",
+            "panel_concentration_scan",
+            "entity × time entity-total scan (onceover v0.1)",
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1604,5 +2322,174 @@ mod tests {
         let (findings, detail) = run_dynamics(&df, &ticks, vec![]);
         assert!(findings.is_empty());
         assert!(detail.contains("distinct periods"), "{detail}");
+    }
+
+    // ----- panel concentration and outlier entities -----
+
+    fn tail_panel(values: &[Vec<f64>]) -> (DataFrame, Vec<Option<i64>>) {
+        let mut person = Vec::new();
+        let mut tokens = Vec::new();
+        let mut ticks = Vec::new();
+        for (e, series) in values.iter().enumerate() {
+            for (w, v) in series.iter().enumerate() {
+                person.push(format!("p{e:02}"));
+                tokens.push(*v);
+                ticks.push(Some(
+                    1_735_689_600_000_000i64 + (w as i64) * 604_800_000_000,
+                ));
+            }
+        }
+        let df = df! { "person" => person, "tokens" => tokens }.unwrap();
+        (df, ticks)
+    }
+
+    fn run_tail(df: &DataFrame, ticks: &[Option<i64>]) -> (Vec<Finding>, String) {
+        let table = extract(df);
+        let input = PanelInput {
+            axis_name: "week",
+            ticks,
+            entities: vec![0],
+            measures: vec![1],
+        };
+        panel_concentration(&table, &input)
+    }
+
+    fn of_type<'a>(findings: &'a [Finding], ty: &str) -> Vec<&'a Finding> {
+        findings
+            .iter()
+            .filter(|f| f.finding_type.as_deref() == Some(ty))
+            .collect()
+    }
+
+    #[test]
+    fn rising_top_share_is_reported() {
+        // 60 entities x 12 periods at 100 per period; entity 0
+        // ramps 260 -> 4_900, so its share of each period's total
+        // rises from about 4% to about 45%.
+        let values: Vec<Vec<f64>> = (0..60)
+            .map(|e| {
+                if e == 0 {
+                    (0..12)
+                        .map(|w| 260.0 + (4900.0 - 260.0) * w as f64 / 11.0)
+                        .collect()
+                } else {
+                    vec![100.0; 12]
+                }
+            })
+            .collect();
+        let (df, ticks) = tail_panel(&values);
+        let (findings, _) = run_tail(&df, &ticks);
+        let hits = of_type(&findings, "concentration_over_time");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let m = &hits[0].evidence[0].metrics;
+        assert_eq!(m["entities"], json!(60));
+        assert_eq!(m["top_group_size"], json!(1));
+        let early = m["early_top_share"].as_f64().unwrap();
+        let late = m["late_top_share"].as_f64().unwrap();
+        assert!(late - early >= 0.10, "early {early} late {late}");
+        assert!(late >= 0.40, "late {late}");
+        assert!(hits[0].claim.contains("p00"), "{}", hits[0].claim);
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn hundredfold_entity_is_named_as_outlier() {
+        // 60 entities x 12 periods at 100 per period; entity 7 at
+        // 10_000 per period — 100x the typical entity's total.
+        let values: Vec<Vec<f64>> = (0..60)
+            .map(|e| {
+                if e == 7 {
+                    vec![10_000.0; 12]
+                } else {
+                    vec![100.0; 12]
+                }
+            })
+            .collect();
+        let (df, ticks) = tail_panel(&values);
+        let (findings, _) = run_tail(&df, &ticks);
+        let hits = of_type(&findings, "outlier_entity");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let m = &hits[0].evidence[0].metrics;
+        assert_eq!(m["outlier_entities"], json!(1));
+        assert_eq!(m["outliers"][0]["entity"], json!("p07"));
+        let ratio = m["outliers"][0]["ratio_to_typical"].as_f64().unwrap();
+        assert!((ratio - 100.0).abs() < 0.01, "ratio {ratio}");
+        assert!(hits[0].claim.contains("p07"), "{}", hits[0].claim);
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn balanced_panel_reports_neither() {
+        let values: Vec<Vec<f64>> = (0..60)
+            .map(|e| {
+                (0..12)
+                    .map(|w| 100.0 + ((e + w) % 3) as f64)
+                    .collect::<Vec<f64>>()
+            })
+            .collect();
+        let (df, ticks) = tail_panel(&values);
+        let (findings, detail) = run_tail(&df, &ticks);
+        assert!(findings.is_empty(), "{detail}");
+    }
+
+    #[test]
+    fn periods_one_entity_occupies_alone_state_no_concentration() {
+        // 60 entities x 12 periods, but each period holds only 5
+        // entities' rows, one of them carrying 10_000 against
+        // 100s: the top share of every period is about 96% by
+        // construction, because the periods are not shared. No
+        // concentration statement is made.
+        let mut person = Vec::new();
+        let mut tokens = Vec::new();
+        let mut ticks = Vec::new();
+        for w in 0..12usize {
+            for k in 0..5usize {
+                let e = w * 5 + k;
+                person.push(format!("p{e:02}"));
+                tokens.push(if k == 0 { 10_000.0 } else { 100.0 });
+                ticks.push(Some(
+                    1_735_689_600_000_000i64 + (w as i64) * 604_800_000_000,
+                ));
+            }
+        }
+        let df = df! { "person" => person, "tokens" => tokens }.unwrap();
+        let (findings, _) = run_tail(&df, &ticks);
+        assert!(
+            of_type(&findings, "concentration_over_time").is_empty(),
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn small_panel_is_below_the_entity_floor() {
+        // 8 entities, one ramping hard: shares are mechanical at
+        // this size, so nothing is stated and the coverage detail
+        // says why.
+        let values: Vec<Vec<f64>> = (0..8)
+            .map(|e| {
+                if e == 0 {
+                    (0..12)
+                        .map(|w| 260.0 + (4900.0 - 260.0) * w as f64 / 11.0)
+                        .collect()
+                } else {
+                    vec![100.0; 12]
+                }
+            })
+            .collect();
+        let (df, ticks) = tail_panel(&values);
+        let (findings, detail) = run_tail(&df, &ticks);
+        assert!(findings.is_empty(), "{detail}");
+        assert!(detail.contains("at least 20 entities"), "{detail}");
     }
 }
