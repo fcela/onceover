@@ -257,7 +257,7 @@ pub struct FrameAxis {
     /// materialized axis column carries this name in the table the
     /// temporal passes receive.
     pub name: String,
-    /// hint | native | string_parse | timestamp_parts | year_candidate
+    /// hint | native | string_parse | timestamp_parts | year_candidate | week_candidate
     pub source: String,
     /// One-line statement of what the axis is, for readers.
     pub description: String,

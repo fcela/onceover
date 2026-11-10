@@ -202,3 +202,120 @@ def test_irregular_axis_gets_no_cycle():
     y = np.sin(np.arange(N) * 2 * np.pi / 7) * 2 + rng.normal(size=N) * 0.2
     k = _series(_run(t=t, y=y), "y")
     assert "cycle" not in k
+
+
+# --- #210: significance-tested trend ------------------------------------
+
+MONDAYS = [date(2023, 1, 2) + timedelta(weeks=i) for i in range(200)]
+
+
+def test_trend_carries_its_significance_test():
+    rng = np.random.default_rng(4)
+    k = _series(_run(t=_days(), y=np.arange(N) * 0.01 + rng.normal(size=N)), "y")
+    m = k["trend"]["evidence"][0]["metrics"]
+    assert m["slope_p_value"] < 0.001
+    assert m["residual_autocorrelation"] >= 0.0
+    assert 0 < m["effective_points"] <= N
+
+
+def test_random_walk_is_not_a_trend():
+    # A random walk's line fit explains most of its variance (seeds
+    # 100 and 103 read as trends on the descriptive gates alone),
+    # but the movement is indistinguishable from noise: the deflated
+    # slope test must keep it from being stated as a trend.
+    n = 156
+    for seed in (100, 102, 103):
+        rng = np.random.default_rng(seed)
+        y = np.cumsum(rng.normal(size=n))
+        assert "trend" not in _series(_run(t=MONDAYS[:n], y=y), "y"), seed
+
+
+def test_weekly_axis_annual_cycle_at_two_years():
+    # 115 weekly points span about 2.2 years — too short for the
+    # general yearly probe — but a weekly axis carries its annual
+    # cycle at lag 52, and the pass tests that lag directly.
+    n = 115
+    rng = np.random.default_rng(8)
+    y = 3 * np.sin(np.arange(n) * 2 * np.pi / 52) + rng.normal(scale=0.5, size=n)
+    k = _series(_run(t=MONDAYS[:n], y=y), "y")
+    assert k["cycle"]["evidence"][0]["metrics"]["period"] == "1 year"
+    assert k["cycle"]["evidence"][0]["metrics"]["lag_steps"] == 52
+
+
+# --- #210: per-entity series on a panel grain ----------------------------
+
+
+def _panel(persons=40, weeks=80, risers=8, seed=21):
+    rng = np.random.default_rng(seed)
+    rows = {"t": [], "person": [], "tokens": []}
+    for i in range(persons):
+        for wk in range(weeks):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:02}")
+            base = 20.0 + (0.3 * wk if i < risers else 0.0)
+            rows["tokens"].append(base + rng.normal(scale=2.0))
+    return pl.DataFrame(rows)
+
+
+def _kinds(report, column="tokens"):
+    return _series(report, column)
+
+
+def test_panel_trend_names_the_minority_that_carries_it():
+    report = onceover.profile(_panel(), detectors=["series"])
+    k = _kinds(report)
+    ent = k["entity_trend"]["evidence"][0]["metrics"]
+    assert ent["entity_column"] == "person"
+    assert ent["direction"] == "rise"
+    assert ent["entities_with_pattern"] == 8
+    assert ent["entities_tested"] == 40
+    claim = k["entity_trend"]["claim"]
+    assert "8 of the 40" in claim and "p00" in claim and "p04" in claim
+    # The aggregate trend must say it is carried by a minority.
+    agg = k["trend"]
+    assert "minority of entities: 8 of 40" in agg["claim"]
+    am = agg["evidence"][0]["metrics"]
+    assert am["entities_with_trend"] == 8
+    assert am["entities_tested"] == 40
+
+
+def test_panel_trend_no_entity_carries_is_qualified():
+    # Every entity rises slightly — too slightly for any single
+    # series to clear the trend gates — while the aggregate rise
+    # is strong. The aggregate statement must say that no
+    # individual series shows the rise on its own.
+    rng = np.random.default_rng(43)
+    rows = {"t": [], "person": [], "tokens": []}
+    for i in range(40):
+        for wk in range(80):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:02}")
+            rows["tokens"].append(20.0 + 0.05 * wk + rng.normal(scale=3.0))
+    report = onceover.profile(pl.DataFrame(rows), detectors=["series"])
+    k = _kinds(report)
+    assert "entity_trend" not in k
+    agg = k["trend"]
+    assert "no individual person series shows a significant rise" in agg["claim"]
+    am = agg["evidence"][0]["metrics"]
+    assert am["entities_with_trend"] == 0
+    assert am["entities_tested"] == 40
+
+
+def test_panel_break_names_the_entities_that_share_it():
+    rng = np.random.default_rng(22)
+    rows = {"t": [], "person": [], "tokens": []}
+    for i in range(30):
+        for wk in range(40):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:02}")
+            base = 20.0 + (8.0 if i < 6 and wk >= 20 else 0.0)
+            rows["tokens"].append(base + rng.normal(scale=1.5))
+    report = onceover.profile(pl.DataFrame(rows), detectors=["series"])
+    k = _kinds(report)
+    ent = k["entity_break"]["evidence"][0]["metrics"]
+    assert ent["entity_column"] == "person"
+    assert ent["direction"] == "up"
+    assert ent["entities_with_pattern"] == 6
+    assert ent["entities_tested"] == 30
+    assert ent["breakpoint"] == "2023-05-22"  # MONDAYS[20]
+    assert "6 of the 30" in k["entity_break"]["claim"]

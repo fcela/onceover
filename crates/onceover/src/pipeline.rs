@@ -36,6 +36,48 @@ pub fn profile_with_detectors(
     profile_inner(df, cfg, extensions, 0)
 }
 
+/// Entity columns of the frame's entity × time grain, in priority
+/// order: the grain's single non-axis factor when the account found
+/// one, then identifier-role columns, then dimension-role columns.
+/// An entity axis needs at least 10 distinct values — the panel
+/// checks' own floor for the entities they follow — which also keeps
+/// two-valued flag columns (dimension role, by cardinality) from
+/// being mistaken for an axis. At most three columns are returned.
+fn entity_columns(
+    table: &TypedTable,
+    frame: &crate::frame::FrameModel,
+    card_facts: &[CardFacts],
+    axis_name: &str,
+) -> Vec<usize> {
+    let mut entities: Vec<usize> = Vec::new();
+    if let Some(grain) = &frame.info.grain {
+        let non_axis: Vec<(&str, usize)> = grain
+            .factorization
+            .iter()
+            .map(|f| (f.column.as_str(), f.distinct))
+            .filter(|(c, _)| *c != axis_name)
+            .collect();
+        if non_axis.len() == 1 && non_axis[0].1 >= 10 {
+            if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
+                entities.push(i);
+            }
+        }
+    }
+    for role in ["identifier", "dimension"] {
+        for (i, r) in frame.roles.iter().enumerate() {
+            if r.as_deref() == Some(role)
+                && card_facts[i].distinct >= 10
+                && !entities.contains(&i)
+                && Some(&table.names[i]) != frame.info.axis.as_ref().map(|a| &a.name)
+            {
+                entities.push(i);
+            }
+        }
+    }
+    entities.truncate(3);
+    entities
+}
+
 fn profile_inner(
     df: &DataFrame,
     cfg: &ProfileConfig,
@@ -965,6 +1007,7 @@ fn profile_inner(
                     ticks,
                     measures,
                     dimensions: columns_with_role("dimension"),
+                    entities: entity_columns(&table, &frame, &card_facts, axis_name),
                 };
                 let (mut f, mut detail) = onceover_mines::profile_series(&table, &input);
                 if !axis_measures.is_empty() {
@@ -1013,40 +1056,7 @@ fn profile_inner(
         let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
         match (&ticks, &axis_name) {
             (Some(ticks), Some(axis_name)) => {
-                // Entity columns in priority order: the grain's
-                // single non-axis factor when the account found
-                // one, then identifier-role columns, then
-                // dimension-role columns. An entity axis needs at
-                // least 10 distinct values — the check's own floor
-                // for the entities it follows — which also keeps
-                // two-valued flag columns (dimension role, by
-                // cardinality) from being mistaken for an axis.
-                let mut entities: Vec<usize> = Vec::new();
-                if let Some(grain) = &frame.info.grain {
-                    let non_axis: Vec<(&str, usize)> = grain
-                        .factorization
-                        .iter()
-                        .map(|f| (f.column.as_str(), f.distinct))
-                        .filter(|(c, _)| *c != axis_name.as_str())
-                        .collect();
-                    if non_axis.len() == 1 && non_axis[0].1 >= 10 {
-                        if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
-                            entities.push(i);
-                        }
-                    }
-                }
-                for role in ["identifier", "dimension"] {
-                    for (i, r) in frame.roles.iter().enumerate() {
-                        if r.as_deref() == Some(role)
-                            && card_facts[i].distinct >= 10
-                            && !entities.contains(&i)
-                            && Some(&table.names[i]) != frame.info.axis.as_ref().map(|a| &a.name)
-                        {
-                            entities.push(i);
-                        }
-                    }
-                }
-                entities.truncate(3);
+                let entities = entity_columns(&table, &frame, &card_facts, axis_name);
                 let input = onceover_mines::PanelInput {
                     axis_name,
                     ticks,

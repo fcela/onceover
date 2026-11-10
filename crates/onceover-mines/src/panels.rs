@@ -128,7 +128,7 @@ enum EntityKey {
 }
 
 /// Why a column cannot key the entities of a grain.
-enum EntitySkip {
+pub(crate) enum EntitySkip {
     /// Fewer than two distinct values.
     TooFew,
     /// More distinct values than the entity cap.
@@ -137,7 +137,10 @@ enum EntitySkip {
 
 /// Per-row entity codes and the distinct count, or the reason the
 /// column cannot key entities.
-fn entity_codes(table: &TypedTable, col: usize) -> Result<(Vec<Option<u32>>, usize), EntitySkip> {
+pub(crate) fn entity_codes(
+    table: &TypedTable,
+    col: usize,
+) -> Result<(Vec<Option<u32>>, usize), EntitySkip> {
     let keys: Vec<Option<EntityKey>> = match &table.cols[col] {
         TypedCol::Str { vals } => vals
             .iter()

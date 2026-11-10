@@ -144,6 +144,57 @@ def test_year_like_integer_is_a_low_confidence_candidate():
     assert axis["confidence"] == "low"
 
 
+def test_year_week_parts_assemble_a_weekly_axis():
+    # Year and week columns with no month part: the axis is
+    # assembled from the Monday of each ISO week, the parts are
+    # timestamp parts, and the account calls the axis weekly.
+    rows = {"year": [], "week": [], "person": [], "tokens": []}
+    for p in range(12):
+        for yr in (2023, 2024):
+            for wk in range(1, 27):
+                rows["year"].append(yr)
+                rows["week"].append(wk)
+                rows["person"].append(f"p{p:02}")
+                rows["tokens"].append(20.0 + 0.1 * wk)
+    report = onceover.profile(pl.DataFrame(rows))
+    axis = report.data["frame"]["axis"]
+    assert axis["source"] == "timestamp_parts"
+    assert axis["name"] == "year/week"
+    assert axis["parts"] == ["year", "week"]
+    assert axis["step"] == "1 week"
+    assert "weekly" in axis["description"]
+    assert axis["min"] == "2023-01-02"  # the Monday of 2023 week 1
+    roles = _roles(report)
+    assert roles["year"] == "timestamp_part"
+    assert roles["week"] == "timestamp_part"
+    # The temporal passes run on the assembled axis.
+    assert report.coverage["series"]["status"] != "skipped"
+
+
+def test_lone_week_column_is_a_low_confidence_candidate():
+    rows = {"week": [], "person": [], "tokens": []}
+    for p in range(12):
+        for wk in range(1, 27):
+            rows["week"].append(wk)
+            rows["person"].append(f"p{p:02}")
+            rows["tokens"].append(20.0 + 0.1 * wk)
+    report = onceover.profile(pl.DataFrame(rows))
+    axis = report.data["frame"]["axis"]
+    assert axis["source"] == "week_candidate"
+    assert axis["confidence"] == "low"
+    assert axis["min"] == "1"
+    assert axis["max"] == "26"
+
+
+def test_weekly_date_axis_is_described_as_weekly():
+    mondays = [date(2023, 1, 2) + timedelta(weeks=i) for i in range(80)]
+    df = pl.DataFrame({"t": mondays, "y": [float(i) for i in range(80)]})
+    report = onceover.profile(df)
+    axis = report.data["frame"]["axis"]
+    assert axis["step"] == "1 week"
+    assert "weekly" in axis["description"]
+
+
 def test_role_hint_overrides_the_assignment():
     report = onceover.profile(_beijing_mini(), hints={"roles": {"No": "measure"}})
     roles = _roles(report)
