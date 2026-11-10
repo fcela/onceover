@@ -1117,6 +1117,56 @@ fn profile_inner(
         }
     }
 
+    // ---------- panel dynamics ----------
+    // Entry blocks, exit blocks, and first activity on the same
+    // entity × time grain: when entities arrive and leave, and
+    // when their activity actually starts. The check rides on the
+    // series detector's enablement — it reads the same axis and
+    // grain — and records its own coverage entry, including the
+    // no-grain case, where it does not apply.
+    if check_deadline(&mut coverage, "panel_dynamics") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("series") {
+        let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+        match (&ticks, &axis_name) {
+            (Some(ticks), Some(axis_name)) => {
+                let input = onceover_mines::PanelInput {
+                    axis_name,
+                    ticks,
+                    entities: entity_columns(&table, &frame, &card_facts, axis_name),
+                    measures: frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect(),
+                };
+                let (mut f, detail) = onceover_mines::panel_dynamics(&table, &input);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "panel_dynamics".into(),
+                    PassInfo::ran(detail),
+                );
+                findings.append(&mut f);
+            }
+            _ => stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "panel_dynamics".into(),
+                PassInfo::skipped(
+                    "no entity × time grain: the frame has no time axis with per-row ticks"
+                        .to_string(),
+                ),
+            ),
+        }
+    }
+
     // ---------- content ----------
     if check_deadline(&mut coverage, "content") {
         deadline_hit = true;

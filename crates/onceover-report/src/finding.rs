@@ -111,6 +111,20 @@ pub enum Pattern {
     /// with the lag to a related activity column when one is
     /// associated.
     OneWayFlag,
+    /// A block of entities first appearing in one period of an
+    /// entity × time grain: far more arrivals in that period than
+    /// the panel's typical period, and a material share of all
+    /// entities.
+    EntryBlock,
+    /// A block of entities last appearing in one period of an
+    /// entity × time grain: the mirror of EntryBlock on the exit
+    /// side.
+    ExitBlock,
+    /// The distribution of the period in which entities first
+    /// become active on a measure, relative to the period in which
+    /// they are first observed: a material share of entities start
+    /// activity after their first observed period.
+    FirstActivity,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -155,6 +169,7 @@ impl Pattern {
             Self::OrderedPartition => Category::Changes,
             Self::SeriesStructure => Category::Changes,
             Self::OneWayFlag => Category::Changes,
+            Self::EntryBlock | Self::ExitBlock | Self::FirstActivity => Category::Changes,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -208,6 +223,9 @@ impl Pattern {
             Self::DistributionShift => "distribution_shift",
             Self::OrderedPartition => "ordered_partition",
             Self::OneWayFlag => "one_way_flag",
+            Self::EntryBlock => "entry_block",
+            Self::ExitBlock => "exit_block",
+            Self::FirstActivity => "first_activity",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
@@ -703,6 +721,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::EntryBlock | Pattern::ExitBlock | Pattern::FirstActivity => (
+                Sc::Columns,
+                O::TemporalBehaviour,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
             Pattern::BoundaryMass | Pattern::ContentAnomaly => (
                 Sc::Column,
                 O::Distribution,
@@ -1003,6 +1030,9 @@ impl Facets {
             (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
             (Category::Changes, Some("ordered_partition")) => Pattern::OrderedPartition,
             (Category::Changes, Some("one_way_flag")) => Pattern::OneWayFlag,
+            (Category::Changes, Some("entry_block")) => Pattern::EntryBlock,
+            (Category::Changes, Some("exit_block")) => Pattern::ExitBlock,
+            (Category::Changes, Some("first_activity")) => Pattern::FirstActivity,
             (Category::Changes, _) => Pattern::ResidualShift,
         };
         Self::for_pattern(pattern, spec, metrics, subject)
@@ -1278,6 +1308,36 @@ impl Finding {
                 );
                 if let Some(v) = metrics.get("entity_column") {
                     spec.definition.insert("entity".into(), v.clone());
+                }
+            }
+            Pattern::EntryBlock | Pattern::ExitBlock => {
+                spec.form = Some(if pattern == Pattern::EntryBlock {
+                    "entry_block".into()
+                } else {
+                    "exit_block".into()
+                });
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the entity or time value are not observations"),
+                );
+                if let Some(v) = metrics.get("entity_column") {
+                    spec.definition.insert("entity".into(), v.clone());
+                }
+                if let Some(v) = metrics.get("period") {
+                    spec.definition.insert("period".into(), v.clone());
+                }
+            }
+            Pattern::FirstActivity => {
+                spec.form = Some("first_activity".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the entity or time value are not observations; a missing measure value is not activity"),
+                );
+                if let Some(v) = metrics.get("entity_column") {
+                    spec.definition.insert("entity".into(), v.clone());
+                }
+                if let Some(v) = metrics.get("activity_column") {
+                    spec.definition.insert("activity".into(), v.clone());
                 }
             }
             Pattern::UnexaminedColumns => {
@@ -1667,11 +1727,14 @@ impl Finding {
                             | "step_discontinuity"
                             | "distribution_shift"
                             | "ordered_partition"
-                            | "one_way_flag",
+                            | "one_way_flag"
+                            | "entry_block"
+                            | "exit_block"
+                            | "first_activity",
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, ordered_partition, or one_way_flag".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()
