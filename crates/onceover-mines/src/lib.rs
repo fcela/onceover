@@ -50,7 +50,7 @@ pub use hstat::{profile_interactions, HConfig};
 pub use ident::identities;
 pub use ident::multiterm_identities;
 pub use missingness::{profile_missingness, MissingnessAxis};
-pub use panels::{panel_flags, PanelInput};
+pub use panels::{panel_dynamics, panel_flags, PanelInput};
 pub use partitions::{ordered_partitions, PartitionsConfig, PartitionsOutcome, PartitionsStatus};
 pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};
 pub use prism::{prism_rules, PrismConfig};
