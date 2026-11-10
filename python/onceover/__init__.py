@@ -97,7 +97,15 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         ``exclude_columns`` (columns removed before profiling starts:
         no card, and no finding can name them; the
         ``column_exclusions`` coverage entry states the exclusion and
-        its user-declared source). Unknown columns or unusable types
+        its user-declared source), and ``labels`` (per-column display
+        labels: claims and interpretations name the column by its
+        label instead of the raw column name, while subjects,
+        evidence, metrics, and column cards keep the raw name and
+        finding ids are unchanged — labels are presentation, never
+        identity. A label that names a different column, one label
+        declared for two columns, an empty label, or a label for an
+        unknown column is not applied: the raw name is kept and the
+        ``labels`` coverage entry states each case). Unknown columns or unusable types
         are reported in the pass coverage, not raised. The column the
         frame model assembles as the report's time axis is excluded
         from target roles and from being profiled as a measure by the

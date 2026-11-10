@@ -297,7 +297,13 @@ Each finding contains:
 - `subject`: `columns`, optional `inputs`, `target`, and comparison `unit`;
 - `specification`: form, conditions, outcome, and the definitions needed to
   interpret a reference or comparison;
-- `claim`: a readable description qualified by its measurements;
+- `claim`: a readable description qualified by its measurements. When
+  the caller declares display labels (`hints.labels`), claims and
+  interpretations name columns by their labels; a label is
+  presentation only — `subject`, `specification`, and `evidence`
+  keep the raw column names, and the `id` is unchanged, because it
+  is derived from the canonical statement rather than the claim
+  text;
 - `evidence`: separate records from contributing detectors and verifiers;
 - `interestingness`: the selection score described above, not a probability;
 - `detector_interestingness`: the score the producing detector assigned;
