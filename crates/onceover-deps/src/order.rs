@@ -44,6 +44,29 @@
 //! a positive one has a compatible range and almost no crossings, whichever
 //! way the rows are paired, and this rule keeps it out.
 //!
+//! The complementary statement covers the pair whose order almost
+//! holds and fails in bulk: an accepted count that exceeds the
+//! generated count it is bounded by on a quarter of the rows is
+//! silent under the certification bar alone, in both directions.
+//! When one direction's violations exceed the certification share
+//! but are themselves systematic — at least 20 rows and at least 5%
+//! of the evaluated rows, while the reverse direction's violations
+//! are at least twice as many — the pair is reported as a systematic
+//! violation of the less-violated direction, with the violating
+//! rows in the evidence. The statement also requires the pair to
+//! share a scale: the median row distance |a − b| / max(|a|, |b|)
+//! over sampled complete rows is at most 0.2, and the columns'
+//! medians agree within a factor of 2.5 when both are non-zero.
+//! A bound pair (a subset count against its total, a part against
+//! its whole) tracks its diagonal; an age in years against a
+//! duration in seconds crosses asymmetrically too, but from far
+//! off the diagonal, and stays silent. Neither direction holds
+//! there, and the
+//! failures are too one-sided to read as chance: two unrelated
+//! columns crossing in both directions at similar rates fail the
+//! asymmetry requirement and stay silent, as do one-sided
+//! violations below the share floor.
+//!
 //! Every eligible pair is screened on the row sample, up to 64 times
 //! the shared pair budget, nearest columns first. Pairs that stay
 //! near-universal on the sample are verified on all rows, up to
@@ -73,6 +96,29 @@ const MIN_DISTINCT: usize = 5;
 /// A direction is reported when its violations are at most this
 /// share of the evaluated rows (zero violations always reports).
 const MAX_VIOLATION_SHARE: f64 = 0.01;
+/// The systematic-violation statement: a direction that fails the
+/// certification share is still reported when its violations reach
+/// at least this many rows and at least MIN_SYSTEMATIC_SHARE of the
+/// evaluated rows, while the reverse direction's violations are at
+/// least SYSTEMATIC_ASYMMETRY times its own.
+const MIN_SYSTEMATIC_VIOLATIONS: usize = 20;
+const MIN_SYSTEMATIC_SHARE: f64 = 0.05;
+const SYSTEMATIC_ASYMMETRY: f64 = 2.0;
+/// Screening admission for the systematic statement: the better
+/// direction's sample violation share must not pass this bound, so
+/// pairs that sit closer to a reverse order than to a broken one
+/// are not verified for the statement.
+const SCREEN_SYSTEMATIC_MAX_SHARE: f64 = 0.40;
+/// The systematic statement's scale gate: the two columns must
+/// track their diagonal — the median over sampled complete rows
+/// of |a − b| / max(|a|, |b|) is at most this. A bound pair (a
+/// subset count against its total, a part against its whole)
+/// sits near the diagonal; two columns on unrelated scales cross
+/// asymmetrically too, but from far away.
+const MAX_PAIR_DISTANCE: f64 = 0.2;
+/// The columns' medians must agree within this factor when both
+/// are non-zero: the same-scale half of the gate above.
+const MAX_MEDIAN_RATIO: f64 = 2.5;
 /// Rows sampled for the screening stage when the table has more
 /// rows than this; survivors are verified on all rows.
 const SCREEN_ROWS: usize = 4096;
@@ -134,8 +180,9 @@ pub struct OrderOutcome {
     pub pairs_surviving: usize,
     /// Surviving pairs verified on all rows, budget permitting.
     pub pairs_evaluated: usize,
-    /// Directions that passed the reporting bar before the
-    /// findings cap (at most one per pair).
+    /// Directions that passed a reporting bar before the
+    /// findings cap (at most one per pair): the certification bar
+    /// or the systematic-violation rule.
     pub pairs_passing: usize,
     /// At least one pair was screened on the row sample.
     pub screened: bool,
@@ -504,6 +551,38 @@ fn count_directions<T: ScanVal>(a: &[Option<T>], b: &[Option<T>]) -> (usize, usi
     (viol_ab, viol_ba, complete)
 }
 
+/// The systematic statement's scale gate, computed on a
+/// deterministic stride sample of the rows where both columns are
+/// present: the median of |a − b| / max(|a|, |b|) (0 where both
+/// values are 0), and whether the two columns' medians are
+/// comparable — within [`MAX_MEDIAN_RATIO`] of each other, a test
+/// skipped when either median is zero.
+fn pair_closeness<T: ScanVal>(a: &[Option<T>], b: &[Option<T>]) -> (f64, bool) {
+    let step = (a.len() / 1024).max(1);
+    let mut dist: Vec<f64> = Vec::new();
+    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+    for k in (0..a.len()).step_by(step) {
+        if let (Some(x), Some(y)) = (a[k], b[k]) {
+            let (x, y) = (x.as_f64(), y.as_f64());
+            xs.push(x);
+            ys.push(y);
+            let m = x.abs().max(y.abs());
+            dist.push(if m == 0.0 { 0.0 } else { (x - y).abs() / m });
+        }
+    }
+    if dist.is_empty() {
+        return (1.0, false);
+    }
+    let median = |v: &mut Vec<f64>| {
+        v.sort_by(|p, q| p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal));
+        v[v.len() / 2]
+    };
+    let d = median(&mut dist);
+    let (mx, my) = (median(&mut xs), median(&mut ys));
+    let comparable = mx == 0.0 || my == 0.0 || mx.max(my) / mx.min(my) <= MAX_MEDIAN_RATIO;
+    (d, comparable)
+}
+
 /// Violations of `lower <= upper` that random pairing would give on the
 /// rows where both are present: the share of (lower, upper) value pairs out
 /// of order, times the rows.
@@ -662,6 +741,14 @@ fn note_satisfied<T: ScanVal>(dir: &mut DirDetail<T>, slack: T) {
 struct Candidate {
     /// Violations random pairing would give.
     chance: f64,
+    /// The statement is the systematic-violation form: the
+    /// direction failed certification but its violations are
+    /// numerous, substantial, and one-sided.
+    systematic: bool,
+    /// The pair's median row distance |a − b| / max(|a|, |b|) on
+    /// sampled complete rows — the scale gate's measurement,
+    /// recorded as evidence on systematic findings.
+    pair_distance: f64,
     lower: usize,
     upper: usize,
     violations: usize,
@@ -696,6 +783,11 @@ struct Candidate {
 impl Candidate {
     fn violation_share(&self) -> f64 {
         self.violations as f64 / self.n.max(1) as f64
+    }
+    /// Violations of the reverse direction: every evaluated row
+    /// violates one direction, violates the other, or ties.
+    fn reverse_violations(&self) -> usize {
+        self.n - self.equal - self.violations
     }
     /// The acceptance order: violations of a near-universal order
     /// first (the data-error signal), then exact orders between
@@ -834,7 +926,24 @@ fn screen_pair(a: &ColPrep, b: &ColPrep, as_float: bool) -> Option<(bool, bool)>
     }
     let want_fs = v_fs as f64 <= SCREEN_SHARE * complete as f64;
     let want_sf = v_sf as f64 <= SCREEN_SHARE * complete as f64;
-    (want_fs || want_sf).then_some((want_fs, want_sf))
+    if want_fs || want_sf {
+        return Some((want_fs, want_sf));
+    }
+    // Systematic-violation admission: neither direction is
+    // near-universal on the sample, but the better direction fails
+    // on a substantial share while the worse fails at least twice
+    // as often — the shape of an order that holds in one direction
+    // and breaks in bulk. Verify the better direction on all rows;
+    // the full-row rule in `dispatch` decides the statement.
+    let (lo, hi) = (v_fs.min(v_sf), v_fs.max(v_sf));
+    let lo_share = lo as f64 / complete as f64;
+    if lo_share > SCREEN_SHARE
+        && lo_share <= SCREEN_SYSTEMATIC_MAX_SHARE
+        && (hi as f64) >= SYSTEMATIC_ASYMMETRY * lo as f64
+    {
+        return Some((v_fs <= v_sf, v_sf < v_fs));
+    }
+    None
 }
 
 fn as_floats(vals: &[Option<i128>]) -> Vec<Option<f64>> {
@@ -912,10 +1021,13 @@ fn dispatch<T: ScanVal>(
                 lo_max: T,
                 hi_min: T,
                 hi_max: T,
-                chance: f64|
+                chance: f64,
+                systematic: bool|
      -> Candidate {
         Candidate {
             chance,
+            systematic,
+            pair_distance: 0.0,
             lower,
             upper,
             violations: dir.violations,
@@ -957,21 +1069,75 @@ fn dispatch<T: ScanVal>(
                 None
             } else if d.fs.violations < d.sf.violations {
                 Some(make(
-                    i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+                    i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs, false,
                 ))
             } else {
                 Some(make(
-                    j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+                    j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf, false,
                 ))
             }
         }
         (true, false) => Some(make(
-            i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs,
+            i, j, &d.fs, d.lo_min, d.lo_max, d.hi_min, d.hi_max, chance_fs, false,
         )),
         (false, true) => Some(make(
-            j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf,
+            j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf, false,
         )),
-        (false, false) => None,
+        (false, false) => {
+            // Neither direction certifies. The complementary
+            // statement: a wanted direction whose violations are
+            // numerous and substantial while the reverse direction's
+            // are at least twice as many, on a pair whose columns
+            // share a scale and track their diagonal — the shape of
+            // a bound that held by construction (a subset count
+            // against its total) and is broken in bulk. The reverse
+            // count is exact even for an unwanted direction — every
+            // evaluated row violates one direction, violates the
+            // other, or ties. The scale gate keeps the statement
+            // off pairs that merely overlap numerically: an age in
+            // years against a duration in seconds also crosses
+            // asymmetrically, but from far off the diagonal.
+            let (pair_distance, comparable) = pair_closeness(av, bv);
+            let systematic = |viol: usize| {
+                let other = d.n - d.equal - viol;
+                viol >= MIN_SYSTEMATIC_VIOLATIONS
+                    && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
+                    && (other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64
+                    && comparable
+                    && pair_distance <= MAX_PAIR_DISTANCE
+            };
+            if want_fs && systematic(d.fs.violations) {
+                let mut c = make(
+                    i,
+                    j,
+                    &d.fs,
+                    d.lo_min,
+                    d.lo_max,
+                    d.hi_min,
+                    d.hi_max,
+                    chance_violations(av, bv),
+                    true,
+                );
+                c.pair_distance = pair_distance;
+                Some(c)
+            } else if want_sf && systematic(d.sf.violations) {
+                let mut c = make(
+                    j,
+                    i,
+                    &d.sf,
+                    d.hi_min,
+                    d.hi_max,
+                    d.lo_min,
+                    d.lo_max,
+                    chance_violations(bv, av),
+                    true,
+                );
+                c.pair_distance = pair_distance;
+                Some(c)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -989,7 +1155,43 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             fmt_num(v)
         }
     };
-    let (claim, interpretation) = if c.violations == 0 {
+    let (claim, interpretation) = if c.systematic {
+        let worst = if c.temporal {
+            format!(
+                "the worst violation is at row {}, where {} is {} after {}",
+                c.worst_row.unwrap_or(0),
+                lower_name,
+                fmt_gap(c.worst, c.worst_ticks),
+                upper_name,
+            )
+        } else {
+            format!(
+                "the worst violation is at row {}, where {} = {} against {} = {}",
+                c.worst_row.unwrap_or(0),
+                lower_name,
+                fmt_num(c.worst_lower),
+                upper_name,
+                fmt_num(c.worst_upper),
+            )
+        };
+        let reverse = c.reverse_violations();
+        let claim = format!(
+            "{} <= {} is violated on {} of {} evaluated rows ({:.1}%), while the reverse order is violated on {} rows ({:.1}%): {}",
+            lower_name,
+            upper_name,
+            c.violations,
+            c.n,
+            100.0 * share,
+            reverse,
+            100.0 * reverse as f64 / c.n.max(1) as f64,
+            worst,
+        );
+        let interp = format!(
+            "the order {lower_name} <= {upper_name} holds on far more rows than its reverse, which is the shape of a constraint between the two columns; violations on {:.1}% of the rows where both are present are too many for scattered recording errors and too one-sided for two unrelated columns crossing. The usual causes are a definition that changed partway through the data, two populations merged under one pair of columns, or one column not measuring the bound its pairing suggests. The violating rows are listed in the evidence",
+            100.0 * share,
+        );
+        (claim, interp)
+    } else if c.violations == 0 {
         let mut claim = format!(
             "{} <= {} on all {} evaluated rows (0 violations; the two are equal on {} of them",
             lower_name, upper_name, c.n, c.equal,
@@ -1072,6 +1274,18 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, and random pairing of the two columns would give at least 20 violations and at least 4 times those observed, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
         ),
     ]);
+    if c.systematic {
+        metrics.insert("violation_kind".into(), json!("systematic"));
+        metrics.insert("reverse_violations".into(), json!(c.reverse_violations()));
+        metrics.insert(
+            "pair_distance".into(),
+            json!((c.pair_distance * 1000.0).round() / 1000.0),
+        );
+        metrics.insert(
+            "method".into(),
+            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a systematic violation when its violations number at least 20 and at least 5% of the evaluated rows and the reverse direction's violations are at least twice as many, and the two columns track each other on a comparable scale (median |a - b| / max(|a|, |b|) over sampled complete rows at most 0.2, and the columns' medians within a factor of 2.5 of each other when both are non-zero), after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+        );
+    }
     if c.temporal {
         metrics.insert("lower_min".into(), json!(c.lo_min_ticks));
         metrics.insert("lower_max".into(), json!(c.lo_max_ticks));
@@ -1110,7 +1324,11 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         metrics.insert("screen_rows".into(), json!(SCREEN_ROWS));
     }
     Finding::new(
-        Pattern::OrderConstraint,
+        if c.systematic {
+            Pattern::OrderViolation
+        } else {
+            Pattern::OrderConstraint
+        },
         BTreeMap::from([
             ("inputs".into(), json!([lower_name])),
             ("target".into(), json!(upper_name)),
@@ -1384,5 +1602,127 @@ mod tests {
         assert_eq!(m["violations"], json!(10));
         assert!(hits[0].claim.contains("2 hours after"), "{}", hits[0].claim);
         hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn systematic_violation_is_reported_with_its_count() {
+        // generated in [50, 249]; accepted exceeds it on 480 of
+        // 2,000 rows (24%), falls below it on 1,300 (65%), and ties
+        // on 220. The direction accepted <= generated fails far
+        // past the 1% certification bar, and the reverse fails far
+        // more often: a systematic violation, stated with its count.
+        let gen: Vec<f64> = (0..2000).map(|k| 50.0 + ((k * 37) % 200) as f64).collect();
+        let mut acc = gen.clone();
+        for (k, a) in acc.iter_mut().enumerate() {
+            if k < 480 {
+                *a += 5.0;
+            } else if k < 1780 {
+                *a -= 3.0;
+            }
+        }
+        let df = df! { "generated" => gen, "accepted" => acc }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "accepted", "generated");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let f = hits[0];
+        assert_eq!(f.finding_type.as_deref(), Some("order_violation"));
+        let m = &f.evidence[0].metrics;
+        assert_eq!(m["violations"], json!(480));
+        assert_eq!(m["reverse_violations"], json!(1300));
+        assert_eq!(m["violation_kind"], json!("systematic"));
+        assert!(f.claim.contains("480 of 2000"), "{}", f.claim);
+        f.validate().unwrap();
+    }
+
+    #[test]
+    fn crossing_counts_at_similar_rates_stay_quiet() {
+        // Two unrelated zero-inflated counts: each exceeds the
+        // other on a substantial share of rows, at similar rates.
+        // No direction certifies, and the asymmetry the systematic
+        // statement requires is absent.
+        let a: Vec<f64> = (0..2000)
+            .map(|k| {
+                if k % 5 < 3 {
+                    0.0
+                } else {
+                    ((k * 37) % 60) as f64
+                }
+            })
+            .collect();
+        let b: Vec<f64> = (0..2000)
+            .map(|k| {
+                if k % 7 < 4 {
+                    0.0
+                } else {
+                    ((k * 91 + 13) % 60) as f64
+                }
+            })
+            .collect();
+        let df = df! { "a" => a, "b" => b }.unwrap();
+        let out = scan(&df);
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn one_sided_but_near_symmetric_crossings_stay_quiet() {
+        // accepted exceeds generated on 24% of rows, generated
+        // exceeds accepted on 30%, ties on 46%: one direction
+        // fails in bulk, but the reverse is not twice as violated,
+        // so neither a certification nor a systematic violation is
+        // stated — the pair crosses both ways.
+        let gen: Vec<f64> = (0..2000).map(|k| 50.0 + ((k * 37) % 200) as f64).collect();
+        let mut acc = gen.clone();
+        for (k, a) in acc.iter_mut().enumerate() {
+            if k < 480 {
+                *a += 5.0;
+            } else if k < 1080 {
+                *a -= 3.0;
+            }
+        }
+        let df = df! { "generated" => gen, "accepted" => acc }.unwrap();
+        let out = scan(&df);
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn different_scales_crossing_asymmetrically_stay_quiet() {
+        // An age in years against a duration in seconds: the age
+        // exceeds the duration on 12.5% of rows (the short
+        // durations) and the reverse direction fails on 87.5% —
+        // the count, share, and asymmetry terms of the systematic
+        // rule all pass. But the columns share no scale and do not
+        // track their diagonal, so no systematic violation is
+        // stated: the pairing is two measurements in different
+        // units whose ranges happen to overlap.
+        let age: Vec<f64> = (0..2000).map(|k| 21.0 + ((k * 29) % 70) as f64).collect();
+        let dur: Vec<f64> = (0..2000)
+            .map(|k| {
+                if k % 8 == 0 {
+                    12.0
+                } else {
+                    240.0 + ((k * 53) % 900) as f64
+                }
+            })
+            .collect();
+        let df = df! { "age" => age, "duration" => dur }.unwrap();
+        let out = scan(&df);
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
     }
 }

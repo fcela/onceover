@@ -155,7 +155,8 @@ fn within_loose_tol(y: f64, predicted: f64) -> bool {
 /// Phase 2 exact-scans all n_rows with strict tolerance and requires fraction >= 0.999.
 /// Rows missing any value are excluded from both counts. Returns (n, matched) from the full scan,
 /// or None when the sample screen fails, the full fraction is below 0.999, or either phase has
-/// zero usable rows.
+/// zero usable rows. Accepts between two and MAX_SPARSE_TERMS predictors: the pair and triple
+/// enumerations call it with two or three, the components-first chase with more.
 pub fn scan_fixed_linear(
     target: &onceover_core::TypedCol,
     predictors: &[&onceover_core::TypedCol],
@@ -163,7 +164,10 @@ pub fn scan_fixed_linear(
     sample_rows: &[u32],
     n_rows: usize,
 ) -> Option<(usize, usize)> {
-    if predictors.len() < 2 || predictors.len() > 3 || coeffs.len() < predictors.len() {
+    if predictors.len() < 2
+        || predictors.len() > MAX_SPARSE_TERMS
+        || coeffs.len() < predictors.len()
+    {
         return None;
     }
 
@@ -650,6 +654,27 @@ const LINEAR_GATE_R2: f64 = 0.9;
 /// A near identity leaves residuals within this share of the target's
 /// central range (p90-p10): the size of rounding in reported totals.
 const NEAR_RESIDUAL_SHARE: f64 = 1e-3;
+/// Largest number of terms the components-first chase will assemble.
+/// The enumeration covers two and three terms and the greedy fitted
+/// search reaches further when its fit behaves; the chase exists for
+/// exact decompositions of four to eight parts, the reported shape.
+const MAX_CHASE_TERMS: usize = 8;
+/// A column is a plausible part of a target when it lies between zero
+/// and the target on at least this share of the sample rows where
+/// both are present: a part cannot exceed the whole it belongs to.
+const PART_BOUND_SHARE: f64 = 0.99;
+/// Smallest number of sample rows where both target and candidate
+/// are present before the part bound is judged.
+const MIN_PART_ROWS: usize = 50;
+/// When more columns pass the part bound, the chase keeps this many,
+/// the largest by mean share of the target; a decomposition's parts
+/// carry material shares of the whole, and the cap keeps the search
+/// linear in the table's width per step.
+const CHASE_POOL_MAX: usize = 24;
+/// A chase step that leaves the miss count unchanged must cut the
+/// mean absolute residual to at most this share of its previous
+/// value for the search to continue.
+const CHASE_PROGRESS: f64 = 0.98;
 
 /// Sampled values of every usable column, NaN where missing.
 struct SampleMatrix {
@@ -840,6 +865,155 @@ fn fit_selected(
     }
     let rss = residual.iter().map(|e| e * e).sum::<f64>();
     Some((coeffs, 1.0 - rss / var_y, residual, rows))
+}
+
+/// Components-first search for an exact unit-coefficient identity
+/// over more terms than the enumeration reaches.
+///
+/// The candidate parts are drawn from the columns the target
+/// plausibly decomposes into: a column enters the pool only when it
+/// lies between zero and the target on at least 99% of the sample
+/// rows where both are present — a part cannot exceed the whole.
+/// That one screen is what keeps the search bounded and honest: it
+/// excludes scaled copies of the target and unrelated measures
+/// larger than it, however strongly they correlate with it, and the
+/// pool is capped at the 24 largest by mean share of the target.
+///
+/// The chase then subtracts parts from the target on the sample,
+/// one at a time: at each step it takes the signed part whose
+/// removal leaves the fewest sample rows outside the loose identity
+/// tolerance, breaking ties by the smaller mean absolute residual.
+/// A step that reduces neither the miss count nor (by at least 2%)
+/// the mean absolute residual ends the search. No coefficients are
+/// fitted anywhere, so collinear or duplicated columns cannot make
+/// the search fail the way a singular least-squares fit does. When
+/// the sample residual falls to at most SAMPLE_MISSES_ALLOWED
+/// misses, the caller verifies the assembled form on every row with
+/// the pass's usual exact scan; the chase itself claims nothing.
+///
+/// Returns the chosen (column position, sign) terms, or None.
+fn unit_chase(mat: &SampleMatrix, t: usize, candidates: &[usize]) -> Option<Vec<(usize, f64)>> {
+    let y = &mat.cols[t];
+    let complete = y.iter().filter(|v| !v.is_nan()).count();
+    if complete < 100 {
+        return None;
+    }
+    let loose = |yv: f64| 1e-6 * (1.0 + yv.abs());
+    // The part-bound pool, in column order.
+    let mut pool: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&c| {
+            let col = &mat.cols[c];
+            let (mut n, mut inside) = (0usize, 0usize);
+            for r in 0..y.len() {
+                if y[r].is_nan() || col[r].is_nan() {
+                    continue;
+                }
+                n += 1;
+                if col[r] >= -loose(y[r]) && col[r] <= y[r] + loose(y[r]) {
+                    inside += 1;
+                }
+            }
+            n >= MIN_PART_ROWS && (inside as f64) >= PART_BOUND_SHARE * n as f64
+        })
+        .collect();
+    if pool.len() > CHASE_POOL_MAX {
+        // Largest mean share of the target first; column order
+        // among ties, then restored to column order for the search.
+        let share = |c: usize| -> f64 {
+            let col = &mat.cols[c];
+            let (mut sc, mut sy, mut n) = (0.0, 0.0, 0.0);
+            for r in 0..y.len() {
+                if !y[r].is_nan() && !col[r].is_nan() {
+                    sc += col[r];
+                    sy += y[r];
+                    n += 1.0;
+                }
+            }
+            if n > 0.0 && sy > 0.0 {
+                sc / sy
+            } else {
+                0.0
+            }
+        };
+        pool.sort_by(|&a, &b| share(b).total_cmp(&share(a)).then_with(|| a.cmp(&b)));
+        pool.truncate(CHASE_POOL_MAX);
+        pool.sort_unstable();
+    }
+    if pool.len() < 2 {
+        return None;
+    }
+
+    // (misses, mean absolute residual) of a residual vector over its
+    // usable rows: rows where the target and every chosen part are
+    // present, NaN elsewhere.
+    let score = |resid: &[f64]| -> (usize, f64, usize) {
+        let (mut misses, mut sum, mut usable) = (0usize, 0.0, 0usize);
+        for r in 0..y.len() {
+            if resid[r].is_nan() {
+                continue;
+            }
+            usable += 1;
+            sum += resid[r].abs();
+            if resid[r].abs() > loose(y[r]) {
+                misses += 1;
+            }
+        }
+        (misses, sum / usable.max(1) as f64, usable)
+    };
+
+    let mut resid: Vec<f64> = y.clone();
+    let (mut cur_misses, mut cur_mean, _) = score(&resid);
+    let mut chosen: Vec<(usize, f64)> = Vec::new();
+    for _step in 0..MAX_CHASE_TERMS {
+        if cur_misses <= SAMPLE_MISSES_ALLOWED && chosen.len() >= 2 {
+            return Some(chosen);
+        }
+        let mut best: Option<(usize, f64, Vec<f64>, usize, f64)> = None;
+        for &c in &pool {
+            if chosen.iter().any(|&(p, _)| p == c) {
+                continue;
+            }
+            let col = &mat.cols[c];
+            for sign in [1.0, -1.0] {
+                let next: Vec<f64> = (0..y.len())
+                    .map(|r| {
+                        if resid[r].is_nan() || col[r].is_nan() {
+                            f64::NAN
+                        } else {
+                            resid[r] - sign * col[r]
+                        }
+                    })
+                    .collect();
+                let (misses, mean, usable) = score(&next);
+                if usable < MIN_PART_ROWS {
+                    continue;
+                }
+                let better = match &best {
+                    None => true,
+                    Some((_, _, _, bm, bmean)) => misses < *bm || (misses == *bm && mean < *bmean),
+                };
+                if better {
+                    best = Some((c, sign, next, misses, mean));
+                }
+            }
+        }
+        let (c, sign, next, misses, mean) = best?;
+        let progress = misses < cur_misses || mean <= CHASE_PROGRESS * cur_mean;
+        if !progress {
+            break;
+        }
+        chosen.push((c, sign));
+        resid = next;
+        cur_misses = misses;
+        cur_mean = mean;
+    }
+    if cur_misses <= SAMPLE_MISSES_ALLOWED && chosen.len() >= 2 {
+        Some(chosen)
+    } else {
+        None
+    }
 }
 
 /// Greedy sparse regression of the target over the sample: add the column
@@ -1431,6 +1605,52 @@ fn multiterm_for_target(
         }
     }
 
+    // Exact decompositions into more parts than the enumeration
+    // reaches, found components-first: the chase assembles signed
+    // parts bounded by the target and the assembled form is verified
+    // on every row by the same exact scan the enumeration uses.
+    if run_sparse && !others.is_empty() {
+        if let Some(picks) = unit_chase(mat, t, &others) {
+            let chosen: Vec<usize> = picks.iter().map(|&(c, _)| c).collect();
+            let duplicate = hits.iter().any(|h| {
+                h.predictors.len() == chosen.len()
+                    && chosen
+                        .iter()
+                        .all(|&c| h.predictors.contains(&table.names[numeric_cols[c]]))
+            });
+            if !duplicate && chosen.len() >= 2 {
+                let mut order: Vec<usize> = (0..picks.len()).collect();
+                order.sort_by_key(|&k| picks[k].0);
+                let pred_cols: Vec<&onceover_core::TypedCol> = order
+                    .iter()
+                    .map(|&k| &table.cols[numeric_cols[picks[k].0]])
+                    .collect();
+                let coeffs: Vec<f64> = order.iter().map(|&k| picks[k].1).collect();
+                if let Some((n, matched)) =
+                    scan_fixed_linear(&table.cols[tc], &pred_cols, &coeffs, sample_rows, n_rows)
+                {
+                    hits.push(MultitermHit {
+                        form: if coeffs.iter().all(|&c| c > 0.0) {
+                            "sum"
+                        } else {
+                            "difference"
+                        },
+                        target: table.names[tc].clone(),
+                        predictors: order
+                            .iter()
+                            .map(|&k| table.names[numeric_cols[picks[k].0]].clone())
+                            .collect(),
+                        coefficients: coeffs,
+                        has_intercept: false,
+                        n,
+                        matched,
+                        near_within: None,
+                    });
+                }
+            }
+        }
+    }
+
     // Sums too long to enumerate, and near identities of any length.
     if run_sparse && !others.is_empty() {
         if let Some((picks, coeffs)) = greedy_sparse_fit(mat, t, &others) {
@@ -1798,6 +2018,137 @@ mod tests {
             findings
                 .iter()
                 .any(|f| f.claim.starts_with("total = p0 + ") && f.claim.contains("p7")),
+            "{:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn exact_four_term_sum_scanned() {
+        // The fixed scan accepts more than three predictors: the
+        // wider searches verify their assembled forms through it.
+        let n: usize = 200;
+        let a: Vec<f64> = (0..n).map(|i| i as f64 * 0.5).collect();
+        let b: Vec<f64> = (0..n).map(|i| (i % 7) as f64).collect();
+        let d: Vec<f64> = (0..n).map(|i| (i % 3) as f64).collect();
+        let e: Vec<f64> = (0..n).map(|i| (i % 5) as f64 * 2.0).collect();
+        let c: Vec<f64> = (0..n).map(|i| a[i] + b[i] + d[i] + e[i]).collect();
+        let sample_rows: Vec<u32> = (0..n as u32).collect();
+        let target = make_col(&c);
+        let cols: Vec<TypedCol> = [&a, &b, &d, &e].iter().map(|v| make_col(v)).collect();
+        let predictors: Vec<&TypedCol> = cols.iter().collect();
+        let res = scan_fixed_linear(&target, &predictors, &[1.0, 1.0, 1.0, 1.0], &sample_rows, n);
+        assert_eq!(res, Some((200, 200)));
+    }
+
+    /// A total split among four parts whose shares substitute for
+    /// one another (the total's budget is nearly fixed, so no part
+    /// correlates with the total), plus a scaled copy of the total
+    /// and two small decoy counts. The fitted greedy search takes
+    /// the scaled copy first and stops; the enumeration reaches
+    /// only three terms. `perturb` adds 50 to the total on every
+    /// twentieth row, breaking the identity.
+    fn substitution_panel(perturb: bool) -> TypedTable<'static> {
+        fn owned_col(data: &[f64]) -> TypedCol<'static> {
+            TypedCol::F64 {
+                vals: data.iter().copied().map(Some).collect::<Vec<_>>().into(),
+            }
+        }
+        let n = 2000usize;
+        let hash = |i: u64, k: u64| -> f64 {
+            let h = (i + 17 * k + 1).wrapping_mul(0x9e3779b97f4a7c15) >> 40;
+            (h % 10_000) as f64
+        };
+        let mut cols: Vec<Vec<f64>> = Vec::new();
+        let mut total = vec![0.0; n];
+        let mut parts: Vec<Vec<f64>> = vec![vec![0.0; n]; 4];
+        for i in 0..n {
+            let budget = 20_000.0 + hash(i as u64, 91) / 10_000.0 * 6_000.0;
+            let raw: Vec<f64> = (0..4u64).map(|k| hash(i as u64, k) + 500.0).collect();
+            let sum: f64 = raw.iter().sum();
+            let mut acc = 0.0;
+            for (k, part) in parts.iter_mut().enumerate() {
+                let v = if k < 3 {
+                    (budget * raw[k] / sum).floor()
+                } else {
+                    budget - acc
+                };
+                part[i] = v;
+                acc += v;
+            }
+            total[i] = budget;
+            if perturb && i % 20 == 0 {
+                total[i] += 50.0;
+            }
+        }
+        let billed: Vec<f64> = total.iter().map(|t| (t * 1.07).round()).collect();
+        let shown: Vec<f64> = (0..n).map(|i| hash(i as u64, 55) % 400.0).collect();
+        let accepted: Vec<f64> = shown
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s * (0.3 + 0.4 * hash(i as u64, 77) / 10_000.0)).floor())
+            .collect();
+        for part in &parts {
+            cols.push(part.clone());
+        }
+        cols.push(total);
+        cols.push(billed);
+        cols.push(shown);
+        cols.push(accepted);
+        let names: Vec<String> = [
+            "chat",
+            "completion",
+            "embedding",
+            "image",
+            "total",
+            "billed",
+            "shown",
+            "accepted",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        TypedTable {
+            n,
+            names,
+            dtypes: vec!["float64".to_string(); 8],
+            cols: cols.iter().map(|c| owned_col(c)).collect(),
+        }
+    }
+
+    #[test]
+    fn four_part_sum_found_components_first() {
+        let table = substitution_panel(false);
+        let (findings, _) = multiterm_identities(&table, 200_000, &[]);
+        let hit = findings
+            .iter()
+            .find(|f| f.subject.target == Some("total".into()));
+        let hit = hit.expect("the four-part sum is reported");
+        assert_eq!(hit.specification.form.as_deref(), Some("sum"));
+        let m = &hit.evidence[0].metrics;
+        assert_eq!(m["matching_rows"], json!(2000));
+        assert_eq!(m["violations"], json!(0));
+        let terms: Vec<&str> = m["terms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t.as_str().unwrap())
+            .collect();
+        assert_eq!(terms, ["chat", "completion", "embedding", "image"]);
+        hit.validate().unwrap();
+    }
+
+    #[test]
+    fn near_sum_is_not_an_identity() {
+        // The same panel with the total off by 50 on 5% of rows:
+        // past the exactness standard and past the rounding band,
+        // so no identity — exact or near — is stated on the total.
+        let table = substitution_panel(true);
+        let (findings, _) = multiterm_identities(&table, 200_000, &[]);
+        assert!(
+            findings
+                .iter()
+                .all(|f| f.subject.target != Some("total".into())),
             "{:?}",
             findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );

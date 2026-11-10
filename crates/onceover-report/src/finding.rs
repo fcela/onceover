@@ -73,6 +73,12 @@ pub enum Pattern {
     PredictiveDependency,
     PiecewiseDependency,
     OrderConstraint,
+    /// A pair order that fails on a substantial, one-sided share of
+    /// rows: too many violations for the near-universal order
+    /// statement, too asymmetric to be two unrelated columns
+    /// crossing. The complementary statement to OrderConstraint
+    /// from the same scan.
+    OrderViolation,
     ConditionalRule,
     StatisticalAssociation,
     PeriodAssociation,
@@ -97,6 +103,11 @@ pub enum Pattern {
     DuplicateEncoding,
     DistributionShift,
     OrderedPartition,
+    /// A boolean flag on an entity × time grain that switches on
+    /// within entities and never switches off (an absorbing state),
+    /// with the lag to a related activity column when one is
+    /// associated.
+    OneWayFlag,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -118,7 +129,8 @@ impl Pattern {
             | Self::ArithmeticIdentity
             | Self::PredictiveDependency
             | Self::PiecewiseDependency
-            | Self::OrderConstraint => Category::Dependencies,
+            | Self::OrderConstraint
+            | Self::OrderViolation => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
@@ -138,6 +150,7 @@ impl Pattern {
             Self::DistributionShift => Category::Changes,
             Self::OrderedPartition => Category::Changes,
             Self::SeriesStructure => Category::Changes,
+            Self::OneWayFlag => Category::Changes,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -168,6 +181,7 @@ impl Pattern {
             }
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
             Self::OrderConstraint => "order_constraint",
+            Self::OrderViolation => "order_violation",
             Self::ConditionalRule => "if_then",
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
@@ -188,6 +202,7 @@ impl Pattern {
             Self::StepDiscontinuity => "step_discontinuity",
             Self::DistributionShift => "distribution_shift",
             Self::OrderedPartition => "ordered_partition",
+            Self::OneWayFlag => "one_way_flag",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
@@ -674,6 +689,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::OneWayFlag => (
+                Sc::Columns,
+                O::TemporalBehaviour,
+                E::Exact,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
             Pattern::BoundaryMass | Pattern::ContentAnomaly => (
                 Sc::Column,
                 O::Distribution,
@@ -692,7 +716,7 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
-            Pattern::OrderConstraint => (
+            Pattern::OrderConstraint | Pattern::OrderViolation => (
                 Sc::Columns,
                 O::Relation,
                 exact_or_approx,
@@ -930,6 +954,7 @@ impl Facets {
             (Category::Formats, Some("content_anomaly")) => Pattern::ContentAnomaly,
             (Category::Formats, _) => Pattern::FormatVariation,
             (Category::Dependencies, Some("order_constraint")) => Pattern::OrderConstraint,
+            (Category::Dependencies, Some("order_violation")) => Pattern::OrderViolation,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -962,6 +987,7 @@ impl Facets {
             (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
             (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
             (Category::Changes, Some("ordered_partition")) => Pattern::OrderedPartition,
+            (Category::Changes, Some("one_way_flag")) => Pattern::OneWayFlag,
             (Category::Changes, _) => Pattern::ResidualShift,
         };
         Self::for_pattern(pattern, spec, metrics, subject)
@@ -1142,7 +1168,7 @@ impl Finding {
                 spec.definition
                     .insert("comparison".into(), json!("canonical_equality"));
             }
-            Pattern::OrderConstraint => {
+            Pattern::OrderConstraint | Pattern::OrderViolation => {
                 spec.form = Some("pairwise_order".into());
                 spec.definition.insert(
                     "missing_values".into(),
@@ -1215,6 +1241,16 @@ impl Finding {
                 );
                 if let Some(v) = metrics.get("absent_values") {
                     spec.definition.insert("absent_values".into(), v.clone());
+                }
+            }
+            Pattern::OneWayFlag => {
+                spec.form = Some("absorbing_state".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the entity, flag, or time value are not observations"),
+                );
+                if let Some(v) = metrics.get("entity_column") {
+                    spec.definition.insert("entity".into(), v.clone());
                 }
             }
             Pattern::UnexaminedColumns => {
@@ -1536,10 +1572,10 @@ impl Finding {
             Category::Dependencies => {
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("functional" | "predictive" | "order_constraint")
+                    Some("functional" | "predictive" | "order_constraint" | "order_violation")
                 ) {
                     return Err(
-                        "dependency type must be functional, predictive, or order_constraint"
+                        "dependency type must be functional, predictive, order_constraint, or order_violation"
                             .into(),
                     );
                 }
@@ -1600,11 +1636,12 @@ impl Finding {
                             | "transient_excursion"
                             | "step_discontinuity"
                             | "distribution_shift"
-                            | "ordered_partition",
+                            | "ordered_partition"
+                            | "one_way_flag",
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, or ordered_partition".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, ordered_partition, or one_way_flag".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()
