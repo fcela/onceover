@@ -77,7 +77,20 @@ pub struct ViewsOutcome {
     pub n_views: usize,
     pub n_findings: usize,
     pub budget_hit: bool,
+    /// Every column the pass did not examine, for any reason:
+    /// the extraction-dropped columns followed by the cap-dropped
+    /// columns. Kept as the combined list for finding metrics;
+    /// coverage wording must use the two separate lists below,
+    /// never this one, so each column is attributed to the reason
+    /// that actually dropped it.
     pub dropped_columns: Vec<String>,
+    /// Columns dropped past the column cap by the pre-screen.
+    pub cap_dropped_columns: Vec<String>,
+    /// Columns dropped at extraction: unsupported types (and
+    /// entirely-null columns), and columns with no non-null values
+    /// on the sample. These were never eligible, so they were
+    /// never subject to the column cap.
+    pub extraction_dropped_columns: Vec<String>,
 }
 
 /// Natural log of the gamma function (Lanczos, g = 7).
@@ -1170,6 +1183,8 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         n_findings: 0,
         budget_hit: false,
         dropped_columns: Vec::new(),
+        cap_dropped_columns: Vec::new(),
+        extraction_dropped_columns: Vec::new(),
     };
     if table.n == 0 {
         return (Vec::new(), empty_outcome("no rows"));
@@ -1180,6 +1195,10 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         .collect();
     let n_sample = sample.len();
     let (all_cols, mut dropped) = extract_columns(table, &sample, cfg);
+    // The extraction drops are a separate list from the cap drops
+    // below: they were never eligible, so they were never subject
+    // to the cap, and coverage must not attribute them to it.
+    let extraction_dropped = dropped.clone();
     if all_cols.is_empty() {
         return (
             Vec::new(),
@@ -1189,6 +1208,8 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
                 n_findings: 0,
                 budget_hit: false,
                 dropped_columns: dropped,
+                cap_dropped_columns: Vec::new(),
+                extraction_dropped_columns: extraction_dropped,
             },
         );
     }
@@ -1321,6 +1342,8 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
             n_findings,
             budget_hit: work.hit,
             dropped_columns: dropped,
+            cap_dropped_columns: cap_dropped_names,
+            extraction_dropped_columns: extraction_dropped,
         },
     )
 }
@@ -2312,6 +2335,124 @@ mod tests {
         }
         assert_eq!(hit.metrics()["reason"], serde_json::json!("column_cap"));
         assert_eq!(hit.metrics()["cap"], serde_json::json!(64));
+    }
+
+    #[test]
+    fn extraction_and_cap_drops_are_separate_lists() {
+        // 70 eligible columns at cap 64 (six cap drops, as in the
+        // pre-screen fixture above) plus one unsupported column.
+        // The unsupported column is dropped at extraction: it was
+        // never eligible, so it must not appear in the cap list,
+        // and the cap list must not count it.
+        let mut s = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let n = 400usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut dtypes: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..68 {
+            names.push(format!("noise_{i}"));
+            dtypes.push("float64".to_string());
+            let vals: Vec<Option<f64>> = (0..n).map(|_| Some(next() * 10.0)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        let regime: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                let base = if i < n / 2 { 0.0 } else { 10.0 };
+                Some(base + next() * 0.01)
+            })
+            .collect();
+        for name in ["signal_a", "signal_b"] {
+            names.push(name.to_string());
+            dtypes.push("float64".to_string());
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(regime.clone()),
+            });
+        }
+        names.push("payload".to_string());
+        dtypes.push("list".to_string());
+        cols.push(TypedCol::Other { n, null_count: 0 });
+        let table = TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 400,
+            ..Default::default()
+        };
+        let (_, outcome) = views_pass(&table, &cfg);
+        assert_eq!(
+            outcome.extraction_dropped_columns,
+            vec!["payload".to_string()],
+            "extraction drops = {:?}",
+            outcome.extraction_dropped_columns
+        );
+        assert_eq!(
+            outcome.cap_dropped_columns.len(),
+            6,
+            "cap drops = {:?}",
+            outcome.cap_dropped_columns
+        );
+        assert!(
+            !outcome.cap_dropped_columns.contains(&"payload".to_string()),
+            "extraction drop counted as a cap drop: {:?}",
+            outcome.cap_dropped_columns
+        );
+        assert_eq!(
+            outcome.dropped_columns.len(),
+            outcome.cap_dropped_columns.len() + outcome.extraction_dropped_columns.len(),
+            "combined list must be exactly the two separate lists"
+        );
+    }
+
+    #[test]
+    fn extraction_drop_alone_produces_no_cap_drop() {
+        // A small table with one unsupported column and no cap
+        // pressure: the extraction list names the column and the
+        // cap list stays empty, so no cap wording can be stated.
+        let n = 200usize;
+        let mut names: Vec<String> = Vec::new();
+        let mut dtypes: Vec<String> = Vec::new();
+        let mut cols: Vec<TypedCol> = Vec::new();
+        for i in 0..6 {
+            names.push(format!("c{i}"));
+            dtypes.push("float64".to_string());
+            let vals: Vec<Option<f64>> =
+                (0..n).map(|r| Some(((r * (i + 3)) % 17) as f64)).collect();
+            cols.push(TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            });
+        }
+        names.push("payload".to_string());
+        dtypes.push("list".to_string());
+        cols.push(TypedCol::Other { n, null_count: 0 });
+        let table = TypedTable {
+            n,
+            names,
+            dtypes,
+            cols,
+        };
+        let cfg = ViewsConfig {
+            row_cap: 1000,
+            search_rows: 200,
+            ..Default::default()
+        };
+        let (_, outcome) = views_pass(&table, &cfg);
+        assert_eq!(
+            outcome.extraction_dropped_columns,
+            vec!["payload".to_string()]
+        );
+        assert!(outcome.cap_dropped_columns.is_empty());
     }
 
     #[test]
