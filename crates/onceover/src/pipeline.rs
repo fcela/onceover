@@ -2256,6 +2256,58 @@ fn profile_inner(
             }
         }
     }
+    // Column labels (hints.labels) are presentation, applied here —
+    // after selection, so finding ids (derived from the canonical
+    // statement, never the claim text), subjects, specifications,
+    // and evidence all keep the raw column names. Only claim and
+    // interpretation prose is rewritten. Unusable entries fall back
+    // to the raw name and are stated in the labels coverage entry.
+    let resolved_labels = cfg.hints.as_ref().and_then(|hints| {
+        if hints.labels.is_empty() {
+            None
+        } else {
+            Some(onceover_report::resolve_labels(&hints.labels, &table.names))
+        }
+    });
+    if let Some(resolved) = &resolved_labels {
+        if !resolved.applied.is_empty() {
+            for finding in findings.iter_mut().chain(grouped.iter_mut()) {
+                finding.claim =
+                    onceover_report::substitute_labels(&finding.claim, &resolved.applied);
+                if let Some(interp) = &finding.interpretation {
+                    finding.interpretation = Some(onceover_report::substitute_labels(
+                        interp,
+                        &resolved.applied,
+                    ));
+                }
+            }
+        }
+        let declared = cfg.hints.as_ref().map_or(0, |h| h.labels.len());
+        let pairs: Vec<String> = resolved
+            .applied
+            .iter()
+            .map(|(name, label)| format!("'{name}' as '{label}'"))
+            .collect();
+        let mut detail = format!(
+            "{declared} label(s) declared, {} applied to claims and interpretations",
+            resolved.applied.len()
+        );
+        if !pairs.is_empty() {
+            detail.push_str(&format!(" ({})", pairs.join(", ")));
+        }
+        detail.push_str("; subjects, evidence, and metrics keep the raw column names");
+        if !resolved.notes.is_empty() {
+            detail.push_str("; ");
+            detail.push_str(&resolved.notes.join("; "));
+        }
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "labels".into(),
+            PassInfo::ran(detail),
+        );
+    }
     let capped = outcome.capped;
     let grouping_note = if grouped.is_empty() {
         None
@@ -2312,7 +2364,11 @@ fn profile_inner(
         families: outcome.families,
         grouped_statements: grouped.len(),
     };
-    let mut overview = build_overview(&table, &columns, &findings, cfg);
+    let applied_labels: BTreeMap<String, String> = resolved_labels
+        .as_ref()
+        .map(|r| r.applied.clone())
+        .unwrap_or_default();
+    let mut overview = build_overview(&table, &columns, &findings, cfg, &applied_labels);
     if let Some(source) = &cfg.source {
         if source.basis == "sampled" {
             overview.headline.push_str(&format!(
@@ -2473,6 +2529,7 @@ fn build_overview(
     columns: &BTreeMap<String, ColumnCard>,
     findings: &[Finding],
     cfg: &ProfileConfig,
+    labels: &BTreeMap<String, String>,
 ) -> Overview {
     let mut dtype_counts: BTreeMap<String, usize> = BTreeMap::new();
     for d in &table.dtypes {
@@ -2496,7 +2553,7 @@ fn build_overview(
         .filter(|f| f.category == Category::ConditionalRules)
         .count();
     let pk = keys_pk(findings)
-        .map(|k| format!("; key candidate: {k}"))
+        .map(|k| format!("; key candidate: {}", labels.get(&k).unwrap_or(&k)))
         .unwrap_or_default();
     let headline=format!("{} rows × {} columns ({} budget){}; {} functional dependencies, {} predictive dependencies, {} conditional rules",
         table.n,table.cols.len(),cfg.budget.as_str(),pk,n_functional,n_predictive,n_rules);

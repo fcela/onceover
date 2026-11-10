@@ -12,7 +12,7 @@ mod finding;
 mod hints;
 mod ledger;
 pub use finding::*;
-pub use hints::{Cadence, ProfileHints};
+pub use hints::{resolve_labels, substitute_labels, Cadence, ProfileHints, ResolvedLabels};
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
     SelectionOutcome, SelectionPolicy, SelectionSummary,

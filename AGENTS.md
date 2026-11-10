@@ -182,6 +182,10 @@ report = onceover.profile(df, hints={
                                     # deviation naming broken mappings)
     "exclude_columns": ["note"],    # columns not profiled at all;
                                     # stated in coverage as user-declared
+    "labels": {"wk_act_usr": "weekly active users"},
+                                    # display labels used in claim
+                                    # strings; evidence and metrics
+                                    # keep the raw column names
 })
 ```
 
