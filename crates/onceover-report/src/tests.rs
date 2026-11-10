@@ -464,6 +464,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         BenfordDeviation,
         FunctionalDependency,
         OrderConstraint,
+        OrderViolation,
         AffineDependency,
         ArithmeticIdentity,
         PredictiveDependency,
@@ -488,12 +489,14 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         DuplicateEncoding,
         DistributionShift,
         OrderedPartition,
+        OneWayFlag,
     ];
     for pattern in patterns {
         let directed = matches!(
             pattern,
             FunctionalDependency
                 | OrderConstraint
+                | OrderViolation
                 | AffineDependency
                 | ArithmeticIdentity
                 | PredictiveDependency
