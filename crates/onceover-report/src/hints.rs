@@ -39,6 +39,25 @@ impl Cadence {
     }
 }
 
+/// A declared group contrast: one subset of the rows, profiled
+/// against the rest of the table by the group_contrast pass. The
+/// group is either a boolean column's true rows (`value` omitted,
+/// or the boolean to match) or the rows where `column` equals
+/// `value` (a string, number, or boolean scalar). A group column
+/// that does not exist, a value of a kind the column cannot hold,
+/// an empty group, and a group covering every assigned row are
+/// reported in the pass's coverage entry rather than raising an
+/// error.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GroupContrast {
+    /// The column whose values define the group.
+    pub column: String,
+    /// The value that marks group membership; required for
+    /// non-boolean columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
+}
+
 /// Declared structure for one table. Every field is optional; unknown
 /// columns and unusable types are reported in a coverage entry (the
 /// expectations pass's, or `column_exclusions` for the exclusion
@@ -106,6 +125,10 @@ pub struct ProfileHints {
     /// prose. See `resolve_labels`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
+    /// A declared group contrast: one subset of the rows profiled
+    /// against the rest of the table by the group_contrast pass.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contrast: Option<GroupContrast>,
 }
 
 impl ProfileHints {
@@ -120,6 +143,7 @@ impl ProfileHints {
             && self.hierarchies.is_empty()
             && self.exclude_columns.is_empty()
             && self.labels.is_empty()
+            && self.contrast.is_none()
     }
 }
 

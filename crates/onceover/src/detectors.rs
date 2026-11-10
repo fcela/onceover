@@ -106,6 +106,9 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // periods whose row (or entity) volume falls far below the
         // typical period's, stated with their position.
         make("panel_coverage", vec![Gaps], &[], Default),
+        // Hint-gated like expectations: engages only when the
+        // caller declares a group contrast in the hints.
+        make("group_contrast", vec![Associations], &[], HintGated),
         make("gbm", vec![Dependencies], &[], Default),
         make("decision_tables", vec![Dependencies], &["gbm"], Default),
         make("prism", vec![ConditionalRules], &["gbm"], Default),
@@ -200,12 +203,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_28_measured_detectors() {
+    fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 36 registered: 29 default (28 Default + hint-gated
-        // expectations), 6 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 36);
-        assert_eq!(active.len(), 29);
+        // 37 registered: 30 default (28 Default + hint-gated
+        // expectations and group_contrast), 6 opt-in, 1 target-gated.
+        assert_eq!(builtin_detectors().len(), 37);
+        assert_eq!(active.len(), 30);
         for id in [
             "views",
             "dates",
@@ -218,6 +221,7 @@ mod tests {
             assert!(!active.contains(id), "{id} must not be in the default set");
         }
         assert!(active.contains("expectations"));
+        assert!(active.contains("group_contrast"));
         assert!(active.contains("discontinuities"));
     }
 
@@ -238,7 +242,7 @@ mod tests {
         }
         assert_eq!(counts.get("Default"), Some(&28));
         assert_eq!(counts.get("OptIn"), Some(&6));
-        assert_eq!(counts.get("HintGated"), Some(&1));
+        assert_eq!(counts.get("HintGated"), Some(&2));
         assert_eq!(counts.get("TargetGated"), Some(&1));
     }
 }

@@ -125,6 +125,12 @@ pub enum Pattern {
     /// they are first observed: a material share of entities start
     /// activity after their first observed period.
     FirstActivity,
+    /// A declared subset of the rows against the rest of the table
+    /// on one column: the two populations' means, medians, or level
+    /// shares, stated as a difference with its size. The group is
+    /// declared, not inferred — the counterpart to a statistical
+    /// association, which relates two columns over all rows.
+    GroupContrast,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -149,7 +155,9 @@ impl Pattern {
             | Self::OrderConstraint
             | Self::OrderViolation => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
-            Self::StatisticalAssociation | Self::PeriodAssociation => Category::Associations,
+            Self::StatisticalAssociation | Self::PeriodAssociation | Self::GroupContrast => {
+                Category::Associations
+            }
             Self::Gap => Category::Gaps,
             Self::SequenceGap
             | Self::MissingCombinations
@@ -204,6 +212,7 @@ impl Pattern {
             Self::ConditionalRule => "if_then",
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
+            Self::GroupContrast => "group_contrast",
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
@@ -811,6 +820,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::GroupContrast => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::Gap | Pattern::SequenceGap => (
                 Sc::Sequence,
                 O::Structure,
@@ -1010,6 +1028,7 @@ impl Facets {
             },
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
+            (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
@@ -1709,10 +1728,13 @@ impl Finding {
             Category::Associations
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("statistical" | "period_association")
+                    Some("statistical" | "period_association" | "group_contrast")
                 ) =>
             {
-                return Err("association type must be statistical or period_association".into());
+                return Err(
+                    "association type must be statistical, period_association, or group_contrast"
+                        .into(),
+                );
             }
             Category::Changes
                 if !matches!(

@@ -188,6 +188,12 @@ report = onceover.profile(df, hints={
                                     # display labels used in claim
                                     # strings; evidence and metrics
                                     # keep the raw column names
+    "contrast": {"column": "region", "value": "north"},
+                                    # group contrast: the named
+                                    # subset of rows profiled against
+                                    # the rest of the table (a boolean
+                                    # column needs no value: its true
+                                    # rows are the group)
 })
 ```
 
@@ -199,12 +205,13 @@ Passing a bare string where a list is expected raises
 `onceover.available_detectors()` lists the detector set with the
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
-restricts a run to named detectors. The default set has 29 of
-the 36 registered detectors: `views` (experimental), `dates`,
+restricts a run to named detectors. The default set has 30 of
+the 37 registered detectors: `views` (experimental), `dates`,
 `pivot`, `period_associations`, `drift`, and `granularity` are
 opt-in and run only when named — a default run records each as
-skipped in coverage, naming it opt-in. `expectations` is in the
-default set but engages only on declared hints. Passing
+skipped in coverage, naming it opt-in. `expectations` and
+`group_contrast` are in the default set but engage only on
+declared hints. Passing
 `target="y"` additionally enables the target-gated shape pass.
 The full category and type reference is `docs/findings.md`.
 

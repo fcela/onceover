@@ -41,6 +41,7 @@ used by package version 0.1.3.
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
+| `associations` | Type `group_contrast`; group column and value, group and rest row counts in the evidence | A declared subset of the rows against the rest of the table on one column, from the `group_contrast` detector (hint-gated on `hints.contrast`): means and medians with Cohen's d for numeric columns, level shares for categorical columns, the true share for boolean columns; reported only at the stated bars (below, "Group contrast") |
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns); also type `partial_period` from the `panel_coverage` detector: an observed period on the frame's time axis whose volume falls far below the typical period's — below 75% of the median period's row count and short by at least 4 rows, or below 75% of the median entity count and short by at least 2 entities, where the entity axis is the grain's non-axis factors or the frame's single identifier column — stated with its position (first, last, or interior), its own counts, the typical counts, and the full per-period table in the evidence. A period with no rows at all is a gap, not a partial period, and is not reported here; when the caller declares the same columns as `dimensions` hints, the declared panel check owns entity completeness and this statement reports row volume only. Periods are singled out only when they make up at most a quarter of all periods; past that share the median names no typical full period and the coverage entry reports the spread instead |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
@@ -183,6 +184,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
+| `group_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `partial_period` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
@@ -529,6 +531,45 @@ At most 24 stratifiers are considered per pair and 400
 pair×stratifier evaluations run per screen; when a bound stops
 a check, the screen's coverage entry says so.
 
+### Group contrast
+
+A group contrast (`associations` category, type `group_contrast`)
+answers a different question from the pair screens: how one
+declared subset of the rows differs from the rest of the table.
+The caller declares the group through `hints.contrast` — either
+`{"column": <boolean column>}` (the true rows) or
+`{"column": <column>, "value": <scalar>}` (the rows where the
+column equals the value). The `group_contrast` detector is
+hint-gated: without a declaration it records a skipped coverage
+entry, and a declaration that cannot name two populations (an
+unknown column, a value of a kind the column cannot hold, an
+empty group, a group covering every assigned row, or fewer than
+10 rows on a side) is likewise a coverage entry, not an error.
+
+Each other column is compared between the group and the rest in
+the terms its kind supports: numeric columns by their means and
+medians, with the difference scaled by the pooled standard
+deviation (Cohen's d); categorical columns by their level
+shares; boolean columns by the share of true values. A
+difference is reported only when the sizes support it: at least
+10 known values on each side for the column, a numeric effect
+of at least 0.5 pooled standard deviations or a share
+difference of at least 0.10, and in every case the difference
+at least 3 times its standard error (the Welch standard error
+for means, the pooled standard error for shares) — so a small
+group must differ by a lot before anything is stated. A numeric
+column constant within both populations at different constants
+is reported as a perfect separation, with `effect_size` null and
+`pooled_sd` 0 in the evidence. Categorical columns with more
+than 64 distinct values are not contrasted. Findings are ranked
+by effect size and capped at 10; the coverage entry states the
+group, the row counts on both sides (and any rows excluded for
+a missing group value), how many columns were evaluated, and
+how many contrasts cleared the bars. The group-defining column
+is never contrasted, and a run that declares no contrast is
+unchanged: the contrast adds findings only when requested, and
+requesting one does not change any other finding.
+
 ## Consolidation and selection
 
 1. Enabled detectors produce candidate statements and evidence.
@@ -689,6 +730,10 @@ Callers can declare structure the profiler cannot infer, through the
 - `hierarchies`: known hierarchies — each entry is one hierarchy's
   level columns, ordered finest to coarsest;
 - `exclude_columns`: columns to leave out of the profile entirely.
+- `contrast`: a group contrast — one subset of the rows (a boolean
+  column's true rows, or the rows where a column equals a value)
+  profiled against the rest of the table by the `group_contrast`
+  pass (see "Group contrast" above).
 
 The `expectations` pass checks the declarations exactly and tags its
 evidence `reference_source: "declared"`, against the dates pass's
@@ -754,15 +799,15 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 29 of the 36 registered detectors. Six are
+and activation. The default set has 30 of the 37 registered detectors. Six are
 opt-in and run only when named in `detectors`: `views` (experimental), and
 `dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
 2026-11-02 detector battery measured those five producing no findings in 40
 runs over 20 datasets, so a default run no longer spends time or report space
 on them; it records each as skipped in coverage, naming it opt-in (the
 benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
-`expectations` is in the default set but hint-gated: it engages only on
-declared hints. `target_shapes` is target-gated: it runs when a target is
+`expectations` and `group_contrast` are in the default set but hint-gated:
+they engage only on declared hints. `target_shapes` is target-gated: it runs when a target is
 designated. Required detectors may execute to supply shared target
 descriptions without contributing their own findings. An empty selection
 still returns column summaries and coverage but no detector findings.
