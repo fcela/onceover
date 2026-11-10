@@ -10,11 +10,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use onceover_core::{dateutil, TypedTable};
+use onceover_core::{dateutil, TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 
+use crate::regimes::single_break_l2;
 use crate::surprises::{code_column, Coded, SurpriseConfig};
 
 const MIN_POINTS: usize = 60;
@@ -27,6 +28,31 @@ const MIN_ABSENT_SHARE: f64 = 0.001;
 /// Share of variance a straight line must explain to be called a trend.
 const MIN_TREND_R2: f64 = 0.3;
 const MIN_LINE_OVER_STEP: f64 = 0.02;
+/// A trend is stated only when the slope also clears this bar under
+/// the autocorrelation-deflated t-test ([`trend_test`]). The bar is
+/// stricter than the usual 0.01: the deflated t is approximate
+/// under near-unit-root residuals, and the pass tests many series
+/// per report with no other multiplicity control.
+const TREND_ALPHA: f64 = 0.001;
+/// Shortest per-entity series the trend test runs on: below twelve
+/// points the deflated test has no power worth reporting.
+const MIN_ENTITY_TREND_POINTS: usize = 12;
+/// Shortest per-entity series the level-break scan runs on.
+const MIN_ENTITY_BREAK_POINTS: usize = 24;
+/// The per-entity pass reports only when at least this many entities
+/// could be tested.
+const MIN_ENTITY_TESTED: usize = 10;
+/// A per-entity pattern is stated when at least this many entities
+/// carry it.
+const MIN_ENTITY_CARRIERS: usize = 3;
+/// Minimum segment length of a per-entity level break.
+const ENTITY_BREAK_MIN_SEGMENT: usize = 6;
+/// A per-entity level break must explain this share of the entity
+/// series' variance. There is no holdout at entity level, so the bar
+/// sits above the aggregate pass's training-gain bar.
+const ENTITY_BREAK_MIN_GAIN: f64 = 0.25;
+/// Entity names spelled out in a claim before the rest are counted.
+const MAX_NAMED_ENTITIES: usize = 5;
 /// Structure explaining this share of variance is removed before measuring
 /// cycles and persistence.
 const REMOVE_STRUCTURE_R2: f64 = 0.3;
@@ -56,6 +82,11 @@ pub struct SeriesInput<'a> {
     pub ticks: &'a [Option<i64>],
     pub measures: Vec<usize>,
     pub dimensions: Vec<usize>,
+    /// Entity columns of a panel grain, in the pipeline's priority
+    /// order. The first is the grain the per-entity pass reads the
+    /// principal measure against; empty when the frame has no
+    /// entity × time grain.
+    pub entities: Vec<usize>,
 }
 
 fn tick_label(micros: i64) -> String {
@@ -225,6 +256,67 @@ fn line_fit(x: &[f64], y: &[f64]) -> Option<(Vec<f64>, f64, f64)> {
     Some((fitted, slope, sxy * sxy / (sxx * syy)))
 }
 
+/// The outcome of testing a fitted line's slope against noise.
+struct TrendTest {
+    /// Two-sided p-value of the slope's t statistic after the
+    /// autocorrelation deflation.
+    p_value: f64,
+    /// Lag-1 autocorrelation of the residuals, clamped to [0, 0.95].
+    residual_autocorrelation: f64,
+    /// Effective number of independent points after the deflation.
+    effective_points: f64,
+}
+
+/// Test whether a fitted line's slope is distinguishable from noise.
+///
+/// The classical slope t-test assumes independent residuals. On a
+/// time series the residuals of a spurious fit — a random walk read
+/// as a drift — are strongly autocorrelated, and the classical test
+/// calls such a slope significant. The statistic is therefore
+/// deflated by the residuals' lag-1 autocorrelation rho: the
+/// effective sample size is n(1-rho)/(1+rho), the t statistic scales
+/// by sqrt(n_eff/n), and the p-value uses n_eff - 2 degrees of
+/// freedom. A series whose movement is a real drift over weakly
+/// correlated noise keeps a small p-value; a random walk's does
+/// not.
+fn trend_test(x: &[f64], y: &[f64], fitted: &[f64], slope: f64) -> Option<TrendTest> {
+    let n = y.len();
+    if n < 4 {
+        return None;
+    }
+    let nf = n as f64;
+    let mx = x.iter().sum::<f64>() / nf;
+    let sxx: f64 = x.iter().map(|a| (a - mx) * (a - mx)).sum();
+    if sxx <= 0.0 {
+        return None;
+    }
+    let resid: Vec<f64> = y.iter().zip(fitted).map(|(a, b)| a - b).collect();
+    let sse: f64 = resid.iter().map(|r| r * r).sum();
+    if sse <= 0.0 {
+        // A line through every point: the slope is the series.
+        return Some(TrendTest {
+            p_value: 0.0,
+            residual_autocorrelation: 0.0,
+            effective_points: nf,
+        });
+    }
+    let se = (sse / (nf - 2.0) / sxx).sqrt();
+    if se <= 0.0 || !se.is_finite() {
+        return None;
+    }
+    let t = slope / se;
+    let rho = autocorrelation(&resid, 1).clamp(0.0, 0.95);
+    let n_eff = (nf * (1.0 - rho) / (1.0 + rho)).clamp(3.0, nf);
+    let t_adj = t * (n_eff / nf).sqrt();
+    let df = (n_eff - 2.0).max(1.0);
+    let t2 = t_adj * t_adj;
+    Some(TrendTest {
+        p_value: crate::dep::beta_inc(df / (df + t2), df / 2.0, 0.5),
+        residual_autocorrelation: rho,
+        effective_points: n_eff,
+    })
+}
+
 /// The best single level shift: fitted values and share of variance.
 fn step_fit(y: &[f64]) -> Option<(Vec<f64>, f64)> {
     let n = y.len();
@@ -336,7 +428,7 @@ fn series_statement(
         Method::new(
             "series",
             "series_description",
-            "line and level-shift fits, then autocorrelation of what remains, on the per-tick mean (onceover v0.1)",
+            "line and level-shift fits on the per-tick mean; a trend is stated only when the slope clears an autocorrelation-deflated t-test at p < 0.001; cycles and persistence are read from the autocorrelation of what the fits leave (onceover v0.1)",
         ),
     )
 }
@@ -358,17 +450,22 @@ fn measure_findings(table: &TypedTable, col: usize, input: &SeriesInput) -> Vec<
     };
     let (step, step_r2) = step_fit(&y).unwrap_or((vec![0.0; n], 0.0));
     let mut out = Vec::new();
-    let is_trend = line_r2 >= MIN_TREND_R2 && line_r2 >= step_r2 + MIN_LINE_OVER_STEP;
+    let test = trend_test(&years, &y, &line, slope);
+    let is_trend = line_r2 >= MIN_TREND_R2
+        && line_r2 >= step_r2 + MIN_LINE_OVER_STEP
+        && test.as_ref().is_some_and(|t| t.p_value < TREND_ALPHA);
     if is_trend {
+        let t = test.as_ref().expect("the trend gate checked the test");
         out.push(series_statement(
             name,
             "trend",
             format!(
-                "{name} {} along {} by about {:.4} per year; a straight line explains {:.0}% of the variance in its per-step mean",
+                "{name} {} along {} by about {:.4} per year; a straight line explains {:.0}% of the variance in its per-step mean, and the slope is distinguishable from noise (autocorrelation-deflated t-test, p {})",
                 if slope > 0.0 { "rises" } else { "falls" },
                 input.axis_name,
                 slope.abs(),
                 100.0 * line_r2,
+                crate::dep::fmt_q(t.p_value),
             ),
             0.6 + 0.2 * line_r2,
             BTreeMap::from([
@@ -376,6 +473,12 @@ fn measure_findings(table: &TypedTable, col: usize, input: &SeriesInput) -> Vec<
                 ("slope_per_year".to_string(), json!(slope)),
                 ("r2".to_string(), json!(line_r2)),
                 ("level_shift_r2".to_string(), json!(step_r2)),
+                ("slope_p_value".to_string(), json!(t.p_value)),
+                (
+                    "residual_autocorrelation".to_string(),
+                    json!(t.residual_autocorrelation),
+                ),
+                ("effective_points".to_string(), json!(t.effective_points)),
             ]),
             "compare like periods rather than whole-series averages",
         ));
@@ -405,11 +508,16 @@ fn measure_findings(table: &TypedTable, col: usize, input: &SeriesInput) -> Vec<
     // A yearly cycle in daily or hourly data lies beyond the lag scan.
     let span = ticks[n - 1] - origin;
     let year = (365.25 * MICROS_PER_DAY as f64) as i64;
-    let extra: Vec<usize> = if modal_step > 0 && span >= 5 * year / 2 {
-        vec![(year / modal_step) as usize]
-    } else {
-        Vec::new()
-    };
+    let mut extra: Vec<usize> = Vec::new();
+    if modal_step > 0 && span >= 5 * year / 2 {
+        extra.push((year / modal_step) as usize);
+    } else if modal_step == 7 * MICROS_PER_DAY && span >= 2 * year {
+        // A weekly axis carries its annual cycle at exactly lag 52.
+        // Two full cycles are enough to test that lag directly,
+        // ahead of the two and a half years the general yearly
+        // probe waits for.
+        extra.push(52);
+    }
     let cycle = dominant_cycle(&residual, &extra);
     if let Some((lag, acf)) = cycle {
         let period = lag as i64 * modal_step;
@@ -455,6 +563,281 @@ fn measure_findings(table: &TypedTable, col: usize, input: &SeriesInput) -> Vec<
         }
     }
     out
+}
+
+/// Render one entity key value as a reader-facing label.
+fn entity_label(table: &TypedTable, col: usize, row: usize) -> Option<String> {
+    match &table.cols[col] {
+        TypedCol::Str { vals } => vals[row].map(|s| s.to_string()),
+        TypedCol::StrOwned { vals } => vals[row].clone(),
+        TypedCol::I64 { vals } => vals.at(row).map(|v| v.to_string()),
+        TypedCol::U64 { vals } => vals.at(row).map(|v| v.to_string()),
+        TypedCol::F64 { vals } => vals.at(row).map(crate::fmt_float),
+        TypedCol::Bool { vals } => vals[row].map(|v| v.to_string()),
+        TypedCol::Date { vals } => vals[row].map(|d| dateutil::iso_date(i64::from(d))),
+        TypedCol::Datetime { .. } => table.cols[col].datetime_micros(row).map(tick_label),
+        _ => None,
+    }
+}
+
+/// The first few entity labels, with the rest counted.
+fn name_list(labels: &[String]) -> String {
+    let shown = labels.len().min(MAX_NAMED_ENTITIES);
+    let mut s = labels[..shown].join(", ");
+    if labels.len() > shown {
+        s.push_str(&format!(" and {} more", labels.len() - shown));
+    }
+    s
+}
+
+/// What the per-entity pass leaves behind: its findings, the trend
+/// account the aggregate statement is qualified against, and the
+/// coverage fragment.
+struct EntityOutcome {
+    findings: Vec<Finding>,
+    /// Principal measure column, entities tested for a trend, and
+    /// how many of them rise / fall significantly on their own.
+    /// Present only when at least [`MIN_ENTITY_TESTED`] entities
+    /// could be tested.
+    principal_trend: Option<(usize, usize, usize, usize)>,
+    detail: String,
+}
+
+/// The trend and level-break checks run per entity on the principal
+/// measure — the measure with the most entity × tick observations.
+///
+/// The aggregate series averages entities together, so a movement
+/// carried by a minority of entities reads as a general one, and a
+/// movement no single entity shows can appear from the mix. The
+/// per-entity statements name the entities carrying each pattern;
+/// [`profile_series`] qualifies the aggregate trend statement when
+/// the per-entity evidence is mixed. Per-entity series are shorter,
+/// so the bars are stated for them: a trend needs at least
+/// [`MIN_ENTITY_TREND_POINTS`] points and the same gates as the
+/// aggregate (line fit, line over step, deflated t-test at
+/// p < 0.001); a level break needs at least
+/// [`MIN_ENTITY_BREAK_POINTS`] points and a single-break gain of
+/// [`ENTITY_BREAK_MIN_GAIN`] with segments of at least
+/// [`ENTITY_BREAK_MIN_SEGMENT`] — there is no holdout at entity
+/// level, so the gain bar sits above the aggregate pass's. An
+/// entity carrying a significant trend is not break-scanned: a
+/// steady ramp reads as a level shift to a two-mean scan, and its
+/// movement is already stated as a trend.
+fn entity_series(table: &TypedTable, input: &SeriesInput, measures: &[usize]) -> EntityOutcome {
+    let empty = |detail: String| EntityOutcome {
+        findings: Vec::new(),
+        principal_trend: None,
+        detail,
+    };
+    let Some(&ecol) = input.entities.first() else {
+        return empty(String::new());
+    };
+    if measures.is_empty() {
+        return empty(String::new());
+    }
+    let ename = table.names[ecol].as_str();
+    let (codes, _) = match crate::panels::entity_codes(table, ecol) {
+        Ok(v) => v,
+        Err(_) => {
+            return empty(format!(
+                "; per-entity series not run: the entity column {ename} could not key entities"
+            ))
+        }
+    };
+    let mut labels: Vec<Option<String>> = Vec::new();
+    for (r, c) in codes.iter().enumerate() {
+        if let Some(c) = c {
+            let c = *c as usize;
+            if labels.len() <= c {
+                labels.resize(c + 1, None);
+            }
+            if labels[c].is_none() {
+                labels[c] = entity_label(table, ecol, r);
+            }
+        }
+    }
+    let label_of = |c: u32| -> String {
+        labels
+            .get(c as usize)
+            .cloned()
+            .flatten()
+            .unwrap_or_else(|| format!("entity #{c}"))
+    };
+
+    // The principal measure: the one with the most observations on
+    // the entity × time grain.
+    let mut principal = measures[0];
+    let mut best_count = 0usize;
+    for &m in measures {
+        let count = (0..table.n)
+            .filter(|&r| {
+                codes[r].is_some()
+                    && input.ticks[r].is_some()
+                    && table.cols[m].numeric_at(r).is_some_and(|v| v.is_finite())
+            })
+            .count();
+        if count > best_count {
+            best_count = count;
+            principal = m;
+        }
+    }
+    let mname = table.names[principal].as_str();
+
+    // Per-entity per-tick means of the principal measure.
+    let mut by_entity: HashMap<u32, BTreeMap<i64, (f64, usize)>> = HashMap::new();
+    for (r, code) in codes.iter().enumerate() {
+        if let (Some(c), Some(t), Some(v)) = (
+            *code,
+            input.ticks[r],
+            table.cols[principal].numeric_at(r),
+        ) {
+            if v.is_finite() {
+                let e = by_entity.entry(c).or_default().entry(t).or_insert((0.0, 0));
+                e.0 += v;
+                e.1 += 1;
+            }
+        }
+    }
+    let origin = input.ticks.iter().flatten().min().copied().unwrap_or(0);
+    let year_micros = 365.25 * MICROS_PER_DAY as f64;
+
+    let mut tested = 0usize;
+    let mut rises: Vec<String> = Vec::new();
+    let mut falls: Vec<String> = Vec::new();
+    let mut break_tested = 0usize;
+    let mut break_groups: BTreeMap<(i64, i32), Vec<String>> = BTreeMap::new();
+    let mut entity_order: Vec<u32> = by_entity.keys().copied().collect();
+    entity_order.sort_unstable();
+    for c in entity_order {
+        let series = &by_entity[&c];
+        let ticks: Vec<i64> = series.keys().copied().collect();
+        let y: Vec<f64> = series.values().map(|(s, k)| s / *k as f64).collect();
+        let label = label_of(c);
+        let mut has_trend = false;
+        if y.len() >= MIN_ENTITY_TREND_POINTS {
+            tested += 1;
+            let years: Vec<f64> = ticks
+                .iter()
+                .map(|t| (*t - origin) as f64 / year_micros)
+                .collect();
+            if let Some((fitted, slope, r2)) = line_fit(&years, &y) {
+                let (_, step_r2) = step_fit(&y).unwrap_or((Vec::new(), 0.0));
+                let significant = r2 >= MIN_TREND_R2
+                    && r2 >= step_r2 + MIN_LINE_OVER_STEP
+                    && trend_test(&years, &y, &fitted, slope)
+                        .is_some_and(|t| t.p_value < TREND_ALPHA);
+                if significant {
+                    has_trend = true;
+                    if slope > 0.0 {
+                        rises.push(label.clone());
+                    } else {
+                        falls.push(label.clone());
+                    }
+                }
+            }
+        }
+        // An entity carrying a significant trend is not break-
+        // scanned: a steady ramp reads as a level shift to a
+        // two-mean scan, and the movement is already stated as a
+        // trend.
+        if y.len() >= MIN_ENTITY_BREAK_POINTS && !has_trend {
+            break_tested += 1;
+            if let Some(br) = single_break_l2(&y, ENTITY_BREAK_MIN_SEGMENT) {
+                let direction =
+                    (br.right_mean > br.left_mean) as i32 - (br.right_mean < br.left_mean) as i32;
+                if br.gain_fraction >= ENTITY_BREAK_MIN_GAIN && direction != 0 {
+                    break_groups
+                        .entry((ticks[br.index], direction))
+                        .or_default()
+                        .push(label);
+                }
+            }
+        }
+    }
+
+    let mut findings = Vec::new();
+    if tested >= MIN_ENTITY_TESTED {
+        for (carriers, direction, verb) in [(&rises, "rise", "rises"), (&falls, "fall", "falls")] {
+            if carriers.len() >= MIN_ENTITY_CARRIERS {
+                findings.push(series_statement(
+                    mname,
+                    "entity_trend",
+                    format!(
+                        "{mname} {verb} along {} for {} of the {tested} {ename} entities tested: {}",
+                        input.axis_name,
+                        carriers.len(),
+                        name_list(carriers),
+                    ),
+                    0.55 + 0.25 * carriers.len() as f64 / tested as f64,
+                    BTreeMap::from([
+                        ("entity_column".to_string(), json!(ename)),
+                        ("direction".to_string(), json!(direction)),
+                        (
+                            "entities_with_pattern".to_string(),
+                            json!(carriers.len()),
+                        ),
+                        ("entities_tested".to_string(), json!(tested)),
+                        (
+                            "entities".to_string(),
+                            json!(carriers[..carriers.len().min(MAX_NAMED_ENTITIES)]),
+                        ),
+                    ]),
+                    "the named entities carry this movement on their own series; the aggregate statement averages all entities together",
+                ));
+            }
+        }
+    }
+    if break_tested >= MIN_ENTITY_TESTED {
+        if let Some((&(tick, direction), carriers)) =
+            break_groups.iter().max_by_key(|(_, v)| v.len())
+        {
+            if carriers.len() >= MIN_ENTITY_CARRIERS {
+                findings.push(series_statement(
+                    mname,
+                    "entity_break",
+                    format!(
+                        "{mname} shifts {} along {} at {} for {} of the {break_tested} {ename} entities tested: {}",
+                        if direction > 0 { "up" } else { "down" },
+                        input.axis_name,
+                        tick_label(tick),
+                        carriers.len(),
+                        name_list(carriers),
+                    ),
+                    0.6,
+                    BTreeMap::from([
+                        ("entity_column".to_string(), json!(ename)),
+                        (
+                            "direction".to_string(),
+                            json!(if direction > 0 { "up" } else { "down" }),
+                        ),
+                        ("breakpoint".to_string(), json!(tick_label(tick))),
+                        ("breakpoint_raw".to_string(), json!(tick)),
+                        (
+                            "entities_with_pattern".to_string(),
+                            json!(carriers.len()),
+                        ),
+                        ("entities_tested".to_string(), json!(break_tested)),
+                        (
+                            "entities".to_string(),
+                            json!(carriers[..carriers.len().min(MAX_NAMED_ENTITIES)]),
+                        ),
+                    ]),
+                    "a level shift at the same period in the named entities' own series; entities not named show no comparable break",
+                ));
+            }
+        }
+    }
+
+    EntityOutcome {
+        findings,
+        principal_trend: (tested >= MIN_ENTITY_TESTED)
+            .then_some((principal, tested, rises.len(), falls.len())),
+        detail: format!(
+            "; per-entity series of {mname} by {ename}: {tested} entities tested for a trend ({} rising, {} falling), {break_tested} for a level break",
+            rises.len(),
+            falls.len(),
+        ),
+    }
 }
 
 /// Whether a column's level is fixed by a calendar field of the axis (year,
@@ -691,6 +1074,57 @@ pub fn profile_series(table: &TypedTable, input: &SeriesInput) -> (Vec<Finding>,
         .collect();
     findings.extend(per_dimension.into_iter().flatten());
 
+    // Per-entity series on the panel grain, and the qualification
+    // of the principal measure's aggregate trend when the
+    // per-entity evidence is mixed: an aggregate movement no
+    // entity shows on its own, or one a minority carries, is not
+    // stated as a general movement.
+    let entity = entity_series(table, input, &measures);
+    findings.extend(entity.findings);
+    if let Some((mcol, tested, rises, falls)) = entity.principal_trend {
+        let ename = table.names[input.entities[0]].clone();
+        let mname = table.names[mcol].clone();
+        for f in findings.iter_mut() {
+            let is_aggregate_trend = f.finding_type.as_deref() == Some("series_structure")
+                && f.subject.columns.contains(&mname)
+                && f.evidence
+                    .first()
+                    .and_then(|e| e.metrics.get("kind"))
+                    .and_then(Value::as_str)
+                    == Some("trend");
+            if !is_aggregate_trend {
+                continue;
+            }
+            let slope = f.evidence[0]
+                .metrics
+                .get("slope_per_year")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let (carriers, word) = if slope > 0.0 {
+                (rises, "rise")
+            } else {
+                (falls, "fall")
+            };
+            if carriers == 0 {
+                f.claim.push_str(&format!(
+                    "; no individual {ename} series shows a significant {word} of its own"
+                ));
+            } else if carriers * 2 < tested {
+                f.claim.push_str(&format!(
+                    "; the {word} is carried by a minority of entities: {carriers} of {tested} {ename} series show a significant {word} of their own"
+                ));
+            } else {
+                continue;
+            }
+            f.evidence[0]
+                .metrics
+                .insert("entities_with_trend".into(), json!(carriers));
+            f.evidence[0]
+                .metrics
+                .insert("entities_tested".into(), json!(tested));
+        }
+    }
+
     let mut detail = format!(
         "{} measures and {} grouping columns described along {}; {} statements",
         measures.len(),
@@ -704,5 +1138,92 @@ pub fn profile_series(table: &TypedTable, input: &SeriesInput) -> (Vec<Finding>,
             input.measures.len()
         ));
     }
+    detail.push_str(&entity.detail);
     (findings, detail)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next_u64(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545F4914F6CDD1D)
+        }
+
+        fn next_f64(&mut self) -> f64 {
+            (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn noise(&mut self, scale: f64) -> f64 {
+            (self.next_f64() + self.next_f64() + self.next_f64() - 1.5) * scale
+        }
+    }
+
+    fn years(n: usize) -> Vec<f64> {
+        (0..n).map(|i| i as f64 / 52.0).collect()
+    }
+
+    fn p_value_of(x: &[f64], y: &[f64]) -> f64 {
+        let (fitted, slope, _) = line_fit(x, y).expect("line fit");
+        trend_test(x, y, &fitted, slope)
+            .expect("trend test")
+            .p_value
+    }
+
+    #[test]
+    fn trend_test_accepts_a_real_drift() {
+        let n = 156;
+        let mut rng = Lcg(11);
+        let y: Vec<f64> = (0..n).map(|i| 0.05 * i as f64 + rng.noise(1.0)).collect();
+        let p = p_value_of(&years(n), &y);
+        assert!(p < TREND_ALPHA, "a real drift must clear the bar, p = {p}");
+    }
+
+    #[test]
+    fn trend_test_rejects_a_random_walk() {
+        // A random walk's line fit explains a large share of its
+        // variance — the descriptive gates alone call it a trend —
+        // but its residuals are near-unit-root autocorrelated, so
+        // the deflated test must not call the slope significant.
+        let n = 156;
+        for seed in [5, 17, 23] {
+            let mut rng = Lcg(seed);
+            let mut y = Vec::with_capacity(n);
+            let mut level = 0.0;
+            for _ in 0..n {
+                level += rng.noise(1.0);
+                y.push(level);
+            }
+            let p = p_value_of(&years(n), &y);
+            assert!(
+                p >= TREND_ALPHA,
+                "seed {seed}: a random walk must not clear the bar, p = {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn trend_test_rejects_strongly_autocorrelated_noise() {
+        let n = 156;
+        let mut rng = Lcg(31);
+        let mut y = Vec::with_capacity(n);
+        let mut level = 0.0;
+        for _ in 0..n {
+            level = 0.95 * level + rng.noise(1.0);
+            y.push(level);
+        }
+        let p = p_value_of(&years(n), &y);
+        assert!(
+            p >= TREND_ALPHA,
+            "AR(1) noise must not clear the bar, p = {p}"
+        );
+    }
 }

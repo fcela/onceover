@@ -1405,8 +1405,11 @@ impl Finding {
             }
             Pattern::SeriesStructure => {
                 // One column can hold several statements: a trend and a
-                // cycle, or several levels of a grouping column.
-                for k in ["kind", "value", "period"] {
+                // cycle, or several levels of a grouping column. The
+                // per-entity statements are keyed by their grain and
+                // direction as well, so a rise carried by one entity
+                // column never merges with a fall on another.
+                for k in ["kind", "value", "period", "entity_column", "direction"] {
                     if let Some(v) = metrics.get(k) {
                         spec.definition.insert(k.into(), v.clone());
                     }

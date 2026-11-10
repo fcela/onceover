@@ -59,7 +59,7 @@ pub struct FrameModel {
     /// Name of the axis column in the table the temporal passes
     /// receive (the materialized name for assembled axes).
     pub axis_name: Option<String>,
-    /// hint | native | string_parse | timestamp_parts | year_candidate
+    /// hint | native | string_parse | timestamp_parts | year_candidate | week_candidate
     pub axis_source: Option<String>,
     /// The part column names, when the axis was assembled from parts.
     pub axis_parts: Vec<String>,
@@ -88,6 +88,7 @@ const MIN_SUPPORT: usize = 8;
 enum PartKind {
     Year,
     Month,
+    Week,
     Day,
     Hour,
     Minute,
@@ -99,6 +100,7 @@ impl PartKind {
         match name.to_ascii_lowercase().as_str() {
             "year" => Some(PartKind::Year),
             "month" => Some(PartKind::Month),
+            "week" | "iso_week" => Some(PartKind::Week),
             "day" => Some(PartKind::Day),
             "hour" => Some(PartKind::Hour),
             "minute" => Some(PartKind::Minute),
@@ -110,6 +112,7 @@ impl PartKind {
         match self {
             PartKind::Year => "year",
             PartKind::Month => "month",
+            PartKind::Week => "week",
             PartKind::Day => "day",
             PartKind::Hour => "hour",
             PartKind::Minute => "minute",
@@ -120,11 +123,30 @@ impl PartKind {
         match self {
             PartKind::Year => YEAR_RANGE,
             PartKind::Month => (1, 12),
+            PartKind::Week => (1, 53),
             PartKind::Day => (1, 31),
             PartKind::Hour => (0, 23),
             PartKind::Minute | PartKind::Second => (0, 59),
         }
     }
+}
+
+/// The Monday of ISO week `w` of year `y`, in days since the epoch,
+/// or None when that year has no such week. ISO week 1 is the week
+/// containing 4 January; a week belongs to the year of its Thursday,
+/// so week 53 exists only in years whose 1 January is a Thursday
+/// (or a Wednesday in a leap year).
+fn iso_week_monday(y: i64, w: i64) -> Option<i64> {
+    if !(1..=53).contains(&w) {
+        return None;
+    }
+    let jan4 = dateutil::days_from_civil(y, 1, 4);
+    // Weekday of a day count with 0 = Sunday (1970-01-01, day 0,
+    // was a Thursday, hence the +4).
+    let weekday = (jan4 + 4).rem_euclid(7);
+    let monday = jan4 - (weekday + 6).rem_euclid(7) + 7 * (w - 1);
+    let (thursday_year, _, _) = dateutil::civil_from_days(monday + 3);
+    (thursday_year == y).then_some(monday)
 }
 
 struct PartSet {
@@ -147,10 +169,15 @@ fn int_values(col: &TypedCol) -> Option<Vec<Option<i64>>> {
 }
 
 /// Detect a timestamp-part set: integer columns named year / month /
-/// day / hour / minute / second, values in plausible ranges, jointly
-/// non-null on at least 99% of rows, whose assembled calendar values
-/// are real dates on at least 99% of complete rows. Requires year
-/// and month at minimum and at least 8 distinct assembled values.
+/// week / day / hour / minute / second, values in plausible ranges,
+/// jointly non-null on at least 99% of rows, whose assembled
+/// calendar values are real dates on at least 99% of complete rows.
+/// Requires a year and at least 8 distinct assembled values. With a
+/// month part the assembly is the calendar date; with a week part
+/// and no month part it is the Monday of the ISO week, and the part
+/// set is the year and week columns alone (a day or time part
+/// cannot be placed on the week calendar). A week part beside a
+/// month part is not part of the set.
 fn detect_part_set(table: &TypedTable) -> Option<PartSet> {
     if table.n < MIN_SUPPORT {
         return None;
@@ -170,9 +197,21 @@ fn detect_part_set(table: &TypedTable) -> Option<PartSet> {
     }
     by_kind.sort_by_key(|(k, _, _)| *k);
     by_kind.dedup_by_key(|(k, _, _)| *k);
+    let weekly = {
+        let get = |kind: PartKind| by_kind.iter().find(|(k, _, _)| *k == kind);
+        get(PartKind::Year)?;
+        let weekly = get(PartKind::Month).is_none() && get(PartKind::Week).is_some();
+        if !weekly {
+            get(PartKind::Month)?;
+        }
+        weekly
+    };
+    if weekly {
+        by_kind.retain(|(k, _, _)| matches!(k, PartKind::Year | PartKind::Week));
+    } else {
+        by_kind.retain(|(k, _, _)| *k != PartKind::Week);
+    }
     let get = |kind: PartKind| by_kind.iter().find(|(k, _, _)| *k == kind);
-    get(PartKind::Year)?;
-    get(PartKind::Month)?;
 
     let present = (0..table.n)
         .filter(|&r| by_kind.iter().all(|(_, _, vals)| vals[r].is_some()))
@@ -192,6 +231,10 @@ fn detect_part_set(table: &TypedTable) -> Option<PartSet> {
         let complete = by_kind.iter().all(|(_, _, vals)| vals[r].is_some());
         let tick = complete.then(|| {
             let y = part(PartKind::Year, r)?;
+            if weekly {
+                let w = part(PartKind::Week, r)?;
+                return iso_week_monday(y, w);
+            }
             let mo = part(PartKind::Month, r)?;
             let d = part(PartKind::Day, r).unwrap_or(1);
             let days = dateutil::days_from_civil(y, mo, d);
@@ -675,7 +718,7 @@ fn measure_axis_span(
     if let Some(ticks) = column_ticks_micros(&table.cols[i]) {
         return span_from_ticks(&ticks);
     }
-    if axis.source == "year_candidate" {
+    if axis.source == "year_candidate" || axis.source == "week_candidate" {
         let fact = &facts[i];
         return (
             fact.numeric_min.map(|v| format!("{}", v as i64)),
@@ -1040,6 +1083,42 @@ pub fn analyze_frame(
             }
         }
     }
+    // 6. week-number candidate, recorded at low confidence: a lone
+    // week column orders rows within a year but repeats across
+    // years, so it is an axis candidate, never an assembled axis.
+    if axis.is_none() {
+        for (i, col) in table.cols.iter().enumerate() {
+            if !matches!(col, TypedCol::I64 { .. } | TypedCol::U64 { .. }) {
+                continue;
+            }
+            if PartKind::of_name(&table.names[i]) != Some(PartKind::Week) {
+                continue;
+            }
+            let fact = &facts[i];
+            let in_range = matches!(
+                (fact.numeric_min, fact.numeric_max),
+                (Some(lo), Some(hi)) if lo >= 1.0 && hi <= 53.0
+            );
+            if in_range && fact.integral && fact.distinct >= MIN_SUPPORT {
+                let name = table.names[i].clone();
+                axis = Some(FrameAxis::unmeasured(
+                    name.clone(),
+                    "week_candidate",
+                    format!(
+                        "the integer column '{name}' holds week numbers ({}..={}); recorded as a candidate axis at low confidence — week numbers repeat every year, so the axis orders periods within a year only",
+                        fact.numeric_min.map(|v| v as i64).unwrap_or(0),
+                        fact.numeric_max.map(|v| v as i64).unwrap_or(0)
+                    ),
+                    "low",
+                    Vec::new(),
+                    Some(name.clone()),
+                ));
+                axis_name = Some(name);
+                axis_source = Some("week_candidate".into());
+                break;
+            }
+        }
+    }
 
     // A string column the axis was parsed from is a timestamp,
     // whatever its cardinality suggested: the axis record and the
@@ -1067,6 +1146,12 @@ pub fn analyze_frame(
         ax.max = max;
         ax.distinct_values = distinct;
         ax.step = step;
+        // A seven-day modal step makes the axis weekly; the account
+        // says so in those terms, whichever representation the axis
+        // arrived in.
+        if ax.step.as_deref() == Some("1 week") && !ax.description.contains("weekly") {
+            ax.description.push_str("; the axis is weekly");
+        }
     }
 
     let info = FrameInfo {
@@ -1343,5 +1428,57 @@ mod tests {
         let model = analyze_frame(&table, &facts, Some(&hints));
         assert_eq!(model.roles[0].as_deref(), Some("measure"));
         assert!(model.info.roles[0].evidence.contains("hints.roles"));
+    }
+
+    #[test]
+    fn iso_week_mondays() {
+        // 2023 week 1 starts on Monday 2 January 2023.
+        assert_eq!(
+            iso_week_monday(2023, 1),
+            Some(dateutil::days_from_civil(2023, 1, 2))
+        );
+        // 2020 has a week 53 (a leap year starting on a Wednesday);
+        // its Monday is 28 December 2020.
+        assert_eq!(
+            iso_week_monday(2020, 53),
+            Some(dateutil::days_from_civil(2020, 12, 28))
+        );
+        // 2021 has 52 weeks only.
+        assert_eq!(iso_week_monday(2021, 53), None);
+        assert_eq!(iso_week_monday(2023, 0), None);
+        assert_eq!(iso_week_monday(2023, 54), None);
+    }
+
+    #[test]
+    fn year_week_parts_assemble_a_weekly_axis() {
+        // Year and week columns with no month: the axis is the
+        // Monday of each ISO week, and the account calls it weekly.
+        let mut year = Vec::new();
+        let mut week = Vec::new();
+        let mut value = Vec::new();
+        for y in [2023i64, 2024] {
+            for w in 1..=30i64 {
+                year.push(y);
+                week.push(w);
+                value.push(10.0 + w as f64);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("year".into(), year).into(),
+            Series::new("week".into(), week).into(),
+            Series::new("value".into(), value).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let model = analyze_frame(&table, &facts, None);
+        let axis = model.info.axis.as_ref().expect("axis assembled");
+        assert_eq!(axis.source, "timestamp_parts");
+        assert_eq!(axis.name, "year/week");
+        assert_eq!(axis.step.as_deref(), Some("1 week"));
+        assert!(axis.description.contains("weekly"), "{}", axis.description);
+        assert_eq!(axis.min.as_deref(), Some("2023-01-02"));
+        let role =
+            |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
+        assert_eq!(role("week").as_deref(), Some("timestamp_part"));
     }
 }

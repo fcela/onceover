@@ -70,6 +70,12 @@ impl Default for BreaksConfig {
 pub struct FoundBreak {
     /// Index of the observation where the break occurs.
     pub index: usize,
+    /// Earliest split index whose two-segment fit is within
+    /// [`RANGE_CHI2`] residual variances of the best split's fit:
+    /// the located range's start. Always `lo <= index <= hi`.
+    pub lo: usize,
+    /// Latest split index in the located range.
+    pub hi: usize,
     /// The kind of break detected.
     pub kind: BreakKind,
     /// Improvement on training data achieved by splitting at this break.
@@ -81,6 +87,77 @@ pub struct FoundBreak {
 }
 
 use crate::regimes::single_break_l2;
+
+/// The 95th percentile of the chi-square distribution with one
+/// degree of freedom. A split point belongs to a break's located
+/// range when its two-segment cost exceeds the best split's cost by
+/// at most this many residual variances — the likelihood-ratio bar
+/// for "the evidence does not separate this split from the best
+/// one". The range is read off the detection scan's own cost curve;
+/// it is not a confidence interval from a separate model.
+pub const RANGE_CHI2: f64 = 3.84;
+
+/// The located range around `best`: the maximal run of split points
+/// in `costs` (split, cost pairs in increasing split order) that
+/// contains `best` and whose costs stay within `RANGE_CHI2 * sigma2`
+/// of the best cost. `sigma2` is the residual variance at the best
+/// split.
+fn located_range(costs: &[(usize, f64)], best: usize, sigma2: f64) -> (usize, usize) {
+    let Some(pos) = costs.iter().position(|(k, _)| *k == best) else {
+        return (best, best);
+    };
+    let bar = costs[pos].1 + RANGE_CHI2 * sigma2.max(0.0);
+    let mut lo = best;
+    for (k, c) in costs[..pos].iter().rev() {
+        if *c > bar {
+            break;
+        }
+        lo = *k;
+    }
+    let mut hi = best;
+    for (k, c) in &costs[pos + 1..] {
+        if *c > bar {
+            break;
+        }
+        hi = *k;
+    }
+    (lo, hi)
+}
+
+/// The two-mean squared-error cost of every admissible split of
+/// `seg`, as (split, cost) pairs, via prefix sums.
+fn two_mean_costs(seg: &[f64], min_segment: usize) -> Vec<(usize, f64)> {
+    let m = seg.len();
+    if m < 2 * min_segment.max(1) {
+        return Vec::new();
+    }
+    let mut pre = vec![0.0f64; m + 1];
+    let mut pre2 = vec![0.0f64; m + 1];
+    for i in 0..m {
+        pre[i + 1] = pre[i] + seg[i];
+        pre2[i + 1] = pre2[i] + seg[i] * seg[i];
+    }
+    let sse = |a: usize, b: usize| -> f64 {
+        let n = (b - a) as f64;
+        let s = pre[b] - pre[a];
+        let s2 = pre2[b] - pre2[a];
+        (s2 - s * s / n).max(0.0)
+    };
+    (min_segment..=m - min_segment)
+        .map(|k| (k, sse(0, k) + sse(k, m)))
+        .collect()
+}
+
+/// The located range of a two-mean break in `seg` (the series the
+/// break was scanned on), from its own cost curve.
+fn two_mean_range(seg: &[f64], best: usize, min_segment: usize) -> (usize, usize) {
+    let costs = two_mean_costs(seg, min_segment);
+    let Some(&(_, best_cost)) = costs.iter().find(|(k, _)| *k == best) else {
+        return (best, best);
+    };
+    let sigma2 = best_cost / (seg.len().saturating_sub(2)).max(1) as f64;
+    located_range(&costs, best, sigma2)
+}
 
 pub fn level_breaks(values: &[f64], cfg: &BreaksConfig) -> Vec<FoundBreak> {
     if values.len() < 2 * cfg.min_segment || cfg.max_breaks == 0 {
@@ -110,8 +187,11 @@ fn scan(values: &[f64], start: usize, end: usize, cfg: &BreaksConfig, out: &mut 
     let right_slice = &values[start + br.index..end];
     let left = left_slice.iter().sum::<f64>() / left_slice.len() as f64;
     let right = right_slice.iter().sum::<f64>() / right_slice.len() as f64;
+    let (lo, hi) = two_mean_range(&values[start..end], br.index, cfg.min_segment);
     out.push(FoundBreak {
         index: start + br.index,
+        lo: start + lo,
+        hi: start + hi,
         kind: BreakKind::Level,
         train_gain: br.gain_fraction,
         left,
@@ -186,6 +266,7 @@ pub fn trend_break(values: &[f64], times: &[f64], cfg: &BreaksConfig) -> Option<
     let mut best_k: Option<usize> = None;
     let mut best_left = 0.0f64;
     let mut best_right = 0.0f64;
+    let mut costs: Vec<(usize, f64)> = Vec::new();
 
     for k in cfg.min_segment..=n - cfg.min_segment {
         let (slope_l, sse_l) = match seg_fit(0, k) {
@@ -197,6 +278,7 @@ pub fn trend_break(values: &[f64], times: &[f64], cfg: &BreaksConfig) -> Option<
             None => continue,
         };
         let total = sse_l + sse_r;
+        costs.push((k, total));
         if total < best_total {
             best_total = total;
             best_k = Some(k);
@@ -211,8 +293,12 @@ pub fn trend_break(values: &[f64], times: &[f64], cfg: &BreaksConfig) -> Option<
         return None;
     }
 
+    let sigma2 = best_total / (n.saturating_sub(4)).max(1) as f64;
+    let (lo, hi) = located_range(&costs, k_best, sigma2);
     Some(FoundBreak {
         index: k_best,
+        lo,
+        hi,
         kind: BreakKind::Trend,
         train_gain: gain,
         left: best_left,
@@ -253,8 +339,13 @@ pub fn variance_break(values: &[f64], cfg: &BreaksConfig) -> Option<FoundBreak> 
     let left = pop_var(&values[..br.index]);
     let right = pop_var(&values[br.index..]);
 
+    // The scan ran on the squared deviations, so the located range
+    // is read off that series' two-mean cost curve.
+    let (lo, hi) = two_mean_range(&sq, br.index, cfg.min_segment);
     Some(FoundBreak {
         index: br.index,
+        lo,
+        hi,
         kind: BreakKind::Variance,
         train_gain: br.gain_fraction,
         left,
@@ -477,12 +568,18 @@ fn level_findings_grouped(
     let mut findings = Vec::with_capacity(breaks.len());
     for j in 0..breaks.len() {
         let display = display_time(axis, boundaries[j]);
+        let range_start = train[breaks[j].lo].0;
+        let range_end = train[breaks[j].hi].0;
+        let range_start_display = display_time(axis, range_start);
+        let range_end_display = display_time(axis, range_end);
         let claim = if let Some((gcol, gval)) = group {
             format!(
-                "{} level shifts after {} along {} within {} = {}: mean {} before, {} after; the training-selected segmentation reduces holdout squared error by {:.1}%",
+                "{} level shifts along {} between {} and {} (best estimate {}) within {} = {}: mean {} before, {} after; the training-selected segmentation reduces holdout squared error by {:.1}%",
                 column,
-                display,
                 time_column,
+                range_start_display,
+                range_end_display,
+                display,
                 gcol,
                 gval,
                 crate::fmt_float(seg_means[j]),
@@ -491,10 +588,12 @@ fn level_findings_grouped(
             )
         } else {
             format!(
-                "{} level shifts after {} along {}: mean {} before, {} after; the training-selected segmentation reduces holdout squared error by {:.1}%",
+                "{} level shifts along {} between {} and {} (best estimate {}): mean {} before, {} after; the training-selected segmentation reduces holdout squared error by {:.1}%",
                 column,
-                display,
                 time_column,
+                range_start_display,
+                range_end_display,
+                display,
                 crate::fmt_float(seg_means[j]),
                 crate::fmt_float(seg_means[j + 1]),
                 100.0 * gain
@@ -503,6 +602,10 @@ fn level_findings_grouped(
         let mut metrics = BTreeMap::from([
             ("breakpoint".into(), json!(display)),
             ("breakpoint_raw".into(), json!(boundaries[j])),
+            ("breakpoint_range_start".into(), json!(range_start_display)),
+            ("breakpoint_range_start_raw".into(), json!(range_start)),
+            ("breakpoint_range_end".into(), json!(range_end_display)),
+            ("breakpoint_range_end_raw".into(), json!(range_end)),
             ("mean_before".into(), json!(seg_means[j])),
             ("mean_after".into(), json!(seg_means[j + 1])),
             ("train_gain".into(), json!(breaks[j].train_gain)),
@@ -512,7 +615,7 @@ fn level_findings_grouped(
             ("n_holdout".into(), json!(holdout.len())),
             (
                 "validation".into(),
-                json!("breakpoints and segment means learned on training rows; fixed segmentation evaluated on holdout; no p-value")
+                json!("breakpoints and segment means learned on training rows; fixed segmentation evaluated on holdout; no p-value; the breakpoint range holds every split whose two-mean squared error is within 3.84 residual variances of the best split")
             ),
         ]);
         metrics.insert("segments".into(), json!(segments_json.clone()));
@@ -592,11 +695,17 @@ fn trend_finding(
     }
 
     let display = display_time(axis, boundary);
+    let range_start = train[tb.lo].0;
+    let range_end = train[tb.hi].0;
+    let range_start_display = display_time(axis, range_start);
+    let range_end_display = display_time(axis, range_end);
     let claim = format!(
-        "{} trend changes after {} along {}: slope {} before, {} after; the training-selected two-line model reduces holdout squared error by {:.1}%",
+        "{} trend changes along {} between {} and {} (best estimate {}): slope {} before, {} after; the training-selected two-line model reduces holdout squared error by {:.1}%",
         column,
-        display,
         time_column,
+        range_start_display,
+        range_end_display,
+        display,
         crate::fmt_float(slope_l),
         crate::fmt_float(slope_r),
         100.0 * gain
@@ -605,6 +714,10 @@ fn trend_finding(
     let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
         ("breakpoint_raw".into(), json!(boundary)),
+        ("breakpoint_range_start".into(), json!(range_start_display)),
+        ("breakpoint_range_start_raw".into(), json!(range_start)),
+        ("breakpoint_range_end".into(), json!(range_end_display)),
+        ("breakpoint_range_end_raw".into(), json!(range_end)),
         ("slope_before".into(), json!(slope_l)),
         ("slope_after".into(), json!(slope_r)),
         ("train_gain".into(), json!(tb.train_gain)),
@@ -613,7 +726,7 @@ fn trend_finding(
         ("n_holdout".into(), json!(holdout.len())),
         (
             "validation".into(),
-            json!("breakpoint and slopes learned on training rows; fixed two-line model evaluated on holdout; no p-value"),
+            json!("breakpoint and slopes learned on training rows; fixed two-line model evaluated on holdout; no p-value; the breakpoint range holds every split whose two-line squared error is within 3.84 residual variances of the best split"),
         ),
     ]);
     // Bespoke evidence payload: the two fitted segments.
@@ -714,11 +827,17 @@ fn variance_finding(
     }
 
     let display = display_time(axis, boundary);
+    let range_start = train[vb.lo].0;
+    let range_end = train[vb.hi].0;
+    let range_start_display = display_time(axis, range_start);
+    let range_end_display = display_time(axis, range_end);
     let claim = format!(
-        "{} variance changes after {} along {}: variance {} before, {} after; the training-selected split reduces holdout squared-deviation error by {:.1}%",
+        "{} variance changes along {} between {} and {} (best estimate {}): variance {} before, {} after; the training-selected split reduces holdout squared-deviation error by {:.1}%",
         column,
-        display,
         time_column,
+        range_start_display,
+        range_end_display,
+        display,
         crate::fmt_float(v_l),
         crate::fmt_float(v_r),
         100.0 * gain
@@ -727,6 +846,10 @@ fn variance_finding(
     let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
         ("breakpoint_raw".into(), json!(boundary)),
+        ("breakpoint_range_start".into(), json!(range_start_display)),
+        ("breakpoint_range_start_raw".into(), json!(range_start)),
+        ("breakpoint_range_end".into(), json!(range_end_display)),
+        ("breakpoint_range_end_raw".into(), json!(range_end)),
         ("variance_before".into(), json!(v_l)),
         ("variance_after".into(), json!(v_r)),
         ("train_gain".into(), json!(vb.train_gain)),
@@ -735,7 +858,7 @@ fn variance_finding(
         ("n_holdout".into(), json!(holdout.len())),
         (
             "validation".into(),
-            json!("breakpoint, segment means and variances learned on training rows; fixed split evaluated on holdout; no p-value"),
+            json!("breakpoint, segment means and variances learned on training rows; fixed split evaluated on holdout; no p-value; the breakpoint range holds every split whose squared-deviation cost is within 3.84 residual variances of the best split"),
         ),
     ]);
     // Bespoke evidence payload: the two segments of the split.
@@ -1734,6 +1857,138 @@ mod excursion_tests {
     fn constant_series_has_no_events() {
         let ys = vec![7.0; 600];
         assert!(excursion_scan(&series(&ys), Axis::Date, &cfg()).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next_u64(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545F4914F6CDD1D)
+        }
+
+        fn next_f64(&mut self) -> f64 {
+            (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn noise(&mut self, scale: f64) -> f64 {
+            (self.next_f64() + self.next_f64() + self.next_f64() - 1.5) * scale
+        }
+    }
+
+    fn test_cfg() -> BreaksConfig {
+        BreaksConfig {
+            min_segment: 10,
+            min_train_gain: 0.10,
+            ..Default::default()
+        }
+    }
+
+    fn shifted(seed: u64, scale: f64, shift: f64) -> Vec<f64> {
+        let n = 400;
+        let mut rng = Lcg(seed);
+        let mut y: Vec<f64> = (0..n).map(|_| rng.noise(scale)).collect();
+        for v in &mut y[200..] {
+            *v += shift;
+        }
+        y
+    }
+
+    fn break_near(breaks: &[FoundBreak], at: usize) -> FoundBreak {
+        *breaks
+            .iter()
+            .min_by_key(|b| b.index.abs_diff(at))
+            .expect("at least one break")
+    }
+
+    #[test]
+    fn level_break_range_contains_the_planted_split() {
+        let breaks = level_breaks(&shifted(42, 2.4, 4.0), &test_cfg());
+        let b = break_near(&breaks, 200);
+        assert!(
+            b.lo <= 200 && 200 <= b.hi,
+            "range {}..={} must contain the planted split 200",
+            b.lo,
+            b.hi
+        );
+        assert!(b.lo <= b.index && b.index <= b.hi);
+    }
+
+    #[test]
+    fn level_break_range_narrows_with_less_noise() {
+        // A weak shift is located loosely at high noise — a range of
+        // several splits — and tightly at low noise.
+        let wide = break_near(&level_breaks(&shifted(7, 2.4, 1.5), &test_cfg()), 200);
+        let narrow = break_near(&level_breaks(&shifted(7, 0.6, 1.5), &test_cfg()), 200);
+        assert!(
+            wide.lo <= 200 && 200 <= wide.hi,
+            "range {}..={} must contain the planted split 200",
+            wide.lo,
+            wide.hi
+        );
+        assert!(
+            narrow.hi - narrow.lo < wide.hi - wide.lo,
+            "range at low noise ({}..={}) should be narrower than at high noise ({}..={})",
+            narrow.lo,
+            narrow.hi,
+            wide.lo,
+            wide.hi
+        );
+    }
+
+    #[test]
+    fn trend_break_range_contains_the_planted_split() {
+        // A tent: rising at 0.1 per step, then falling at the same
+        // rate. The kink is sharply located, unlike a flat-then-
+        // rising join, whose early post-break values sit near the
+        // pre-break level.
+        let n = 400;
+        let mut rng = Lcg(123);
+        let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| {
+                let base = if i < 200 {
+                    0.1 * i as f64
+                } else {
+                    20.0 - 0.1 * (i - 200) as f64
+                };
+                base + rng.noise(1.0)
+            })
+            .collect();
+        let b = trend_break(&y, &times, &test_cfg()).expect("a trend break");
+        assert!(
+            b.lo <= 200 && 200 <= b.hi,
+            "range {}..={} must contain the planted split 200",
+            b.lo,
+            b.hi
+        );
+        assert!(b.lo <= b.index && b.index <= b.hi);
+    }
+
+    #[test]
+    fn variance_break_range_contains_the_planted_split() {
+        let n = 400;
+        let mut rng = Lcg(77);
+        let y: Vec<f64> = (0..n)
+            .map(|i| rng.noise(if i < 200 { 0.8 } else { 3.2 }))
+            .collect();
+        let b = variance_break(&y, &test_cfg()).expect("a variance break");
+        assert!(
+            b.lo <= 200 && 200 <= b.hi,
+            "range {}..={} must contain the planted split 200",
+            b.lo,
+            b.hi
+        );
+        assert!(b.lo <= b.index && b.index <= b.hi);
     }
 }
 
