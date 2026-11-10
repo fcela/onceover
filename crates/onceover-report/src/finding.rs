@@ -131,6 +131,17 @@ pub enum Pattern {
     /// declared, not inferred — the counterpart to a statistical
     /// association, which relates two columns over all rows.
     GroupContrast,
+    /// The share of a measure held by the top entities in each
+    /// period of an entity × time grain: high in level, or rising
+    /// materially across the period range. A panel statement —
+    /// the whole-column concentration check computes shares over
+    /// the whole frame at once and cannot see the movement.
+    ConcentrationOverTime,
+    /// Entities whose total of a measure over an entity × time
+    /// grain sits far outside the distribution of the other
+    /// entities' totals. No single cell needs to be extreme:
+    /// every row of such an entity is.
+    OutlierEntity,
 }
 impl Pattern {
     pub fn category(self) -> Category {
@@ -178,6 +189,7 @@ impl Pattern {
             Self::SeriesStructure => Category::Changes,
             Self::OneWayFlag => Category::Changes,
             Self::EntryBlock | Self::ExitBlock | Self::FirstActivity => Category::Changes,
+            Self::ConcentrationOverTime | Self::OutlierEntity => Category::Concentration,
         }
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -235,6 +247,8 @@ impl Pattern {
             Self::EntryBlock => "entry_block",
             Self::ExitBlock => "exit_block",
             Self::FirstActivity => "first_activity",
+            Self::ConcentrationOverTime => "concentration_over_time",
+            Self::OutlierEntity => "outlier_entity",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
@@ -645,6 +659,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::ConcentrationOverTime | Pattern::OutlierEntity => (
+                Sc::Columns,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::Hotspot => (
                 Sc::Columns,
                 O::Distribution,
@@ -998,6 +1021,10 @@ impl Facets {
             (Category::Missingness, Some("sentinel_values")) => Pattern::SentinelValues,
             (Category::Missingness, _) => Pattern::MissingValues,
             (Category::Concentration, Some("hotspot")) => Pattern::Hotspot,
+            (Category::Concentration, Some("concentration_over_time")) => {
+                Pattern::ConcentrationOverTime
+            }
+            (Category::Concentration, Some("outlier_entity")) => Pattern::OutlierEntity,
             (Category::Concentration, _) => Pattern::ValueConcentration,
             (Category::ColumnRoles, Some("identifier_role")) => Pattern::IdentifierRole,
             (Category::ColumnRoles, Some("long_format")) => Pattern::LongFormat,
@@ -1358,6 +1385,34 @@ impl Finding {
                 if let Some(v) = metrics.get("activity_column") {
                     spec.definition.insert("activity".into(), v.clone());
                 }
+            }
+            Pattern::ConcentrationOverTime => {
+                spec.form = Some("per_period_top_share".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the entity, measure, or time value are not observations"),
+                );
+                if let Some(v) = metrics.get("entity_column") {
+                    spec.definition.insert("entity".into(), v.clone());
+                }
+                spec.definition.insert(
+                    "top_group".into(),
+                    json!("the largest entities holding the top share of each period's total: ceil(1% of the entities), at least one"),
+                );
+            }
+            Pattern::OutlierEntity => {
+                spec.form = Some("entity_total_tail".into());
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the entity, measure, or time value are not observations"),
+                );
+                if let Some(v) = metrics.get("entity_column") {
+                    spec.definition.insert("entity".into(), v.clone());
+                }
+                spec.definition.insert(
+                    "aggregation".into(),
+                    json!("the measure summed over all periods, per entity"),
+                );
             }
             Pattern::UnexaminedColumns => {
                 subject.unit = Some("columns".into());
