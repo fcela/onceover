@@ -84,12 +84,25 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         ``order_by`` (columns rows are ordered by), ``no_gaps`` (columns
         expected to form a complete sequence), ``cadence`` (per-column:
         "daily", "business_day", "weekly", "monthly", or a day/step
-        count), ``dimensions`` and ``measures`` (panel structure), and
+        count), ``dimensions`` and ``measures`` (panel structure),
         ``roles`` (per-column semantic role override for the frame
         model: one of "identifier", "index", "timestamp",
-        "timestamp_part", "dimension", "measure", "text").
-        Unknown columns or unusable types are reported in the pass
-        coverage, not raised.
+        "timestamp_part", "dimension", "measure", "text"),
+        ``hierarchies`` (known hierarchies: each entry is one
+        hierarchy's level columns, ordered finest to coarsest — every
+        adjacent mapping is verified exactly; a hierarchy that holds
+        is stated once and the inferred restatements of the chain
+        group under it, a hierarchy that does not hold is stated once
+        as a deviation naming every broken mapping), and
+        ``exclude_columns`` (columns removed before profiling starts:
+        no card, and no finding can name them; the
+        ``column_exclusions`` coverage entry states the exclusion and
+        its user-declared source). Unknown columns or unusable types
+        are reported in the pass coverage, not raised. The column the
+        frame model assembles as the report's time axis is excluded
+        from target roles and from being profiled as a measure by the
+        series pass by structure, whatever its assigned role; a
+        ``roles`` entry for the axis column overrides that default.
     target : str, optional
         Designate a response column for the opt-in target-aware mode.
         Adds the ``target_shapes`` pass, which reports the shape of

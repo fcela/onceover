@@ -764,6 +764,299 @@ fn bijection_family_groups_both_fd_directions() {
     assert_eq!(outcome.selected.len(), 2);
 }
 
+fn rollup(finer: &str, coarser: &str, score: f64) -> Finding {
+    let mut subject = Subject {
+        columns: vec![finer.to_string(), coarser.to_string()],
+        ..Default::default()
+    };
+    subject.canonicalize();
+    Finding::from_statement(
+        Category::ColumnRoles,
+        Some("duplicate_encoding".into()),
+        subject,
+        Specification {
+            form: Some("rollup".into()),
+            ..Default::default()
+        },
+        format!("{finer} rolls up to {coarser}"),
+        Evidence::new(
+            Method::new("duplicate_encodings", "rollup", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([
+                ("finer".into(), json!(finer)),
+                ("coarser".into(), json!(coarser)),
+                ("exceptions".into(), json!(0)),
+                ("n_used".into(), json!(100)),
+            ]),
+        ),
+        score,
+        None,
+    )
+}
+
+fn declared_hierarchy(levels: &[&str], violations: u64, score: f64) -> Finding {
+    let mut subject = Subject {
+        columns: levels.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    };
+    subject.canonicalize();
+    Finding::from_statement(
+        Category::ColumnRoles,
+        Some("duplicate_encoding".into()),
+        subject,
+        Specification {
+            form: Some("hierarchy".into()),
+            ..Default::default()
+        },
+        format!("declared hierarchy: {}", levels.join(" -> ")),
+        Evidence::new(
+            Method::new("expectations", "declared_hierarchy", "test"),
+            EvidenceBasis::Measured,
+            BTreeMap::from([
+                ("reference_source".into(), json!("declared")),
+                ("violations".into(), json!(violations)),
+                (
+                    "hierarchy_levels".into(),
+                    json!(levels.iter().map(|s| s.to_string()).collect::<Vec<_>>()),
+                ),
+                ("n_used".into(), json!(100)),
+            ]),
+        ),
+        score,
+        None,
+    )
+}
+
+#[test]
+fn hierarchy_chain_groups_pairwise_statements() {
+    // unit -> team -> division -> company, stated pair by pair:
+    // the adjacent FDs, two skip-level FDs, and the adjacent
+    // rollups. One constructed lead states the chain; every
+    // pairwise statement groups under it.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["unit"], "team", 0.95),
+            exact_fd(&["team"], "division", 0.94),
+            exact_fd(&["division"], "company", 0.93),
+            exact_fd(&["unit"], "division", 0.92),
+            exact_fd(&["unit"], "company", 0.91),
+            rollup("unit", "team", 0.90),
+            rollup("team", "division", 0.89),
+            rollup("division", "company", 0.88),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 8);
+    let lead = &outcome.selected[0];
+    assert_eq!(lead.specification.form.as_deref(), Some("hierarchy"));
+    assert_eq!(
+        lead.subject.columns,
+        vec!["company", "division", "team", "unit"]
+    );
+    assert!(lead.validate().is_ok(), "{:?}", lead.validate());
+    assert!(
+        lead.claim
+            .contains("unit → team → division → company form one hierarchy"),
+        "{}",
+        lead.claim
+    );
+    let metrics = lead.metrics();
+    assert_eq!(
+        metrics["hierarchy_levels"],
+        json!([["unit"], ["team"], ["division"], ["company"]])
+    );
+    let mappings = metrics["hierarchy_mappings"].as_array().unwrap();
+    assert_eq!(mappings.len(), 3);
+    assert_eq!(mappings[0]["finer"], json!(["unit"]));
+    assert_eq!(mappings[0]["coarser"], json!(["team"]));
+    assert_eq!(mappings[0]["rows_evaluated"], json!(100));
+    let relations = metrics["member_relations"].as_array().unwrap();
+    assert_eq!(relations.len(), 8);
+    assert_eq!(lead.grouped_members.len(), 8);
+    for member in &outcome.grouped {
+        assert_eq!(member.grouped_under.as_deref(), Some(lead.id.as_str()));
+    }
+}
+
+#[test]
+fn two_independent_chains_stay_two_families() {
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a1"], "a2", 0.95),
+            exact_fd(&["a2"], "a3", 0.94),
+            exact_fd(&["a3"], "a4", 0.93),
+            exact_fd(&["b1"], "b2", 0.92),
+            exact_fd(&["b2"], "b3", 0.91),
+            exact_fd(&["b3"], "b4", 0.90),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 2);
+    assert_eq!(outcome.selected.len(), 2);
+    assert_eq!(outcome.grouped.len(), 6);
+    for lead in &outcome.selected {
+        assert_eq!(lead.specification.form.as_deref(), Some("hierarchy"));
+    }
+}
+
+#[test]
+fn branching_structure_is_not_a_chain() {
+    // a and b both roll up to c, and c determines d: a and b are
+    // incomparable, so the component is a merge, not a chain, and
+    // no statement is grouped.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a"], "c", 0.95),
+            exact_fd(&["b"], "c", 0.94),
+            exact_fd(&["c"], "d", 0.93),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 3);
+}
+
+#[test]
+fn equivalence_class_inside_a_chain_is_one_level() {
+    // a and b determine each other (one level stated twice), then
+    // b -> c -> d: the chain's first level is the class {a, b}.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a"], "b", 0.95),
+            exact_fd(&["b"], "a", 0.94),
+            exact_fd(&["b"], "c", 0.93),
+            exact_fd(&["c"], "d", 0.92),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 4);
+    let lead = &outcome.selected[0];
+    assert_eq!(
+        lead.metrics()["hierarchy_levels"],
+        json!([["a", "b"], ["c"], ["d"]])
+    );
+    assert!(lead.claim.contains("a + b → c → d"), "{}", lead.claim);
+}
+
+#[test]
+fn pure_equivalence_structure_collapses() {
+    // Three columns pairwise determining each other: one grouping
+    // stated six times.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["a"], "b", 0.95),
+            exact_fd(&["b"], "a", 0.94),
+            exact_fd(&["b"], "c", 0.93),
+            exact_fd(&["c"], "b", 0.92),
+            exact_fd(&["a"], "c", 0.91),
+            exact_fd(&["c"], "a", 0.90),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 6);
+    let lead = &outcome.selected[0];
+    assert_eq!(lead.metrics()["hierarchy_levels"], json!([["a", "b", "c"]]));
+    assert!(
+        lead.claim.contains("encode the same grouping one-to-one"),
+        "{}",
+        lead.claim
+    );
+}
+
+#[test]
+fn declared_hierarchy_leads_its_restatements() {
+    // The declared statement outranks nothing here — the FDs score
+    // higher — but the family still forms under the declared lead
+    // when its first member is reached.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["unit"], "team", 0.95),
+            exact_fd(&["team"], "division", 0.94),
+            rollup("unit", "team", 0.90),
+            declared_hierarchy(&["unit", "team", "division"], 0, 0.80),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.grouped.len(), 3);
+    let lead = &outcome.selected[0];
+    assert_eq!(
+        lead.evidence[0].method.detector, "expectations",
+        "the declared statement leads"
+    );
+    assert_eq!(lead.grouped_members.len(), 3);
+}
+
+#[test]
+fn broken_declared_hierarchy_does_not_lead() {
+    // The declaration records violations, so it cannot lead; the
+    // inferred chain still forms over the exact statements, and
+    // the deviation statement competes on its own.
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["unit"], "team", 0.95),
+            exact_fd(&["team"], "division", 0.94),
+            rollup("unit", "team", 0.90),
+            declared_hierarchy(&["unit", "team", "division"], 3, 0.85),
+        ],
+        &SelectionPolicy::default(),
+    );
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.grouped.len(), 3);
+    let lead = outcome
+        .selected
+        .iter()
+        .find(|f| f.specification.form.as_deref() == Some("hierarchy"))
+        .expect("the constructed chain lead is selected");
+    assert!(
+        lead.metrics().get("reference_source").is_none(),
+        "the lead is the constructed one, not the declaration"
+    );
+    assert!(
+        outcome
+            .selected
+            .iter()
+            .any(|f| f.evidence[0].method.detector == "expectations"),
+        "the deviation statement stays selected on its own"
+    );
+}
+
+#[test]
+fn cap_blocked_chain_lead_leaves_members_independent() {
+    // The constructed lead inherits the rollup's detector for cap
+    // attribution; capping that detector at zero turns the lead
+    // away. The family does not form, the FDs are selected on
+    // their own, and the capped count names only the detector's
+    // own statements (the three rollups), not the lead.
+    let policy = SelectionPolicy {
+        max_findings_per_detector: BTreeMap::from([("duplicate_encodings".to_string(), 0)]),
+        ..Default::default()
+    };
+    let outcome = select_findings_counted(
+        vec![
+            exact_fd(&["unit"], "team", 0.95),
+            exact_fd(&["team"], "division", 0.94),
+            exact_fd(&["division"], "company", 0.93),
+            rollup("unit", "team", 0.90),
+            rollup("team", "division", 0.89),
+            rollup("division", "company", 0.88),
+        ],
+        &policy,
+    );
+    assert_eq!(outcome.families, 0);
+    assert!(outcome.grouped.is_empty());
+    assert_eq!(outcome.selected.len(), 3);
+    assert_eq!(outcome.capped.get("duplicate_encodings"), Some(&3));
+}
+
 #[test]
 fn identity_family_groups_rotations_and_fds() {
     // cnt = casual + registered, its subtraction rotation, and the

@@ -31,7 +31,15 @@
 //! that spend no selection slot (see `form_families` for the seed
 //! cases and the rotation test). Grouping never removes a
 //! statement from the report; it moves it to `grouped_findings`.
-use crate::{Category, Evidence, EvidenceBasis, Finding, FindingGroup, Sampling, Scope};
+//! Issue #207 extends the same consolidation to hierarchy chains:
+//! pairwise exact relations over different column sets that form
+//! one chain of levels collapse under a constructed lead stating
+//! the structure, and a declared hierarchy that holds leads its
+//! own restatements.
+use crate::{
+    Category, Evidence, EvidenceBasis, Facets, Finding, FindingGroup, Pattern, Sampling, Scope,
+    Specification, Subject,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -407,12 +415,255 @@ fn proportional(w1: &(BTreeMap<String, f64>, f64), w2: &(BTreeMap<String, f64>, 
 struct Family {
     lead: String,
     members: Vec<String>,
+    /// A lead statement the ledger itself constructed (the
+    /// hierarchy-chain lead, issue #207): it is keyed by `lead`
+    /// but is not one of the ranked statements, so selection takes
+    /// it from here rather than from the ranked map. `None` for
+    /// families led by a ranked statement.
+    lead_finding: Option<Finding>,
+}
+
+/// The level columns of a declared hierarchy that holds, when a
+/// statement is one (issue #207): the expectations pass states it
+/// with form `hierarchy`, evidence tagged
+/// `reference_source: "declared"` and zero recorded violations,
+/// and the declared levels in the `hierarchy_levels` metric. A
+/// declaration that does not hold records violations instead and
+/// never leads a family.
+fn declared_hierarchy_levels(f: &Finding) -> Option<Vec<String>> {
+    if f.specification.form.as_deref() != Some("hierarchy") {
+        return None;
+    }
+    let e = f.evidence.iter().find(|e| {
+        e.metrics.get("reference_source").and_then(Value::as_str) == Some("declared")
+            && metric(e, "violations").is_some_and(|v| v == 0.0)
+    })?;
+    let levels: Vec<String> = e
+        .metrics
+        .get("hierarchy_levels")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    if levels.len() < 2 || levels.iter().any(|l| !f.subject.columns.contains(l)) {
+        return None;
+    }
+    Some(levels)
+}
+
+/// Whether a member statement directly links two adjacent classes
+/// of a hierarchy chain: an FD from the finer class to the coarser
+/// one, or a rollup between them.
+fn statement_links(f: &Finding, finer: &[String], coarser: &[String]) -> bool {
+    match exact_kind(f) {
+        Some(ExactKind::Fd) => {
+            f.subject.inputs.len() == 1
+                && finer.contains(&f.subject.inputs[0])
+                && f.subject
+                    .target
+                    .as_ref()
+                    .is_some_and(|t| coarser.contains(t))
+        }
+        Some(ExactKind::Rollup) => f.evidence.iter().any(|e| {
+            let a = e.metrics.get("finer").and_then(Value::as_str);
+            let b = e.metrics.get("coarser").and_then(Value::as_str);
+            match (a, b) {
+                (Some(a), Some(b)) => {
+                    finer.iter().any(|c| c == a) && coarser.iter().any(|c| c == b)
+                }
+                _ => false,
+            }
+        }),
+        _ => false,
+    }
+}
+
+/// The single column pair a linking statement measures, finer
+/// first: an FD's input and target, or a rollup's two columns.
+fn link_columns(f: &Finding) -> Option<(String, String)> {
+    match exact_kind(f) {
+        Some(ExactKind::Fd) => Some((f.subject.inputs.first()?.clone(), f.subject.target.clone()?)),
+        Some(ExactKind::Rollup) => f.evidence.iter().find_map(|e| {
+            let a = e.metrics.get("finer").and_then(Value::as_str)?;
+            let b = e.metrics.get("coarser").and_then(Value::as_str)?;
+            Some((a.to_string(), b.to_string()))
+        }),
+        _ => None,
+    }
+}
+
+/// The constructed lead of a hierarchy-chain family (issue #207):
+/// one statement of the whole structure — the levels in order,
+/// finest to coarsest, each adjacent mapping's row support, and
+/// every member relation in its evidence. A mapping's support is
+/// its widest direct witness member's row count, and the witness
+/// column pair is recorded in the mapping entry: a level with
+/// several columns is complete on fewer rows than any one of its
+/// columns, so the support belongs to the pair it was counted on.
+/// The lead is built on
+/// the highest-ranked rollup member when the chain has one (its
+/// measurement carries the lead's evidence scope and its detector
+/// the lead's cap attribution), else the highest-ranked member;
+/// members arrive in ranked order. Its shape is the duplicate-
+/// encoding family's: a column-roles statement over the level
+/// columns with form `hierarchy`, so it validates and renders
+/// like the pair statements it replaces, with a canonical key no
+/// member statement can share.
+fn hierarchy_lead(members: &[&Finding], levels: &[Vec<String>]) -> Finding {
+    let base = members
+        .iter()
+        .find(|f| exact_kind(f) == Some(ExactKind::Rollup))
+        .or_else(|| {
+            members
+                .iter()
+                .find(|f| exact_kind(f) == Some(ExactKind::Bijection))
+        })
+        .or_else(|| members.first())
+        .expect("a chain has members");
+    let rows_of = |f: &Finding| {
+        f.evidence
+            .iter()
+            .filter_map(|e| e.scope.rows_evaluated)
+            .max()
+            .unwrap_or(0)
+    };
+    let level_label = |class: &[String]| class.join(" + ");
+    let mut mappings: Vec<Value> = Vec::new();
+    let mut mapping_labels: Vec<String> = Vec::new();
+    for pair in levels.windows(2) {
+        let (finer, coarser) = (&pair[0], &pair[1]);
+        // The mapping's support is the widest direct witness's: a
+        // member statement linking the two classes on the most rows.
+        // The witness pair is recorded with the support, because a
+        // level with several columns is complete on fewer rows than
+        // any one of its columns, and a reader recounting the number
+        // needs the columns it was counted on.
+        let mut witness: Option<(&Finding, usize)> = None;
+        for f in members
+            .iter()
+            .filter(|f| statement_links(f, finer, coarser))
+        {
+            let rows = rows_of(f);
+            if witness.is_none_or(|(_, best)| rows > best) {
+                witness = Some((f, rows));
+            }
+        }
+        let (support, witness) = match witness {
+            Some((w, rows)) => (rows, link_columns(w)),
+            None => (members.iter().map(|f| rows_of(f)).max().unwrap_or(0), None),
+        };
+        let mut entry = json!({
+            "finer": finer,
+            "coarser": coarser,
+            "rows_evaluated": support,
+        });
+        if let Some((wf, wc)) = witness {
+            entry["witness"] = json!({"finer": [wf], "coarser": [wc]});
+        }
+        mappings.push(entry);
+        mapping_labels.push(format!(
+            "{} → {} on {} rows",
+            level_label(finer),
+            level_label(coarser),
+            support
+        ));
+    }
+    let claim = if levels.len() > 1 {
+        format!(
+            "{} form one hierarchy: each level determines the next ({})",
+            levels
+                .iter()
+                .map(|c| level_label(c))
+                .collect::<Vec<_>>()
+                .join(" → "),
+            mapping_labels.join("; ")
+        )
+    } else {
+        let names = &levels[0];
+        let joined = if names.len() == 2 {
+            format!("{} and {}", names[0], names[1])
+        } else {
+            format!(
+                "{} and {}",
+                names[..names.len() - 1].join(", "),
+                names[names.len() - 1]
+            )
+        };
+        format!("{joined} encode the same grouping one-to-one: each column determines the others")
+    };
+    let member_relations: Vec<Value> = members
+        .iter()
+        .map(|f| {
+            json!({
+                "claim": f.claim,
+                "type": f.finding_type,
+                "form": f.specification.form,
+                "columns": f.subject.columns,
+                "inputs": f.subject.inputs,
+                "target": f.subject.target,
+                "rows_evaluated": rows_of(f),
+            })
+        })
+        .collect();
+    let subject = Subject::columns(levels.iter().flatten().cloned());
+    let specification = Specification {
+        form: Some("hierarchy".into()),
+        conditions: Vec::new(),
+        outcome: None,
+        definition: BTreeMap::from([
+            ("comparison".into(), json!("canonical_equality")),
+            (
+                "missing_values".into(),
+                json!("exclude rows missing any level column"),
+            ),
+        ]),
+    };
+    let metrics: BTreeMap<String, Value> = BTreeMap::from([
+        ("form".into(), json!("hierarchy")),
+        ("hierarchy_levels".into(), json!(levels)),
+        ("hierarchy_mappings".into(), json!(mappings)),
+        ("member_relations".into(), json!(member_relations)),
+    ]);
+    let mut lead = (*base).clone();
+    lead.id = String::new();
+    lead.category = Category::ColumnRoles;
+    lead.finding_type = Some("duplicate_encoding".into());
+    lead.facets = Facets::for_pattern(
+        Pattern::DuplicateEncoding,
+        &specification,
+        &metrics,
+        &subject,
+    );
+    lead.subject = subject;
+    lead.specification = specification;
+    lead.claim = claim;
+    let mut evidence = base.primary_evidence().clone();
+    evidence.metrics = metrics;
+    lead.evidence = vec![evidence];
+    lead.interpretation = Some(
+        "the exact pairwise statements over these columns restate this one structure; \
+         they are grouped under this finding"
+            .into(),
+    );
+    lead.grouped_members = Vec::new();
+    lead.grouped_under = None;
+    lead
 }
 
 /// Build the verified relationship families over the ranked
 /// statements (issue #116). A family is seeded only by exact
 /// verified relations:
 ///
+/// - a declared hierarchy that holds (issue #207) leads the exact
+///   statements internal to its level columns;
+/// - a hierarchy chain (issue #207): a connected set of at least
+///   three columns whose exact pairwise relations totally order
+///   their equivalence classes by determination — each level
+///   determines the next — collapses under a constructed lead
+///   stating the levels in order; a single equivalence class of
+///   three or more columns collapses the same way. Branching or
+///   merging structures are not chains and fall through to the
+///   seeds below;
 /// - an exact duplicate encoding (a bijection) gathers the exact
 ///   FDs over its column pair, in both directions;
 /// - an exact rollup gathers the exact FD in its own direction
@@ -464,8 +715,17 @@ fn form_families(ranked: &[Finding]) -> Vec<Family> {
         for m in &members {
             claimed.insert(m.clone());
         }
-        families.push(Family { lead, members });
+        families.push(Family {
+            lead,
+            members,
+            lead_finding: None,
+        });
     };
+    let rank_of: BTreeMap<String, usize> = ranked
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (f.canonical_key(), i))
+        .collect();
     // Exact FDs over a column set, in ranked order.
     let fds_over = |set: &BTreeSet<String>, claimed: &BTreeSet<String>| -> Vec<String> {
         ranked
@@ -478,6 +738,310 @@ fn form_families(ranked: &[Finding]) -> Vec<Family> {
             })
             .collect()
     };
+
+    // (0a) Declared hierarchies (issue #207): the expectations pass
+    // states a declared hierarchy that holds as one structural
+    // statement (form `hierarchy`, evidence tagged declared, zero
+    // violations). It leads the family over its level columns, and
+    // every exact statement internal to those columns groups under
+    // it — the declaration asserts the levels form one structure,
+    // so any exact relation among them restates it. A declaration
+    // that does not hold produces a deviation statement instead
+    // (violations recorded), which never leads.
+    for f in ranked {
+        let key = f.canonical_key();
+        if claimed.contains(&key) {
+            continue;
+        }
+        let Some(levels) = declared_hierarchy_levels(f) else {
+            continue;
+        };
+        let level_set: BTreeSet<String> = levels.iter().cloned().collect();
+        if level_set.len() < 2 {
+            continue;
+        }
+        let members: Vec<String> = ranked
+            .iter()
+            .map(|m| m.canonical_key())
+            .filter(|k| {
+                k != &key
+                    && !claimed.contains(k)
+                    && kind_of.contains_key(k)
+                    && columns_of(k).is_subset(&level_set)
+            })
+            .collect();
+        push_family(&mut families, &mut claimed, key, members);
+    }
+
+    // (0b) Hierarchy chains (issue #207): exact pairwise relations
+    // (single-input FDs, rollups, bijections) are the edges of a
+    // directed graph over columns — an edge a -> b reads "a
+    // determines b". Columns that determine each other form one
+    // equivalence class (the strongly connected components). A
+    // connected set of columns is one hierarchy when its classes
+    // are totally ordered by determination — each class determines
+    // every coarser one — and it spans at least three columns. A
+    // single class of three or more columns is an equivalence
+    // structure and collapses the same way. Anything else — two
+    // branches rolling up to one column, a diamond — is not a
+    // chain: nothing is claimed here and the standing seeds below
+    // treat its statements as before. Members are the exact
+    // statements internal to the chain's columns that respect its
+    // direction; the lead is a constructed statement naming the
+    // levels in order, with each adjacent mapping's row support
+    // and every member relation in its evidence. Chains are
+    // considered in the order of their best-ranked member.
+    {
+        // Directed exact edges between single columns, from the
+        // unclaimed pairwise statements.
+        let mut edges: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut edge_columns: BTreeSet<String> = BTreeSet::new();
+        let add_edge = |edges: &mut BTreeMap<String, BTreeSet<String>>,
+                        cols: &mut BTreeSet<String>,
+                        a: &str,
+                        b: &str| {
+            edges
+                .entry(a.to_string())
+                .or_default()
+                .insert(b.to_string());
+            cols.insert(a.to_string());
+            cols.insert(b.to_string());
+        };
+        for f in ranked {
+            let key = f.canonical_key();
+            if claimed.contains(&key) {
+                continue;
+            }
+            match kind_of.get(&key) {
+                Some(ExactKind::Fd) if f.subject.inputs.len() == 1 => {
+                    if let Some(t) = &f.subject.target {
+                        add_edge(&mut edges, &mut edge_columns, &f.subject.inputs[0], t);
+                    }
+                }
+                Some(ExactKind::Rollup) => {
+                    for e in &f.evidence {
+                        if let (Some(finer), Some(coarser)) = (
+                            e.metrics.get("finer").and_then(Value::as_str),
+                            e.metrics.get("coarser").and_then(Value::as_str),
+                        ) {
+                            add_edge(&mut edges, &mut edge_columns, finer, coarser);
+                        }
+                    }
+                }
+                Some(ExactKind::Bijection) => {
+                    let cols = columns_of(&key);
+                    if cols.len() == 2 {
+                        let pair: Vec<&String> = cols.iter().collect();
+                        add_edge(&mut edges, &mut edge_columns, pair[0], pair[1]);
+                        add_edge(&mut edges, &mut edge_columns, pair[1], pair[0]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Undirected components over the edge columns.
+        let mut neighbors: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (a, bs) in &edges {
+            for b in bs {
+                neighbors.entry(a.clone()).or_default().insert(b.clone());
+                neighbors.entry(b.clone()).or_default().insert(a.clone());
+            }
+        }
+        let mut components: Vec<BTreeSet<String>> = Vec::new();
+        let mut seen_cols: BTreeSet<String> = BTreeSet::new();
+        for start in &edge_columns {
+            if seen_cols.contains(start) {
+                continue;
+            }
+            let mut component = BTreeSet::new();
+            let mut stack = vec![start.clone()];
+            while let Some(c) = stack.pop() {
+                if !seen_cols.insert(c.clone()) {
+                    continue;
+                }
+                component.insert(c.clone());
+                if let Some(ns) = neighbors.get(&c) {
+                    stack.extend(ns.iter().cloned());
+                }
+            }
+            components.push(component);
+        }
+        // Reachability within each component, for the equivalence
+        // classes and the class order.
+        let reach = |from: &str, within: &BTreeSet<String>| -> BTreeSet<String> {
+            let mut out = BTreeSet::new();
+            let mut stack = vec![from.to_string()];
+            while let Some(c) = stack.pop() {
+                if !within.contains(&c) || !out.insert(c.clone()) {
+                    continue;
+                }
+                if let Some(ns) = edges.get(&c) {
+                    stack.extend(ns.iter().cloned());
+                }
+            }
+            out
+        };
+        let mut chain_candidates: Vec<(usize, Vec<Vec<String>>)> = Vec::new();
+        for component in &components {
+            if component.len() < 3 {
+                continue;
+            }
+            // Equivalence classes: columns that determine each
+            // other (mutually reachable).
+            let mut classes: Vec<Vec<String>> = Vec::new();
+            let mut assigned: BTreeSet<String> = BTreeSet::new();
+            for c in component {
+                if assigned.contains(c) {
+                    continue;
+                }
+                let rc = reach(c, component);
+                let class: Vec<String> = component
+                    .iter()
+                    .filter(|x| rc.contains(*x) && reach(x, component).contains(c))
+                    .cloned()
+                    .collect();
+                for x in &class {
+                    assigned.insert(x.clone());
+                }
+                classes.push(class);
+            }
+            // Total order over the classes, finest first: at each
+            // step exactly one remaining class must determine all
+            // the others (reachability restricted to class
+            // representatives decides it; class members share
+            // reach). If no class qualifies, the component branches
+            // or merges and is not a chain.
+            let class_reach: Vec<BTreeSet<String>> = classes
+                .iter()
+                .map(|class| reach(&class[0], component))
+                .collect();
+            let mut remaining: Vec<usize> = (0..classes.len()).collect();
+            let mut order: Vec<usize> = Vec::new();
+            let mut total = true;
+            while !remaining.is_empty() {
+                let next = remaining.iter().copied().find(|&ci| {
+                    remaining.iter().all(|&cj| {
+                        cj == ci || classes[cj].iter().all(|x| class_reach[ci].contains(x))
+                    })
+                });
+                match next {
+                    Some(ci) => {
+                        order.push(ci);
+                        remaining.retain(|&x| x != ci);
+                    }
+                    None => {
+                        total = false;
+                        break;
+                    }
+                }
+            }
+            if !total {
+                continue;
+            }
+            let ordered: Vec<Vec<String>> = order.iter().map(|&ci| classes[ci].clone()).collect();
+            // Each adjacent pair of classes needs a direct exact
+            // edge; reachability between neighbours can only run
+            // through the classes between them, of which there are
+            // none, so this restates the order check — kept as a
+            // guard so a chain never rests on a skipped level.
+            let adjacent_linked = ordered.windows(2).all(|pair| {
+                pair[0].iter().any(|a| {
+                    edges
+                        .get(a)
+                        .is_some_and(|bs| pair[1].iter().any(|b| bs.contains(b)))
+                })
+            });
+            if !adjacent_linked {
+                continue;
+            }
+            let best_rank = ranked
+                .iter()
+                .filter(|f| {
+                    kind_of.contains_key(&f.canonical_key())
+                        && f.subject.columns.iter().all(|c| component.contains(c))
+                })
+                .map(|f| rank_of[&f.canonical_key()])
+                .min()
+                .unwrap_or(usize::MAX);
+            chain_candidates.push((best_rank, ordered));
+        }
+        chain_candidates.sort_by_key(|(rank, _)| *rank);
+        for (_, levels) in &chain_candidates {
+            let chain_columns: BTreeSet<String> = levels.iter().flatten().cloned().collect();
+            let class_of: BTreeMap<String, usize> = levels
+                .iter()
+                .enumerate()
+                .flat_map(|(i, class)| class.iter().map(move |c| (c.clone(), i)))
+                .collect();
+            // Members: unclaimed exact statements internal to the
+            // chain's columns and consistent with its direction —
+            // nothing points from a coarser level to a strictly
+            // finer one. Pairwise statements satisfy this by
+            // construction (their edges built the classes); the
+            // check binds the multi-input FDs, which are not edges.
+            let members: Vec<String> = ranked
+                .iter()
+                .map(|f| f.canonical_key())
+                .filter(|k| {
+                    if claimed.contains(k) || !columns_of(k).is_subset(&chain_columns) {
+                        return false;
+                    }
+                    let f = by_key[k];
+                    match kind_of.get(k) {
+                        Some(ExactKind::Fd) => {
+                            let Some(t) = &f.subject.target else {
+                                return false;
+                            };
+                            let tc = class_of[t];
+                            // No input is coarser than the target,
+                            // and a multi-input FD must draw on at
+                            // least one strictly finer level (a
+                            // single-input FD inside one class is a
+                            // restatement of the equivalence itself).
+                            f.subject.inputs.iter().all(|i| class_of[i] <= tc)
+                                && (f.subject.inputs.len() == 1
+                                    || f.subject.inputs.iter().any(|i| class_of[i] < tc))
+                        }
+                        Some(ExactKind::Rollup) => f.evidence.iter().any(|e| {
+                            let finer = e.metrics.get("finer").and_then(Value::as_str);
+                            let coarser = e.metrics.get("coarser").and_then(Value::as_str);
+                            match (finer, coarser) {
+                                (Some(a), Some(b)) => {
+                                    class_of.get(a).copied().unwrap_or(usize::MAX)
+                                        <= class_of.get(b).copied().unwrap_or(0)
+                                }
+                                _ => false,
+                            }
+                        }),
+                        Some(ExactKind::Bijection) => {
+                            columns_of(k)
+                                .iter()
+                                .map(|c| class_of[c])
+                                .collect::<BTreeSet<_>>()
+                                .len()
+                                == 1
+                        }
+                        _ => false,
+                    }
+                })
+                .collect();
+            if members.len() < 2 {
+                continue;
+            }
+            let member_findings: Vec<&Finding> = members.iter().map(|k| by_key[k]).collect();
+            let lead = hierarchy_lead(&member_findings, levels);
+            let lead_key = lead.canonical_key();
+            claimed.insert(lead_key.clone());
+            for m in &members {
+                claimed.insert(m.clone());
+            }
+            families.push(Family {
+                lead: lead_key,
+                members,
+                lead_finding: Some(lead),
+            });
+        }
+    }
 
     // (a) Bijections: the duplicate-encoding statement leads; the
     // FDs in both directions over the pair are its restatements.
@@ -532,11 +1096,6 @@ fn form_families(ranked: &[Finding]) -> Vec<Family> {
     // FDs over the set: an FD over an identity's columns restates
     // the identity, since each column is then a function of the
     // others by the identity itself.
-    let rank_of: BTreeMap<String, usize> = ranked
-        .iter()
-        .enumerate()
-        .map(|(i, f)| (f.canonical_key(), i))
-        .collect();
     enum ClassKind {
         Multiplicative,
         Linear(BTreeMap<String, f64>, f64),
@@ -874,6 +1433,12 @@ pub fn select_findings_counted(
     // mechanism: the admission checks, their order, and the cap
     // counters are the standing ones (see `Admission`).
     let families = form_families(&ranked);
+    // Constructed leads (hierarchy chains) are not ranked
+    // statements; they wait here under their family key.
+    let mut virtual_leads: BTreeMap<String, Finding> = families
+        .iter()
+        .filter_map(|fam| fam.lead_finding.clone().map(|f| (fam.lead.clone(), f)))
+        .collect();
     let member_of: BTreeMap<String, usize> = families
         .iter()
         .enumerate()
@@ -924,7 +1489,12 @@ pub fn select_findings_counted(
                     // First member reached: the family competes
                     // here, through its lead.
                     let lead_key = families[fi].lead.clone();
-                    let lead = by_key.remove(&lead_key).expect("family lead present");
+                    let constructed = families[fi].lead_finding.is_some();
+                    let lead = virtual_leads
+                        .remove(&lead_key)
+                        .or_else(|| by_key.remove(&lead_key))
+                        .expect("family lead present");
+                    let lead_detector = lead.evidence.first().map(|e| e.method.detector.clone());
                     match admission.admit(lead, &mut selected) {
                         Some(id) => {
                             fam_state.insert(fi, FamState::LeadSelected);
@@ -937,6 +1507,24 @@ pub fn select_findings_counted(
                             continue;
                         }
                         None => {
+                            if constructed {
+                                // A constructed lead is not a
+                                // candidate statement, so its cap
+                                // refusal must not inflate the
+                                // capped count the report states
+                                // for the detector's own statements.
+                                // (Only the per-detector cap can
+                                // turn a constructed lead away: it
+                                // is neither a rule nor a prediction.)
+                                if let Some(detector) = &lead_detector {
+                                    if let Some(count) = admission.capped.get_mut(detector) {
+                                        *count -= 1;
+                                        if *count == 0 {
+                                            admission.capped.remove(detector);
+                                        }
+                                    }
+                                }
+                            }
                             fam_state.insert(fi, FamState::LeadFailed);
                         }
                     }

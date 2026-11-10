@@ -40,8 +40,10 @@ impl Cadence {
 }
 
 /// Declared structure for one table. Every field is optional; unknown
-/// columns and unusable types are reported by the expectations pass in
-/// its coverage entry rather than raising an error.
+/// columns and unusable types are reported in a coverage entry (the
+/// expectations pass's, or `column_exclusions` for the exclusion
+/// list, which is applied before any pass runs) rather than raising
+/// an error.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProfileHints {
     /// The time / ordering axis column.
@@ -69,6 +71,26 @@ pub struct ProfileHints {
     /// role outside the vocabulary are ignored.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub roles: BTreeMap<String, String>,
+    /// Declared hierarchies: each entry is one hierarchy's level
+    /// columns, ordered finest to coarsest (each level determines
+    /// the next). The expectations pass verifies every adjacent
+    /// mapping exactly. A hierarchy that holds yields one structural
+    /// statement, and the inferred restatements of the same chain
+    /// group under it; a hierarchy that does not hold yields one
+    /// deviation statement naming every broken mapping. Entries
+    /// naming an unknown column, repeating a column, or holding
+    /// fewer than two levels are reported in the expectations
+    /// coverage entry rather than raising an error.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hierarchies: Vec<Vec<String>>,
+    /// Columns to exclude from profiling entirely, by user
+    /// declaration. An excluded column is removed before any pass
+    /// runs: it gets no column card and no finding can name it.
+    /// The report's `column_exclusions` coverage entry states the
+    /// exclusion and its source (user-declared); names that are not
+    /// columns of the table are ignored and stated there too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_columns: Vec<String>,
 }
 
 impl ProfileHints {
@@ -80,5 +102,7 @@ impl ProfileHints {
             && self.dimensions.is_empty()
             && self.measures.is_empty()
             && self.roles.is_empty()
+            && self.hierarchies.is_empty()
+            && self.exclude_columns.is_empty()
     }
 }
