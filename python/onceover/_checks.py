@@ -232,17 +232,75 @@ def _check_hierarchy(f, m, df) -> list[Triple]:
 
 
 def _check_duplicate_encoding(f, m, df) -> list[Triple]:
+    """Recount a duplicate-encoding or rollup statement in full.
+
+    The correspondence is recounted, not just its size: the levels
+    on each side, the distinct pairs, the rows breaking each
+    direction's majority mapping, and the exceptions — the rows
+    whose value pair is not the modal pair for both of its values.
+    An exact duplicate encoding (a bijection) is checked in both
+    directions, and its exactness is recomputed from them. A
+    rollup is checked as the mapping it states, finer to coarser;
+    its exceptions are by definition the rows breaking that
+    mapping, so the same recount serves both.
+    """
     if m.get("form") == "hierarchy":
         return _check_hierarchy(f, m, df)
     a, b = m.get("finer"), m.get("coarser")
     if a is None:
         a, b = f["subject"]["columns"]
     rows = df.drop_nulls([a, b])
-    pairs = rows.select([a, b]).unique().height
-    return [
-        ("pairs", m["pairs"], pairs),
+    counts = rows.group_by([a, b]).len("__n")
+    modal_a = counts.group_by(a).agg(pl.col("__n").max().alias("__modal"))
+    modal_b = counts.group_by(b).agg(pl.col("__n").max().alias("__modal"))
+    modal_rows_a = modal_a.select(pl.col("__modal").sum()).item() or 0
+    modal_rows_b = modal_b.select(pl.col("__modal").sum()).item() or 0
+    violations_ab = rows.height - modal_rows_a
+    violations_ba = rows.height - modal_rows_b
+    triples: list[Triple] = [
+        ("pairs", m["pairs"], counts.height),
         ("complete rows", m["n_used"], rows.height),
     ]
+    if "levels_first" in m:
+        triples.append((f"levels of {a}", m["levels_first"], _distinct(rows, a)))
+    if "levels_second" in m:
+        triples.append((f"levels of {b}", m["levels_second"], _distinct(rows, b)))
+    if "violations_first_to_second" in m:
+        triples.append(
+            (
+                f"rows breaking the {a} → {b} mapping",
+                m["violations_first_to_second"],
+                violations_ab,
+            )
+        )
+    if "violations_second_to_first" in m:
+        triples.append(
+            (
+                f"rows breaking the {b} → {a} mapping",
+                m["violations_second_to_first"],
+                violations_ba,
+            )
+        )
+    if "exceptions" in m:
+        if m.get("form") == "rollup":
+            exceptions = violations_ab
+        else:
+            joined = counts.join(modal_a, on=a).join(modal_b, on=b, suffix="_b")
+            exceptions = (
+                joined.filter(
+                    (pl.col("__n") < pl.col("__modal"))
+                    | (pl.col("__n") < pl.col("__modal_b"))
+                )
+                .select(pl.col("__n").sum())
+                .item()
+                or 0
+            )
+        triples.append(("exceptions", m["exceptions"], exceptions))
+    if "exact" in m:
+        triples.append(
+            ("exact", m["exact"], violations_ab == 0 and violations_ba == 0)
+        )
+    return triples
 
 
 def _check_missing(f, m, df) -> list[Triple]:
