@@ -390,7 +390,21 @@ The same ledger is available in four forms:
   the old and new values), an unchanged count, and any per-pass
   coverage status changes. Evidence internals are not diffed — a
   finding whose evidence changed but whose claim and score held
-  counts as unchanged. Digest rollups for multi-member groups list
+  counts as unchanged. The diff also compares the column cards,
+  under `columns`: the columns `other` added and the ones it
+  removed (by name, with card dtype and role), the columns whose
+  card dtype changed (`retyped` — stated distinctly from a
+  removal plus an addition), and, for columns present in both
+  with an unchanged dtype, the card quantities that moved, each
+  with its before and after values, the absolute change, and the
+  relative change where one is meaningful. The compared
+  quantities are the card pass's exact counts — rows, nulls and
+  their share, distinct values — and, for numeric columns, the
+  mean, minimum, and maximum the card carries; the card carries
+  no sum, so none is reported, and the rest of the card is not
+  diffed. Column identity is by name, so a renamed column reads
+  as a removal plus an addition, and row-level changes are not
+  compared. Digest rollups for multi-member groups list
   up to three exemplar finding ids so a rolled-up line can be
   expanded with `report.finding(id)`.
 - **Markdown** (`report.to_markdown()`): the headline and overview,

@@ -67,3 +67,85 @@ def test_digest_rollup_lists_exemplars():
     digest = report.to_digest(8000)
     assert "[exemplars:" in digest
     assert roles[0]["id"] in digest or roles[1]["id"] in digest
+def _card_v1() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "city": ["Chicago", "Springfield", "Aurora", "Chicago"] * 10,
+            "amt": [10.0, 20.0, None, 40.0] * 10,
+            "code": list(range(40)),
+            "gone": [1.5] * 40,
+        }
+    )
+
+
+def _card_v2() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "city": ["Chicago", "Springfield", "Aurora", "Chicago"] * 10,
+            "amt": [10.0, 20.0, None, None] * 10,
+            "code": [str(i) for i in range(40)],
+            "fresh": [True] * 40,
+        }
+    )
+
+
+def test_diff_columns_added_removed_retyped_changed():
+    base = onceover.profile(_card_v1())
+    other = onceover.profile(_card_v2())
+    cols = base.diff(other)["columns"]
+    assert [e["name"] for e in cols["added"]] == ["fresh"]
+    assert cols["added"][0]["dtype"] == other.columns["fresh"]["dtype"]
+    assert cols["added"][0]["role"] == other.columns["fresh"]["role"]
+    assert [e["name"] for e in cols["removed"]] == ["gone"]
+    assert cols["removed"][0]["dtype"] == base.columns["gone"]["dtype"]
+    # `code` was recast from integer to string: a retype, stated
+    # distinctly from a removal plus an addition.
+    assert [e["name"] for e in cols["retyped"]] == ["code"]
+    assert cols["retyped"][0]["dtype"] == [
+        base.columns["code"]["dtype"],
+        other.columns["code"]["dtype"],
+    ]
+    assert base.columns["code"]["dtype"] != other.columns["code"]["dtype"]
+    changed = {e["name"]: e["changes"] for e in cols["changed"]}
+    assert set(changed) == {"amt"}
+    amt = changed["amt"]
+    # Nulls doubled (10 -> 20 of 40 rows); the mean and the maximum
+    # moved with the lost 40.0 values; the minimum did not move.
+    assert amt["null_count"]["before"] == 10
+    assert amt["null_count"]["after"] == 20
+    assert amt["null_count"]["delta"] == 10
+    assert amt["null_count"]["relative"] == 1.0
+    assert amt["null_fraction"]["before"] == 0.25
+    assert amt["null_fraction"]["after"] == 0.5
+    assert amt["distinct"]["before"] == 3
+    assert amt["distinct"]["after"] == 2
+    assert amt["mean"]["before"] == base.columns["amt"]["numeric_stats"]["mean"]
+    assert amt["mean"]["after"] == other.columns["amt"]["numeric_stats"]["mean"]
+    assert amt["mean"]["delta"] == amt["mean"]["after"] - amt["mean"]["before"]
+    assert amt["max"]["before"] == 40.0
+    assert amt["max"]["after"] == 20.0
+    assert "min" not in amt
+    assert "n" not in amt  # both versions carry 40 rows
+    # `city` is the one shared column whose card did not move.
+    assert cols["unchanged"] == 1
+
+
+def test_diff_columns_identical_data_is_empty():
+    frame = _card_v1()
+    cols = onceover.profile(frame).diff(onceover.profile(frame))["columns"]
+    assert cols["added"] == [] and cols["removed"] == []
+    assert cols["retyped"] == [] and cols["changed"] == []
+    assert cols["unchanged"] == frame.width
+
+
+def test_diff_columns_do_not_depend_on_budget():
+    # The compared card quantities are computed by the column pass
+    # on the full table, before budget gating: a quick profile and
+    # a standard profile of the same data diff empty.
+    frame = _card_v1()
+    quick = onceover.profile(frame, budget="quick")
+    standard = onceover.profile(frame, budget="standard")
+    cols = quick.diff(standard)["columns"]
+    assert cols["added"] == [] and cols["removed"] == []
+    assert cols["retyped"] == [] and cols["changed"] == []
+    assert cols["unchanged"] == frame.width

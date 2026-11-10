@@ -94,8 +94,10 @@ Use `report.to_digest(4_000)` for a short reading budget, or
 `report.to_json(max_chars=24_000)` for a budgeted JSON view. The latter
 raises `ValueError` if the requested size cannot hold its minimal index.
 Both keep the full report available. `report.diff(other)` compares two
-reports by finding ID and records coverage-status changes; it is separate
-from the statistical drift detector.
+reports by finding ID, records coverage-status changes, and compares
+the column cards — columns added, removed, or retyped, and the card
+quantities that moved; it is separate from the statistical drift
+detector.
 
 Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 [reading findings](docs/book/usage/findings.ipynb) and
