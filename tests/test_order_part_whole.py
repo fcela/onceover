@@ -24,25 +24,21 @@ def _decomposition(n=2000, corrupt=0):
     return pl.DataFrame({"part": part, "rest": rest, "total": total})
 
 
-def _pair_findings(report, lower, upper):
-    out = []
-    for finding in report.findings:
-        for ev in finding.get("evidence", []):
-            metrics = ev.get("metrics", {})
-            if metrics.get("lower") == lower and metrics.get("upper") == upper:
-                out.append((finding, metrics))
-    return out
+def _pair(report, lower, upper):
+    return [
+        f
+        for f in report.findings
+        if f["evidence"]
+        and f["evidence"][0]["metrics"].get("lower") == lower
+        and f["evidence"][0]["metrics"].get("upper") == upper
+    ]
 
 
 def test_corrupted_part_is_stated_with_its_count():
     report = onceover.profile(_decomposition(corrupt=480))
-    hits = [
-        (f, m)
-        for f, m in _pair_findings(report, "part", "total")
-        if f["finding_type"] == "order_violation"
-    ]
+    hits = [f for f in _pair(report, "part", "total") if f["type"] == "order_violation"]
     assert len(hits) == 1
-    _, metrics = hits[0]
+    metrics = hits[0]["evidence"][0]["metrics"]
     assert metrics["violations"] == 480
     assert metrics["violation_kind"] == "part_whole"
     assert metrics["part_whole_basis"] == "identity"
@@ -50,11 +46,7 @@ def test_corrupted_part_is_stated_with_its_count():
 
 def test_healthy_part_whole_pair_has_no_order_violation():
     report = onceover.profile(_decomposition())
-    hits = [
-        f
-        for f, _ in _pair_findings(report, "part", "total")
-        if f["finding_type"] == "order_violation"
-    ]
+    hits = [f for f in _pair(report, "part", "total") if f["type"] == "order_violation"]
     assert hits == []
 
 
@@ -65,14 +57,12 @@ def test_exact_decomposition_is_not_double_stated():
     identity = [
         f
         for f in report.findings
-        if f["finding_type"] == "functional"
-        and "total" in f["claim"]
-        and "part" in f["claim"]
+        if f["type"] == "functional"
+        and f["subject"].get("target") == "total"
+        and set(f["subject"].get("inputs") or []) == {"part", "rest"}
     ]
     assert identity, "the exact decomposition should be stated"
     violations = [
-        f
-        for f, _ in _pair_findings(report, "part", "total")
-        if f["finding_type"] == "order_violation"
+        f for f in _pair(report, "part", "total") if f["type"] == "order_violation"
     ]
     assert violations == []
