@@ -109,7 +109,7 @@ def summary(report):
     dirty = find(report, "uniqueness", column="source_order_ref")
     fd = find(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="manager")
     affine = find(report,"dependencies",subtype="functional",form="affine",inputs=["quantity"],target="double_quantity")
-    gap = find(report,"gaps",column="order_date")
+    gap = find(report,"gaps",subtype="gap",column="order_date")
     rule = measured(find(report,"dependencies",subtype="predictive",target="churn",inputs=["tenure_months"]))
     local = measured(find(report,"dependencies",subtype="predictive",form="piecewise_linear",target="line_total"))
     phone = measured(find(report,"formats",column="phone"))
@@ -241,7 +241,7 @@ def missing_dates(orders, report):
     start,end=min(observed),max(observed)
     expected={start+dt.timedelta(days=i) for i in range((end-start).days+1) if (start+dt.timedelta(days=i)).weekday()<5}
     missing=sorted(expected-observed)
-    assert len(missing) == measured(find(report,"gaps",column="order_date"))["missing"] == 2
+    assert len(missing) == measured(find(report,"gaps",subtype="gap",column="order_date"))["missing"] == 2
     return table([{"Date absent from the extract":d.isoformat(),"Reference calendar":"Monday–Friday; holidays not excluded"} for d in missing],
                  "Table 6. Direct check of the date-gap finding")
 
