@@ -27,6 +27,7 @@ project:
         - file: case_studies/feature_trimming.ipynb
         - file: case_studies/churn_shift.ipynb
         - file: case_studies/delivery_drift.ipynb
+        - file: case_studies/unemployment_panel.ipynb
     - title: Part III — Methodology
       children:
         - file: methodology/evidence.ipynb
@@ -57,6 +58,7 @@ project:
         - file: methodology/digit_fingerprints.ipynb
         - file: methodology/step_discontinuities.ipynb
         - file: methodology/drift.ipynb
+        - file: methodology/changeforest.ipynb
     - title: Part IV — Implementation
       children:
         - file: implementation/architecture.ipynb
