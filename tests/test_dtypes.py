@@ -150,16 +150,15 @@ def test_duration_profiles_as_a_number():
 
 def test_duration_units_agree():
     # The same span stored at two time units extracts to the same
-    # measure in seconds.
+    # measure in seconds. The columns are built from integer ticks:
+    # constructing a timedelta series with an explicit unit dtype
+    # crashes inside Polars 1.28 on Python 3.15 (its cast_time_unit
+    # path returns None), and ticks at a stated unit are what a
+    # duration column stores in any case.
     df = pl.DataFrame(
         {
-            "ms": pl.Series(
-                [datetime.timedelta(milliseconds=1500)] * 30, dtype=pl.Duration("ms")
-            ),
-            "us": pl.Series(
-                [datetime.timedelta(microseconds=1_500_000)] * 30,
-                dtype=pl.Duration("us"),
-            ),
+            "ms": pl.Series([1500] * 30, dtype=pl.Duration("ms")),
+            "us": pl.Series([1_500_000] * 30, dtype=pl.Duration("us")),
         }
     )
     rep = onceover.profile(df, budget="standard")
