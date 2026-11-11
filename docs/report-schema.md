@@ -62,7 +62,15 @@ condition on the row rather than partitioning the frame, so the
 dimension consumers (grain inference, dominant structure, entity
 axes) never receive it (a two-state string or categorical column
 keeps the `dimension` role: its levels are labels, not states), a
-`measure` is a numeric quantity, and `text` is free text. A `roles` hint
+`measure` is a numeric quantity, and `text` is free text.
+One stated exception to the dimension rule: a numeric column with
+exactly two distinct values other than 0 and 1 is a `measure`, not
+a dimension — a two-level quantity (activity recorded as 0 or a
+fixed token amount) is measured, not grouped by, and the panel
+activity scans read measure-role columns. Boolean columns and the
+0/1 pair take the `flag` role, and a two-state string or
+categorical column stays a dimension: its levels are labels.
+A `roles` hint
 (`hints={"roles": {"col": "measure"}}`) overrides the assignment
 for that column. The axis is the frame's time axis, chosen in
 precedence order: a `time` hint, a native date/datetime column, a

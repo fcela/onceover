@@ -137,3 +137,52 @@ def test_panel_dynamics_coverage_without_a_grain():
     entry = report.coverage["panel_dynamics"]
     assert entry["status"] == "skipped"
     assert "no entity" in entry["detail"]
+
+
+def _token_panel(two_valued):
+    # Every person is observed from the first week and becomes
+    # active three weeks in. With constant tokens the activity
+    # column is two-valued (0 or 25); with varied amounts it is an
+    # ordinary measure. The panels are otherwise identical.
+    persons, weeks = 40, 10
+    person, week, tokens = [], [], []
+    for p in range(persons):
+        for w in range(weeks):
+            person.append(f"p{p:03d}")
+            week.append(START + datetime.timedelta(weeks=w))
+            if w < 3:
+                tokens.append(0)
+            elif two_valued:
+                tokens.append(25)
+            else:
+                tokens.append(10 + ((p * 13 + w * 7) % 40))
+    return pl.DataFrame({"person": person, "week": week, "tokens": tokens})
+
+
+def test_first_activity_sees_a_two_valued_measure():
+    # Issue #232: the two-valued token column used to take the
+    # dimension role, so the scan had no measure and stated
+    # nothing on a panel whose only activity is tokens.
+    report = onceover.profile(_token_panel(two_valued=True))
+    roles = {r["column"]: r["role"] for r in report.data["frame"]["roles"]}
+    assert roles["tokens"] == "measure"
+    hits = _hits(report, "first_activity")
+    assert len(hits) == 1, [f["claim"] for f in report.findings]
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["activity_column"] == "tokens"
+    assert metrics["entities_active"] == 40
+    assert metrics["entities_starting_late"] == 40
+    assert metrics["entities_never_active"] == 0
+    assert metrics["lag_periods_median"] == 3.0
+
+
+def test_first_activity_on_varied_tokens_is_unchanged():
+    # The control panel: varied token amounts were always a
+    # measure, and the statement is the same one.
+    report = onceover.profile(_token_panel(two_valued=False))
+    hits = _hits(report, "first_activity")
+    assert len(hits) == 1, [f["claim"] for f in report.findings]
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["activity_column"] == "tokens"
+    assert metrics["entities_starting_late"] == 40
+    assert metrics["lag_periods_median"] == 3.0

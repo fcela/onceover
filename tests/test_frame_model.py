@@ -380,3 +380,26 @@ def test_one_way_flag_scan_still_finds_its_flag():
     assert metrics["flag"] == "licence_flag"
     assert metrics["entity_column"] == "person"
     assert metrics["entities_with_onset"] == persons
+
+
+def test_two_valued_numeric_columns_are_measures_not_dimensions():
+    # Issue #232: a numeric column with exactly two values other
+    # than the flag pair {0, 1} is a two-level quantity (activity
+    # recorded as 0 or a fixed token amount), and the panel
+    # activity scans read measure-role columns. Boolean and 0/1
+    # columns are flags, and a two-state string column's levels
+    # are labels, not states of a quantity.
+    n = 200
+    frame = pl.DataFrame({
+        "tokens": [0 if i % 3 else 25 for i in range(n)],
+        "reading": [0.0 if i % 3 else 2.5 for i in range(n)],
+        "flag01": [i % 2 for i in range(n)],
+        "boolflag": [i % 2 == 0 for i in range(n)],
+        "pair": ["a" if i % 2 else "b" for i in range(n)],
+    })
+    roles = _roles(onceover.profile(frame))
+    assert roles["tokens"] == "measure"
+    assert roles["reading"] == "measure"
+    assert roles["flag01"] == "flag"
+    assert roles["boolflag"] == "flag"
+    assert roles["pair"] == "dimension"
