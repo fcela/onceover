@@ -904,7 +904,11 @@ first, and `exceptions` counts the rows breaking the finer-to-coarser mapping
 (for a duplicate encoding, the rows breaking the majority pairing in either
 direction). The advisory's scores (0.62 exact, 0.56 partial, 0.5 rollup) sit
 below an exact functional dependency's, so when both describe one pair the
-dependency finding ranks first.
+dependency finding ranks first. The verifier recounts the full correspondence
+for both forms — the levels on each side, the distinct pairs, the rows
+breaking each direction's majority mapping, the exceptions, and whether an
+exact pairing is one-to-one — so a statement of either form edited after the
+fact fails verification.
 
 The experimental `views` detector is excluded from the default selection.
 Request it explicitly at the standard or deep budget. It uses
