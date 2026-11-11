@@ -768,6 +768,16 @@ fn key_like_name(name: &str) -> bool {
     )
 }
 
+/// A numeric level rendered for role evidence: whole numbers
+/// without a decimal part, other values as they print.
+fn fmt_level(v: Option<f64>) -> String {
+    match v {
+        Some(v) if v == v.trunc() && v.abs() < 1e15 => format!("{}", v as i64),
+        Some(v) => format!("{v}"),
+        None => "?".into(),
+    }
+}
+
 fn grouping_candidates(facts: &[CardFacts]) -> Vec<usize> {
     facts
         .iter()
@@ -908,6 +918,23 @@ pub fn analyze_frame(
             };
             continue;
         }
+        // A numeric column with exactly two distinct values, other
+        // than the flag pair {0, 1}, is a two-level quantity, not a
+        // grouping: activity recorded as 0 or a fixed token amount
+        // is the panel's measure, and the dimension rule below would
+        // claim it on cardinality alone, leaving the scans that read
+        // measure-role columns (first activity, the flag scan's
+        // related activity, per-entity trends) with no measure at
+        // all. Flags under rule (f2) — boolean columns and the
+        // {0, 1} pair — are assigned there and never reach this
+        // rule; a two-state string column's levels are labels and
+        // it stays a dimension.
+        let two_valued_quantity = col.is_numeric()
+            && fact.distinct == 2
+            && !matches!(
+                (fact.numeric_min, fact.numeric_max),
+                (Some(lo), Some(hi)) if lo == 0.0 && hi == 1.0
+            );
         // (g) dimension: low-cardinality grouping columns. The card's
         // "categorical" scales with row count, so age (74 values) or a
         // normalized reading (50 values) reaches it on a large frame;
@@ -919,6 +946,7 @@ pub fn analyze_frame(
             && !(fact.integral && fact.distinct <= MAX_NUMERIC_DIMENSION_LEVELS)
             && fact.distinct > MAX_FRACTIONAL_DIMENSION_LEVELS;
         if !numeric_grid
+            && !two_valued_quantity
             && fact.card_role != "constant"
             && (matches!(fact.card_role.as_str(), "categorical" | "boolean")
                 || matches!(col, TypedCol::Bool { .. }))
@@ -943,6 +971,13 @@ pub fn analyze_frame(
             evidence[i] = format!(
                 "numeric column on a grid of {} values, too fine to group by",
                 fact.distinct
+            );
+        } else if two_valued_quantity {
+            roles[i] = Some("measure".into());
+            evidence[i] = format!(
+                "two-valued numeric column (values {} and {}); a two-level quantity is a measure, not a grouping",
+                fmt_level(fact.numeric_min),
+                fmt_level(fact.numeric_max)
             );
         } else if col.is_numeric() {
             roles[i] = Some("measure".into());
@@ -1685,5 +1720,70 @@ mod tests {
                 grain.factorization
             );
         }
+    }
+
+    #[test]
+    fn two_valued_numeric_columns_are_measures_unless_they_are_flags() {
+        // Enough rows that the card reads the low-cardinality
+        // numerics as categorical — the shape that used to send a
+        // two-valued quantity to the dimension rule and left the
+        // panel activity scans with no measure.
+        let n = 120usize;
+        let df = DataFrame::new_infer_height(vec![
+            Series::new(
+                "tokens".into(),
+                (0..n)
+                    .map(|k| if k % 3 == 0 { 25i64 } else { 0 })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "reading".into(),
+                (0..n)
+                    .map(|k| if k % 3 == 0 { 2.5f64 } else { 0.0 })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "flag01".into(),
+                (0..n).map(|k| (k % 2) as i64).collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "boolflag".into(),
+                (0..n).map(|k| k % 2 == 0).collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "pair".into(),
+                (0..n)
+                    .map(|k| if k % 2 == 0 { "a" } else { "b" })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let model = analyze_frame(&table, &facts, None);
+        let role =
+            |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
+        assert_eq!(role("tokens").as_deref(), Some("measure"));
+        assert_eq!(role("reading").as_deref(), Some("measure"));
+        assert_eq!(role("flag01").as_deref(), Some("flag"));
+        assert_eq!(role("boolflag").as_deref(), Some("flag"));
+        assert_eq!(role("pair").as_deref(), Some("dimension"));
+        let tokens_entry = model
+            .info
+            .roles
+            .iter()
+            .find(|r| r.column == "tokens")
+            .expect("tokens role entry");
+        assert!(
+            tokens_entry
+                .evidence
+                .contains("two-valued numeric column (values 0 and 25)"),
+            "{}",
+            tokens_entry.evidence
+        );
     }
 }

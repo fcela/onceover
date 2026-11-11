@@ -192,6 +192,34 @@ def test_one_way_flag_with_lag_is_reported():
     assert metrics["lag_periods_median"] <= metrics["lag_periods_p75"]
 
 
+def test_one_way_flag_lag_reads_a_two_valued_activity_column():
+    # Issue #232: the flag's related activity is a two-valued
+    # token column (0 before onset, a constant 25 from two weeks
+    # after onset). As a dimension it was invisible to the scan;
+    # as a measure the lag is stated against it.
+    persons, weeks = 60, 20
+    start = datetime.date(2025, 1, 6)
+    person, week, licence, tokens = [], [], [], []
+    for p in range(persons):
+        onset = 10 if p >= 30 else None
+        for w in range(weeks):
+            person.append(f"p{p:03d}")
+            week.append(start + datetime.timedelta(weeks=w))
+            licence.append(onset is not None and w >= onset)
+            tokens.append(25 if onset is not None and w >= onset + 2 else 0)
+    report = onceover.profile(pl.DataFrame({
+        "person": person, "week": week, "licence_flag": licence,
+        "tokens": tokens,
+    }))
+    hits = report.select(type="one_way_flag")
+    assert len(hits) == 1, [f["claim"] for f in report.findings]
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["flag"] == "licence_flag"
+    assert metrics["entities_with_onset"] == 30
+    assert metrics["activity_column"] == "tokens"
+    assert metrics["lag_periods_median"] == 2.0
+
+
 def test_one_way_flag_coverage_without_a_grain():
     report = onceover.profile(pl.DataFrame({
         "a": [1.0, 2.0, 3.0] * 100,
