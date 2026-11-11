@@ -125,3 +125,75 @@ def test_too_few_periods_states_no_typical():
     entry = report.coverage["panel_coverage"]
     assert entry["status"] == "ran_exact"
     assert "at least 4 periods" in entry["detail"]
+
+
+def _valued_panel(dip_week=None, dip_value=10, base_value=100, dip_count=None):
+    rows = []
+    for wi, w in enumerate(WEEKS):
+        present = PERSONS[:dip_count] if wi == dip_week and dip_count else PERSONS
+        for p in present:
+            rows.append(
+                {
+                    "person": p,
+                    "week": w,
+                    "tokens": dip_value if wi == dip_week else base_value,
+                }
+            )
+    return pl.DataFrame(rows)
+
+
+def test_volume_collapse_with_steady_counts_is_flagged():
+    # Every week holds all 40 people; in week 5 the per-row
+    # measure collapses, so the week's total falls to 10% of
+    # typical while rows and entities are unchanged. The row and
+    # entity counts cannot see this period; the volume rule can.
+    report = onceover.profile(_valued_panel(dip_week=5))
+    hits = _partial(report)
+    assert len(hits) == 1
+    m = hits[0]["evidence"][0]["metrics"]
+    assert m["position"] == "interior"
+    assert m["period"] == "2024-02-05"
+    assert m["rows"] == 40
+    assert m["entities"] == 40
+    assert "total tokens 400" in hits[0]["claim"]
+    measures = m["measures"]
+    assert len(measures) == 1
+    assert measures[0]["column"] == "tokens"
+    assert measures[0]["total"] == 400
+    assert measures[0]["typical_total"] == 4000
+    assert measures[0]["below_typical"] is True
+    # Per-period totals in the evidence, against hand-computed
+    # sums: 40 rows x 100 in a full week, 40 x 10 in week 5.
+    totals = {p["period"]: p["totals"]["tokens"] for p in m["periods"]}
+    assert totals["2024-01-01"] == 4000
+    assert totals["2024-02-05"] == 400
+    entry = report.coverage["panel_coverage"]
+    assert "principal measures: total tokens typically 4000 per period" in entry["detail"]
+    assert "1 period(s) below 75%" in entry["detail"]
+
+
+def test_row_and_volume_shortfall_in_one_period_is_one_statement():
+    # Week 4 holds 16 of the 40 people and the measure collapses
+    # there too: rows, entities, and volume all fall short in the
+    # same period, stated once with every shortfall as a clause.
+    report = onceover.profile(_valued_panel(dip_week=4, dip_count=16))
+    hits = _partial(report)
+    assert len(hits) == 1
+    assert hits[0]["evidence"][0]["metrics"]["period"] == "2024-01-29"
+    assert "holds 16 rows" in hits[0]["claim"]
+    assert "total tokens 160" in hits[0]["claim"]
+
+
+def test_signed_measure_is_totalled_but_never_flags():
+    # A signed measure's per-period sum is a level, not a volume:
+    # its total swings negative in week 5 with rows and entities
+    # steady, and no statement is made. The coverage entry still
+    # reports its typical total.
+    rows = []
+    for wi, w in enumerate(WEEKS):
+        for p in PERSONS:
+            rows.append({"person": p, "week": w, "delta": -50 if wi == 5 else 50})
+    report = onceover.profile(pl.DataFrame(rows))
+    assert _partial(report) == []
+    entry = report.coverage["panel_coverage"]
+    assert "principal measures: total delta typically 2000 per period" in entry["detail"]

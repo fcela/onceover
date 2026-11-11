@@ -103,8 +103,9 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // declared hints and otherwise records itself skipped.
         make("expectations", vec![Gaps, Ordering], &[], HintGated),
         // Per-period coverage on the frame's time axis: observed
-        // periods whose row (or entity) volume falls far below the
-        // typical period's, stated with their position.
+        // periods whose row, entity, or principal-measure volume
+        // falls far below the typical period's, stated with their
+        // position.
         make("panel_coverage", vec![Gaps], &[], Default),
         // Hint-gated like expectations: engages only when the
         // caller declares a group contrast in the hints.
