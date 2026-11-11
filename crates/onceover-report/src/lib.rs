@@ -13,7 +13,8 @@ mod hints;
 mod ledger;
 pub use finding::*;
 pub use hints::{
-    resolve_labels, substitute_labels, Cadence, GroupContrast, ProfileHints, ResolvedLabels,
+    labels_for_finding, resolve_labels, substitute_labels, Cadence, GroupContrast, ProfileHints,
+    ResolvedLabels,
 };
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
