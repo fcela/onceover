@@ -319,3 +319,128 @@ def test_panel_break_names_the_entities_that_share_it():
     assert ent["entities_tested"] == 30
     assert ent["breakpoint"] == "2023-05-22"  # MONDAYS[20]
     assert "6 of the 30" in k["entity_break"]["claim"]
+
+
+# --- #239: per-entity series beyond the principal measure ----------------
+
+
+def _entity_findings(report, kind=None):
+    out = []
+    for f in report.findings:
+        if f.get("type") != "series_structure":
+            continue
+        m = f["evidence"][0]["metrics"]
+        if m.get("kind") in ("entity_trend", "entity_break") and (
+            kind is None or m["kind"] == kind
+        ):
+            out.append(f)
+    return out
+
+
+def _two_measure_panel(risers, seed):
+    rng = np.random.default_rng(seed)
+    rows = {"t": [], "person": [], "tokens": [], "clicks": []}
+    for i in range(40):
+        for wk in range(80):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:02}")
+            rows["tokens"].append(20.0 + rng.normal(scale=2.0))
+            rows["clicks"].append(
+                20.0 + (0.3 * wk if i < risers else 0.0) + rng.normal(scale=2.0)
+            )
+    return pl.DataFrame(rows)
+
+
+def test_panel_second_measure_trend_is_stated():
+    # The principal measure (tokens: the observation counts tie, so
+    # column order puts it first) is flat; the pattern lives in the
+    # second measure. The per-entity pass states it for clicks, on
+    # clicks' own tested and carrier counts.
+    report = onceover.profile(_two_measure_panel(8, 31), detectors=["series"])
+    ent = [
+        f
+        for f in _entity_findings(report, "entity_trend")
+        if f["claim"].startswith("clicks")
+    ]
+    assert len(ent) == 1
+    m = ent[0]["evidence"][0]["metrics"]
+    assert m["entity_column"] == "person"
+    assert m["direction"] == "rise"
+    assert m["entities_with_pattern"] == 8
+    assert m["entities_tested"] == 40
+    assert "8 of the 40" in ent[0]["claim"]
+    assert not [
+        f for f in _entity_findings(report) if f["claim"].startswith("tokens")
+    ]
+    # The aggregate trend on clicks is qualified against clicks'
+    # own per-entity account, not the principal measure's.
+    agg = _series(report, "clicks")["trend"]
+    assert "minority of entities: 8 of 40" in agg["claim"]
+    am = agg["evidence"][0]["metrics"]
+    assert am["entities_with_trend"] == 8
+    assert am["entities_tested"] == 40
+
+
+def test_panel_second_measure_too_few_carriers_stays_silent():
+    # Two carriers are below the carrier bar of three: the second
+    # measure states nothing, exactly as the principal would not.
+    report = onceover.profile(_two_measure_panel(2, 32), detectors=["series"])
+    assert not [
+        f for f in _entity_findings(report) if f["claim"].startswith("clicks")
+    ]
+
+
+def test_panel_second_entity_column_is_examined():
+    # Every person rises too slightly to carry a trend alone, but
+    # the persons of a store rise together: grouping by the second
+    # entity column (store) shows the pattern the first (person)
+    # cannot state.
+    rng = np.random.default_rng(33)
+    rows = {"t": [], "person": [], "store": [], "tokens": []}
+    for i in range(120):
+        for wk in range(80):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:03}")
+            rows["store"].append(f"s{i % 12:02}")
+            rows["tokens"].append(20.0 + 0.05 * wk + rng.normal(scale=3.0))
+    report = onceover.profile(pl.DataFrame(rows), detectors=["series"])
+    by_store = [
+        f
+        for f in _entity_findings(report, "entity_trend")
+        if f["evidence"][0]["metrics"]["entity_column"] == "store"
+    ]
+    assert len(by_store) == 1
+    m = by_store[0]["evidence"][0]["metrics"]
+    assert m["entities_tested"] == 12
+    assert m["entities_with_pattern"] == 12
+    assert not [
+        f
+        for f in _entity_findings(report, "entity_trend")
+        if f["evidence"][0]["metrics"]["entity_column"] == "person"
+    ]
+
+
+def test_panel_measure_cap_is_stated_in_coverage():
+    # Ten measures, all fully observed; the pattern sits in the
+    # last by the observation ranking (ties keep column order),
+    # past the eight-measure examination bound. It states nothing,
+    # and coverage states the bound.
+    rng = np.random.default_rng(34)
+    rows = {"t": [], "person": []}
+    measures = {f"m{j}": [] for j in range(10)}
+    for i in range(40):
+        for wk in range(80):
+            rows["t"].append(MONDAYS[wk])
+            rows["person"].append(f"p{i:02}")
+            for j in range(10):
+                v = 20.0 + rng.normal(scale=2.0)
+                if j == 9 and i < 8:
+                    v += 0.3 * wk
+                measures[f"m{j}"].append(v)
+    rows.update(measures)
+    report = onceover.profile(pl.DataFrame(rows), detectors=["series"])
+    assert not [
+        f for f in _entity_findings(report) if f["claim"].startswith("m9")
+    ]
+    detail = report.coverage["series"]["detail"]
+    assert "first 8 of 10 measures" in detail
