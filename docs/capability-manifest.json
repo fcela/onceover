@@ -273,6 +273,14 @@
    "activation": "opt_in"
   },
   {
+   "id": "changeforest",
+   "categories": [
+    "changes"
+   ],
+   "requires": [],
+   "activation": "opt_in"
+  },
+  {
    "id": "association_rules",
    "categories": [
     "conditional_rules",

@@ -16,7 +16,15 @@ import polars as pl
 
 import onceover
 
-OPT_IN = ["views", "dates", "pivot", "period_associations", "drift", "granularity"]
+OPT_IN = [
+    "views",
+    "dates",
+    "pivot",
+    "period_associations",
+    "drift",
+    "granularity",
+    "changeforest",
+]
 
 
 def _frame() -> pl.DataFrame:
@@ -32,7 +40,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_activation_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 37
+    assert len(registry) == 38
     by_activation = {}
     for d in registry.values():
         by_activation.setdefault(d["activation"], []).append(d["id"])

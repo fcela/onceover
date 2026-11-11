@@ -1711,6 +1711,61 @@ fn profile_inner(
                 );
                 findings.extend(out.findings);
             }
+            if check_deadline(&mut coverage, "changeforest") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("changeforest") {
+                // The frame model's axis and measure roles, as for
+                // the series pass: the segmentation runs over the
+                // measures jointly, and the axis column itself is
+                // never a measure.
+                let ticks = crate::frame::axis_ticks_micros(&table, &frame);
+                let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
+                match (ticks, axis_name) {
+                    (Some(ticks), Some(axis_name)) => {
+                        let measures: Vec<usize> = frame
+                            .roles
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, r)| r.as_deref() == Some("measure"))
+                            .map(|(i, _)| i)
+                            .filter(|i| !axis_excluded.contains(i))
+                            .collect();
+                        let input = onceover_mines::ChangeforestInput {
+                            axis_name,
+                            ticks,
+                            measures,
+                            axis_is_datetime: frame.axis_is_datetime,
+                        };
+                        let out =
+                            onceover_mines::changeforest_pass(&table, &input, &tier.changeforest);
+                        let info = match out.status {
+                            onceover_mines::ChangeforestStatus::NotApplicable(d) => PassInfo::na(d),
+                            onceover_mines::ChangeforestStatus::Ran(d) => {
+                                PassInfo::ran(format!("{d}{exclusion_note}"))
+                            }
+                            onceover_mines::ChangeforestStatus::Capped(d) => {
+                                PassInfo::capped(format!("{d}{exclusion_note}"))
+                            }
+                        };
+                        stamp_insert(
+                            &mut coverage,
+                            &mut last_mark,
+                            timing_on,
+                            "changeforest".into(),
+                            info,
+                        );
+                        findings.extend(out.findings);
+                    }
+                    _ => stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "changeforest".into(),
+                        PassInfo::na("no date or datetime axis to segment along"),
+                    ),
+                }
+            }
             if check_deadline(&mut coverage, "surprises") {
                 deadline_hit = true;
             }
@@ -2185,6 +2240,7 @@ fn profile_inner(
             "regimes",
             "breaks",
             "ordered_partitions",
+            "changeforest",
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",
@@ -2314,6 +2370,7 @@ fn profile_inner(
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
+                "changeforest"=>"rows missing the axis value or any measure value are excluded",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",

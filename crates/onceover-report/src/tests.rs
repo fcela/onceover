@@ -488,6 +488,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         StepDiscontinuity,
         DuplicateEncoding,
         DistributionShift,
+        DistributionChange,
         OrderedPartition,
         OneWayFlag,
     ];

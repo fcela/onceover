@@ -66,9 +66,10 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
     detectors : list[str], optional
         Detector IDs to select; None selects the default set (30 of the
-        37 registered detectors). Excluded unless requested: the opt-in
+        38 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
-        "period_associations", "drift" and "granularity" — each records
+        "period_associations", "drift", "granularity" and
+        "changeforest" — each records
         a skipped coverage entry in default runs — and "target_shapes",
         which runs when a target is designated. "expectations" and
         "group_contrast" are in the default set but engage only when

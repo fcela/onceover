@@ -111,6 +111,15 @@ pub enum Pattern {
     StepDiscontinuity,
     DuplicateEncoding,
     DistributionShift,
+    /// A change in the joint distribution of the measure columns
+    /// along the time axis, located by classifier-based binary
+    /// segmentation (the `changeforest` detector): the split is
+    /// where a random forest best distinguishes the rows before
+    /// from the rows after, kept when its permutation p-value
+    /// clears the stated bar. Carries no per-coordinate summary:
+    /// means, variances and trends of every measure can be
+    /// unchanged across the split.
+    DistributionChange,
     OrderedPartition,
     /// A boolean flag on an entity × time grain that switches on
     /// within entities and never switches off (an absorbing state),
@@ -192,6 +201,7 @@ impl Pattern {
             Self::StepDiscontinuity => Category::Changes,
             Self::DuplicateEncoding => Category::ColumnRoles,
             Self::DistributionShift => Category::Changes,
+            Self::DistributionChange => Category::Changes,
             Self::OrderedPartition => Category::Changes,
             Self::SeriesStructure => Category::Changes,
             Self::OneWayFlag => Category::Changes,
@@ -250,6 +260,7 @@ impl Pattern {
             Self::TransientExcursion => "transient_excursion",
             Self::StepDiscontinuity => "step_discontinuity",
             Self::DistributionShift => "distribution_shift",
+            Self::DistributionChange => "distribution_change",
             Self::OrderedPartition => "ordered_partition",
             Self::OneWayFlag => "one_way_flag",
             Self::EntryBlock => "entry_block",
@@ -993,6 +1004,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::DistributionChange => (
+                Sc::Sequence,
+                O::Distribution,
+                E::ModelBased,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
             Pattern::OrderedPartition => (
                 Sc::Sequence,
                 O::TemporalBehaviour,
@@ -1083,6 +1103,7 @@ impl Facets {
             (Category::Changes, Some("transient_excursion")) => Pattern::TransientExcursion,
             (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
             (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
+            (Category::Changes, Some("distribution_change")) => Pattern::DistributionChange,
             (Category::Changes, Some("ordered_partition")) => Pattern::OrderedPartition,
             (Category::Changes, Some("one_way_flag")) => Pattern::OneWayFlag,
             (Category::Changes, Some("entry_block")) => Pattern::EntryBlock,
@@ -1493,7 +1514,10 @@ impl Finding {
                     spec.definition.insert("breakpoint".into(), v.clone());
                 }
             }
-            Pattern::LevelShift | Pattern::TrendChange | Pattern::VarianceChange => {
+            Pattern::LevelShift
+            | Pattern::TrendChange
+            | Pattern::VarianceChange
+            | Pattern::DistributionChange => {
                 if let Some(v) = metrics.get("breakpoint") {
                     spec.definition.insert("breakpoint".into(), v.clone());
                 }
@@ -1823,6 +1847,7 @@ impl Finding {
                             | "transient_excursion"
                             | "step_discontinuity"
                             | "distribution_shift"
+                            | "distribution_change"
                             | "ordered_partition"
                             | "one_way_flag"
                             | "entry_block"
@@ -1831,7 +1856,7 @@ impl Finding {
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, distribution_change, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()

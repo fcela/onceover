@@ -6,6 +6,7 @@
 
 pub mod association;
 pub mod breaks;
+pub mod changeforest;
 pub mod contrast;
 pub mod dates;
 pub mod deadline;
@@ -38,6 +39,10 @@ pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, pair_associations, AssociationConfig};
 pub use breaks::{profile_breaks, BreaksConfig};
+pub use changeforest::{
+    changeforest_pass, ChangeforestConfig, ChangeforestInput, ChangeforestOutcome,
+    ChangeforestStatus,
+};
 pub use contrast::{group_contrast, ContrastOutcome};
 pub use dates::{analyze_temporal, DatesOutcome};
 pub use deadline::Deadline;
