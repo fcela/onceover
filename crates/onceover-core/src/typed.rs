@@ -109,7 +109,8 @@ pub enum TypedCol<'a> {
         vals: NumericValues<'a, u64>,
     },
     /// Floats (NaN/inf treated as null; -0.0 normalized to +0.0).
-    /// Decimal columns are converted into this variant at extraction.
+    /// Decimal columns are converted into this variant at extraction,
+    /// and so are Duration columns (converted to seconds).
     F64 {
         vals: NumericValues<'a, f64>,
     },
@@ -138,6 +139,12 @@ pub enum TypedCol<'a> {
         n: usize,
     },
     /// Unsupported dtype (list/struct/binary/...) — opaque to the profiler.
+    /// Time-of-day columns also land here, by decision rather than by
+    /// omission: a time of day is a circular quantity (23:00 is closer
+    /// to 01:00 than to 12:00), so the order statistics and measures
+    /// the numeric kinds receive would mislead. Time columns are
+    /// counted for rows and nulls, and coverage states that they are
+    /// not analysed.
     Other {
         n: usize,
         null_count: usize,
@@ -325,6 +332,8 @@ pub fn dtype_name(dtype: &DataType) -> String {
         DataType::Float32 => "float32",
         DataType::Float64 => "float64",
         DataType::Decimal(_, _) => "decimal",
+        DataType::Duration(_) => "duration",
+        DataType::Time => "time",
         DataType::String => "string",
         DataType::Categorical(_, _) => "categorical",
         DataType::Enum(_, _) => "enum",
@@ -525,6 +534,26 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             }
             TypedCol::F64 { vals: vals.into() }
         }
+        DataType::Duration(unit) => {
+            // A duration is a count of ticks at the column's time
+            // unit. Convert to seconds at extraction — the span
+            // itself, with the tick encoding divided out, the same
+            // projection the Decimal arm applies to its scaled
+            // integer — so every downstream pass analyses the column
+            // as a number, and every value it presents is in seconds.
+            // Spans beyond f64 precision are not retained exactly,
+            // as with the u64 -> f64 projection.
+            let per_second = crate::dateutil::ticks_per_second(*unit) as f64;
+            let mut vals = Vec::with_capacity(s.len());
+            for av in s.iter() {
+                vals.push(match av {
+                    AnyValue::Duration(v, _) => norm_f64(v as f64 / per_second),
+                    AnyValue::Null => None,
+                    _ => None,
+                });
+            }
+            TypedCol::F64 { vals: vals.into() }
+        }
         DataType::String => {
             let mut vals = Vec::with_capacity(s.len());
             for av in s.iter() {
@@ -680,5 +709,75 @@ mod tests {
             }
             _ => panic!("scale-6 decimal should extract as F64"),
         }
+    }
+
+    #[test]
+    fn extracts_duration_as_float_seconds() {
+        // Duration('ms'): the stored integers are millisecond ticks.
+        // Extraction presents the span in seconds.
+        let s = Series::new(
+            "d".into(),
+            &[Some(1500i64), Some(2500), None, Some(-500), Some(0)],
+        )
+        .cast(&DataType::Duration(TimeUnit::Milliseconds))
+        .unwrap();
+        assert_eq!(dtype_name(s.dtype()), "duration");
+        let t = extract_series(&s);
+        match &t {
+            TypedCol::F64 { vals } => {
+                assert_eq!(
+                    vals,
+                    &vec![Some(1.5f64), Some(2.5), None, Some(-0.5), Some(0.0)]
+                );
+            }
+            _ => panic!("duration should extract as F64"),
+        }
+        assert!(t.is_numeric());
+        assert_eq!(t.null_count(), 1);
+        assert_eq!(t.numeric_at(3), Some(-0.5));
+    }
+
+    #[test]
+    fn extracts_duration_in_each_time_unit() {
+        // The same span (2 seconds) stored at each time unit must
+        // extract to the same measure.
+        for (unit, ticks) in [
+            (TimeUnit::Nanoseconds, 2_000_000_000i64),
+            (TimeUnit::Microseconds, 2_000_000),
+            (TimeUnit::Milliseconds, 2_000),
+        ] {
+            let s = Series::new("d".into(), &[ticks])
+                .cast(&DataType::Duration(unit))
+                .unwrap();
+            match extract_series(&s) {
+                TypedCol::F64 { vals } => assert_eq!(vals, vec![Some(2.0f64)]),
+                _ => panic!("duration ({unit}) should extract as F64"),
+            }
+        }
+    }
+
+    #[test]
+    fn extracts_time_as_opaque() {
+        // Time-of-day stays opaque by decision (a circular quantity);
+        // it is counted, and its dtype is named, but no pass analyses
+        // it as a number.
+        let s = Series::new(
+            "t".into(),
+            &[Some(3_600_000_000_000i64), None, Some(86_399_000_000_000)],
+        )
+        .cast(&DataType::Time)
+        .unwrap();
+        assert_eq!(dtype_name(s.dtype()), "time");
+        let t = extract_series(&s);
+        match &t {
+            TypedCol::Other { n, null_count } => {
+                assert_eq!(*n, 3);
+                assert_eq!(*null_count, 1);
+            }
+            _ => panic!("time should extract as Other"),
+        }
+        assert!(!t.is_numeric());
+        assert_eq!(t.len(), 3);
+        assert_eq!(t.null_count(), 1);
     }
 }

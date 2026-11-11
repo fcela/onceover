@@ -219,19 +219,40 @@ fn profile_inner(
         .iter()
         .filter(|d| d.as_str() == "other")
         .count();
+    // Time-of-day columns are counted but not analysed, by decision:
+    // a time of day is a circular quantity, so the order statistics
+    // the analysed kinds receive would mislead. State it here, at
+    // the point of extraction, rather than leaving the columns
+    // silently opaque.
+    let time_columns: Vec<&str> = table
+        .dtypes
+        .iter()
+        .zip(table.names.iter())
+        .filter(|(d, _)| d.as_str() == "time")
+        .map(|(_, n)| n.as_str())
+        .collect();
     stamp_insert(
         &mut coverage,
         &mut last_mark,
         timing_on,
         "extraction".into(),
         PassInfo::ran(format!(
-            "{} rows × {} columns{}",
+            "{} rows × {} columns{}{}",
             table.n,
             table.cols.len(),
             if unsupported > 0 {
                 format!(" ({unsupported} unsupported column type(s) opaque to the profiler)")
             } else {
                 String::new()
+            },
+            if time_columns.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; {} time-of-day column(s) counted but not analysed (a time of day is a circular quantity, so order statistics would mislead): {}",
+                    time_columns.len(),
+                    time_columns.join(", ")
+                )
             }
         )),
     );
@@ -2010,12 +2031,25 @@ fn profile_inner(
                 // budget-truncated run reports as capped, like the
                 // other truncated passes, not as a complete run.
                 let mut detail = vout.coverage.clone();
-                if !vout.dropped_columns.is_empty() {
+                // Cap drops and extraction drops are stated
+                // separately, each under its own wording and count:
+                // extraction-dropped columns were never eligible,
+                // so they were never subject to the cap, and
+                // attributing them to it would overstate the cap's
+                // share and misstate why they went unexamined.
+                if !vout.cap_dropped_columns.is_empty() {
                     detail.push_str(&format!(
                         "; dropped {} column(s) past the {}-column cap: {}",
-                        vout.dropped_columns.len(),
+                        vout.cap_dropped_columns.len(),
                         tier.views.max_columns,
-                        vout.dropped_columns.join(", ")
+                        vout.cap_dropped_columns.join(", ")
+                    ));
+                }
+                if !vout.extraction_dropped_columns.is_empty() {
+                    detail.push_str(&format!(
+                        "; dropped {} column(s) at extraction (unsupported type or no non-null values): {}",
+                        vout.extraction_dropped_columns.len(),
+                        vout.extraction_dropped_columns.join(", ")
                     ));
                 }
                 stamp_insert(

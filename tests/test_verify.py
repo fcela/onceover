@@ -149,6 +149,110 @@ def test_great_expectations_suite_shape():
     json.dumps(suite)
 
 
+def _dupe_finding(report):
+    return next(f for f in report.findings if f.get("type") == "duplicate_encoding")
+
+
+def test_bijection_verifies_and_its_edits_are_flagged():
+    # An exact duplicate encoding is a bijection claim: the verifier
+    # recounts the correspondence in both directions (issue #222).
+    n = 400
+    codes = [(r % 4) + 1 for r in range(n)]
+    df = pl.DataFrame({
+        "code": codes,
+        "label": [f"group_{c}" for c in codes],
+        "shade": [f"s{r % 3}" for r in range(n)],
+    })
+    report = onceover.profile(df)
+    hit = _dupe_finding(report)
+    assert hit["evidence"][0]["metrics"]["exact"] is True
+    rows = report.verify(df).filter(pl.col("id") == hit["id"])
+    assert set(rows["status"].to_list()) == {"ok"}
+    quantities = set(rows["quantity"].to_list())
+    assert "exact" in quantities
+    assert "rows breaking the code → label mapping" in quantities
+    assert "rows breaking the label → code mapping" in quantities
+
+    edited = onceover.profile(df)
+    _corrupt(edited, hit["id"], "exact", False)
+    result = edited.verify(df).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+    edited = onceover.profile(df)
+    _corrupt(edited, hit["id"], "violations_first_to_second", 3)
+    result = edited.verify(df).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+    edited = onceover.profile(df)
+    for f in edited.data["findings"]:
+        if f["id"] == hit["id"]:
+            f["subject"]["columns"] = ["code", "shade"]
+    result = edited.verify(df).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+
+def test_rollup_verifies_and_a_swapped_direction_is_flagged():
+    # A rollup states one mapping, finer to coarser; stating it in
+    # the wrong direction must fail verification (issue #222).
+    cities = [f"city_{r % 9}" for r in range(450)]
+    states = [f"state_{(r % 9) // 3}" for r in range(450)]
+    df = pl.DataFrame({"city": cities, "state": states})
+    report = onceover.profile(df)
+    hit = _dupe_finding(report)
+    metrics = hit["evidence"][0]["metrics"]
+    assert metrics["form"] == "rollup"
+    assert metrics["finer"] == "city" and metrics["coarser"] == "state"
+    rows = report.verify(df).filter(pl.col("id") == hit["id"])
+    assert set(rows["status"].to_list()) == {"ok"}
+
+    edited = onceover.profile(df)
+    for f in edited.data["findings"]:
+        if f["id"] == hit["id"]:
+            m = f["evidence"][0]["metrics"]
+            m["finer"], m["coarser"] = m["coarser"], m["finer"]
+    result = edited.verify(df).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+
+def test_duplicate_encoding_verifies_and_its_edits_are_flagged():
+    # A duplicate encoding with exceptions: the exception count and
+    # the violations in each direction are recounted (issue #222).
+    n_groups, n = 50, 1000
+    codes = [(r % n_groups) + 1 for r in range(n)]
+    labels = [f"group_{c}" for c in codes]
+    done = 0
+    for k in range(n):
+        if codes[k] == 1 and done < 5:
+            labels[k] = "group_7"
+            done += 1
+    df = pl.DataFrame({"code": codes, "label": labels})
+    report = onceover.profile(df)
+    hit = _dupe_finding(report)
+    metrics = hit["evidence"][0]["metrics"]
+    assert metrics["form"] == "duplicate_encoding"
+    assert metrics["exact"] is False and metrics["exceptions"] == 5
+    rows = report.verify(df).filter(pl.col("id") == hit["id"])
+    assert set(rows["status"].to_list()) == {"ok"}
+    assert "exceptions" in set(rows["quantity"].to_list())
+
+    edited = onceover.profile(df)
+    _corrupt(edited, hit["id"], "exceptions", 0)
+    result = edited.verify(df).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+    # The same report against data whose correspondence broke
+    # further after the fact fails as well.
+    broken_labels = list(labels)
+    done = 0
+    for k in range(n):
+        if codes[k] == 2 and done < 5:
+            broken_labels[k] = "group_9"
+            done += 1
+    broken = pl.DataFrame({"code": codes, "label": broken_labels})
+    result = report.verify(broken).filter(pl.col("id") == hit["id"])
+    assert "mismatch" in result["status"].to_list()
+
+
 def test_unknown_format_is_refused():
     with pytest.raises(ValueError):
         onceover.profile(_frame()).to_checks("yaml")
