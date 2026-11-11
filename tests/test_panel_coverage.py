@@ -127,26 +127,29 @@ def test_too_few_periods_states_no_typical():
     assert "at least 4 periods" in entry["detail"]
 
 
-def _valued_panel(dip_week=None, dip_value=10, base_value=100, dip_count=None):
+def _valued_panel(dip_week=None, dip_count=None):
+    # Each person's measure value varies (90 + their index), so
+    # the column carries the frame model's measure role. In the
+    # dip week the values collapse to an eighth.
     rows = []
     for wi, w in enumerate(WEEKS):
         present = PERSONS[:dip_count] if wi == dip_week and dip_count else PERSONS
-        for p in present:
-            rows.append(
-                {
-                    "person": p,
-                    "week": w,
-                    "tokens": dip_value if wi == dip_week else base_value,
-                }
-            )
-    return pl.DataFrame(rows)
+        for pi, p in enumerate(present):
+            v = (90 + pi) / 8 if wi == dip_week else 90 + pi
+            rows.append({"person": p, "week": w, "tokens": v})
+    return pl.DataFrame(
+        rows,
+        schema={"person": pl.String, "week": pl.Date, "tokens": pl.Float64},
+    )
 
 
 def test_volume_collapse_with_steady_counts_is_flagged():
-    # Every week holds all 40 people; in week 5 the per-row
-    # measure collapses, so the week's total falls to 10% of
-    # typical while rows and entities are unchanged. The row and
-    # entity counts cannot see this period; the volume rule can.
+    # Every week holds all 40 people; in week 5 the measure's
+    # values collapse to an eighth, so the week's total falls to
+    # 12.5% of typical while rows and entities are unchanged. The
+    # row and entity counts cannot see this period; the volume
+    # rule can. A full week's total is sum(90..129) = 4380; the
+    # collapsed week's is 547.5.
     report = onceover.profile(_valued_panel(dip_week=5))
     hits = _partial(report)
     assert len(hits) == 1
@@ -155,20 +158,20 @@ def test_volume_collapse_with_steady_counts_is_flagged():
     assert m["period"] == "2024-02-05"
     assert m["rows"] == 40
     assert m["entities"] == 40
-    assert "total tokens 400" in hits[0]["claim"]
+    assert "total tokens 547.5" in hits[0]["claim"]
     measures = m["measures"]
     assert len(measures) == 1
     assert measures[0]["column"] == "tokens"
-    assert measures[0]["total"] == 400
-    assert measures[0]["typical_total"] == 4000
+    assert measures[0]["total"] == 547.5
+    assert measures[0]["typical_total"] == 4380
     assert measures[0]["below_typical"] is True
-    # Per-period totals in the evidence, against hand-computed
-    # sums: 40 rows x 100 in a full week, 40 x 10 in week 5.
+    # Per-period totals in the evidence, against the hand-computed
+    # sums above.
     totals = {p["period"]: p["totals"]["tokens"] for p in m["periods"]}
-    assert totals["2024-01-01"] == 4000
-    assert totals["2024-02-05"] == 400
+    assert totals["2024-01-01"] == 4380
+    assert totals["2024-02-05"] == 547.5
     entry = report.coverage["panel_coverage"]
-    assert "principal measures: total tokens typically 4000 per period" in entry["detail"]
+    assert "principal measures: total tokens typically 4380 per period" in entry["detail"]
     assert "1 period(s) below 75%" in entry["detail"]
 
 
@@ -176,24 +179,55 @@ def test_row_and_volume_shortfall_in_one_period_is_one_statement():
     # Week 4 holds 16 of the 40 people and the measure collapses
     # there too: rows, entities, and volume all fall short in the
     # same period, stated once with every shortfall as a clause.
+    # The week's total is sum(90..105) / 8 = 195.
     report = onceover.profile(_valued_panel(dip_week=4, dip_count=16))
     hits = _partial(report)
     assert len(hits) == 1
     assert hits[0]["evidence"][0]["metrics"]["period"] == "2024-01-29"
     assert "holds 16 rows" in hits[0]["claim"]
-    assert "total tokens 160" in hits[0]["claim"]
+    assert "total tokens 195" in hits[0]["claim"]
+
+
+def test_volume_spread_does_not_silence_count_shortfalls():
+    # The measure's totals sit at half volume in weeks 7-9, and
+    # week 2 holds 16 of 40 people, so four of ten periods fall
+    # below 75% of the median total (4380) — past the quarter
+    # share, so the volume names no period. The counts' own
+    # spread is narrow, so the count statement still stands and
+    # carries no volume clause. Weekly totals: 4380 in full
+    # weeks, 2190 in weeks 7-9, 1560 in week 2.
+    rows = []
+    for wi, w in enumerate(WEEKS):
+        present = PERSONS[:16] if wi == 2 else PERSONS
+        for pi, p in enumerate(present):
+            v = (90 + pi) / 2 if wi >= 7 else 90 + pi
+            rows.append({"person": p, "week": w, "tokens": v})
+    df = pl.DataFrame(
+        rows,
+        schema={"person": pl.String, "week": pl.Date, "tokens": pl.Float64},
+    )
+    report = onceover.profile(df)
+    hits = _partial(report)
+    assert len(hits) == 1
+    assert hits[0]["evidence"][0]["metrics"]["period"] == "2024-01-15"
+    assert "holds 16 rows" in hits[0]["claim"]
+    assert "total tokens" not in hits[0]["claim"]
+    entry = report.coverage["panel_coverage"]
+    assert "too wide a spread for the measure volume" in entry["detail"]
 
 
 def test_signed_measure_is_totalled_but_never_flags():
     # A signed measure's per-period sum is a level, not a volume:
     # its total swings negative in week 5 with rows and entities
     # steady, and no statement is made. The coverage entry still
-    # reports its typical total.
+    # reports its typical total, sum(40..79) = 2380.
     rows = []
     for wi, w in enumerate(WEEKS):
-        for p in PERSONS:
-            rows.append({"person": p, "week": w, "delta": -50 if wi == 5 else 50})
+        for pi, p in enumerate(PERSONS):
+            rows.append(
+                {"person": p, "week": w, "delta": -(40 + pi) if wi == 5 else 40 + pi}
+            )
     report = onceover.profile(pl.DataFrame(rows))
     assert _partial(report) == []
     entry = report.coverage["panel_coverage"]
-    assert "principal measures: total delta typically 2000 per period" in entry["detail"]
+    assert "principal measures: total delta typically 2380 per period" in entry["detail"]

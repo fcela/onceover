@@ -45,13 +45,20 @@
 //! many of its volumes fall short; a shortfall on a second
 //! volume is a clause in the same statement, not a second
 //! statement. The check needs at least
-//! 4 observed periods before a typical period is meaningful, and
-//! it reports only when the partial periods are a minority — at
-//! most a quarter of all periods. Past that share the median no
-//! longer names a typical full period: per-period volume varies
-//! too widely (a date attribute on rows collected for other
-//! reasons, counts spread over orders of magnitude), the coverage
-//! entry says so, and no period is singled out. The
+//! 4 observed periods before a typical period is meaningful.
+//! Each kind of shortfall — the counts (rows and entities) and
+//! the measure volume — singles periods out only when the
+//! periods short on that kind are a minority, at most a quarter
+//! of all periods. Past that share the median names no typical
+//! period for that kind: its per-period volume varies too widely
+//! (a date attribute on rows collected for other reasons, counts
+//! spread over orders of magnitude), the coverage entry says so,
+//! and that kind singles no period out. The kinds are judged
+//! separately, so a wide spread in one does not silence the
+//! other: a panel whose daily measure totals vary by
+//! construction can still state the days holding a fraction of
+//! the usual rows. A stated period carries clauses for the kinds
+//! that were admitted and on which it falls short. The
 //! position of a flagged period — first, last, or interior — is
 //! part of the statement: an edge period is the truncation shape,
 //! an interior one is an outage shape.
@@ -89,9 +96,10 @@ const MAX_CLAIM_MEASURES: usize = 3;
 /// At most this many partial periods are stated, worst shortfall
 /// first; the coverage entry discloses the cap.
 const MAX_FINDINGS: usize = 10;
-/// The check reports only when partial periods make up at most
-/// this share of all periods; past it the median does not name a
-/// typical full period and the coverage entry says so instead.
+/// Each kind of shortfall reports only when the periods short
+/// on that kind make up at most this share of all periods; past
+/// it the median does not name a typical period for that kind
+/// and the coverage entry says so instead.
 const MAX_FLAGGED_SHARE: f64 = 0.25;
 /// The per-period table in a finding's evidence is complete up to
 /// this many periods; past it the payload lists the flagged
@@ -106,7 +114,7 @@ fn method() -> Method {
     )
 }
 
-const METHOD_TEXT: &str = "per-period volume on the frame's assembled time axis: rows are counted per distinct axis value; entities are counted as distinct values of the entity axis (the grain's non-axis factors, or the frame's single identifier column) per period; the frame's principal measures (measure-role columns that extract to a numeric kind, ranked by non-null observation count, at most 8) are totalled per period; the typical period is the median period; a period is reported when its row count is below 75% of the typical row count and short by at least 4 rows, or its entity count is below 75% of the typical entity count and short by at least 2 entities, or a principal measure's total in it is below 75% of that measure's typical total (a measure whose typical total is not positive, or that carries negative values, is totalled but never flags: its sum is a level, not a volume); a period is stated once however many of its volumes fall short; wholly absent periods are not reported here (they are gaps, not partial periods); periods are singled out only when they make up at most a quarter of all periods — past that share the median names no typical full period and the coverage entry reports the spread instead";
+const METHOD_TEXT: &str = "per-period volume on the frame's assembled time axis: rows are counted per distinct axis value; entities are counted as distinct values of the entity axis (the grain's non-axis factors, or the frame's single identifier column) per period; the frame's principal measures (measure-role columns that extract to a numeric kind, ranked by non-null observation count, at most 8) are totalled per period; the typical period is the median period; a period is reported when its row count is below 75% of the typical row count and short by at least 4 rows, or its entity count is below 75% of the typical entity count and short by at least 2 entities, or a principal measure's total in it is below 75% of that measure's typical total (a measure whose typical total is not positive, or that carries negative values, is totalled but never flags: its sum is a level, not a volume); a period is stated once however many of its volumes fall short; wholly absent periods are not reported here (they are gaps, not partial periods); each kind of shortfall (the row and entity counts, and the measure volume) singles out periods only when the periods short on that kind make up at most a quarter of all periods — past that share the median names no typical period for that kind and the coverage entry reports its spread instead; the kinds are judged separately, so one kind's wide spread does not silence the other kind's statements";
 
 pub enum PanelCoverageStatus {
     Ran(String),
@@ -504,12 +512,39 @@ pub fn panel_coverage(
             .total_cmp(&b.worst_share)
             .then(a.idx.cmp(&b.idx))
     });
+    // The quarter-share guard is applied to each kind of
+    // shortfall separately. The counts and the measure volume
+    // answer different questions, and either can vary widely by
+    // construction while the other stays regular — daily totals
+    // of an activity measure vary with the weekday in a panel
+    // collected without a break. Judged together, a wide spread
+    // in one kind would silence the other kind's statements,
+    // including the row and entity statements this pass made
+    // before measure volume was added.
+    let n_below = flagged.len();
+    let n_count_flagged = flagged
+        .iter()
+        .filter(|f| f.row_flag || f.entity_flag)
+        .count();
+    let n_volume_flagged = flagged
+        .iter()
+        .filter(|f| f.volume_flags.iter().any(|&v| v))
+        .count();
+    let counts_admit = n_count_flagged as f64 <= MAX_FLAGGED_SHARE * n_periods as f64;
+    let volume_admit = n_volume_flagged as f64 <= MAX_FLAGGED_SHARE * n_periods as f64;
+    let mut flagged: Vec<Flagged> = flagged
+        .into_iter()
+        .filter(|f| {
+            ((f.row_flag || f.entity_flag) && counts_admit)
+                || (f.volume_flags.iter().any(|&v| v) && volume_admit)
+        })
+        .collect();
     let n_flagged = flagged.len();
-    if n_flagged as f64 > MAX_FLAGGED_SHARE * n_periods as f64 {
-        // Too much of the panel is "partial" for the median to
-        // name a typical full period: per-period volume varies
-        // too widely for the statement, and singling periods out
-        // would report the frame's shape, not coverage breaks.
+    if n_flagged == 0 && n_below > 0 {
+        // Every kind of shortfall present is too widely spread
+        // for the median to name a typical period for it:
+        // singling periods out would report the frame's shape,
+        // not coverage breaks.
         let mut detail = format!(
             "{n_periods} periods on the '{axis_name}' axis; typical period {} rows (median)",
             fmt_count(typical_rows)
@@ -523,8 +558,8 @@ pub fn panel_coverage(
         }
         measure_detail(&mut detail);
         detail.push_str(&format!(
-            "; {n_flagged} of {n_periods} periods ({:.0}%) fall below 75% of the typical volume — too wide a spread for a typical period to name, so no partial-period statements",
-            100.0 * n_flagged as f64 / n_periods as f64
+            "; {n_below} of {n_periods} periods ({:.0}%) fall below 75% of the typical volume — too wide a spread for a typical period to name, so no partial-period statements",
+            100.0 * n_below as f64 / n_periods as f64
         ));
         return PanelCoverageOutcome {
             findings: Vec::new(),
@@ -577,8 +612,13 @@ pub fn panel_coverage(
             "interior"
         };
         let rows = rows_per[idx];
+        // Clauses are gated by the same admission that singled
+        // the period out: a period stated on one kind does not
+        // gain a clause from a kind whose own spread was too
+        // wide to name periods. The evidence below carries every
+        // measured count and total either way.
         let mut clauses: Vec<String> = Vec::new();
-        if f.row_flag {
+        if f.row_flag && counts_admit {
             clauses.push(format!(
                 "holds {} {} against a typical {} rows per period ({}% of typical)",
                 fmt_count(rows as f64),
@@ -587,7 +627,7 @@ pub fn panel_coverage(
                 (100.0 * rows as f64 / typical_rows).round() as i64
             ));
         }
-        if f.entity_flag {
+        if f.entity_flag && counts_admit {
             let e = entities_per.as_ref().expect("entities")[idx];
             let te = typical_entities.expect("typical entities");
             // The clause carries its own verb when it stands alone.
@@ -605,9 +645,13 @@ pub fn panel_coverage(
         // A period already stated for its rows or entities gains
         // the clause in the same statement — it is not stated
         // twice for the same shortfall.
-        let collapsed: Vec<usize> = (0..measure_cols.len())
-            .filter(|&m| f.volume_flags[m])
-            .collect();
+        let collapsed: Vec<usize> = if volume_admit {
+            (0..measure_cols.len())
+                .filter(|&m| f.volume_flags[m])
+                .collect()
+        } else {
+            Vec::new()
+        };
         for (j, &m) in collapsed.iter().enumerate() {
             if j == MAX_CLAIM_MEASURES {
                 clauses.push(format!(
@@ -739,6 +783,16 @@ pub fn panel_coverage(
                 ", worst {MAX_FINDINGS} stated (cap {MAX_FINDINGS})"
             ));
         }
+    }
+    if !counts_admit {
+        detail.push_str(&format!(
+            "; {n_count_flagged} of {n_periods} periods fall below 75% of the typical row or entity count — too wide a spread for the counts to name a typical period, so no period is singled out on its counts"
+        ));
+    }
+    if !volume_admit {
+        detail.push_str(&format!(
+            "; {n_volume_flagged} of {n_periods} periods fall below 75% of a principal measure's typical total — too wide a spread for the measure volume to name a typical period, so no period is singled out on its volume"
+        ));
     }
     PanelCoverageOutcome {
         findings,
@@ -875,21 +929,25 @@ mod tests {
 
     fn measure_panel(
         name: &str,
-        value: impl Fn(usize) -> f64,
+        value: impl Fn(usize, usize) -> f64,
         present: impl Fn(usize) -> usize,
     ) -> DataFrame {
         // 40 entities x 10 weekly periods; week `wi` holds
-        // `present(wi)` entities, each carrying measure value
-        // `value(wi)`.
+        // `present(wi)` entities, and entity `pi` carries measure
+        // value `value(wi, pi)`. The per-entity values vary, so
+        // the column carries the frame model's measure role.
+        // (The collapse factor used below is an eighth, exact in
+        // binary floating point, so the hand-computed totals in
+        // the tests are exact.)
         let persons: Vec<String> = (0..40).map(|i| format!("p{i:02}")).collect();
         let mut person = Vec::new();
         let mut week = Vec::new();
         let mut measure = Vec::new();
         for wi in 0..10 {
-            for p in persons.iter().take(present(wi)) {
+            for (pi, p) in persons.iter().enumerate().take(present(wi)) {
                 person.push(p.clone());
                 week.push(19723 + 7 * wi as i32);
-                measure.push(value(wi));
+                measure.push(value(wi, pi));
             }
         }
         DataFrame::new_infer_height(vec![
@@ -906,10 +964,21 @@ mod tests {
     #[test]
     fn volume_collapse_with_steady_counts_is_flagged() {
         // Rows and entities hold steady in every period; the
-        // measure's per-row value collapses in week 5, so its
-        // total falls to 10% of typical. Only the volume rule can
-        // see this period.
-        let df = measure_panel("tokens", |wi| if wi == 5 { 10.0 } else { 100.0 }, |_| 40);
+        // measure's values collapse to an eighth in week 5, so
+        // its total falls to 12.5% of typical. Only the volume
+        // rule can see this period. A full week's total is
+        // sum(90..=129) = 4380; the collapsed week's is 547.5.
+        let df = measure_panel(
+            "tokens",
+            |wi, pi| {
+                if wi == 5 {
+                    (90.0 + pi as f64) / 8.0
+                } else {
+                    90.0 + pi as f64
+                }
+            },
+            |_| 40,
+        );
         let out = run(&df);
         assert_eq!(
             out.findings.len(),
@@ -922,27 +991,27 @@ mod tests {
         assert_eq!(f.metrics()["position"], json!("interior"));
         assert_eq!(f.metrics()["period"], json!("2024-02-05"));
         assert_eq!(f.metrics()["rows"], json!(40));
-        assert!(f.claim.contains("total tokens 400"), "{}", f.claim);
-        assert!(f.claim.contains("typical 4000"), "{}", f.claim);
+        assert!(f.claim.contains("total tokens 547.5"), "{}", f.claim);
+        assert!(f.claim.contains("typical 4380"), "{}", f.claim);
         assert!(!f.claim.contains("holds"), "{}", f.claim);
         let measures = f.metrics()["measures"].as_array().unwrap();
         assert_eq!(measures.len(), 1);
         assert_eq!(measures[0]["column"], json!("tokens"));
-        assert_eq!(measures[0]["total"], json!(400));
-        assert_eq!(measures[0]["typical_total"], json!(4000));
+        assert_eq!(measures[0]["total"], json!(547.5));
+        assert_eq!(measures[0]["typical_total"], json!(4380));
         assert_eq!(measures[0]["below_typical"], json!(true));
-        // The per-period table carries the totals, hand-checked:
-        // 40 rows x 100 in a full week, 40 x 10 in week 5.
+        // The per-period table carries the totals, hand-checked
+        // against the sums above.
         let periods = f.metrics()["periods"].as_array().unwrap();
         let by_period: std::collections::HashMap<&str, &Value> = periods
             .iter()
             .map(|p| (p["period"].as_str().unwrap(), p))
             .collect();
-        assert_eq!(by_period["2024-01-01"]["totals"]["tokens"], json!(4000));
-        assert_eq!(by_period["2024-02-05"]["totals"]["tokens"], json!(400));
+        assert_eq!(by_period["2024-01-01"]["totals"]["tokens"], json!(4380));
+        assert_eq!(by_period["2024-02-05"]["totals"]["tokens"], json!(547.5));
         match &out.status {
             PanelCoverageStatus::Ran(d) => assert!(
-                d.contains("principal measures: total tokens typically 4000 per period"),
+                d.contains("principal measures: total tokens typically 4380 per period"),
                 "{d}"
             ),
             _ => panic!("expected Ran"),
@@ -951,13 +1020,20 @@ mod tests {
 
     #[test]
     fn row_and_volume_shortfall_in_one_period_is_one_statement() {
-        // Week 4 holds 16 of 40 entities and its measure value
-        // also collapses: rows, entities, and volume all fall
-        // short in the same period. The period is stated once,
-        // with every shortfall as a clause.
+        // Week 4 holds 16 of 40 entities and its measure values
+        // also collapse to an eighth: rows, entities, and volume
+        // all fall short in the same period. The period is stated
+        // once, with every shortfall as a clause. The week's
+        // total is sum(90..=105) / 8 = 195.
         let df = measure_panel(
             "tokens",
-            |wi| if wi == 4 { 10.0 } else { 100.0 },
+            |wi, pi| {
+                if wi == 4 {
+                    (90.0 + pi as f64) / 8.0
+                } else {
+                    90.0 + pi as f64
+                }
+            },
             |wi| if wi == 4 { 16 } else { 40 },
         );
         let out = run(&df);
@@ -970,7 +1046,95 @@ mod tests {
         let f = &out.findings[0];
         assert_eq!(f.metrics()["period"], json!("2024-01-29"));
         assert!(f.claim.contains("holds 16 rows"), "{}", f.claim);
-        assert!(f.claim.contains("total tokens 160"), "{}", f.claim);
+        assert!(f.claim.contains("total tokens 195"), "{}", f.claim);
+    }
+
+    #[test]
+    fn volume_spread_does_not_silence_count_shortfalls() {
+        // The measure's totals sit at half volume in weeks 7-9,
+        // and week 2 holds 16 of 40 entities, so four of ten
+        // periods fall below 75% of the median total (4380) —
+        // past the quarter share, so the volume names no period.
+        // The counts' own spread is narrow (one period of ten),
+        // so the count statement still stands, and it carries no
+        // volume clause: the volume was not admitted to name
+        // periods. Weekly totals: 4380 in full weeks, 2190 in
+        // weeks 7-9, 1560 in week 2 (sum(90..=105)).
+        let df = measure_panel(
+            "tokens",
+            |wi, pi| {
+                if wi >= 7 {
+                    (90.0 + pi as f64) / 2.0
+                } else {
+                    90.0 + pi as f64
+                }
+            },
+            |wi| if wi == 2 { 16 } else { 40 },
+        );
+        let out = run(&df);
+        assert_eq!(
+            out.findings.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let f = &out.findings[0];
+        f.validate().unwrap();
+        assert_eq!(f.metrics()["period"], json!("2024-01-15"));
+        assert!(f.claim.contains("holds 16 rows"), "{}", f.claim);
+        assert!(!f.claim.contains("total tokens"), "{}", f.claim);
+        match &out.status {
+            PanelCoverageStatus::Ran(d) => {
+                assert!(
+                    d.contains("too wide a spread for the measure volume"),
+                    "{d}"
+                );
+                assert!(d.contains("1 period(s) below 75%"), "{d}");
+            }
+            _ => panic!("expected Ran"),
+        }
+    }
+
+    #[test]
+    fn count_spread_does_not_silence_volume_shortfalls() {
+        // Three of ten weeks hold 10 of 40 entities — 30% of
+        // periods short on counts, past the quarter share, so
+        // the counts name no period. Those weeks' per-row values
+        // are quadrupled, so their totals (3780) stay near the
+        // typical total; only week 7's total collapses, to
+        // 547.5 against a median total of 4380. The volume
+        // statement stands alone, with no count clause.
+        let df = measure_panel(
+            "tokens",
+            |wi, pi| {
+                if wi == 7 {
+                    (90.0 + pi as f64) / 8.0
+                } else if wi <= 2 {
+                    4.0 * (90.0 + pi as f64)
+                } else {
+                    90.0 + pi as f64
+                }
+            },
+            |wi| if wi <= 2 { 10 } else { 40 },
+        );
+        let out = run(&df);
+        assert_eq!(
+            out.findings.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let f = &out.findings[0];
+        f.validate().unwrap();
+        assert_eq!(f.metrics()["period"], json!("2024-02-19"));
+        assert!(f.claim.contains("total tokens 547.5"), "{}", f.claim);
+        assert!(!f.claim.contains("holds"), "{}", f.claim);
+        match &out.status {
+            PanelCoverageStatus::Ran(d) => {
+                assert!(d.contains("too wide a spread for the counts"), "{d}");
+            }
+            _ => panic!("expected Ran"),
+        }
     }
 
     #[test]
@@ -978,13 +1142,24 @@ mod tests {
         // A signed measure's per-period sum is a level, not a
         // volume: week 5 swings negative with rows and entities
         // steady, and no statement is made — but the coverage
-        // entry still reports its typical total.
-        let df = measure_panel("delta", |wi| if wi == 5 { -50.0 } else { 50.0 }, |_| 40);
+        // entry still reports its typical total, sum(40..=79) =
+        // 2380.
+        let df = measure_panel(
+            "delta",
+            |wi, pi| {
+                if wi == 5 {
+                    -(40.0 + pi as f64)
+                } else {
+                    40.0 + pi as f64
+                }
+            },
+            |_| 40,
+        );
         let out = run(&df);
         assert!(out.findings.is_empty(), "{:?}", out.findings);
         match &out.status {
             PanelCoverageStatus::Ran(d) => assert!(
-                d.contains("principal measures: total delta typically 2000 per period"),
+                d.contains("principal measures: total delta typically 2380 per period"),
                 "{d}"
             ),
             _ => panic!("expected Ran"),
@@ -1002,10 +1177,9 @@ mod tests {
         for wi in 0..10 {
             for p in &persons {
                 person.push(p.clone());
-                week.push(19723 + 7 * wi as i32);
+                week.push(19723 + 7 * wi);
             }
         }
-        let n = person.len();
         let mut cols: Vec<Column> = vec![
             Series::new("person".into(), person).into(),
             Series::new("week".into(), week)
@@ -1013,8 +1187,14 @@ mod tests {
                 .unwrap()
                 .into(),
         ];
-        for name in ["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"] {
-            cols.push(Series::new(name.into(), vec![1.0; n]).into());
+        for (j, name) in ["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]
+            .iter()
+            .enumerate()
+        {
+            let vals: Vec<f64> = (0..10)
+                .flat_map(|_| (0..40).map(move |pi| (j + 1) as f64 * (90.0 + pi as f64)))
+                .collect();
+            cols.push(Series::new((*name).into(), vals).into());
         }
         let df = DataFrame::new_infer_height(cols).unwrap();
         let out = run(&df);
@@ -1025,7 +1205,7 @@ mod tests {
                     d.contains("first 8 of 10 measure columns, ranked by non-null observations"),
                     "{d}"
                 );
-                assert!(d.contains("total m0 typically 40 per period"), "{d}");
+                assert!(d.contains("total m0 typically 4380 per period"), "{d}");
                 assert!(!d.contains("total m8"), "{d}");
             }
             _ => panic!("expected Ran"),
