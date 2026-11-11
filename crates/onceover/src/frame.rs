@@ -26,12 +26,13 @@ use polars::prelude::*;
 use std::collections::{BTreeSet, HashMap};
 
 /// The semantic role vocabulary of the frame model.
-pub const ROLE_VOCABULARY: [&str; 7] = [
+pub const ROLE_VOCABULARY: [&str; 8] = [
     "identifier",
     "index",
     "timestamp",
     "timestamp_part",
     "dimension",
+    "flag",
     "measure",
     "text",
 ];
@@ -887,15 +888,38 @@ pub fn analyze_frame(
             );
             continue;
         }
+        // (f2) flag: a two-valued column — a boolean with both
+        // states present, or a numeric column holding only 0 and 1.
+        // A flag states a condition on the row; it does not
+        // partition the frame into groups the way a dimension does,
+        // so it keeps its own role and the dimension consumers
+        // (grain inference, dominant structure, entity axes) never
+        // receive it. The definition is the one the panel passes'
+        // flag scan uses (onceover_core::is_two_valued_flag). A
+        // two-state string or categorical column is not a flag
+        // under it: its levels are labels, not states, and it
+        // stays a dimension.
+        if onceover_core::is_two_valued_flag(table, i) {
+            roles[i] = Some("flag".into());
+            evidence[i] = if matches!(col, TypedCol::Bool { .. }) {
+                "boolean column with both states present".into()
+            } else {
+                "numeric column holding only 0 and 1, both present".into()
+            };
+            continue;
+        }
         // (g) dimension: low-cardinality grouping columns. The card's
         // "categorical" scales with row count, so age (74 values) or a
         // normalized reading (50 values) reaches it on a large frame;
         // a numeric column groups only on a small whole-number grid.
+        // A constant card (at most one distinct value) is excluded:
+        // it has no levels to group by.
         let numeric_grid = col.is_numeric()
             && fact.card_role == "categorical"
             && !(fact.integral && fact.distinct <= MAX_NUMERIC_DIMENSION_LEVELS)
             && fact.distinct > MAX_FRACTIONAL_DIMENSION_LEVELS;
         if !numeric_grid
+            && fact.card_role != "constant"
             && (matches!(fact.card_role.as_str(), "categorical" | "boolean")
                 || matches!(col, TypedCol::Bool { .. }))
         {
@@ -1480,5 +1504,186 @@ mod tests {
         let role =
             |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
         assert_eq!(role("week").as_deref(), Some("timestamp_part"));
+    }
+
+    #[test]
+    fn flags_get_the_flag_role_not_dimension() {
+        // Boolean and 0/1 columns are flags. A two-state string
+        // column stays a dimension (its levels are labels, not
+        // states), and a single-state boolean is a constant: it
+        // takes neither role.
+        let n = 200usize;
+        let df = DataFrame::new_infer_height(vec![
+            Series::new(
+                "active".into(),
+                (0..n).map(|k| k % 3 != 0).collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "converted".into(),
+                (0..n).map(|k| (k % 5 == 0) as i64).collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "fraction_flag".into(),
+                (0..n)
+                    .map(|k| if k % 7 == 0 { 1.0 } else { 0.0 })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "channel".into(),
+                (0..n)
+                    .map(|k| if k % 2 == 0 { "web" } else { "store" })
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new(
+                "region".into(),
+                (0..n)
+                    .map(|k| ["north", "south", "east"][k % 3])
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            Series::new("always_on".into(), vec![true; n]).into(),
+            Series::new(
+                "amount".into(),
+                (0..n).map(|k| 10.0 + (k % 50) as f64).collect::<Vec<_>>(),
+            )
+            .into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let model = analyze_frame(&table, &facts, None);
+        let role =
+            |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
+        assert_eq!(role("active").as_deref(), Some("flag"));
+        assert_eq!(role("converted").as_deref(), Some("flag"));
+        assert_eq!(role("fraction_flag").as_deref(), Some("flag"));
+        assert_eq!(role("channel").as_deref(), Some("dimension"));
+        assert_eq!(role("region").as_deref(), Some("dimension"));
+        assert_eq!(role("amount").as_deref(), Some("measure"));
+        assert_ne!(role("always_on").as_deref(), Some("flag"));
+        assert_ne!(role("always_on").as_deref(), Some("dimension"));
+    }
+
+    #[test]
+    fn grain_and_dominant_structure_ignore_flags() {
+        // An entity x time panel with a boolean flag and a 0/1
+        // column: neither enters the grain factorization, and the
+        // dominant-structure groupings carry no flag grouping.
+        let entities = 12usize;
+        let periods = 10usize;
+        let mut date = Vec::new();
+        let mut entity = Vec::new();
+        let mut active = Vec::new();
+        let mut enrolled = Vec::new();
+        let mut volume = Vec::new();
+        for e in 0..entities {
+            for p in 0..periods {
+                date.push(format!("2024-{:02}-01", p + 1));
+                entity.push(format!("E{:02}", e + 1));
+                active.push((e + p) % 3 != 0);
+                enrolled.push(((e + p) % 4 == 0) as i64);
+                volume.push(100.0 + ((e * 31 + p * 17) % 90) as f64);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("date".into(), date).into(),
+            Series::new("entity".into(), entity).into(),
+            Series::new("active".into(), active).into(),
+            Series::new("enrolled".into(), enrolled).into(),
+            Series::new("volume".into(), volume).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let model = analyze_frame(&table, &facts, None);
+        let account = crate::account::compute_account(
+            &table,
+            &model,
+            &facts,
+            &onceover_deps::fd::DepsOutcome::default(),
+        );
+        let grain = account.grain.expect("grain found");
+        let factors: Vec<&str> = grain
+            .factorization
+            .iter()
+            .map(|f| f.column.as_str())
+            .collect();
+        assert!(factors.contains(&"entity"), "{factors:?}");
+        assert!(!factors.contains(&"active"), "{factors:?}");
+        assert!(!factors.contains(&"enrolled"), "{factors:?}");
+        assert!(
+            account
+                .dominant
+                .iter()
+                .all(|d| d.grouping != "active" && d.grouping != "enrolled"),
+            "{:?}",
+            account.dominant
+        );
+    }
+
+    #[test]
+    fn a_flag_crossed_with_time_is_not_a_grain() {
+        // Every (flag state, period) pair occurs exactly once, so
+        // under the dimension assignment the flag formed an exact
+        // grain factor with the axis. A flag is not a grain
+        // component: no factorization may name it.
+        let periods = 15usize;
+        let mut date = Vec::new();
+        let mut active = Vec::new();
+        let mut volume = Vec::new();
+        for state in [false, true] {
+            for p in 0..periods {
+                date.push(format!("202{}-{:02}-01", 3 + p / 12, 1 + p % 12));
+                active.push(state);
+                volume.push(50.0 + ((p * 13 + state as usize * 7) % 40) as f64);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("date".into(), date).into(),
+            Series::new("active".into(), active).into(),
+            Series::new("volume".into(), volume).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let model = analyze_frame(&table, &facts, None);
+        let role =
+            |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
+        assert_eq!(role("active").as_deref(), Some("flag"));
+        let account = crate::account::compute_account(
+            &table,
+            &model,
+            &facts,
+            &onceover_deps::fd::DepsOutcome::default(),
+        );
+        if let Some(grain) = &account.grain {
+            assert!(
+                grain.factorization.iter().all(|f| f.column != "active"),
+                "{:?}",
+                grain.factorization
+            );
+        }
+        // The dependency pass's exact key for this frame is (date,
+        // active): it must not be promoted to the grain either. The
+        // key stays a dependency finding; the grain names no flag.
+        let col = |name: &str| table.names.iter().position(|n| n == name).unwrap();
+        let deps = onceover_deps::fd::DepsOutcome {
+            composite_uccs: vec![vec![col("date"), col("active")]],
+            ..Default::default()
+        };
+        let account = crate::account::compute_account(&table, &model, &facts, &deps);
+        if let Some(grain) = &account.grain {
+            assert!(
+                !grain.key_columns.iter().any(|c| c == "active"),
+                "{:?}",
+                grain.key_columns
+            );
+            assert!(
+                grain.factorization.iter().all(|f| f.column != "active"),
+                "{:?}",
+                grain.factorization
+            );
+        }
     }
 }

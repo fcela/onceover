@@ -176,7 +176,7 @@ report = onceover.profile(df, hints={
     "roles": {"row_no": "index"},   # semantic role override:
                                     # identifier | index | timestamp |
                                     # timestamp_part | dimension |
-                                    # measure | text
+                                    # flag | measure | text
     "hierarchies": [["unit", "team", "division"]],
                                     # known hierarchy, levels finest
                                     # to coarsest; verified exactly,

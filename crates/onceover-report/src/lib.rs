@@ -132,7 +132,7 @@ pub struct ColumnCard {
     /// free_text | date | datetime | other
     pub role: String,
     /// The frame model's semantic role: identifier | index | timestamp |
-    /// timestamp_part | dimension | measure | text. Assigned before the
+    /// timestamp_part | dimension | flag | measure | text. Assigned before the
     /// detectors run, with the evidence in `semantic_role_evidence`;
     /// absent when no assignment was made (opaque, empty, or constant
     /// columns). The dtype/cardinality `role` above is unchanged.

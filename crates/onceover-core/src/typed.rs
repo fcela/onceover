@@ -307,6 +307,54 @@ impl<'a> TypedCol<'a> {
     }
 }
 
+/// Whether a column is a two-valued flag: a boolean column with
+/// both states present, or a numeric column whose non-null values
+/// are all 0 or 1 with both values present. Nulls are not a state.
+/// This is the one definition of a flag in the library: the frame
+/// model's role assignment and the panel passes' flag scan both
+/// read it, so the two cannot drift apart.
+pub fn is_two_valued_flag(table: &TypedTable, col: usize) -> bool {
+    two_valued_flag_states(table, col).is_some()
+}
+
+/// A column's per-row flag states when it is a two-valued flag (see
+/// [`is_two_valued_flag`]); `None` otherwise.
+pub fn two_valued_flag_states(table: &TypedTable, col: usize) -> Option<Vec<Option<bool>>> {
+    match &table.cols[col] {
+        TypedCol::Bool { vals } => {
+            let (mut on, mut off) = (false, false);
+            for v in vals.iter().flatten() {
+                if *v {
+                    on = true;
+                } else {
+                    off = true;
+                }
+            }
+            (on && off).then(|| vals.clone())
+        }
+        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+            let (mut on, mut off) = (false, false);
+            let mut out = Vec::with_capacity(table.n);
+            for r in 0..table.n {
+                match table.cols[col].numeric_at(r) {
+                    Some(0.0) => {
+                        off = true;
+                        out.push(Some(false));
+                    }
+                    Some(1.0) => {
+                        on = true;
+                        out.push(Some(true));
+                    }
+                    Some(_) => return None,
+                    None => out.push(None),
+                }
+            }
+            (on && off).then_some(out)
+        }
+        _ => None,
+    }
+}
+
 /// The extracted table. Borrows string data from the source DataFrame.
 #[derive(Debug)]
 pub struct TypedTable<'a> {

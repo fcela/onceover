@@ -39,10 +39,10 @@ pub fn profile_with_detectors(
 /// Entity columns of the frame's entity × time grain, in priority
 /// order: the grain's single non-axis factor when the account found
 /// one, then identifier-role columns, then dimension-role columns.
-/// An entity axis needs at least 10 distinct values — the panel
-/// checks' own floor for the entities they follow — which also keeps
-/// two-valued flag columns (dimension role, by cardinality) from
-/// being mistaken for an axis. At most three columns are returned.
+/// Flag columns carry their own role and never enter this list. An
+/// entity axis also needs at least 10 distinct values — the panel
+/// checks' own floor for the entities they follow. At most three
+/// columns are returned.
 fn entity_columns(
     table: &TypedTable,
     frame: &crate::frame::FrameModel,
@@ -2795,11 +2795,10 @@ fn build_overview(
 
 /// Entity columns for the panel passes, in priority order: the
 /// grain's single non-axis factor when the account found one,
-/// then identifier-role columns, then dimension-role columns. An
-/// entity axis needs at least 10 distinct values — the passes'
-/// own floor for the entities they follow — which also keeps
-/// two-valued flag columns (dimension role, by cardinality) from
-/// being mistaken for an axis.
+/// then identifier-role columns, then dimension-role columns.
+/// Flag columns carry their own role and never enter this list.
+/// An entity axis also needs at least 10 distinct values — the
+/// passes' own floor for the entities they follow.
 fn panel_entity_columns(
     table: &TypedTable,
     frame: &crate::frame::FrameModel,

@@ -88,7 +88,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         count), ``dimensions`` and ``measures`` (panel structure),
         ``roles`` (per-column semantic role override for the frame
         model: one of "identifier", "index", "timestamp",
-        "timestamp_part", "dimension", "measure", "text"),
+        "timestamp_part", "dimension", "flag", "measure", "text"),
         ``hierarchies`` (known hierarchies: each entry is one
         hierarchy's level columns, ordered finest to coarsest — every
         adjacent mapping is verified exactly; a hierarchy that holds
