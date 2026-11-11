@@ -735,9 +735,21 @@ Callers can declare structure the profiler cannot infer, through the
   `monthly`, or a fixed day/step count;
 - `dimensions`, `measures`: the panel's declared dimension and measure
   columns;
+- `roles`: semantic roles for individual columns, overriding the roles
+  the frame model infers — each value is one of `identifier`, `index`,
+  `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`; an
+  entry naming a column the table does not have, or a role outside
+  that vocabulary, is ignored;
 - `hierarchies`: known hierarchies — each entry is one hierarchy's
   level columns, ordered finest to coarsest;
-- `exclude_columns`: columns to leave out of the profile entirely.
+- `exclude_columns`: columns to leave out of the profile entirely;
+- `labels`: display labels for individual columns — where a label is
+  declared, finding claims and interpretations name the column by its
+  label instead of its raw name, while subjects, specifications,
+  evidence, and column cards keep the raw name; a label that cannot
+  apply (its column is not in the table, the label is empty, or it
+  collides with another column of the table or with another label) is
+  not applied and is stated in the `labels` coverage entry;
 - `contrast`: a group contrast — one subset of the rows (a boolean
   column's true rows, or the rows where a column equals a value)
   profiled against the rest of the table by the `group_contrast`
