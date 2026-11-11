@@ -232,7 +232,8 @@
   {
    "id": "breaks",
    "categories": [
-    "changes"
+    "changes",
+    "gaps"
    ],
    "requires": [],
    "activation": "default"
