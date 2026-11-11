@@ -3,7 +3,11 @@ display label used in claim strings and interpretations. Labels are
 presentation, never identity: evidence metrics, subjects, and column
 cards keep the raw column names, and finding ids are unchanged.
 Colliding or unusable labels fall back to the raw name and are stated
-in the `labels` coverage entry, never raised."""
+in the `labels` coverage entry, never raised. Substitution is scoped
+to each finding (issue #229): a finding's prose uses a column's label
+only when the finding's own subject or specification names that
+column, so a column named like an ordinary word is never replaced in
+prose that merely uses the word or talks about another column."""
 
 import polars as pl
 
@@ -114,3 +118,56 @@ def test_empty_label_is_ignored_and_stated():
 def test_no_labels_no_labels_coverage_entry():
     report = onceover.profile(_counts_df())
     assert "labels" not in report.coverage
+
+
+def _counts_df_with_rows_column():
+    # `rows` sits between acc_cnt and gen_cnt, so two order
+    # constraints fire: acc_cnt <= gen_cnt, whose claim uses the word
+    # "rows" only generically ("evaluated rows"), and acc_cnt <=
+    # rows, whose claim is about the rows column itself.
+    acc = [(k % 500) * 0.1 for k in range(2000)]
+    gen = [a + (k % 41) for k, a in enumerate(acc)]
+    rows = [a + (k % 7) for k, a in enumerate(acc)]
+    return pl.DataFrame({"acc_cnt": acc, "gen_cnt": gen, "rows": rows})
+
+
+def _order_findings_by_subject(report):
+    out = {}
+    for f in report.findings:
+        if f.get("category") == "dependencies" and f.get("type") == "order_constraint":
+            out[tuple(f["subject"]["columns"])] = f
+    return out
+
+
+_LABELS_WITH_ROWS = {
+    "acc_cnt": "accepted count",
+    "gen_cnt": "generated count",
+    "rows": "row tally",
+}
+
+
+def test_labels_do_not_replace_generic_words_in_other_findings():
+    report = onceover.profile(
+        _counts_df_with_rows_column(), hints={"labels": _LABELS_WITH_ROWS}
+    )
+    by_subject = _order_findings_by_subject(report)
+    other = by_subject[("acc_cnt", "gen_cnt")]
+    # The finding's own columns are labelled...
+    assert other["claim"].startswith("accepted count <= generated count")
+    # ...but the word "rows" in its prose is generic — the claim is
+    # not about the rows column — and keeps its raw form.
+    assert "evaluated rows" in other["claim"]
+    assert "row tally" not in other["claim"]
+
+
+def test_labels_apply_to_a_finding_about_the_labelled_column():
+    report = onceover.profile(
+        _counts_df_with_rows_column(), hints={"labels": _LABELS_WITH_ROWS}
+    )
+    by_subject = _order_findings_by_subject(report)
+    own = by_subject[("acc_cnt", "rows")]
+    # The scope boundary is the finding: a finding whose own subject
+    # names the rows column substitutes its label, starting with the
+    # subject mention in the claim.
+    assert own["claim"].startswith("accepted count <= row tally")
+    assert "row tally" in own["claim"]

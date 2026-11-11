@@ -305,11 +305,16 @@ Each finding contains:
   interpret a reference or comparison;
 - `claim`: a readable description qualified by its measurements. When
   the caller declares display labels (`hints.labels`), claims and
-  interpretations name columns by their labels; a label is
-  presentation only — `subject`, `specification`, and `evidence`
-  keep the raw column names, and the `id` is unchanged, because it
-  is derived from the canonical statement rather than the claim
-  text;
+  interpretations name columns by their labels. Substitution is
+  scoped to each finding: a finding's prose uses a column's label
+  only when the finding's own `subject` or `specification` names
+  that column, so a column whose raw name is also an ordinary word
+  (such as `count`, `total`, or `rows`) is never replaced in prose
+  that merely uses the word or talks about a different column. A
+  label is presentation only — `subject`, `specification`, and
+  `evidence` keep the raw column names, and the `id` is unchanged,
+  because it is derived from the canonical statement rather than
+  the claim text;
 - `evidence`: separate records from contributing detectors and verifiers;
 - `interestingness`: the selection score described above, not a probability;
 - `detector_interestingness`: the score the producing detector assigned;

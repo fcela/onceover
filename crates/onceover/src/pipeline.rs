@@ -2478,8 +2478,14 @@ fn profile_inner(
     // after selection, so finding ids (derived from the canonical
     // statement, never the claim text), subjects, specifications,
     // and evidence all keep the raw column names. Only claim and
-    // interpretation prose is rewritten. Unusable entries fall back
-    // to the raw name and are stated in the labels coverage entry.
+    // interpretation prose is rewritten, and each finding's prose is
+    // rewritten with only its own statement's labels: a finding
+    // substitutes the labels of the columns its subject and
+    // specification name, never the whole map, so a column named
+    // like an ordinary word is not replaced in prose that merely
+    // uses the word or talks about another column. Unusable entries
+    // fall back to the raw name and are stated in the labels
+    // coverage entry.
     let resolved_labels = cfg.hints.as_ref().and_then(|hints| {
         if hints.labels.is_empty() {
             None
@@ -2490,13 +2496,14 @@ fn profile_inner(
     if let Some(resolved) = &resolved_labels {
         if !resolved.applied.is_empty() {
             for finding in findings.iter_mut().chain(grouped.iter_mut()) {
-                finding.claim =
-                    onceover_report::substitute_labels(&finding.claim, &resolved.applied);
+                let scoped = onceover_report::labels_for_finding(&resolved.applied, finding);
+                if scoped.is_empty() {
+                    continue;
+                }
+                finding.claim = onceover_report::substitute_labels(&finding.claim, &scoped);
                 if let Some(interp) = &finding.interpretation {
-                    finding.interpretation = Some(onceover_report::substitute_labels(
-                        interp,
-                        &resolved.applied,
-                    ));
+                    finding.interpretation =
+                        Some(onceover_report::substitute_labels(interp, &scoped));
                 }
             }
         }

@@ -103,10 +103,13 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         label instead of the raw column name, while subjects,
         evidence, metrics, and column cards keep the raw name and
         finding ids are unchanged — labels are presentation, never
-        identity. A label that names a different column, one label
-        declared for two columns, an empty label, or a label for an
-        unknown column is not applied: the raw name is kept and the
-        ``labels`` coverage entry states each case), and ``contrast``
+        identity. Substitution is scoped to each finding: a finding's
+        prose uses a column's label only when the finding's own
+        subject or specification names that column. A label that
+        names a different column, one label declared for two columns,
+        an empty label, or a label for an unknown column is not
+        applied: the raw name is kept and the ``labels`` coverage
+        entry states each case), and ``contrast``
         (a group contrast: ``{"column": name, "value": scalar}``
         declares one subset of the rows — the rows where the column
         equals the value, or a boolean column's true rows when

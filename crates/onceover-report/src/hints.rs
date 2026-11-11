@@ -7,8 +7,9 @@
 //! not findings: the expectations pass checks them exactly and tags
 //! its evidence `reference_source: "declared"`.
 
+use crate::finding::Finding;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A declared cadence for gap checks: a fixed step in days (for date
 /// columns, the spacing of expected periods; for integer columns, the
@@ -112,7 +113,12 @@ pub struct ProfileHints {
     pub exclude_columns: Vec<String>,
     /// Display labels, per column: where a label is declared, the
     /// report's prose — finding claims and interpretations — names
-    /// the column by its label instead of its raw name. Labels are
+    /// the column by its label instead of its raw name. Substitution
+    /// is scoped to each finding: a finding's prose uses a column's
+    /// label only when the finding's own subject or specification
+    /// names that column, so a column whose raw name is also an
+    /// ordinary word is never replaced in prose that merely uses
+    /// the word or talks about a different column. Labels are
     /// presentation, never identity: subjects, specifications,
     /// evidence metrics, and column cards keep the raw name, and
     /// finding ids (derived from the canonical statement, not the
@@ -122,7 +128,7 @@ pub struct ProfileHints {
     /// not have, an empty label, and a colliding label — one that
     /// names a different column of the table, or one label declared
     /// for two columns. A colliding column keeps its raw name in
-    /// prose. See `resolve_labels`.
+    /// prose. See `resolve_labels` and `labels_for_finding`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     /// A declared group contrast: one subset of the rows profiled
@@ -274,6 +280,72 @@ pub fn substitute_labels(text: &str, labels: &BTreeMap<String, String>) -> Strin
     out
 }
 
+/// Collect the strings carried in a specification definition value,
+/// at any depth: alongside prose and numbers that name nothing, a
+/// definition names columns in string values — a condition column,
+/// the index, attribute, and measure columns of a pivot, and the
+/// like.
+fn definition_strings(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(s) => out.push(s.clone()),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                definition_strings(item, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for item in map.values() {
+                definition_strings(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The subset of the resolved labels one finding's prose may use:
+/// the labels of the columns the finding's own statement names —
+/// the subject's columns, inputs, and target, and the columns the
+/// specification names, through its predicates' columns and through
+/// the column names carried in its definition's string values.
+///
+/// Substitution is scoped per finding because a token match alone
+/// cannot tell a mention from a word: a column whose raw name is
+/// also an ordinary word — count, total, rows — would otherwise be
+/// replaced in prose that merely uses the word, or that talks about
+/// a different column.
+pub fn labels_for_finding(
+    applied: &BTreeMap<String, String>,
+    finding: &Finding,
+) -> BTreeMap<String, String> {
+    if applied.is_empty() {
+        return BTreeMap::new();
+    }
+    let mut named: BTreeSet<&str> = BTreeSet::new();
+    named.extend(finding.subject.columns.iter().map(String::as_str));
+    named.extend(finding.subject.inputs.iter().map(String::as_str));
+    if let Some(target) = &finding.subject.target {
+        named.insert(target.as_str());
+    }
+    let spec = &finding.specification;
+    for predicate in spec.conditions.iter().chain(spec.outcome.iter()) {
+        named.insert(predicate.column.as_str());
+    }
+    let mut strings: Vec<String> = Vec::new();
+    for value in spec.definition.values() {
+        definition_strings(value, &mut strings);
+    }
+    for s in &strings {
+        if applied.contains_key(s) {
+            named.insert(s.as_str());
+        }
+    }
+    applied
+        .iter()
+        .filter(|(name, _)| named.contains(name.as_str()))
+        .map(|(name, label)| (name.clone(), label.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +445,111 @@ mod tests {
             substitute_labels("no names here", &BTreeMap::new()),
             "no names here"
         );
+    }
+
+    use crate::finding::{
+        Category, Evidence, EvidenceBasis, Method, Predicate, Specification, Subject,
+    };
+    use serde_json::json;
+
+    fn statement(subject: Subject, spec: Specification, claim: &str) -> Finding {
+        Finding::from_statement(
+            Category::ConditionalRules,
+            Some("if_then".into()),
+            subject,
+            spec,
+            claim.into(),
+            Evidence::new(
+                Method::new("test", "test", "test"),
+                EvidenceBasis::Measured,
+                BTreeMap::new(),
+            ),
+            0.5,
+            None,
+        )
+    }
+
+    #[test]
+    fn labels_scope_to_the_subjects_columns() {
+        let applied = declared(&[("price", "unit price"), ("total", "grand total")]);
+        // The claim is about price; it also uses the word `total`
+        // generically. Only the price label may be substituted.
+        let f = statement(
+            Subject::columns(["price".to_string()]),
+            Specification::default(),
+            "price rose in spring; the total covers all rows",
+        );
+        let scoped = labels_for_finding(&applied, &f);
+        assert_eq!(scoped, declared(&[("price", "unit price")]));
+        assert_eq!(
+            substitute_labels(&f.claim, &scoped),
+            "unit price rose in spring; the total covers all rows"
+        );
+    }
+
+    #[test]
+    fn labels_scope_includes_inputs_and_target() {
+        let applied = declared(&[
+            ("x", "input label"),
+            ("y", "outcome label"),
+            ("z", "other label"),
+        ]);
+        let f = statement(
+            Subject::dependency(vec!["x".to_string()], "y".to_string()),
+            Specification::default(),
+            "y follows x",
+        );
+        let scoped = labels_for_finding(&applied, &f);
+        assert_eq!(scoped.len(), 2, "{scoped:?}");
+        assert!(scoped.contains_key("x") && scoped.contains_key("y"));
+    }
+
+    #[test]
+    fn labels_scope_includes_specification_columns() {
+        let applied = declared(&[("amount", "the amount"), ("region", "sales region")]);
+        // Named by a condition predicate, not by the subject.
+        let spec = Specification {
+            conditions: vec![Predicate::equal("region", json!("north"))],
+            ..Default::default()
+        };
+        let f = statement(
+            Subject::columns(["amount".to_string()]),
+            spec,
+            "within region = north, amount reaches 9",
+        );
+        let scoped = labels_for_finding(&applied, &f);
+        assert!(scoped.contains_key("region"), "{scoped:?}");
+        assert_eq!(
+            substitute_labels(&f.claim, &scoped),
+            "within sales region = north, the amount reaches 9"
+        );
+        // Named in a definition value (a condition column), not by
+        // the subject and not by a predicate.
+        let mut spec = Specification::default();
+        spec.definition
+            .insert("condition_column".into(), json!("region"));
+        let f = statement(
+            Subject::columns(["amount".to_string()]),
+            spec,
+            "within region = north, amount reaches 9",
+        );
+        let scoped = labels_for_finding(&applied, &f);
+        assert_eq!(
+            substitute_labels(&f.claim, &scoped),
+            "within sales region = north, the amount reaches 9"
+        );
+    }
+
+    #[test]
+    fn labels_scope_empty_when_no_labelled_column_is_named() {
+        let applied = declared(&[("total", "grand total")]);
+        let f = statement(
+            Subject::columns(["price".to_string()]),
+            Specification::default(),
+            "the total is computed over price",
+        );
+        let scoped = labels_for_finding(&applied, &f);
+        assert!(scoped.is_empty(), "{scoped:?}");
+        assert_eq!(substitute_labels(&f.claim, &scoped), f.claim);
     }
 }

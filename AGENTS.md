@@ -186,8 +186,10 @@ report = onceover.profile(df, hints={
                                     # stated in coverage as user-declared
     "labels": {"wk_act_usr": "weekly active users"},
                                     # display labels used in claim
-                                    # strings; evidence and metrics
-                                    # keep the raw column names
+                                    # strings; each finding uses only
+                                    # the labels of the columns its
+                                    # own statement names; evidence
+                                    # and metrics keep the raw names
     "contrast": {"column": "region", "value": "north"},
                                     # group contrast: the named
                                     # subset of rows profiled against
