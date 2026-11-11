@@ -287,3 +287,96 @@ def test_unique_widely_spaced_integers_are_measures():
     assert frame["total_spend"].n_unique() == n
     assert roles["total_spend"] == "measure"
     assert roles["row_label"] == "identifier"
+
+
+def test_flag_columns_get_the_flag_role_not_dimension():
+    # Boolean and 0/1 columns are flags: they state a condition on
+    # the row rather than partitioning the frame. A two-state
+    # string column keeps the dimension role (its levels are
+    # labels, not states); a single-state boolean is a constant
+    # and takes neither role.
+    n = 400
+    frame = pl.DataFrame({
+        "active": [i % 3 != 0 for i in range(n)],
+        "converted": [1 if i % 5 == 0 else 0 for i in range(n)],
+        "fraction_flag": [1.0 if i % 7 == 0 else 0.0 for i in range(n)],
+        "channel": ["web" if i % 2 == 0 else "store" for i in range(n)],
+        "region": [["north", "south", "east"][i % 3] for i in range(n)],
+        "always_on": [True] * n,
+        "amount": [10.0 + (i % 50) for i in range(n)],
+    })
+    report = onceover.profile(frame)
+    roles = _roles(report)
+    assert roles["active"] == "flag"
+    assert roles["converted"] == "flag"
+    assert roles["fraction_flag"] == "flag"
+    assert roles["channel"] == "dimension"
+    assert roles["region"] == "dimension"
+    assert roles["amount"] == "measure"
+    assert roles["always_on"] not in ("flag", "dimension")
+    card = report.data["columns"]["active"]
+    assert card["semantic_role"] == "flag"
+    assert card["semantic_role_evidence"]
+
+
+def test_flag_role_hint_overrides_both_ways():
+    frame = pl.DataFrame({"active": [i % 2 == 0 for i in range(100)]})
+    report = onceover.profile(frame, hints={"roles": {"active": "dimension"}})
+    assert _roles(report)["active"] == "dimension"
+    report = onceover.profile(frame, hints={"roles": {"active": "flag"}})
+    assert _roles(report)["active"] == "flag"
+
+
+def test_a_flag_crossed_with_time_is_not_a_grain():
+    # Every (flag state, period) pair occurs exactly once, so the
+    # flag would form an exact grain factor with the axis if it
+    # carried the dimension role. It must not: a flag is not a
+    # grain component, and no dominant grouping is measured on it.
+    periods = 15
+    rows = {"date": [], "active": [], "volume": []}
+    for state in (False, True):
+        for p in range(periods):
+            rows["date"].append(f"202{3 + p // 12}-{1 + p % 12:02d}-01")
+            rows["active"].append(state)
+            rows["volume"].append(50.0 + ((p * 13 + int(state) * 7) % 40))
+    report = onceover.profile(pl.DataFrame(rows))
+    assert _roles(report)["active"] == "flag"
+    grain = report.data["frame"].get("grain")
+    if grain:
+        # Neither the factorized grain nor the dependency pass's
+        # exact key, promoted to the grain, may name the flag.
+        assert "active" not in grain["key_columns"]
+        assert "active" not in [
+            f["column"] for f in grain.get("factorization") or []
+        ]
+    dominant = report.data["frame"].get("dominant") or []
+    assert all(d["grouping"] != "active" for d in dominant)
+
+
+def test_one_way_flag_scan_still_finds_its_flag():
+    # The panel flag scan selects flags by the same definition the
+    # frame model now uses for the role: on this person x week
+    # panel the licence flag carries the flag role, stays out of
+    # the grain, and is still reported as a one-way flag.
+    persons, weeks = 30, 20
+    rows = {"person": [], "week": [], "licence_flag": [], "activity": []}
+    start = date(2025, 1, 6)
+    for p in range(persons):
+        onset = 5 + (p % 10)
+        for w in range(weeks):
+            rows["person"].append(f"p{p:02d}")
+            rows["week"].append(start + timedelta(weeks=w))
+            rows["licence_flag"].append(w >= onset)
+            rows["activity"].append(10.0 if w > onset else 0.0)
+    report = onceover.profile(pl.DataFrame(rows))
+    roles = _roles(report)
+    assert roles["licence_flag"] == "flag"
+    assert roles["person"] == "dimension"
+    grain = report.data["frame"]["grain"]
+    assert "licence_flag" not in [f["column"] for f in grain["factorization"]]
+    hits = report.select(type="one_way_flag")
+    assert len(hits) == 1, [f["claim"] for f in report.findings]
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["flag"] == "licence_flag"
+    assert metrics["entity_column"] == "person"
+    assert metrics["entities_with_onset"] == persons

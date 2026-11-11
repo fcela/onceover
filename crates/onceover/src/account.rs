@@ -207,6 +207,8 @@ fn compute_grain(
     bool,
 ) {
     let n = table.n;
+    // Dimension-role columns only: flag-role columns state a
+    // condition on the row and are never grain components.
     let dims: Vec<usize> = frame
         .roles
         .iter()
@@ -359,15 +361,21 @@ fn compute_grain(
 
     // ---- the dependency pass's exact key, without factorization ----
     // A unique float is a measurement, not what the rows are keyed by.
+    // A key that needs a flag column is not the grain either: a flag
+    // states a condition on the row, it is not an entity axis. The
+    // dependency pass still reports such keys as its own key
+    // findings; the frame model does not promote them to the grain.
+    let is_flag = |i: usize| frame.roles[i].as_deref() == Some("flag");
     let single_key = deps
         .single_unique
         .iter()
-        .find(|&&i| !matches!(table.cols[i], TypedCol::F64 { .. }));
+        .find(|&&i| !matches!(table.cols[i], TypedCol::F64 { .. }) && !is_flag(i));
     let deps_key: Option<Vec<String>> = if let Some(&i) = single_key {
         Some(vec![table.names[i].clone()])
     } else {
         deps.composite_uccs
-            .first()
+            .iter()
+            .find(|ucc| ucc.iter().all(|&i| !is_flag(i)))
             .map(|ucc| ucc.iter().map(|&i| table.names[i].clone()).collect())
     };
     if let Some(key_columns) = deps_key {

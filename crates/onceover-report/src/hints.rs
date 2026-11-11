@@ -86,7 +86,7 @@ pub struct ProfileHints {
     pub measures: Vec<String>,
     /// Declared semantic roles, per column: one of the frame model's
     /// role vocabulary (identifier, index, timestamp, timestamp_part,
-    /// dimension, measure, text). An entry overrides the inferred
+    /// dimension, flag, measure, text). An entry overrides the inferred
     /// role for that column; entries naming an unknown column or a
     /// role outside the vocabulary are ignored.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

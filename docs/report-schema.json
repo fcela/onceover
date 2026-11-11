@@ -104,6 +104,7 @@
             "timestamp",
             "timestamp_part",
             "dimension",
+            "flag",
             "measure",
             "text"
           ]
@@ -863,6 +864,7 @@
                 "timestamp",
                 "timestamp_part",
                 "dimension",
+                "flag",
                 "measure",
                 "text"
               ]

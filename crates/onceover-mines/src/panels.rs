@@ -79,41 +79,11 @@ pub struct PanelInput<'a> {
 
 /// A column's per-row flag states when it is a two-valued flag:
 /// a boolean column, or a numeric column whose values are all
-/// 0 or 1 with both values present.
+/// 0 or 1 with both values present. The definition itself lives in
+/// `onceover_core` (`two_valued_flag_states`), shared with the
+/// frame model's role assignment.
 fn flag_values(table: &TypedTable, col: usize) -> Option<Vec<Option<bool>>> {
-    match &table.cols[col] {
-        TypedCol::Bool { vals } => {
-            let (mut on, mut off) = (false, false);
-            for v in vals.iter().flatten() {
-                if *v {
-                    on = true;
-                } else {
-                    off = true;
-                }
-            }
-            (on && off).then(|| vals.clone())
-        }
-        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
-            let (mut on, mut off) = (false, false);
-            let mut out = Vec::with_capacity(table.n);
-            for r in 0..table.n {
-                match table.cols[col].numeric_at(r) {
-                    Some(0.0) => {
-                        off = true;
-                        out.push(Some(false));
-                    }
-                    Some(1.0) => {
-                        on = true;
-                        out.push(Some(true));
-                    }
-                    Some(_) => return None,
-                    None => out.push(None),
-                }
-            }
-            (on && off).then_some(out)
-        }
-        _ => None,
-    }
+    onceover_core::two_valued_flag_states(table, col)
 }
 
 /// Whether the column is boolean or numeric at all (the flag

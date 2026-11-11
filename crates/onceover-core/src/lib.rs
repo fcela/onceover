@@ -13,7 +13,10 @@ pub use sampling::sample_rows;
 pub use card::{column_card, CardOut};
 pub use counts::{build_counts, ColCounts, VKey};
 pub use dup::{find_duplicate_rows, DupInfo};
-pub use typed::{dtype_name, extract, extract_series, NumericValues, TypedCol, TypedTable};
+pub use typed::{
+    dtype_name, extract, extract_series, is_two_valued_flag, two_valued_flag_states, NumericValues,
+    TypedCol, TypedTable,
+};
 
 #[cfg(test)]
 mod tests {

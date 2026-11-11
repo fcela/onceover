@@ -16,7 +16,7 @@ in `findings.md`.
 |---|---|
 | `schema_version` | string, e.g. `"0.5"` |
 | `overview` | `n_rows`, `n_columns`, `headline` (one-line summary), `dtype_counts`, `role_counts`, `top_findings` (top five claim strings) |
-| `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, `year_candidate`, or `week_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
+| `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `flag`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, `year_candidate`, or `week_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
 | `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `grouped_findings` | statements grouped under a verified relationship family's lead (schema 0.6): full finding objects, each carrying `grouped_under`; absent when no family formed. Grouped statements are not in `findings` and spend no selection or digest slot; the family semantics are defined in `docs/findings.md`, "Verified relationship families" |
@@ -55,7 +55,14 @@ column, a `timestamp_part` is a member of a set of integer columns
 (year and month at minimum) that jointly form a timestamp, a
 `dimension` is a low-cardinality grouping column (a numeric column
 qualifies only with at most 32 whole-number values, or 12 fractional
-ones), a `measure` is a numeric quantity, and `text` is free text. A `roles` hint
+ones), a `flag` is a two-valued column — a boolean with both states
+present, or a numeric column holding only 0 and 1, the same
+definition the panel passes' flag scan uses — which states a
+condition on the row rather than partitioning the frame, so the
+dimension consumers (grain inference, dominant structure, entity
+axes) never receive it (a two-state string or categorical column
+keeps the `dimension` role: its levels are labels, not states), a
+`measure` is a numeric quantity, and `text` is free text. A `roles` hint
 (`hints={"roles": {"col": "measure"}}`) overrides the assignment
 for that column. The axis is the frame's time axis, chosen in
 precedence order: a `time` hint, a native date/datetime column, a
@@ -92,6 +99,10 @@ the candidate `columns`, its `distinct` count, and the
 it. A factorized grain is also a finding (category `uniqueness`,
 detector `keys`, algorithm `grain_factorization`, facet scope
 `frame`); it replaces the bare key finding for the same columns.
+When no factorized grain exists, the grain record falls back to
+the dependency pass's exact key — except a key that needs a flag
+column: the dependency pass still reports such a key as its own
+finding, but the frame model does not promote it to the grain.
 A near key is likewise a finding (category `duplicates`,
 algorithm `near_key_axis`, scope `frame`).
 
