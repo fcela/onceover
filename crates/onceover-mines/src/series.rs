@@ -53,6 +53,13 @@ const ENTITY_BREAK_MIN_SEGMENT: usize = 6;
 const ENTITY_BREAK_MIN_GAIN: f64 = 0.25;
 /// Entity names spelled out in a claim before the rest are counted.
 const MAX_NAMED_ENTITIES: usize = 5;
+/// The per-entity pass examines at most this many measures per
+/// entity column, ranked by entity × tick observations — the
+/// principal measure first, then the rest by count. Each measure
+/// costs a full per-entity scan and can add up to three statements,
+/// so the bound holds both the work and the report size; coverage
+/// states it when it binds.
+const MAX_ENTITY_MEASURES: usize = 8;
 /// Structure explaining this share of variance is removed before measuring
 /// cycles and persistence.
 const REMOVE_STRUCTURE_R2: f64 = 0.3;
@@ -83,9 +90,10 @@ pub struct SeriesInput<'a> {
     pub measures: Vec<usize>,
     pub dimensions: Vec<usize>,
     /// Entity columns of a panel grain, in the pipeline's priority
-    /// order. The first is the grain the per-entity pass reads the
-    /// principal measure against; empty when the frame has no
-    /// entity × time grain.
+    /// order. The per-entity pass reads each of them as an entity
+    /// axis in turn; the first is the grain's own entity column,
+    /// and its per-measure accounts qualify the aggregate trend
+    /// statements. Empty when the frame has no entity × time grain.
     pub entities: Vec<usize>,
 }
 
@@ -591,30 +599,52 @@ fn name_list(labels: &[String]) -> String {
 }
 
 /// What the per-entity pass leaves behind: its findings, the trend
-/// account the aggregate statement is qualified against, and the
-/// coverage fragment.
+/// accounts the aggregate statements are qualified against, and
+/// the coverage fragment.
 struct EntityOutcome {
     findings: Vec<Finding>,
-    /// Principal measure column, entities tested for a trend, and
-    /// how many of them rise / fall significantly on their own.
-    /// Present only when at least [`MIN_ENTITY_TESTED`] entities
-    /// could be tested.
-    principal_trend: Option<(usize, usize, usize, usize)>,
+    /// Per-measure trend accounts on the first entity column:
+    /// (measure column, entities tested for a trend, how many of
+    /// them rise / fall significantly on their own) for each
+    /// examined measure tested on at least [`MIN_ENTITY_TESTED`]
+    /// entities. [`profile_series`] qualifies a measure's
+    /// aggregate trend statement against its own account.
+    trend_accounts: Vec<(usize, usize, usize, usize)>,
     detail: String,
 }
 
-/// The trend and level-break checks run per entity on the principal
-/// measure — the measure with the most entity × tick observations.
+/// One measure's per-entity scan on one entity column: its
+/// findings and its trend account.
+struct EntityScan {
+    findings: Vec<Finding>,
+    tested: usize,
+    rises: usize,
+    falls: usize,
+    break_tested: usize,
+}
+
+/// The trend and level-break checks run per entity on the examined
+/// measures of every entity column the frame model supplies — the
+/// grain's entity column first, then the identifier- and
+/// dimension-role candidates, in the pipeline's priority order.
 ///
 /// The aggregate series averages entities together, so a movement
 /// carried by a minority of entities reads as a general one, and a
 /// movement no single entity shows can appear from the mix. The
 /// per-entity statements name the entities carrying each pattern;
-/// [`profile_series`] qualifies the aggregate trend statement when
-/// the per-entity evidence is mixed. Per-entity series are shorter,
-/// so the bars are stated for them: a trend needs at least
-/// [`MIN_ENTITY_TREND_POINTS`] points and the same gates as the
-/// aggregate (line fit, line over step, deflated t-test at
+/// [`profile_series`] qualifies each measure's aggregate trend
+/// statement against that measure's own account on the first
+/// entity column when the per-entity evidence is mixed.
+///
+/// Measures are ranked per entity column by their observations on
+/// the entity × time grain — the principal measure (the most
+/// observations) first, then the rest by count, ties in the order
+/// the measures arrive — and at most [`MAX_ENTITY_MEASURES`] are
+/// examined per entity column. Each measure's statements stand on
+/// its own tested and carrier counts. Per-entity series are
+/// shorter, so the bars are stated for them: a trend needs at
+/// least [`MIN_ENTITY_TREND_POINTS`] points and the same gates as
+/// the aggregate (line fit, line over step, deflated t-test at
 /// p < 0.001); a level break needs at least
 /// [`MIN_ENTITY_BREAK_POINTS`] points and a single-break gain of
 /// [`ENTITY_BREAK_MIN_GAIN`] with segments of at least
@@ -624,70 +654,105 @@ struct EntityOutcome {
 /// steady ramp reads as a level shift to a two-mean scan, and its
 /// movement is already stated as a trend.
 fn entity_series(table: &TypedTable, input: &SeriesInput, measures: &[usize]) -> EntityOutcome {
-    let empty = |detail: String| EntityOutcome {
+    let mut outcome = EntityOutcome {
         findings: Vec::new(),
-        principal_trend: None,
-        detail,
-    };
-    let Some(&ecol) = input.entities.first() else {
-        return empty(String::new());
+        trend_accounts: Vec::new(),
+        detail: String::new(),
     };
     if measures.is_empty() {
-        return empty(String::new());
+        return outcome;
     }
-    let ename = table.names[ecol].as_str();
-    let (codes, _) = match crate::panels::entity_codes(table, ecol) {
-        Ok(v) => v,
-        Err(_) => {
-            return empty(format!(
-                "; per-entity series not run: the entity column {ename} could not key entities"
-            ))
-        }
-    };
-    let mut labels: Vec<Option<String>> = Vec::new();
-    for (r, c) in codes.iter().enumerate() {
-        if let Some(c) = c {
-            let c = *c as usize;
-            if labels.len() <= c {
-                labels.resize(c + 1, None);
+    for (axis, &ecol) in input.entities.iter().enumerate() {
+        let ename = table.names[ecol].as_str();
+        let (codes, _) = match crate::panels::entity_codes(table, ecol) {
+            Ok(v) => v,
+            Err(_) => {
+                outcome.detail.push_str(&format!(
+                    "; per-entity series not run: the entity column {ename} could not key entities"
+                ));
+                continue;
             }
-            if labels[c].is_none() {
-                labels[c] = entity_label(table, ecol, r);
+        };
+        let mut labels: Vec<Option<String>> = Vec::new();
+        for (r, c) in codes.iter().enumerate() {
+            if let Some(c) = c {
+                let c = *c as usize;
+                if labels.len() <= c {
+                    labels.resize(c + 1, None);
+                }
+                if labels[c].is_none() {
+                    labels[c] = entity_label(table, ecol, r);
+                }
             }
         }
-    }
-    let label_of = |c: u32| -> String {
-        labels
-            .get(c as usize)
-            .cloned()
-            .flatten()
-            .unwrap_or_else(|| format!("entity #{c}"))
-    };
+        let label_of = |c: u32| -> String {
+            labels
+                .get(c as usize)
+                .cloned()
+                .flatten()
+                .unwrap_or_else(|| format!("entity #{c}"))
+        };
 
-    // The principal measure: the one with the most observations on
-    // the entity × time grain.
-    let mut principal = measures[0];
-    let mut best_count = 0usize;
-    for &m in measures {
-        let count = (0..table.n)
-            .filter(|&r| {
-                codes[r].is_some()
-                    && input.ticks[r].is_some()
-                    && table.cols[m].numeric_at(r).is_some_and(|v| v.is_finite())
+        // Rank the measures on this grain: the principal measure
+        // (the most entity × tick observations) first, then the
+        // rest by count; the sort is stable, so ties keep the
+        // order the measures arrive in.
+        let mut ranked: Vec<(usize, usize)> = measures
+            .iter()
+            .map(|&m| {
+                let count = (0..table.n)
+                    .filter(|&r| {
+                        codes[r].is_some()
+                            && input.ticks[r].is_some()
+                            && table.cols[m].numeric_at(r).is_some_and(|v| v.is_finite())
+                    })
+                    .count();
+                (m, count)
             })
-            .count();
-        if count > best_count {
-            best_count = count;
-            principal = m;
+            .collect();
+        ranked.sort_by_key(|a| std::cmp::Reverse(a.1));
+        let examined = ranked.len().min(MAX_ENTITY_MEASURES);
+        for &(mcol, _) in &ranked[..examined] {
+            let mname = table.names[mcol].as_str();
+            let scan = entity_measure_scan(table, input, ename, mcol, &codes, &label_of);
+            if axis == 0 && scan.tested >= MIN_ENTITY_TESTED {
+                outcome
+                    .trend_accounts
+                    .push((mcol, scan.tested, scan.rises, scan.falls));
+            }
+            outcome.findings.extend(scan.findings);
+            outcome.detail.push_str(&format!(
+                "; per-entity series of {mname} by {ename}: {} entities tested for a trend ({} rising, {} falling), {} for a level break",
+                scan.tested, scan.rises, scan.falls, scan.break_tested
+            ));
+        }
+        if ranked.len() > MAX_ENTITY_MEASURES {
+            outcome.detail.push_str(&format!(
+                "; per-entity series by {ename} examined the first {MAX_ENTITY_MEASURES} of {} measures by entity × tick observations",
+                ranked.len()
+            ));
         }
     }
-    let mname = table.names[principal].as_str();
+    outcome
+}
 
-    // Per-entity per-tick means of the principal measure.
+/// One measure's per-entity scan on one entity column: the trend
+/// and level-break checks of [`entity_series`] run on the
+/// per-entity per-tick means of the measure, keyed by `codes`.
+fn entity_measure_scan(
+    table: &TypedTable,
+    input: &SeriesInput,
+    ename: &str,
+    mcol: usize,
+    codes: &[Option<u32>],
+    label_of: &dyn Fn(u32) -> String,
+) -> EntityScan {
+    let mname = table.names[mcol].as_str();
+
+    // Per-entity per-tick means of the measure.
     let mut by_entity: HashMap<u32, BTreeMap<i64, (f64, usize)>> = HashMap::new();
     for (r, code) in codes.iter().enumerate() {
-        if let (Some(c), Some(t), Some(v)) =
-            (*code, input.ticks[r], table.cols[principal].numeric_at(r))
+        if let (Some(c), Some(t), Some(v)) = (*code, input.ticks[r], table.cols[mcol].numeric_at(r))
         {
             if v.is_finite() {
                 let e = by_entity.entry(c).or_default().entry(t).or_insert((0.0, 0));
@@ -826,15 +891,12 @@ fn entity_series(table: &TypedTable, input: &SeriesInput, measures: &[usize]) ->
         }
     }
 
-    EntityOutcome {
+    EntityScan {
         findings,
-        principal_trend: (tested >= MIN_ENTITY_TESTED)
-            .then_some((principal, tested, rises.len(), falls.len())),
-        detail: format!(
-            "; per-entity series of {mname} by {ename}: {tested} entities tested for a trend ({} rising, {} falling), {break_tested} for a level break",
-            rises.len(),
-            falls.len(),
-        ),
+        tested,
+        rises: rises.len(),
+        falls: falls.len(),
+        break_tested,
     }
 }
 
@@ -1073,13 +1135,13 @@ pub fn profile_series(table: &TypedTable, input: &SeriesInput) -> (Vec<Finding>,
     findings.extend(per_dimension.into_iter().flatten());
 
     // Per-entity series on the panel grain, and the qualification
-    // of the principal measure's aggregate trend when the
-    // per-entity evidence is mixed: an aggregate movement no
-    // entity shows on its own, or one a minority carries, is not
-    // stated as a general movement.
+    // of each measure's aggregate trend against that measure's own
+    // per-entity account when the evidence is mixed: an aggregate
+    // movement no entity shows on its own, or one a minority
+    // carries, is not stated as a general movement.
     let entity = entity_series(table, input, &measures);
     findings.extend(entity.findings);
-    if let Some((mcol, tested, rises, falls)) = entity.principal_trend {
+    for &(mcol, tested, rises, falls) in &entity.trend_accounts {
         let ename = table.names[input.entities[0]].clone();
         let mname = table.names[mcol].clone();
         for f in findings.iter_mut() {
