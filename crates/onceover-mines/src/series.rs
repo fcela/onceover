@@ -710,7 +710,7 @@ fn entity_series(table: &TypedTable, input: &SeriesInput, measures: &[usize]) ->
                 (m, count)
             })
             .collect();
-        ranked.sort_by(|a, b| b.1.cmp(&a.1));
+        ranked.sort_by_key(|a| std::cmp::Reverse(a.1));
         let examined = ranked.len().min(MAX_ENTITY_MEASURES);
         for &(mcol, _) in &ranked[..examined] {
             let mname = table.names[mcol].as_str();
