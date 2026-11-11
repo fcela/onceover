@@ -96,7 +96,7 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
     # The regression assertion: the date-gap finding the notebook's
     # summary and section 4 read, with the fixture's two missing
     # business dates.
-    gap = ex.find(report, "gaps", column="order_date")
+    gap = ex.find(report, "gaps", subtype="gap", column="order_date")
     assert ex.measured(gap)["missing"] == 2
 
     # The two call sites that raised StopIteration now execute.
