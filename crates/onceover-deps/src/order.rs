@@ -67,6 +67,42 @@
 //! asymmetry requirement and stay silent, as do one-sided
 //! violations below the share floor.
 //!
+//! The second complementary statement covers the pair the scale
+//! gate itself excludes: a part against its whole. A part sits
+//! far from its total by construction — a quarter-share part has
+//! a median row distance near 0.75 — so the gate can never pass,
+//! and a part corrupted to exceed its total in bulk is stated by
+//! no pass: the identity scan states a decomposition only when
+//! it holds on at least 99.9% of rows, which bulk corruption
+//! breaks. When a direction's violations number at least 20 and
+//! between 5% and 40% of the evaluated rows, and one column is a
+//! component of the other, the direction is reported as a
+//! part-against-whole violation in the same statement shape,
+//! without the scale gate and without the asymmetry requirement:
+//! the component relation is the evidence the pair is a bound,
+//! and the whole exceeding the part on the remaining rows is
+//! what a bound looks like, not a competing order. The relation
+//! is established two ways (see `part_whole_relation`). By
+//! identity: the whole minus the part equals a sum of one to
+//! three other columns, within the identity tolerance, on at
+//! least 99.9% of the rows where the order holds, with the rest
+//! non-negative on at least 99% of the evaluated rows — judged
+//! on the held rows because the corrupted rows are the ones
+//! where the decomposition breaks. By containment: both columns
+//! respect the shared zero floor on at least 99% of the
+//! evaluated rows, and the slack reaches the floor (within 0.1%
+//! of the whole's range) on at least 5% of the held rows where
+//! the whole is above it, but on fewer than half of them — the
+//! whole is sometimes just the part, which shared zeros alone
+//! cannot show, and columns equal on half or more of the held
+//! rows are two recordings of one quantity. An age in years against
+//! a duration in seconds meets neither test: no decomposition of
+//! its slack exists, and the slack never reaches the floor.
+//! Where the decomposition verifies on at least 99.9% of all
+//! evaluated rows the identity scan states it, and this
+//! statement stays silent for the pair: the same failure is not
+//! stated twice.
+//!
 //! Every eligible pair is screened on the row sample, up to 64 times
 //! the shared pair budget, nearest columns first. Pairs that stay
 //! near-universal on the sample are verified on all rows, up to
@@ -119,6 +155,47 @@ const MAX_PAIR_DISTANCE: f64 = 0.2;
 /// The columns' medians must agree within this factor when both
 /// are non-zero: the same-scale half of the gate above.
 const MAX_MEDIAN_RATIO: f64 = 2.5;
+/// The identity tolerance of the identity scans, shared with the
+/// part/whole component test: |y − predicted| ≤ 1e-9 · (1 + |y|).
+const IDENTITY_TOL: f64 = 1e-9;
+/// A decomposition of the whole into the part plus a rest must
+/// match on at least this share of the rows it is judged on —
+/// the identity scans' own acceptance bar (their fixed-form scan
+/// requires the full-data fraction to reach 0.999).
+const IDENTITY_MATCH_SHARE: f64 = 0.999;
+/// The rest of a decomposition is the whole's other parts, so it
+/// is non-negative on at least this share of the evaluated rows;
+/// the identity scans' components-first chase admits candidate
+/// parts by the same bound read the other way (a part lies
+/// between zero and its target on at least 99% of rows).
+const REST_NONNEG_SHARE: f64 = 0.99;
+/// Smallest number of rows where a candidate rest and the slack
+/// are both present before the rest is judged (the chase's own
+/// minimum, read on the held rows here).
+const MIN_REST_ROWS: usize = 50;
+/// Candidate rests for a decomposition, largest mean share of
+/// the slack first; the chase caps its candidate pool the same
+/// way, at 24.
+const REST_POOL_MAX: usize = 12;
+/// A decomposition's rest has at most this many columns: totals
+/// of up to four parts are covered.
+const REST_MAX_TERMS: usize = 3;
+/// The floor half of the containment test: a part and its whole
+/// both respect the shared zero floor on at least this share of
+/// the evaluated rows (the chase's part-bound share).
+const FLOOR_SHARE: f64 = 0.99;
+/// Containment route: on held rows where the whole is above the
+/// floor, the slack (whole − part) must come within this share
+/// of the whole's range of zero — the size of rounding in
+/// reported totals, as the near-identity test measures it — on
+/// at least SLACK_CONTACT_SHARE of those rows: the whole is
+/// sometimes just the part.
+const SLACK_CONTACT_REL_SHARE: f64 = 1e-3;
+const SLACK_CONTACT_SHARE: f64 = 0.05;
+/// The contact share stays below this: where the two columns
+/// are equal on half or more of the held rows, the pair reads
+/// as two recordings of one quantity, not a part and its whole.
+const MAX_SLACK_CONTACT_SHARE: f64 = 0.5;
 /// Rows sampled for the screening stage when the table has more
 /// rows than this; survivors are verified on all rows.
 const SCREEN_ROWS: usize = 4096;
@@ -252,6 +329,17 @@ impl ColPrep {
     }
     fn is_temporal(&self) -> bool {
         matches!(self, ColPrep::Ticks { .. })
+    }
+    /// Whether every value is exactly representable in f64: all
+    /// float columns, and integer columns within the exact limit.
+    /// The part/whole component test works in f64 and requires
+    /// this of both columns.
+    fn f64_exact(&self) -> bool {
+        match self {
+            ColPrep::Floats { .. } => true,
+            ColPrep::Ints { f64_exact, .. } => *f64_exact,
+            ColPrep::Ticks { .. } => false,
+        }
     }
     /// The same column with only the given rows' values; the marginal
     /// statistics stay those of the whole column.
@@ -745,6 +833,14 @@ struct Candidate {
     /// direction failed certification but its violations are
     /// numerous, substantial, and one-sided.
     systematic: bool,
+    /// The statement is the part/whole variant of the systematic
+    /// form: the scale gate was replaced by component evidence.
+    part_whole: bool,
+    /// How the component relation was established: `"identity"`
+    /// (the slack decomposes exactly over the rows where the
+    /// order holds) or `"containment"` (the pair respects the
+    /// shared zero floor and the slack reaches it).
+    part_whole_basis: Option<&'static str>,
     /// The pair's median row distance |a − b| / max(|a|, |b|) on
     /// sampled complete rows — the scale gate's measurement,
     /// recorded as evidence on systematic findings.
@@ -890,7 +986,18 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
             let derived = cfg.derived_pairs.contains(&(i.min(j), i.max(j)));
             let (a, b) = (whole.get(&i)?, whole.get(&j)?);
             let want = (want_fs, want_sf);
-            evaluate_pair(a, b, i, j, as_float, derived, want, sampled)
+            evaluate_pair(
+                a,
+                b,
+                i,
+                j,
+                as_float,
+                derived,
+                want,
+                sampled,
+                table,
+                &cfg.excluded,
+            )
         })
         .collect();
 
@@ -943,7 +1050,54 @@ fn screen_pair(a: &ColPrep, b: &ColPrep, as_float: bool) -> Option<(bool, bool)>
     {
         return Some((v_fs <= v_sf, v_sf < v_fs));
     }
+    // Part/whole admission: a component pair can fail the
+    // asymmetry term — the whole is often just the part, so the
+    // reverse direction rarely violates — so a pair in the same
+    // share band whose columns respect the shared zero floor on
+    // the sample is also verified. The full-row component test
+    // in `dispatch` decides the statement.
+    if lo_share > SCREEN_SHARE
+        && lo_share <= SCREEN_SYSTEMATIC_MAX_SHARE
+        && floor_respected(a, b, as_float)
+    {
+        return Some((v_fs <= v_sf, v_sf < v_fs));
+    }
     None
+}
+
+/// Whether both columns respect the shared zero floor on at
+/// least FLOOR_SHARE of the sample rows where both are present,
+/// each row's tolerance taken from the other column's magnitude
+/// (the identity tolerance): the screening half of the
+/// part/whole component test.
+fn floor_respected(a: &ColPrep, b: &ColPrep, as_float: bool) -> bool {
+    fn check<T: ScanVal>(av: &[Option<T>], bv: &[Option<T>]) -> bool {
+        let (mut n, mut ok) = (0usize, 0usize);
+        for (x, y) in av.iter().zip(bv) {
+            if let (Some(x), Some(y)) = (x, y) {
+                let (x, y) = (x.as_f64(), y.as_f64());
+                n += 1;
+                if x >= -IDENTITY_TOL * (1.0 + y.abs()) && y >= -IDENTITY_TOL * (1.0 + x.abs()) {
+                    ok += 1;
+                }
+            }
+        }
+        n > 0 && ok as f64 >= FLOOR_SHARE * n as f64
+    }
+    match (a, b, as_float) {
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => check(av, bv),
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
+            check(&as_floats(av), bv)
+        }
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => {
+            check(av, &as_floats(bv))
+        }
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false)
+        | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => {
+            check(av, bv)
+        }
+        _ => false,
+    }
 }
 
 fn as_floats(vals: &[Option<i128>]) -> Vec<Option<f64>> {
@@ -962,21 +1116,44 @@ fn evaluate_pair(
     derived: bool,
     want: (bool, bool),
     screened: bool,
+    table: &TypedTable,
+    excluded: &BTreeSet<usize>,
 ) -> Option<Candidate> {
+    let exact_f64 = a.f64_exact() && b.f64_exact();
     match (a, b, as_float) {
-        (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
-            dispatch(av, bv, i, j, a, derived, want, screened)
-        }
-        (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => {
-            dispatch(&as_floats(av), bv, i, j, a, derived, want, screened)
-        }
-        (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => {
-            dispatch(av, &as_floats(bv), i, j, a, derived, want, screened)
-        }
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => dispatch(
+            av, bv, i, j, a, derived, want, screened, table, excluded, exact_f64,
+        ),
+        (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => dispatch(
+            &as_floats(av),
+            bv,
+            i,
+            j,
+            a,
+            derived,
+            want,
+            screened,
+            table,
+            excluded,
+            exact_f64,
+        ),
+        (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => dispatch(
+            av,
+            &as_floats(bv),
+            i,
+            j,
+            a,
+            derived,
+            want,
+            screened,
+            table,
+            excluded,
+            exact_f64,
+        ),
         (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false)
-        | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => {
-            dispatch(av, bv, i, j, a, derived, want, screened)
-        }
+        | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => dispatch(
+            av, bv, i, j, a, derived, want, screened, table, excluded, exact_f64,
+        ),
         _ => None,
     }
 }
@@ -991,6 +1168,9 @@ fn dispatch<T: ScanVal>(
     derived: bool,
     (want_fs, want_sf): (bool, bool),
     screened: bool,
+    table: &TypedTable,
+    excluded: &BTreeSet<usize>,
+    exact_f64: bool,
 ) -> Option<Candidate> {
     let d = verify_pair(av, bv, want_fs, want_sf);
     if d.n < MIN_EVALUATED {
@@ -1027,6 +1207,8 @@ fn dispatch<T: ScanVal>(
         Candidate {
             chance,
             systematic,
+            part_whole: false,
+            part_whole_basis: None,
             pair_distance: 0.0,
             lower,
             upper,
@@ -1134,11 +1316,311 @@ fn dispatch<T: ScanVal>(
                 );
                 c.pair_distance = pair_distance;
                 Some(c)
+            } else if exact_f64 && !temporal {
+                // The part/whole variant: the same count and
+                // share bars as the systematic rule, with the
+                // share also capped at the screening admission
+                // bound (past it the part is above the whole as
+                // often as below it), and the scale gate and the
+                // asymmetry term replaced by the component test.
+                // Temporal pairs are not components of anything,
+                // and the test works in f64, so both columns must
+                // be exactly representable there.
+                let variant = |viol: usize| {
+                    viol >= MIN_SYSTEMATIC_VIOLATIONS
+                        && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
+                        && (viol as f64) <= SCREEN_SYSTEMATIC_MAX_SHARE * d.n as f64
+                };
+                if want_fs && variant(d.fs.violations) {
+                    if let PartWhole::Component(basis) =
+                        part_whole_relation(av, bv, table, i, j, excluded)
+                    {
+                        let mut c = make(
+                            i,
+                            j,
+                            &d.fs,
+                            d.lo_min,
+                            d.lo_max,
+                            d.hi_min,
+                            d.hi_max,
+                            chance_violations(av, bv),
+                            true,
+                        );
+                        c.pair_distance = pair_distance;
+                        c.part_whole = true;
+                        c.part_whole_basis = Some(basis);
+                        return Some(c);
+                    }
+                }
+                if want_sf && variant(d.sf.violations) {
+                    if let PartWhole::Component(basis) =
+                        part_whole_relation(bv, av, table, j, i, excluded)
+                    {
+                        let mut c = make(
+                            j,
+                            i,
+                            &d.sf,
+                            d.hi_min,
+                            d.hi_max,
+                            d.lo_min,
+                            d.lo_max,
+                            chance_violations(bv, av),
+                            true,
+                        );
+                        c.pair_distance = pair_distance;
+                        c.part_whole = true;
+                        c.part_whole_basis = Some(basis);
+                        return Some(c);
+                    }
+                }
+                None
             } else {
                 None
             }
         }
     }
+}
+
+/// How an ordered pair stands as part and whole, judged on the
+/// evaluated rows of `part <= whole` (see `part_whole_relation`).
+enum PartWhole {
+    /// No component relation: the pair keeps the gated behaviour.
+    None,
+    /// A component relation holds and no exact identity states
+    /// it: the part/whole variant may state the exceedances. The
+    /// payload is the route that established it.
+    Component(&'static str),
+    /// A component relation holds and an exact sum identity
+    /// states it at the identity scans' own bar: that statement
+    /// is the one that fires; the variant stays silent.
+    IdentityCovered,
+}
+
+/// Judge whether `part` is a component of `whole`.
+///
+/// By identity: the whole minus the part — the slack — equals a
+/// sum of one to three other columns (unit coefficients, as in
+/// the identity scans' fixed-form scan), within the identity
+/// tolerance, on at least [`IDENTITY_MATCH_SHARE`] of the rows
+/// where the order holds and all the decomposition's columns
+/// are present, with the rest non-negative on at least
+/// [`REST_NONNEG_SHARE`] of the evaluated rows. The judgement is
+/// made on the held rows because the corrupted rows are the
+/// ones where the decomposition breaks; a decomposition that
+/// also matches at the same bar on all evaluated rows is one
+/// the identity scans state, and the pair is then
+/// [`PartWhole::IdentityCovered`], not a component for this
+/// pass. Candidate rests are screened against the slack on the
+/// held rows — a rest lies between zero and the slack on at
+/// least [`FLOOR_SHARE`] of them, the part-bound screen of the
+/// identity scans read against the slack — and capped at
+/// [`REST_POOL_MAX`], largest mean share of the slack first.
+///
+/// By containment, when no decomposition verifies: both columns
+/// respect the shared zero floor on at least [`FLOOR_SHARE`] of
+/// the evaluated rows, and the slack reaches the floor — within
+/// [`SLACK_CONTACT_REL_SHARE`] of the whole's range — on at
+/// least [`SLACK_CONTACT_SHARE`] of the held rows where the
+/// whole is above the floor, and on fewer than
+/// [`MAX_SLACK_CONTACT_SHARE`] of them: the whole is sometimes
+/// just the part, which rows where both columns are zero
+/// cannot show, and columns equal on half or more of the held
+/// rows are two recordings of one quantity, not a part and
+/// its whole.
+///
+/// The test works in f64; the caller guarantees both columns
+/// are exactly representable there.
+fn part_whole_relation<T: ScanVal>(
+    part: &[Option<T>],
+    whole: &[Option<T>],
+    table: &TypedTable,
+    part_idx: usize,
+    whole_idx: usize,
+    excluded: &BTreeSet<usize>,
+) -> PartWhole {
+    let tol = |y: f64| IDENTITY_TOL * (1.0 + y.abs());
+    let p: Vec<Option<f64>> = part.iter().map(|v| v.map(|x| x.as_f64())).collect();
+    let w: Vec<Option<f64>> = whole.iter().map(|v| v.map(|x| x.as_f64())).collect();
+    let mut n = 0usize;
+    let mut floor_ok = 0usize;
+    let mut held: Vec<usize> = Vec::new();
+    let (mut w_min, mut w_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for r in 0..p.len() {
+        let (Some(x), Some(y)) = (p[r], w[r]) else {
+            continue;
+        };
+        n += 1;
+        if x >= -tol(y) && y >= -tol(y) {
+            floor_ok += 1;
+        }
+        if x <= y + tol(y) {
+            held.push(r);
+        }
+        w_min = w_min.min(y);
+        w_max = w_max.max(y);
+    }
+    if n < MIN_EVALUATED || held.is_empty() {
+        return PartWhole::None;
+    }
+
+    // Identity route: screen candidate rests against the slack.
+    let slack: Vec<Option<f64>> = p
+        .iter()
+        .zip(&w)
+        .map(|(x, y)| match (x, y) {
+            (Some(x), Some(y)) => Some(y - x),
+            _ => None,
+        })
+        .collect();
+    let mut pool: Vec<(usize, f64)> = Vec::new();
+    for c in 0..table.cols.len() {
+        if c == part_idx || c == whole_idx || excluded.contains(&c) {
+            continue;
+        }
+        let col = &table.cols[c];
+        if !matches!(
+            col,
+            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+        ) {
+            continue;
+        }
+        let (mut m, mut inside, mut s_sum, mut r_sum) = (0usize, 0usize, 0.0, 0.0);
+        for &r in &held {
+            let (Some(s), Some(v)) = (slack[r], col.numeric_at(r)) else {
+                continue;
+            };
+            m += 1;
+            if v >= -tol(s) && v <= s + tol(s) {
+                inside += 1;
+            }
+            s_sum += s;
+            r_sum += v;
+        }
+        if m >= MIN_REST_ROWS && inside as f64 >= FLOOR_SHARE * m as f64 {
+            pool.push((c, if s_sum > 0.0 { r_sum / s_sum } else { 0.0 }));
+        }
+    }
+    pool.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    pool.truncate(REST_POOL_MAX);
+    let pool: Vec<usize> = pool.into_iter().map(|(c, _)| c).collect();
+
+    // Verify a candidate rest against the decomposition
+    // whole = part + rest. Some(true): it also matches at the
+    // identity bar on all evaluated rows (identity-covered).
+    // Some(false): it matches on the held rows only.
+    let held_total = held.len() as f64;
+    let verify = |rest: &[usize]| -> Option<bool> {
+        let (mut hn, mut h_match, mut h_miss) = (0usize, 0usize, 0usize);
+        let (mut an, mut a_match, mut nonneg, mut neg) = (0usize, 0usize, 0usize, 0usize);
+        for r in 0..p.len() {
+            let (Some(x), Some(y)) = (p[r], w[r]) else {
+                continue;
+            };
+            let mut rest_sum = 0.0;
+            let mut present = true;
+            for &c in rest {
+                match table.cols[c].numeric_at(r) {
+                    Some(v) => rest_sum += v,
+                    None => {
+                        present = false;
+                        break;
+                    }
+                }
+            }
+            if !present {
+                continue;
+            }
+            an += 1;
+            let matches = (y - (x + rest_sum)).abs() <= tol(y);
+            if matches {
+                a_match += 1;
+            }
+            if rest_sum >= -tol(y) {
+                nonneg += 1;
+            } else {
+                neg += 1;
+                if neg as f64 > (1.0 - REST_NONNEG_SHARE) * n as f64 {
+                    return None;
+                }
+            }
+            if x <= y + tol(y) {
+                hn += 1;
+                if matches {
+                    h_match += 1;
+                } else {
+                    h_miss += 1;
+                    if h_miss as f64 > (1.0 - IDENTITY_MATCH_SHARE) * held_total {
+                        return None;
+                    }
+                }
+            }
+        }
+        if hn == 0 || an == 0 {
+            return None;
+        }
+        if (h_match as f64) < IDENTITY_MATCH_SHARE * hn as f64 {
+            return None;
+        }
+        if (nonneg as f64) < REST_NONNEG_SHARE * an as f64 {
+            return None;
+        }
+        Some((a_match as f64) >= IDENTITY_MATCH_SHARE * an as f64)
+    };
+
+    // Subsets of the pool, smallest first, in pool order: the
+    // simplest decomposition is the witness.
+    fn search<F: Fn(&[usize]) -> Option<bool>>(
+        pool: &[usize],
+        start: usize,
+        depth: usize,
+        subset: &mut Vec<usize>,
+        verify: &F,
+    ) -> Option<bool> {
+        if depth == 0 {
+            return verify(subset);
+        }
+        for k in start..pool.len() {
+            subset.push(pool[k]);
+            let hit = search(pool, k + 1, depth - 1, subset, verify);
+            subset.pop();
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        None
+    }
+    let mut subset: Vec<usize> = Vec::new();
+    for size in 1..=REST_MAX_TERMS.min(pool.len()) {
+        if let Some(covered) = search(&pool, 0, size, &mut subset, &verify) {
+            return if covered {
+                PartWhole::IdentityCovered
+            } else {
+                PartWhole::Component("identity")
+            };
+        }
+    }
+
+    // Containment route.
+    if floor_ok as f64 >= FLOOR_SHARE * n as f64 {
+        let band = SLACK_CONTACT_REL_SHARE * (w_max - w_min);
+        let (mut above, mut contact) = (0usize, 0usize);
+        for &r in &held {
+            let y = w[r].unwrap();
+            if y > tol(y) {
+                above += 1;
+                if y - p[r].unwrap() <= band {
+                    contact += 1;
+                }
+            }
+        }
+        if above > 0
+            && contact as f64 >= SLACK_CONTACT_SHARE * above as f64
+            && (contact as f64) < MAX_SLACK_CONTACT_SHARE * above as f64
+        {
+            return PartWhole::Component("containment");
+        }
+    }
+    PartWhole::None
 }
 
 fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
@@ -1186,10 +1668,25 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             100.0 * reverse as f64 / c.n.max(1) as f64,
             worst,
         );
-        let interp = format!(
-            "the order {lower_name} <= {upper_name} holds on far more rows than its reverse, which is the shape of a constraint between the two columns; violations on {:.1}% of the rows where both are present are too many for scattered recording errors and too one-sided for two unrelated columns crossing. The usual causes are a definition that changed partway through the data, two populations merged under one pair of columns, or one column not measuring the bound its pairing suggests. The violating rows are listed in the evidence",
-            100.0 * share,
-        );
+        let interp = if c.part_whole {
+            let basis = match c.part_whole_basis {
+                Some("identity") => {
+                    "the whole minus the part decomposes exactly into other columns on the rows where the order holds"
+                }
+                _ => {
+                    "the pair respects the shared zero floor and the whole is sometimes just the part"
+                }
+            };
+            format!(
+                "{lower_name} is a component of {upper_name} — {basis} — so {lower_name} <= {upper_name} holds by construction wherever the data is sound, and a part sits far from its whole by construction, which is why this statement carries no comparable-scale requirement. Exceedances on {:.1}% of the rows where both are present are the data-error signal: a part recorded against the wrong whole, a part counted twice, or a whole recorded before all its parts arrived. The violating rows are listed in the evidence",
+                100.0 * share,
+            )
+        } else {
+            format!(
+                "the order {lower_name} <= {upper_name} holds on far more rows than its reverse, which is the shape of a constraint between the two columns; violations on {:.1}% of the rows where both are present are too many for scattered recording errors and too one-sided for two unrelated columns crossing. The usual causes are a definition that changed partway through the data, two populations merged under one pair of columns, or one column not measuring the bound its pairing suggests. The violating rows are listed in the evidence",
+                100.0 * share,
+            )
+        };
         (claim, interp)
     } else if c.violations == 0 {
         let mut claim = format!(
@@ -1275,16 +1772,34 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         ),
     ]);
     if c.systematic {
-        metrics.insert("violation_kind".into(), json!("systematic"));
+        metrics.insert(
+            "violation_kind".into(),
+            json!(if c.part_whole {
+                "part_whole"
+            } else {
+                "systematic"
+            }),
+        );
         metrics.insert("reverse_violations".into(), json!(c.reverse_violations()));
         metrics.insert(
             "pair_distance".into(),
             json!((c.pair_distance * 1000.0).round() / 1000.0),
         );
-        metrics.insert(
-            "method".into(),
-            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a systematic violation when its violations number at least 20 and at least 5% of the evaluated rows and the reverse direction's violations are at least twice as many, and the two columns track each other on a comparable scale (median |a - b| / max(|a|, |b|) over sampled complete rows at most 0.2, and the columns' medians within a factor of 2.5 of each other when both are non-zero), after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
-        );
+        if c.part_whole {
+            metrics.insert(
+                "part_whole_basis".into(),
+                json!(c.part_whole_basis.unwrap_or("containment")),
+            );
+            metrics.insert(
+                "method".into(),
+                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a part-against-whole violation when its violations number at least 20 and between 5% and 40% of the evaluated rows and one column is a component of the other — by identity, when the whole minus the part equals a sum of one to three other columns within the identity tolerance (1e-9 absolute + 1e-9 relative) on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows, or by containment, when both columns respect the shared zero floor on at least 99% of the evaluated rows and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it but on fewer than half of them (columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole) — and no exact sum identity states the decomposition (one matching on at least 99.9% of all evaluated rows is the identity pass's statement, and this one stays silent for the pair); the comparable-scale gate of the systematic form does not apply, because a part's distance from its whole is set by the other components, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+            );
+        } else {
+            metrics.insert(
+                "method".into(),
+                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a systematic violation when its violations number at least 20 and at least 5% of the evaluated rows and the reverse direction's violations are at least twice as many, and the two columns track each other on a comparable scale (median |a - b| / max(|a|, |b|) over sampled complete rows at most 0.2, and the columns' medians within a factor of 2.5 of each other when both are non-zero), after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+            );
+        }
     }
     if c.temporal {
         metrics.insert("lower_min".into(), json!(c.lo_min_ticks));
@@ -1695,6 +2210,195 @@ mod tests {
             "{:?}",
             out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn part_exceeding_its_whole_is_stated_without_the_scale_gate() {
+        // total = part + rest as recorded; the part is then
+        // corrupted upward on 480 of 2,000 rows (24%), so it
+        // exceeds its whole there. The pair's median row distance
+        // is the rest's share of the total — far past the
+        // systematic rule's 0.2 scale gate — and the sum identity
+        // holds on only 76% of rows, below the identity scan's
+        // 99.9% bar, so before the variant no pass stated the
+        // exceedances.
+        let n = 2000;
+        let rest: Vec<f64> = (0..n).map(|k| 5.0 + ((k * 53) % 40) as f64).collect();
+        let mut part: Vec<f64> = (0..n).map(|k| 10.0 + ((k * 29) % 40) as f64).collect();
+        let total: Vec<f64> = part.iter().zip(&rest).map(|(p, r)| p + r).collect();
+        for k in 0..480 {
+            part[k] = total[k] + 5.0;
+        }
+        let df = df! { "part" => part, "rest" => rest, "total" => total }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "part", "total");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let f = hits[0];
+        assert_eq!(f.finding_type.as_deref(), Some("order_violation"));
+        let m = &f.evidence[0].metrics;
+        assert_eq!(m["violations"], json!(480));
+        assert_eq!(m["violation_kind"], json!("part_whole"));
+        assert_eq!(m["part_whole_basis"], json!("identity"));
+        assert!(f.claim.contains("480 of 2000"), "{}", f.claim);
+        f.validate().unwrap();
+    }
+
+    #[test]
+    fn healthy_part_whole_pair_states_the_order_not_a_violation() {
+        // The same decomposition, uncorrupted: part <= total
+        // holds exactly and is stated as an order.
+        let n = 2000;
+        let rest: Vec<f64> = (0..n).map(|k| 5.0 + ((k * 53) % 40) as f64).collect();
+        let part: Vec<f64> = (0..n).map(|k| 10.0 + ((k * 29) % 40) as f64).collect();
+        let total: Vec<f64> = part.iter().zip(&rest).map(|(p, r)| p + r).collect();
+        let df = df! { "part" => part, "rest" => rest, "total" => total }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "part", "total");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert_eq!(hits[0].finding_type.as_deref(), Some("order_constraint"));
+        assert_eq!(hits[0].evidence[0].metrics["violations"], json!(0));
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn contained_part_without_a_decomposition_is_stated() {
+        // The whole is recorded independently — no rest column
+        // exists to decompose the slack. The part sits inside
+        // the whole, the slack is zero on a tenth of the held
+        // rows (the whole is sometimes just the part), and the
+        // part exceeds the whole on 480 of 2,000 rows (24%).
+        let n = 2000;
+        let whole: Vec<f64> = (0..n).map(|k| 40.0 + ((k * 37) % 120) as f64).collect();
+        let mut part: Vec<f64> = whole
+            .iter()
+            .enumerate()
+            .map(|(k, w)| {
+                if (k * 13) % 10 == 9 {
+                    *w
+                } else {
+                    w * (((k * 13) % 10) as f64 / 10.0)
+                }
+            })
+            .collect();
+        for k in 0..480 {
+            part[k] = whole[k] + 5.0;
+        }
+        let df = df! { "part" => part, "whole" => whole }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "part", "whole");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let f = hits[0];
+        assert_eq!(f.finding_type.as_deref(), Some("order_violation"));
+        let m = &f.evidence[0].metrics;
+        assert_eq!(m["violations"], json!(480));
+        assert_eq!(m["violation_kind"], json!("part_whole"));
+        assert_eq!(m["part_whole_basis"], json!("containment"));
+        f.validate().unwrap();
+    }
+
+    #[test]
+    fn negative_rest_pair_is_not_a_part_whole_violation() {
+        // total = part + rest holds on every row, but the rest
+        // is negative on 480 rows (a contra component), so the
+        // part exceeds the total there by construction. The
+        // decomposition exists and the identity scan states it;
+        // the exceedances are not a bound's failure and the
+        // variant stays silent.
+        let n = 2000;
+        let part: Vec<f64> = (0..n).map(|k| 10.0 + ((k * 29) % 40) as f64).collect();
+        let rest: Vec<f64> = (0..n)
+            .map(|k| {
+                if k < 480 {
+                    -5.0
+                } else {
+                    30.0 + ((k * 53) % 90) as f64
+                }
+            })
+            .collect();
+        let total: Vec<f64> = part.iter().zip(&rest).map(|(p, r)| p + r).collect();
+        let df = df! { "part" => part, "rest" => rest, "total" => total }.unwrap();
+        let out = scan(&df);
+        assert!(
+            pair_findings(&out, "part", "total").is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn part_whole_relation_distinguishes_its_cases() {
+        let n = 2000;
+        let rest: Vec<f64> = (0..n).map(|k| 5.0 + ((k * 53) % 40) as f64).collect();
+        let part: Vec<f64> = (0..n).map(|k| 10.0 + ((k * 29) % 40) as f64).collect();
+        let total: Vec<f64> = part.iter().zip(&rest).map(|(p, r)| p + r).collect();
+        let opts = |v: &[f64]| v.iter().copied().map(Some).collect::<Vec<_>>();
+        let df = df! { "part" => part.clone(), "rest" => rest, "total" => total.clone() }.unwrap();
+        let table = extract(&df);
+        let idx = |name: &str| table.names.iter().position(|x| x == name).unwrap();
+        // The decomposition holds everywhere: the identity scans
+        // state it, so the pair is covered.
+        match part_whole_relation(
+            &opts(&part),
+            &opts(&total),
+            &table,
+            idx("part"),
+            idx("total"),
+            &BTreeSet::new(),
+        ) {
+            PartWhole::IdentityCovered => {}
+            _ => panic!("an exact decomposition must read as identity-covered"),
+        }
+        // Corrupt the part on 24% of rows: the decomposition
+        // holds only on the held rows — a component, by identity.
+        let mut bad = part.clone();
+        for k in 0..480 {
+            bad[k] = total[k] + 5.0;
+        }
+        match part_whole_relation(
+            &opts(&bad),
+            &opts(&total),
+            &table,
+            idx("part"),
+            idx("total"),
+            &BTreeSet::new(),
+        ) {
+            PartWhole::Component("identity") => {}
+            _ => panic!("a corrupted decomposition must read as a component by identity"),
+        }
+        // An age in years against a duration in seconds: no
+        // decomposition of the slack, and the slack never reaches
+        // the floor — no relation.
+        let age: Vec<f64> = (0..n).map(|k| 21.0 + ((k * 29) % 70) as f64).collect();
+        let dur: Vec<f64> = (0..n)
+            .map(|k| {
+                if k % 8 == 0 {
+                    12.0
+                } else {
+                    240.0 + ((k * 53) % 900) as f64
+                }
+            })
+            .collect();
+        let df2 = df! { "age" => age.clone(), "duration" => dur.clone() }.unwrap();
+        let table2 = extract(&df2);
+        match part_whole_relation(&opts(&age), &opts(&dur), &table2, 0, 1, &BTreeSet::new()) {
+            PartWhole::None => {}
+            _ => panic!("unrelated scales must not read as part and whole"),
+        }
     }
 
     #[test]
