@@ -508,8 +508,10 @@ mod tests {
     fn labels_scope_includes_specification_columns() {
         let applied = declared(&[("amount", "the amount"), ("region", "sales region")]);
         // Named by a condition predicate, not by the subject.
-        let mut spec = Specification::default();
-        spec.conditions = vec![Predicate::equal("region", json!("north"))];
+        let spec = Specification {
+            conditions: vec![Predicate::equal("region", json!("north"))],
+            ..Default::default()
+        };
         let f = statement(
             Subject::columns(["amount".to_string()]),
             spec,
