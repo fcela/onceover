@@ -125,6 +125,10 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // rarely pass, and issue #95 tracks a panic on long-form
         // data with a time hint.
         make("drift", vec![Changes], &["gbm"], OptIn),
+        // Opt-in: a model-based segmentation over the joint
+        // measure distribution; stated splits carry permutation
+        // p-values, and the pass is heavier than the breaks scan.
+        make("changeforest", vec![Changes], &[], OptIn),
         make(
             "association_rules",
             vec![ConditionalRules, Associations],
@@ -162,7 +166,7 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
     let mut active = selected.cloned().unwrap_or_else(|| {
         // The default set: detectors whose activation is Default or
         // HintGated. Opt-in detectors (views, dates, pivot,
-        // period_associations, drift, granularity) run only when
+        // period_associations, drift, granularity, changeforest) run only when
         // explicitly requested via detectors=[...]; target-gated
         // target_shapes runs only when a target is designated (the
         // pipeline adds it then) or when explicitly requested
@@ -206,9 +210,9 @@ mod tests {
     #[test]
     fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 37 registered: 30 default (28 Default + hint-gated
-        // expectations and group_contrast), 6 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 37);
+        // 38 registered: 30 default (28 Default + hint-gated
+        // expectations and group_contrast), 7 opt-in, 1 target-gated.
+        assert_eq!(builtin_detectors().len(), 38);
         assert_eq!(active.len(), 30);
         for id in [
             "views",
@@ -217,6 +221,7 @@ mod tests {
             "period_associations",
             "drift",
             "granularity",
+            "changeforest",
             "target_shapes",
         ] {
             assert!(!active.contains(id), "{id} must not be in the default set");
@@ -242,7 +247,7 @@ mod tests {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
         assert_eq!(counts.get("Default"), Some(&28));
-        assert_eq!(counts.get("OptIn"), Some(&6));
+        assert_eq!(counts.get("OptIn"), Some(&7));
         assert_eq!(counts.get("HintGated"), Some(&2));
         assert_eq!(counts.get("TargetGated"), Some(&1));
     }

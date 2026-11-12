@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
-    AssociationConfig, BreaksConfig, DiscConfig, DriftConfig, DtableConfig, EncodeConfig, HConfig,
-    HotspotConfig, PartitionsConfig, PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig,
-    SurpriseConfig, ViewsConfig,
+    AssociationConfig, BreaksConfig, ChangeforestConfig, DiscConfig, DriftConfig, DtableConfig,
+    EncodeConfig, HConfig, HotspotConfig, PartitionsConfig, PrismConfig, RegimesConfig,
+    ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,6 +123,7 @@ pub struct TierConfig {
     pub association: AssociationConfig,
     pub hotspots: HotspotConfig,
     pub views: ViewsConfig,
+    pub changeforest: ChangeforestConfig,
     pub dep_pair_cap: usize,
     pub ident_pair_cap: usize,
     pub ident_multiterm_cap: usize,
@@ -160,6 +161,7 @@ impl TierConfig {
                     ..Default::default()
                 },
                 views: ViewsConfig::default(),
+                changeforest: ChangeforestConfig::default(),
                 dep_pair_cap: 0,
                 ident_pair_cap: 0,
                 ident_multiterm_cap: 0,
@@ -197,6 +199,7 @@ impl TierConfig {
                 },
                 hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
+                changeforest: ChangeforestConfig::default(),
                 // The discontinuity screen is the measured runtime
                 // outlier (2026-11-02 battery: 0.43 s median marginal,
                 // +83.0 s excess, concentrated on wide tables). The
@@ -303,6 +306,10 @@ impl TierConfig {
                 },
                 views: ViewsConfig {
                     row_cap: 50_000,
+                    ..Default::default()
+                },
+                changeforest: ChangeforestConfig {
+                    row_cap: 20_000,
                     ..Default::default()
                 },
                 dep_pair_cap: 2_016,

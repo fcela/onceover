@@ -14,6 +14,13 @@ rustc-hash = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+changeforest = "1.2.1"
+ndarray = "0.16"
+# Not used directly: changeforest 1.2.1 builds against biosphere
+# 0.4 on ndarray 0.16; biosphere 0.4.2 moved to ndarray 0.17 and
+# no longer compiles with it. The bound keeps the resolution on a
+# compatible biosphere until changeforest follows.
+biosphere = ">=0.4.0, <0.4.2"
 
 [dev-dependencies]
 polars = { workspace = true }
