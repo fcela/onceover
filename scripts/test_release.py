@@ -31,6 +31,12 @@ def test_mismatched_python_version_is_rejected(monkeypatch):
         release.check()
 
 
+def test_missing_release_notes_section_is_rejected(monkeypatch):
+    monkeypatch.setattr(release, "release_note_lines", lambda: ["## Unreleased"])
+    with pytest.raises(ValueError, match="release notes"):
+        release.check()
+
+
 def test_missing_token_fails_before_registry_access(monkeypatch):
     monkeypatch.delenv("CARGO_REGISTRY_TOKEN", raising=False)
     monkeypatch.setattr(sys, "argv", ["release.py", "publish-crates"])

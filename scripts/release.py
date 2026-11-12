@@ -25,6 +25,16 @@ def read_toml(path):
     return tomllib.loads(path.read_text())
 
 
+def release_note_lines():
+    notes = json.loads((ROOT / "docs/book/appendix/release_notes.ipynb").read_text())
+    return [
+        line
+        for cell in notes["cells"]
+        if cell["cell_type"] == "markdown"
+        for line in "".join(cell["source"]).splitlines()
+    ]
+
+
 def check(tag=""):
     workspace = read_toml(ROOT / "Cargo.toml")["workspace"]
     version = workspace["package"]["version"]
@@ -50,6 +60,13 @@ def check(tag=""):
             raise ValueError(f"update the workspace dependency version for {name}")
     if read_toml(ROOT / "crates/onceover-py/Cargo.toml")["package"]["publish"] is not False:
         raise ValueError("the Python binding crate must not publish to crates.io")
+    if not any(
+        line.startswith(f"## Version {version} — ") for line in release_note_lines()
+    ):
+        raise ValueError(
+            f"release notes have no '## Version {version}' section; move the "
+            "Unreleased entries under the new version heading before tagging"
+        )
     print(f"Release metadata matches {version}", flush=True)
     return version, workspace["package"]["repository"]
 
