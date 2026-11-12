@@ -55,12 +55,20 @@ the registry configuration exactly.
 1. Set the version in `[workspace.package]` and all five local dependency
    constraints in `Cargo.toml`, `[project]` in `pyproject.toml`, and
    `__version__` in `python/onceover/__init__.py`.
-2. Run `cargo check --workspace` to update `Cargo.lock`, then
+2. Move the release notes. In `docs/book/appendix/release_notes.ipynb`,
+   retitle the `Unreleased` section to `## Version X.Y.Z — <tag date>`,
+   with the opening line `Version X.Y.Z was tagged and published on
+   <tag date>. The main changes since <previous version> follow.`, and
+   start a fresh `Unreleased` section above it (`Work merged since
+   version X.Y.Z, not yet tagged.`). The date is the planned tag date.
+   `python scripts/release.py check` fails until the new version's
+   section exists.
+3. Run `cargo check --workspace` to update `Cargo.lock`, then
    `python scripts/release.py check` and the test suites. Build and install the
    release wheel, execute `python scripts/check_notebook.py`, and run the
    [scale benchmark](benchmarks/README.md) against that wheel. Check exact key
    counts and recovery of the relationships in the final columns before tagging.
-3. Commit, push, and tag the same version:
+4. Commit, push, and tag the same version:
 
    ```bash
    git push origin main
