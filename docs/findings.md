@@ -827,13 +827,14 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 30 of the 37 registered detectors. Six are
-opt-in and run only when named in `detectors`: `views` (experimental), and
-`dates`, `pivot`, `period_associations`, `drift`, and `granularity` — the
-2026-11-02 detector battery measured those five producing no findings in 40
-runs over 20 datasets, so a default run no longer spends time or report space
-on them; it records each as skipped in coverage, naming it opt-in (the
-benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
+and activation. The default set has 30 of the 38 registered detectors. Seven are
+opt-in and run only when named in `detectors`: `views` (experimental),
+`changeforest`, and `dates`, `pivot`, `period_associations`, `drift`, and
+`granularity` — the 2026-11-02 detector battery measured the last five
+producing no findings in 40 runs over 20 datasets, so a default run no
+longer spends time or report space on them; it records each as skipped in
+coverage, naming it opt-in (the benchmark record is
+`docs/benchmarks/2026-11-02-detector-opt-in.md`).
 `expectations` and `group_contrast` are in the default set but hint-gated:
 they engage only on declared hints. `target_shapes` is target-gated: it runs when a target is
 designated. Required detectors may execute to supply shared target

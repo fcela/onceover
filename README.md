@@ -114,10 +114,11 @@ Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 | `deep` | Larger samples and wider searches for those detectors |
 
 Use `detectors=[...]` to replace the default selection with named methods.
-Required resource passes may also run; coverage explains that work. Six
+Required resource passes may also run; coverage explains that work. Seven
 detectors are opt-in and run only when named: the experimental `views`
-detector, and `dates`, `pivot`, `period_associations`, `drift`, and
-`granularity` (a default run records each as skipped in coverage).
+detector, `changeforest`, and `dates`, `pivot`, `period_associations`,
+`drift`, and `granularity` (a default run records each as skipped in
+coverage).
 Designating `target="response"` adds the target-gated shape pass when using
 the default detector selection; with an explicit list, include
 `target_shapes` yourself.
