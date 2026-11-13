@@ -590,6 +590,72 @@ fn per_detector_cap_limits_and_counts_statements() {
     assert_eq!(outcome.capped.len(), 1);
 }
 
+#[test]
+fn per_detector_cap_is_disclosed_when_the_global_cap_fills_first() {
+    // The two strongest FDs fill the per-detector cap; two key
+    // findings then fill the global cap before the remaining FDs
+    // are reached. The unreached FDs are past the per-detector
+    // cap and not selected, so the cap count must still disclose
+    // them: whether the disclosure appears cannot depend on where
+    // other detectors' findings rank.
+    let key_on = |column: &str| {
+        Finding::new(
+            Pattern::Uniqueness,
+            BTreeMap::from([("column".into(), json!(column))]),
+            format!("{column} uniquely identifies rows"),
+            EvidenceBasis::Measured,
+            0.95,
+            BTreeMap::from([("distinct".into(), json!(100)), ("n".into(), json!(100))]),
+            None,
+            Method::new("keys", "uniqueness", "test"),
+        )
+    };
+    let findings = vec![
+        fd_on("a", "w", 0.99),
+        fd_on("b", "x", 0.98),
+        key_on("k1"),
+        key_on("k2"),
+        fd_on("c", "y", 0.85),
+        fd_on("d", "z", 0.80),
+    ];
+    let policy = SelectionPolicy {
+        max_findings: 4,
+        max_findings_per_detector: BTreeMap::from([("functional_dependencies".to_string(), 2)]),
+        ..Default::default()
+    };
+    let outcome = select_findings_counted(findings, &policy);
+    assert_eq!(outcome.selected.len(), 4);
+    assert_eq!(outcome.capped.get("functional_dependencies"), Some(&2));
+
+    // The fill case: the global cap fills while the detector is
+    // still below its own cap. Of the two unreached FDs, the
+    // first would have filled the cap and only the second is
+    // past it.
+    let key_on = |column: &str| {
+        Finding::new(
+            Pattern::Uniqueness,
+            BTreeMap::from([("column".into(), json!(column))]),
+            format!("{column} uniquely identifies rows"),
+            EvidenceBasis::Measured,
+            0.95,
+            BTreeMap::from([("distinct".into(), json!(100)), ("n".into(), json!(100))]),
+            None,
+            Method::new("keys", "uniqueness", "test"),
+        )
+    };
+    let findings = vec![
+        fd_on("a", "w", 0.99),
+        key_on("k1"),
+        key_on("k2"),
+        key_on("k3"),
+        fd_on("b", "x", 0.90),
+        fd_on("c", "y", 0.85),
+    ];
+    let outcome = select_findings_counted(findings, &policy);
+    assert_eq!(outcome.selected.len(), 4);
+    assert_eq!(outcome.capped.get("functional_dependencies"), Some(&1));
+}
+
 fn exact_fd(lhs: &[&str], rhs: &str, score: f64) -> Finding {
     fd_with_violations(lhs, rhs, score, 0)
 }

@@ -56,7 +56,10 @@ pub use disc::{profile_discontinuities, DiscConfig, DiscOutcome};
 pub use drift::{profile_drift, DriftConfig};
 pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
-pub use gbm::{screen as screen_predictability, ScreenConfig, ScreenOutcome, TargetResult};
+pub use gbm::{
+    screen as screen_predictability, screen_missing_indicator, IndicatorScreen, ScreenConfig,
+    ScreenOutcome, TargetResult,
+};
 pub use hotspots::{hotspots, HotspotConfig, HotspotsOutcome};
 pub use hstat::{profile_interactions, HConfig};
 pub use ident::identities;

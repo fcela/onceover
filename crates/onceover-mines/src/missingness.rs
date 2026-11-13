@@ -19,6 +19,7 @@ use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 
+use crate::gbm::{screen_missing_indicator, ScreenConfig};
 use crate::surprises::{code_column, Coded, SurpriseConfig};
 
 /// A column is stated from this missing rate up.
@@ -41,6 +42,13 @@ const FAMILY_ALPHA: f64 = 0.01;
 const MIN_RATE_RATIO: f64 = 1.5;
 const MIN_RATE_DIFFERENCE: f64 = 0.02;
 const DECILE_CUTS: usize = 9;
+/// Predictability screen: a column enters it with at least this
+/// many missing rows and at most this missing rate, and is stated
+/// when a model of the other columns identifies its missing rows
+/// on held-out data at this AUC or better.
+const MIN_INDICATOR_MISSING_ROWS: usize = 30;
+const MAX_INDICATOR_RATE: f64 = 0.95;
+const MIN_INDICATOR_AUC: f64 = 0.65;
 /// Co-missing blocks: shared rows over rows missing in either, and the
 /// factor by which the overlap exceeds what independent gaps would give.
 const MIN_JACCARD: f64 = 0.9;
@@ -592,6 +600,7 @@ pub fn profile_missingness(
     table: &TypedTable,
     excluded: &[usize],
     axis: Option<MissingnessAxis>,
+    indicator_cap: usize,
 ) -> (Vec<Finding>, String) {
     if table.n == 0 {
         return (Vec::new(), "empty table".into());
@@ -802,6 +811,106 @@ pub fn profile_missingness(
         ));
     }
 
+    // ---- predictability screen ----
+    // A column's gaps can follow a rule no single condition states:
+    // several columns jointly determine where the value is absent.
+    // Screen the strongest candidates' missingness indicators with
+    // the house GBM and state the ones a held-out AUC certifies.
+    let indicator_candidates: Vec<usize> = eligible
+        .iter()
+        .copied()
+        .filter(|&c| {
+            null_counts[c] >= MIN_INDICATOR_MISSING_ROWS
+                && null_counts[c] as f64 / n as f64 <= MAX_INDICATOR_RATE
+        })
+        .collect();
+    let mut indicator_screened = 0usize;
+    let mut indicator_stated = 0usize;
+    if indicator_cap > 0 && !indicator_candidates.is_empty() && table.cols.len() >= 2 {
+        let (enc, _enc_detail) = crate::encode::encode(table, &crate::EncodeConfig::default());
+        let screen_cfg = ScreenConfig::default();
+        for &c in indicator_candidates.iter().take(indicator_cap) {
+            indicator_screened += 1;
+            let missing: Vec<bool> = enc
+                .rows
+                .iter()
+                .map(|&r| table.cols[c].is_null_at(r as usize))
+                .collect();
+            let Some(screen) =
+                screen_missing_indicator(table, &enc, c, &missing, &screen_cfg, excluded)
+            else {
+                continue;
+            };
+            if screen.auc < MIN_INDICATOR_AUC {
+                continue;
+            }
+            let name = &table.names[c];
+            let count = null_counts[c];
+            let rate = count as f64 / n as f64;
+            let named = screen
+                .drivers
+                .iter()
+                .map(|(d, share)| format!("{d} ({:.0}% of gain)", share * 100.0))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let score = if screen.auc >= 0.80 {
+                0.72
+            } else if screen.auc >= 0.70 {
+                0.62
+            } else {
+                0.55
+            };
+            findings.push(Finding::new(
+                Pattern::PredictableMissingness,
+                BTreeMap::from([("columns".to_string(), json!([name]))]),
+                format!(
+                    "Whether {name} is missing is predictable from {named}: a model of the other columns identifies the missing rows with holdout AUC {:.2} ({name} is missing on {} of {} rows, {})",
+                    screen.auc,
+                    group_int(count),
+                    group_int(n),
+                    pct(rate)
+                ),
+                EvidenceBasis::Estimated,
+                score,
+                BTreeMap::from([
+                    ("auc".to_string(), json!(screen.auc)),
+                    ("missing".to_string(), json!(count)),
+                    ("missing_fraction".to_string(), json!(rate)),
+                    (
+                        "drivers".to_string(),
+                        json!(screen
+                            .drivers
+                            .iter()
+                            .map(|(d, _)| d)
+                            .collect::<Vec<_>>()),
+                    ),
+                    (
+                        "driver_shares".to_string(),
+                        json!(screen
+                            .drivers
+                            .iter()
+                            .map(|(_, share)| share)
+                            .collect::<Vec<_>>()),
+                    ),
+                    ("n_train".to_string(), json!(screen.n_train)),
+                    ("n_holdout".to_string(), json!(screen.n_holdout)),
+                    ("rounds".to_string(), json!(screen.rounds)),
+                    ("rows_used".to_string(), json!(enc.n)),
+                ]),
+                Some(
+                    "the gaps are not random: rows with a value differ systematically from rows without one, so summaries that drop the incomplete rows inherit that difference"
+                        .into(),
+                ),
+                Method::new(
+                    "missingness",
+                    "missingness_indicator_screen",
+                    "histogram GBM on the column's missingness indicator, holdout AUC (onceover v0.1)",
+                ),
+            ));
+            indicator_stated += 1;
+        }
+    }
+
     let mut detail = format!(
         "{} columns missing on at least 1% of rows; {} with a pattern at a Bonferroni family alpha of {FAMILY_ALPHA} over {} comparisons; {} co-missing blocks",
         with_gaps,
@@ -812,6 +921,15 @@ pub fn profile_missingness(
     if with_gaps > MAX_TARGETS {
         detail.push_str(&format!(
             "; patterns searched for the {MAX_TARGETS} columns with the highest missing rates"
+        ));
+    }
+    if !indicator_candidates.is_empty() {
+        detail.push_str(&format!(
+            "; predictability screen over {} of {} candidate columns (cap {} per run): {} stated at holdout AUC >= {MIN_INDICATOR_AUC}",
+            indicator_screened,
+            indicator_candidates.len(),
+            indicator_cap,
+            indicator_stated
         ));
     }
     (findings, detail)

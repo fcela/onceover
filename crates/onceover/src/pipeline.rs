@@ -1007,7 +1007,13 @@ fn profile_inner(
             (Some(ticks), Some(name)) => Some(onceover_mines::MissingnessAxis { name, ticks }),
             _ => None,
         };
-        let (mut f, detail) = onceover_mines::profile_missingness(&table, &scaffold_excluded, axis);
+        let indicator_cap = match cfg.budget {
+            Budget::Quick => 0,
+            Budget::Standard => 8,
+            Budget::Deep => 16,
+        };
+        let (mut f, detail) =
+            onceover_mines::profile_missingness(&table, &scaffold_excluded, axis, indicator_cap);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
