@@ -122,6 +122,7 @@ fn profile_inner(
         tier.regimes.row_cap = rows.max(1);
     }
     tier.views.row_cap = tier.encode.row_cap;
+    tier.slices.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);
@@ -143,6 +144,7 @@ fn profile_inner(
     tier.disc.deadline = pass_deadline;
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
+    tier.slices.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
@@ -1788,6 +1790,30 @@ fn profile_inner(
                 );
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "slice_shifts") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("slice_shifts") {
+                let excluded: &[usize] = &scaffold_excluded;
+                let out = onceover_mines::profile_slice_shifts(&table, excluded, &tier.slices);
+                let info = match out.status {
+                    onceover_mines::SliceStatus::NotApplicable(d) => PassInfo::na(d),
+                    onceover_mines::SliceStatus::Ran(d) => {
+                        PassInfo::ran(format!("{d}{exclusion_note}"))
+                    }
+                    onceover_mines::SliceStatus::Capped(d) => {
+                        PassInfo::capped(format!("{d}{exclusion_note}"))
+                    }
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "slice_shifts".into(),
+                    info,
+                );
+                findings.extend(out.findings);
+            }
             // Discontinuities polls the deadline inside its own
             // loops, so it is exempt from the dispatch skip: it is
             // dispatched even when the deadline has already
@@ -2246,6 +2272,7 @@ fn profile_inner(
             "arithmetic_identities",
             "period_associations",
             "views",
+            "slice_shifts",
             "drift",
         ] {
             stamp_insert(
@@ -2371,6 +2398,7 @@ fn profile_inner(
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "changeforest"=>"rows missing the axis value or any measure value are excluded",
+                "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",

@@ -6,7 +6,7 @@ use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
     AssociationConfig, BreaksConfig, ChangeforestConfig, DiscConfig, DriftConfig, DtableConfig,
     EncodeConfig, HConfig, HotspotConfig, PartitionsConfig, PrismConfig, RegimesConfig,
-    ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
+    ScreenConfig, ShapesConfig, SliceConfig, SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +124,7 @@ pub struct TierConfig {
     pub hotspots: HotspotConfig,
     pub views: ViewsConfig,
     pub changeforest: ChangeforestConfig,
+    pub slices: SliceConfig,
     pub dep_pair_cap: usize,
     pub ident_pair_cap: usize,
     pub ident_multiterm_cap: usize,
@@ -162,6 +163,7 @@ impl TierConfig {
                 },
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
+                slices: SliceConfig::default(),
                 dep_pair_cap: 0,
                 ident_pair_cap: 0,
                 ident_multiterm_cap: 0,
@@ -200,6 +202,7 @@ impl TierConfig {
                 hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
+                slices: SliceConfig::default(),
                 // The discontinuity screen is the measured runtime
                 // outlier (2026-11-02 battery: 0.43 s median marginal,
                 // +83.0 s excess, concentrated on wide tables). The
@@ -310,6 +313,14 @@ impl TierConfig {
                 },
                 changeforest: ChangeforestConfig {
                     row_cap: 20_000,
+                    ..Default::default()
+                },
+                // Deep extends the slice search to depth 3, as a
+                // beam over the depth-2 slices that cleared the
+                // search bars; the row cap follows the tier's
+                // encoding cap in the pipeline, like views.
+                slices: SliceConfig {
+                    max_depth: 3,
                     ..Default::default()
                 },
                 dep_pair_cap: 2_016,

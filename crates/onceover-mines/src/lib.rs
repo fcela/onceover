@@ -31,6 +31,7 @@ mod screen;
 pub mod series;
 pub mod shapes;
 pub mod simpson;
+pub mod slices;
 pub mod surprises;
 pub mod targets;
 pub mod views;
@@ -65,6 +66,7 @@ pub use regimes::{profile_regimes, RegimesConfig};
 pub use rows::profile_row_consistency;
 pub use series::{profile_series, SeriesInput};
 pub use shapes::{profile_target_shapes, shape_diagnostics, ShapeDiagnostics, ShapesConfig};
+pub use slices::{profile_slice_shifts, SliceConfig, SliceOutcome, SliceStatus};
 pub use surprises::{profile_surprises, SurpriseConfig};
 
 /// Deterministic stratified subsample (one hashed offset per row interval) of row indices (0..n down to cap).
