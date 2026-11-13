@@ -151,6 +151,14 @@ pub enum Pattern {
     /// declared, not inferred — the counterpart to a statistical
     /// association, which relates two columns over all rows.
     GroupContrast,
+    /// A pooled association between two columns that does not
+    /// survive conditioning on a categorical dimension: within
+    /// every usable level of the stratifier the direction
+    /// reverses (form `reversal`), or the association is absent
+    /// (form `vanishing`). The pooled statement is an artefact
+    /// of the stratifier's mix; the conditioned statement is
+    /// the fact about the pair.
+    ConditionedAssociation,
     /// A conjunction of conditions (a slice), searched rather than
     /// declared, under which a target column's distribution differs
     /// from the table-wide one: a tail share, a median shift, or a
@@ -197,7 +205,8 @@ impl Pattern {
             Self::StatisticalAssociation
             | Self::PeriodAssociation
             | Self::GroupContrast
-            | Self::SliceShift => Category::Associations,
+            | Self::ConditionedAssociation => Category::Associations,
+            Self::SliceShift => Category::Associations,
             Self::Gap => Category::Gaps,
             Self::SequenceGap
             | Self::MissingCombinations
@@ -261,6 +270,7 @@ impl Pattern {
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
             Self::GroupContrast => "group_contrast",
+            Self::ConditionedAssociation => "conditioned_association",
             Self::SliceShift => "slice_shift",
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
@@ -904,7 +914,7 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
-            Pattern::SliceShift => (
+            Pattern::ConditionedAssociation | Pattern::SliceShift => (
                 Sc::Columns,
                 O::Relation,
                 E::Approximate,
@@ -1165,6 +1175,9 @@ impl Facets {
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
             (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
+            (Category::Associations, Some("conditioned_association")) => {
+                Pattern::ConditionedAssociation
+            }
             (Category::Associations, Some("slice_shift")) => Pattern::SliceShift,
             (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
@@ -1980,13 +1993,14 @@ impl Finding {
                         "statistical"
                             | "period_association"
                             | "group_contrast"
+                            | "conditioned_association"
                             | "slice_shift"
                             | "axis_shape",
                     )
                 ) =>
             {
                 return Err(
-                    "association type must be statistical, period_association, group_contrast, slice_shift, or axis_shape"
+                    "association type must be statistical, period_association, group_contrast, conditioned_association, slice_shift, or axis_shape"
                         .into(),
                 );
             }

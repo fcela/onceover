@@ -1070,8 +1070,16 @@ fn screen_sampled_impl(
     // direction reverses inside every usable stratum of a
     // categorical dimension. A reversal appends a qualification
     // to the claim and a payload to the evidence; the finding
-    // itself is never removed or re-tiered.
+    // itself is never removed or re-tiered. Since issue #276
+    // the check also tests the vanishing form (the association
+    // absent within every usable stratum), and either outcome
+    // is additionally emitted as a standalone conditioned
+    // finding: the conditioned fact is often the most
+    // interesting fact about the pair, and as a qualification
+    // alone it can only appear as a footnote.
     let (mut simpson_checked, mut simpson_qualified) = (0usize, 0usize);
+    let mut simpson_vanished = 0usize;
+    let mut conditioned: Vec<Finding> = Vec::new();
     let mut simpson_budget = crate::simpson::SimpsonBudget::new();
     let has_strong = dep_findings.iter().any(|(_, t, _)| *t == "strong");
     let stratifiers = if has_strong {
@@ -1135,12 +1143,66 @@ fn screen_sampled_impl(
                         )),
                     );
                 }
+                conditioned.push(crate::simpson::conditioned_finding(
+                    pooled,
+                    &table.names[d.a],
+                    &table.names[d.b],
+                    &hit.stratifier,
+                    "reversal",
+                    crate::simpson::reversal_statement(
+                        stat,
+                        pooled,
+                        &table.names[d.a],
+                        &table.names[d.b],
+                        &hit,
+                    ),
+                    crate::simpson::simpson_payload(stat, pooled, &hit),
+                    Method::new("numeric_dependence", "simpson_conditioning", "Stratified re-evaluation of the pair's signed effect within the usable levels of a categorical dimension: reversal requires every level to reverse with the combined within effect clear of zero; vanishing requires every level's effect small and the combined within effect certified below the equivalence bound"),
+                ));
+            } else if let Some(hit) = crate::simpson::vanishing_for_pair(
+                stat,
+                pooled,
+                &universe,
+                &stratifiers,
+                &[d.a, d.b],
+                &mut simpson_budget,
+            ) {
+                simpson_vanished += 1;
+                finding
+                    .claim
+                    .push_str(&crate::simpson::vanishing_claim_clause(stat, pooled, &hit));
+                if let Some(ev) = finding.evidence.first_mut() {
+                    ev.metrics.insert(
+                        "simpson".to_string(),
+                        serde_json::Value::Object(crate::simpson::vanishing_payload(
+                            stat, pooled, &hit,
+                        )),
+                    );
+                }
+                conditioned.push(crate::simpson::conditioned_finding(
+                    pooled,
+                    &table.names[d.a],
+                    &table.names[d.b],
+                    &hit.stratifier,
+                    "vanishing",
+                    crate::simpson::vanishing_statement(
+                        stat,
+                        pooled,
+                        &table.names[d.a],
+                        &table.names[d.b],
+                        &hit,
+                    ),
+                    crate::simpson::vanishing_payload(stat, pooled, &hit),
+                    Method::new("numeric_dependence", "simpson_conditioning", "Stratified re-evaluation of the pair's signed effect within the usable levels of a categorical dimension: reversal requires every level to reverse with the combined within effect clear of zero; vanishing requires every level's effect small and the combined within effect certified below the equivalence bound"),
+                ));
             }
         }
     }
 
     let n_weak = dep_findings.iter().filter(|(_, t, _)| *t == "weak").count();
-    let findings: Vec<Finding> = dep_findings.into_iter().map(|(_, _, f)| f).collect();
+    let mut findings: Vec<Finding> = dep_findings.into_iter().map(|(_, _, f)| f).collect();
+    let n_pair_findings = findings.len();
+    findings.extend(conditioned);
 
     // The associations table: every pair that received detailed
     // statistics, with its test results and tier (issue #134).
@@ -1183,7 +1245,7 @@ fn screen_sampled_impl(
         total_pairs,
         if capped { "capped" } else { "full" },
         screened_clause, rows.len(), table.n,
-        findings.len() - n_weak,
+        n_pair_findings - n_weak,
         n_weak,
         Q_BAR,
         tested,
@@ -1198,11 +1260,17 @@ fn screen_sampled_impl(
         ));
     }
     coverage.push_str(&excluded_suffix);
-    if simpson_qualified > 0 || simpson_budget.capped {
+    if simpson_checked > 0 || simpson_budget.capped {
         coverage.push_str(&format!(
-            "; Simpson reversal check over {} strong numeric pairs: {} qualified{}",
+            "; Simpson check over {} strong numeric pairs: {} reversal, {} vanishing{}{}",
             simpson_checked,
             simpson_qualified,
+            simpson_vanished,
+            if simpson_qualified + simpson_vanished > 0 {
+                ", each also stated as its own conditioned finding"
+            } else {
+                ""
+            },
             if simpson_budget.capped {
                 " (evaluation bound reached; some pairs unchecked)"
             } else {
