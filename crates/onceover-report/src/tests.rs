@@ -491,6 +491,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         DistributionChange,
         OrderedPartition,
         OneWayFlag,
+        SliceShift,
     ];
     for pattern in patterns {
         let directed = matches!(

@@ -24,6 +24,7 @@ OPT_IN = [
     "drift",
     "granularity",
     "changeforest",
+    "slice_shifts",
 ]
 
 
@@ -40,7 +41,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_activation_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 39
+    assert len(registry) == 40
     by_activation = {}
     for d in registry.values():
         by_activation.setdefault(d["activation"], []).append(d["id"])
