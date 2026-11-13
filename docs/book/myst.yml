@@ -59,6 +59,7 @@ project:
         - file: methodology/step_discontinuities.ipynb
         - file: methodology/drift.ipynb
         - file: methodology/changeforest.ipynb
+        - file: methodology/ordered_axis.ipynb
     - title: Part IV — Implementation
       children:
         - file: implementation/architecture.ipynb
