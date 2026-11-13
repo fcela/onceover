@@ -158,6 +158,12 @@ pub enum Pattern {
     /// of the stratifier's mix; the conditioned statement is
     /// the fact about the pair.
     ConditionedAssociation,
+    /// A conjunction of conditions (a slice), searched rather than
+    /// declared, under which a target column's distribution differs
+    /// from the table-wide one: a tail share, a median shift, or a
+    /// categorical level share. The statement is stated only when
+    /// the shift reappears on held-out rows the search never saw.
+    SliceShift,
     /// The share of a measure held by the top entities in each
     /// period of an entity × time grain: high in level, or rising
     /// materially across the period range. A panel statement —
@@ -197,6 +203,7 @@ impl Pattern {
             | Self::PeriodAssociation
             | Self::GroupContrast
             | Self::ConditionedAssociation => Category::Associations,
+            Self::SliceShift => Category::Associations,
             Self::Gap => Category::Gaps,
             Self::SequenceGap
             | Self::MissingCombinations
@@ -260,6 +267,7 @@ impl Pattern {
             Self::PeriodAssociation => "period_association",
             Self::GroupContrast => "group_contrast",
             Self::ConditionedAssociation => "conditioned_association",
+            Self::SliceShift => "slice_shift",
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
@@ -893,7 +901,7 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
-            Pattern::ConditionedAssociation => (
+            Pattern::ConditionedAssociation | Pattern::SliceShift => (
                 Sc::Columns,
                 O::Relation,
                 E::Approximate,
@@ -1154,6 +1162,7 @@ impl Facets {
             (Category::Associations, Some("conditioned_association")) => {
                 Pattern::ConditionedAssociation
             }
+            (Category::Associations, Some("slice_shift")) => Pattern::SliceShift,
             (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
@@ -1776,6 +1785,44 @@ impl Finding {
                     }
                 }
             }
+            Pattern::SliceShift => {
+                if let Some(v) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(v.to_owned());
+                }
+                if let Some(conds) = raw.get("conditions").and_then(Value::as_array) {
+                    for c in conds {
+                        let (Some(column), Some(op), Some(value)) = (
+                            c.get("column").and_then(Value::as_str),
+                            c.get("op").and_then(Value::as_str),
+                            c.get("value"),
+                        ) else {
+                            continue;
+                        };
+                        let operator = match op {
+                            "eq" => Operator::Eq,
+                            "gt" => Operator::Gt,
+                            _ => continue,
+                        };
+                        let mut p = Predicate {
+                            column: column.to_owned(),
+                            operator,
+                            value: value.clone(),
+                            transform: None,
+                        };
+                        p.canonicalize();
+                        spec.conditions.push(p);
+                    }
+                    spec.conditions
+                        .sort_by_key(|p| serde_json::to_string(p).unwrap());
+                }
+                if let Some(v) = metrics.get("target_level") {
+                    spec.definition.insert("target_level".into(), v.clone());
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive"),
+                );
+            }
             _ => {}
         }
         let basis = if matches!(pattern, Pattern::CategoricalRole | Pattern::IdentifierRole) {
@@ -1931,12 +1978,13 @@ impl Finding {
                             | "period_association"
                             | "group_contrast"
                             | "conditioned_association"
+                            | "slice_shift"
                             | "axis_shape",
                     )
                 ) =>
             {
                 return Err(
-                    "association type must be statistical, period_association, group_contrast, conditioned_association, or axis_shape"
+                    "association type must be statistical, period_association, group_contrast, conditioned_association, slice_shift, or axis_shape"
                         .into(),
                 );
             }

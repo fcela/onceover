@@ -491,6 +491,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         DistributionChange,
         OrderedPartition,
         OneWayFlag,
+        SliceShift,
     ];
     for pattern in patterns {
         let directed = matches!(
@@ -1243,6 +1244,10 @@ fn default_policy_caps_the_char_heavy_detectors() {
         Some(&20)
     );
     assert_eq!(policy.max_findings_per_detector.get("series"), Some(&20));
+    // Issue #271 caps breaks and views too, but only under cap
+    // pressure: they live in `pressure_detector_caps`, not in
+    // this standing map (see
+    // `default_policy_carries_the_group_cap_reserve_and_extended_detector_caps`).
     assert_eq!(policy.max_findings_per_detector.len(), 6);
 }
 
@@ -1309,4 +1314,307 @@ fn frame_scope_findings_lead_the_report() {
     let selected = finalize_ledger(vec![fd_finding(0.9), near_key]);
     assert_eq!(selected[0].category, Category::Duplicates);
     assert_eq!(selected[1].category, Category::Dependencies);
+}
+
+// ---------- statement classes and rationed selection (issue #271) ----------
+
+fn classed(category: Category, typ: &str, col: &str, score: f64) -> Finding {
+    Finding::from_statement(
+        category,
+        Some(typ.into()),
+        Subject {
+            columns: vec![col.into()],
+            ..Subject::default()
+        },
+        Specification::default(),
+        format!("statement about {col}"),
+        evidence("survey_detector"),
+        score,
+        None,
+    )
+}
+
+#[test]
+fn statement_class_first_matching_rule_decides() {
+    // Account: frame scope, whatever the category.
+    let mut f = classed(Category::Missingness, "missing_values", "a", 0.5);
+    let mut facets = f.facets;
+    facets.scope = Scope::Frame;
+    f = f.with_facets(facets);
+    assert_eq!(statement_class(&f), StatementClass::Account);
+    // Account: the uniqueness category.
+    let f = classed(Category::Uniqueness, "unique_key", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Account);
+    // Structure: duplicate_encoding by type, whatever the category.
+    let f = classed(Category::Intervals, "duplicate_encoding", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Structure);
+    // Structure: the relation categories.
+    let f = classed(Category::Dependencies, "functional", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Structure);
+    let f = classed(Category::Associations, "statistical", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Structure);
+    // Structure: a conditioned statement of any other category.
+    let mut f = classed(Category::Missingness, "missing_values", "a", 0.5);
+    let mut facets = f.facets;
+    facets.conditionality = Conditionality::SegmentConditioned;
+    f = f.with_facets(facets);
+    assert_eq!(statement_class(&f), StatementClass::Structure);
+    // Shape: changes, and extreme values in intervals.
+    let f = classed(Category::Changes, "level_shift", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Shape);
+    let f = classed(Category::Intervals, "extreme_value", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Shape);
+    // Hygiene: everything else.
+    let f = classed(Category::Intervals, "value_range", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Hygiene);
+    let f = classed(Category::Missingness, "missing_values", "a", 0.5);
+    assert_eq!(statement_class(&f), StatementClass::Hygiene);
+}
+
+fn fd_col(col: &str, score: f64) -> Finding {
+    Finding::new(
+        Pattern::FunctionalDependency,
+        BTreeMap::from([
+            ("lhs".into(), json!([col])),
+            ("rhs".into(), json!("region")),
+        ]),
+        format!("{col} determines region"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([
+            ("violations".into(), json!(0)),
+            ("n_used".into(), json!(100)),
+        ]),
+        None,
+        Method::new("survey_detector", "value_mapping", "test"),
+    )
+}
+
+fn key_on(col: &str, score: f64) -> Finding {
+    Finding::new(
+        Pattern::Uniqueness,
+        BTreeMap::from([("column".into(), json!(col))]),
+        format!("{col} uniquely identifies rows"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([("distinct".into(), json!(100)), ("n".into(), json!(100))]),
+        None,
+        Method::new("survey_detector", "uniqueness", "test"),
+    )
+}
+
+fn missing_on(col: &str, score: f64) -> Finding {
+    Finding::new(
+        Pattern::MissingValues,
+        BTreeMap::from([("column".into(), json!(col))]),
+        format!("{col} is missing in 12% of rows"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("survey_detector", "missing_values", "test"),
+    )
+}
+
+fn dup_on(col: &str, score: f64) -> Finding {
+    Finding::new(
+        Pattern::Duplicates,
+        BTreeMap::from([("columns".into(), json!([col]))]),
+        format!("rows repeat on {col}"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("survey_detector", "duplicate_rows", "test"),
+    )
+}
+
+fn step_on(col: &str, score: f64) -> Finding {
+    Finding::new(
+        Pattern::StepDiscontinuity,
+        BTreeMap::from([
+            ("column".into(), json!(col)),
+            ("time_column".into(), json!("date")),
+        ]),
+        format!("{col} steps at 2024-06"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("survey_detector", "step_discontinuity", "test"),
+    )
+}
+
+#[test]
+fn selection_without_pressure_is_unrationed() {
+    let findings = vec![fd_col("a", 0.9), missing_on("b", 0.8), step_on("c", 0.7)];
+    let outcome = select_findings_counted(findings, &SelectionPolicy::default());
+    assert_eq!(outcome.selected.len(), 3);
+    assert!(outcome.grouped.is_empty());
+    assert!(outcome.group_capped.is_empty());
+    assert_eq!(outcome.reserve_capped, 0);
+    // No cap pressure: every candidate is selected and no
+    // per-class counts are recorded.
+    assert!(outcome.candidates_by_class.is_empty());
+    let claims: std::collections::BTreeSet<&str> =
+        outcome.selected.iter().map(|f| f.claim.as_str()).collect();
+    assert_eq!(
+        claims,
+        std::collections::BTreeSet::from([
+            "a determines region",
+            "b is missing in 12% of rows",
+            "c steps at 2024-06",
+        ])
+    );
+}
+
+#[test]
+fn group_cap_does_not_bind_without_pressure() {
+    // Fifteen findings in one (category, type, form) group, under
+    // the findings cap: all are selected, exactly as before.
+    let findings: Vec<Finding> = (0..15).map(|i| fd_col(&format!("s{i}"), 0.9)).collect();
+    let outcome = select_findings_counted(findings, &SelectionPolicy::default());
+    assert_eq!(outcome.selected.len(), 15);
+    assert!(outcome.group_capped.is_empty());
+}
+
+#[test]
+fn group_cap_and_hygiene_reserve_bind_under_pressure() {
+    // 145 distinct candidates against a cap of 100: 15 account,
+    // 30 structure findings in a single group, and 100 hygiene
+    // findings in two groups of 50 (so the reserve, not the
+    // group cap alone, is what stops hygiene at 20).
+    let mut findings = Vec::new();
+    for i in 0..30 {
+        findings.push(fd_col(&format!("s{i}"), 0.95));
+    }
+    for i in 0..50 {
+        findings.push(missing_on(&format!("h{i}"), 0.5));
+    }
+    for i in 0..50 {
+        findings.push(dup_on(&format!("d{i}"), 0.5));
+    }
+    for i in 0..15 {
+        findings.push(key_on(&format!("k{i}"), 0.6));
+    }
+    let outcome = select_findings_counted(findings, &SelectionPolicy::default());
+    // Account admitted in full, the structure group capped at 12,
+    // hygiene admitted last up to the reserve of 20: the report
+    // is shorter than the cap rather than padded with hygiene.
+    assert_eq!(outcome.selected.len(), 15 + 12 + 20);
+    assert_eq!(outcome.selected_by_class.get("account"), Some(&15));
+    assert_eq!(outcome.selected_by_class.get("structure"), Some(&12));
+    assert_eq!(outcome.selected_by_class.get("hygiene"), Some(&20));
+    assert_eq!(outcome.candidates_by_class.get("account"), Some(&15));
+    assert_eq!(outcome.candidates_by_class.get("structure"), Some(&30));
+    assert_eq!(outcome.candidates_by_class.get("hygiene"), Some(&100));
+    // The structure group turns away 18, the first hygiene group
+    // 38 at its group cap, and the remaining 42 hygiene
+    // statements meet the filled reserve.
+    assert_eq!(outcome.group_capped.values().sum::<usize>(), 18 + 38);
+    assert_eq!(outcome.reserve_capped, 42);
+    assert_eq!(outcome.capped_by_class.get("structure"), Some(&18));
+    assert_eq!(outcome.capped_by_class.get("hygiene"), Some(&80));
+}
+
+#[test]
+fn default_policy_carries_the_group_cap_reserve_and_extended_detector_caps() {
+    let policy = SelectionPolicy::default();
+    assert_eq!(policy.max_findings_per_group, 12);
+    assert_eq!(policy.hygiene_reserve, 20);
+    // The extended detector caps bind only under cap pressure:
+    // breaks and views at 25 each, in the pressure map.
+    assert_eq!(policy.pressure_detector_caps.get("breaks"), Some(&25));
+    assert_eq!(policy.pressure_detector_caps.get("views"), Some(&25));
+    assert_eq!(policy.pressure_detector_caps.len(), 2);
+    // The six standing per-detector caps are unchanged, and
+    // neither new detector joins them.
+    assert_eq!(
+        policy
+            .max_findings_per_detector
+            .get("functional_dependencies"),
+        Some(&25)
+    );
+    assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
+    assert!(!policy.max_findings_per_detector.contains_key("breaks"));
+    assert!(!policy.max_findings_per_detector.contains_key("views"));
+}
+
+fn break_on(col: &str, score: f64) -> Finding {
+    break_typed(Pattern::StepDiscontinuity, col, score)
+}
+
+fn break_typed(pattern: Pattern, col: &str, score: f64) -> Finding {
+    Finding::new(
+        pattern,
+        BTreeMap::from([
+            ("column".into(), json!(col)),
+            ("time_column".into(), json!("date")),
+        ]),
+        format!("{col} changes at 2024-06"),
+        EvidenceBasis::Measured,
+        score,
+        BTreeMap::from([("n".into(), json!(100))]),
+        None,
+        Method::new("breaks", "break_scan", "test"),
+    )
+}
+
+#[test]
+fn pressure_detector_caps_do_not_bind_without_pressure() {
+    // Thirty statements from the breaks detector, distinct and
+    // under the findings cap: every one is selected, exactly as
+    // before issue #271 — the breaks/views caps ration only
+    // when the candidate pool exceeds the cap. (The selection
+    // study's uncapped control measured 42 views statements
+    // selected on an 81-statement report; a standing cap would
+    // rewrite that report's membership.)
+    let findings: Vec<Finding> = (0..30).map(|i| break_on(&format!("b{i}"), 0.9)).collect();
+    let outcome = select_findings_counted(findings, &SelectionPolicy::default());
+    assert_eq!(outcome.selected.len(), 30);
+    assert!(outcome.capped.is_empty());
+}
+
+#[test]
+fn pressure_detector_caps_bind_under_pressure() {
+    // 140 distinct candidates against a cap of 100: 15 account,
+    // 40 breaks statements, 85 hygiene statements. The breaks
+    // statements spread over four change types, ten per
+    // (category, type, form) group, so the group cap cannot
+    // bind first: the pressure-only per-detector cap is what
+    // stops breaks at 25 selected, with the 15 turned away
+    // counted per-detector. The hygiene statements spread over
+    // two groups, so the reserve, not a group cap, is what
+    // stops hygiene at 20.
+    let mut findings = Vec::new();
+    for i in 0..15 {
+        findings.push(key_on(&format!("k{i}"), 0.6));
+    }
+    for pattern in [
+        Pattern::LevelShift,
+        Pattern::TrendChange,
+        Pattern::VarianceChange,
+        Pattern::TransientExcursion,
+    ] {
+        for i in 0..10 {
+            findings.push(break_typed(pattern, &format!("b{i}"), 0.95));
+        }
+    }
+    for i in 0..43 {
+        findings.push(missing_on(&format!("h{i}"), 0.5));
+    }
+    for i in 0..42 {
+        findings.push(dup_on(&format!("d{i}"), 0.5));
+    }
+    let outcome = select_findings_counted(findings, &SelectionPolicy::default());
+    assert_eq!(outcome.selected.len(), 15 + 25 + 20);
+    assert_eq!(outcome.selected_by_class.get("account"), Some(&15));
+    assert_eq!(outcome.selected_by_class.get("shape"), Some(&25));
+    assert_eq!(outcome.selected_by_class.get("hygiene"), Some(&20));
+    assert_eq!(outcome.capped.get("breaks"), Some(&15));
+    // capped_by_class counts every turned-away candidate of the
+    // class: 15 shape (the pressure cap) and 65 hygiene (the
+    // reserve).
+    assert_eq!(outcome.capped_by_class.get("shape"), Some(&15));
+    assert_eq!(outcome.capped_by_class.get("hygiene"), Some(&65));
 }

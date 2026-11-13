@@ -122,6 +122,7 @@ fn profile_inner(
         tier.regimes.row_cap = rows.max(1);
     }
     tier.views.row_cap = tier.encode.row_cap;
+    tier.slices.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);
@@ -143,6 +144,7 @@ fn profile_inner(
     tier.disc.deadline = pass_deadline;
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
+    tier.slices.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
@@ -1843,6 +1845,30 @@ fn profile_inner(
                 );
                 findings.extend(f);
             }
+            if check_deadline(&mut coverage, "slice_shifts") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("slice_shifts") {
+                let excluded: &[usize] = &scaffold_excluded;
+                let out = onceover_mines::profile_slice_shifts(&table, excluded, &tier.slices);
+                let info = match out.status {
+                    onceover_mines::SliceStatus::NotApplicable(d) => PassInfo::na(d),
+                    onceover_mines::SliceStatus::Ran(d) => {
+                        PassInfo::ran(format!("{d}{exclusion_note}"))
+                    }
+                    onceover_mines::SliceStatus::Capped(d) => {
+                        PassInfo::capped(format!("{d}{exclusion_note}"))
+                    }
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "slice_shifts".into(),
+                    info,
+                );
+                findings.extend(out.findings);
+            }
             // Discontinuities polls the deadline inside its own
             // loops, so it is exempt from the dispatch skip: it is
             // dispatched even when the deadline has already
@@ -2301,6 +2327,7 @@ fn profile_inner(
             "arithmetic_identities",
             "period_associations",
             "views",
+            "slice_shifts",
             "drift",
         ] {
             stamp_insert(
@@ -2426,6 +2453,7 @@ fn profile_inner(
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "changeforest"=>"rows missing the axis value or any measure value are excluded",
+                "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",
                 "ordered_axis"=>"rows missing the axis or the response are excluded from each series and pair; series aggregate rows sharing an axis value by their mean",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
@@ -2656,9 +2684,11 @@ fn profile_inner(
             outcome.families
         ))
     };
-    if !capped.is_empty() || grouping_note.is_some() {
-        // Per-detector report caps and family grouping are
-        // disclosed with counts, never applied silently (the
+    let rationed = !outcome.group_capped.is_empty() || outcome.reserve_capped > 0;
+    if !capped.is_empty() || grouping_note.is_some() || rationed {
+        // Per-detector report caps, the per-group cap, the
+        // hygiene reserve, and family grouping are disclosed
+        // with counts, never applied silently (the
         // demote-never-suppress rule).
         let mut parts: Vec<String> = capped
             .iter()
@@ -2667,18 +2697,42 @@ fn profile_inner(
                     .selection
                     .max_findings_per_detector
                     .get(detector)
+                    .or_else(|| cfg.selection.pressure_detector_caps.get(detector))
                     .copied()
                     .unwrap_or(0);
                 format!("{detector}: {n} statement(s) past the per-detector report cap of {cap} not selected")
             })
             .collect();
+        parts.extend(outcome.group_capped.iter().map(|(label, n)| {
+            format!(
+                "{label}: {n} statement(s) past the per-group report cap of {} not selected",
+                cfg.selection.max_findings_per_group
+            )
+        }));
+        parts.extend(
+            outcome
+                .group_capped_by_detector
+                .iter()
+                .map(|(detector, n)| {
+                    format!(
+                "{detector}: {n} statement(s) past the per-group report cap of {} not selected",
+                cfg.selection.max_findings_per_group
+            )
+                }),
+        );
+        if outcome.reserve_capped > 0 {
+            parts.push(format!(
+                "hygiene class: {} statement(s) past the hygiene reserve of {} not selected",
+                outcome.reserve_capped, cfg.selection.hygiene_reserve
+            ));
+        }
         if let Some(note) = &grouping_note {
             parts.push(note.clone());
         }
         if let Some(note) = &demotion_note {
             parts.push(note.clone());
         }
-        let info = if capped.is_empty() {
+        let info = if capped.is_empty() && !rationed {
             // Grouping alone bound nothing: the entry is an exact
             // run record, not a cap disclosure.
             PassInfo::ran(parts.join("; "))
@@ -2701,6 +2755,9 @@ fn profile_inner(
         selected: findings.len(),
         families: outcome.families,
         grouped_statements: grouped.len(),
+        candidates_by_class: outcome.candidates_by_class.clone(),
+        selected_by_class: outcome.selected_by_class.clone(),
+        capped_by_class: outcome.capped_by_class.clone(),
     };
     let applied_labels: BTreeMap<String, String> = resolved_labels
         .as_ref()
