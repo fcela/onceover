@@ -2600,9 +2600,11 @@ fn profile_inner(
             outcome.families
         ))
     };
-    if !capped.is_empty() || grouping_note.is_some() {
-        // Per-detector report caps and family grouping are
-        // disclosed with counts, never applied silently (the
+    let rationed = !outcome.group_capped.is_empty() || outcome.reserve_capped > 0;
+    if !capped.is_empty() || grouping_note.is_some() || rationed {
+        // Per-detector report caps, the per-group cap, the
+        // hygiene reserve, and family grouping are disclosed
+        // with counts, never applied silently (the
         // demote-never-suppress rule).
         let mut parts: Vec<String> = capped
             .iter()
@@ -2611,18 +2613,42 @@ fn profile_inner(
                     .selection
                     .max_findings_per_detector
                     .get(detector)
+                    .or_else(|| cfg.selection.pressure_detector_caps.get(detector))
                     .copied()
                     .unwrap_or(0);
                 format!("{detector}: {n} statement(s) past the per-detector report cap of {cap} not selected")
             })
             .collect();
+        parts.extend(outcome.group_capped.iter().map(|(label, n)| {
+            format!(
+                "{label}: {n} statement(s) past the per-group report cap of {} not selected",
+                cfg.selection.max_findings_per_group
+            )
+        }));
+        parts.extend(
+            outcome
+                .group_capped_by_detector
+                .iter()
+                .map(|(detector, n)| {
+                    format!(
+                "{detector}: {n} statement(s) past the per-group report cap of {} not selected",
+                cfg.selection.max_findings_per_group
+            )
+                }),
+        );
+        if outcome.reserve_capped > 0 {
+            parts.push(format!(
+                "hygiene class: {} statement(s) past the hygiene reserve of {} not selected",
+                outcome.reserve_capped, cfg.selection.hygiene_reserve
+            ));
+        }
         if let Some(note) = &grouping_note {
             parts.push(note.clone());
         }
         if let Some(note) = &demotion_note {
             parts.push(note.clone());
         }
-        let info = if capped.is_empty() {
+        let info = if capped.is_empty() && !rationed {
             // Grouping alone bound nothing: the entry is an exact
             // run record, not a cap disclosure.
             PassInfo::ran(parts.join("; "))
@@ -2645,6 +2671,9 @@ fn profile_inner(
         selected: findings.len(),
         families: outcome.families,
         grouped_statements: grouped.len(),
+        candidates_by_class: outcome.candidates_by_class.clone(),
+        selected_by_class: outcome.selected_by_class.clone(),
+        capped_by_class: outcome.capped_by_class.clone(),
     };
     let applied_labels: BTreeMap<String, String> = resolved_labels
         .as_ref()

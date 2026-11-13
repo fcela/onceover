@@ -621,6 +621,22 @@
           "minimum": 0,
           "type": "integer"
         },
+        "candidates_by_class": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Distinct candidate statements per statement class (account, structure, shape, hygiene), counted by the ledger over the statements it ranked plus constructed family leads.",
+          "type": "object"
+        },
+        "capped_by_class": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Candidate statements turned away per statement class: candidates minus selected minus grouped, per class.",
+          "type": "object"
+        },
         "distinct_statements": {
           "minimum": 0,
           "type": "integer"
@@ -636,6 +652,14 @@
         "selected": {
           "minimum": 0,
           "type": "integer"
+        },
+        "selected_by_class": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Selected findings per statement class (account, structure, shape, hygiene).",
+          "type": "object"
         },
         "verified_candidates": {
           "minimum": 0,

@@ -218,7 +218,11 @@ score and a ledger evidence score computed from validation quality,
 effect strength, specificity, and simplicity — and the detector's
 original score is preserved in `detector_interestingness`. Findings
 are ordered by the selection score, and the same order decides which
-findings survive the `max_findings` cap.
+findings survive the `max_findings` cap — with one exception: when
+the distinct candidates exceed the cap, survival is decided by the
+statement-class rationing described under "Consolidation and
+selection" below. The findings array's presentation order (report
+band, then score) does not change either way.
 
 Four adjustments keep exact-but-expected statements from outranking
 substantive ones:
@@ -607,18 +611,43 @@ and evaluation participates in selection. It is not an independent confirmation
 sample and has no multiple-testing guarantee.
 
 Selection defaults to at most 100 findings, 20 conditional rules, two rules per
-outcome, and three predictive findings per target. Three per-detector caps bound
+outcome, and three predictive findings per target. Six per-detector caps bound
 the report's context cost: at most 25 selected statements attributed to
-`functional_dependencies`, 20 attributed to `gbm`, and 25 attributed to
-`discontinuities`, where a statement is
+`functional_dependencies`, 25 to `discontinuities`, 20 to `gbm`, 20 to
+`missingness`, 20 to `row_consistency`, and 20 to `series`, where a statement is
 attributed to the detector of its first evidence record. The 2026-11-02
 battery measured the first two detectors producing about 41% of all report
 characters (550,443 and 467,098 of 2,479,798); the 2026-11-04 battery added
 the discontinuities cap after measuring it taking 81 of the 100 slots on the
 state-unemployment panel, crowding out every gbm and numeric-dependence
-statement (docs/benchmarks/2026-11-04-detector-battery-step2.md). A cap is never silent: when one
+statement (docs/benchmarks/2026-11-04-detector-battery-step2.md).
+
+When the distinct candidate statements exceed the 100-finding cap, selection
+also rations by statement class. Each statement is classified from its facets
+and type as account (frame-scope statements and keys), structure
+(dependencies, associations, conditional rules, duplicate encodings, and any
+value- or segment-conditioned statement), shape (changes, and extreme values
+in intervals), or hygiene (the remaining data-quality statements). Account
+statements are admitted in full. Structure and shape statements are admitted
+in selection-score order, with at most 12 selected statements sharing one
+(category, type, form) group, and two further per-detector caps binding only
+under this pressure — at most 25 selected statements attributed to `breaks`
+and 25 to `views`. The 2026-11-13 selection study
+(docs/benchmarks/2026-11-13-report-selection.md) measured `breaks` taking 53
+of one capped report's 100 slots; it also measured `views` producing 42
+statements on a report whose candidates fit under the cap, which is why
+these two caps bind only under pressure: an uncapped report's membership is
+unchanged. Hygiene statements are admitted last, in score
+order, up to a reserve of 20 of the 100 slots; if the account, structure, and
+shape candidates run out first, the report is shorter than 100 findings
+rather than padded with more hygiene statements. When the candidates fit
+under the cap, none of this binds and selection is the plain score order.
+A cap is never silent: when one
 binds, coverage gains a `selection` entry with status `capped` stating how
-many statements per detector were not selected. Rule evaluation requires at
+many statements each cap turned away, and the report's `selection` record
+gains per-class counts — `candidates_by_class`, `selected_by_class`, and
+`capped_by_class` (candidates minus selected minus grouped, per class).
+Rule evaluation requires at
 least 30 eligible rows, 30 antecedent matches and 20 joint matches; the conditional
 rate must exceed baseline and have at least 0.02 absolute improvement or lift
 1.5. Rust `SelectionPolicy` configures these limits. Python exposes

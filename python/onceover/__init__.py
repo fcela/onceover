@@ -327,6 +327,30 @@ def _report_band(finding: dict) -> int:
     return 4
 
 
+def _statement_class(finding: dict) -> int:
+    """The statement class of a finding (issue #271), mirroring the
+    Rust ledger's selection-time classification: 0 account
+    (frame-scope statements and keys), 1 structure (how columns and
+    segments relate), 2 shape (how values distribute and move),
+    3 hygiene (data-quality facts). First matching rule decides."""
+    facets = finding.get("facets") or {}
+    cat = finding.get("category")
+    if facets.get("scope") == "frame" or cat == "uniqueness":
+        return 0
+    if (
+        finding.get("type") == "duplicate_encoding"
+        or cat in ("dependencies", "associations", "conditional_rules")
+        or facets.get("conditionality")
+        in ("value_conditioned", "segment_conditioned")
+    ):
+        return 1
+    if cat == "changes" or (
+        cat == "intervals" and finding.get("type") == "extreme_value"
+    ):
+        return 2
+    return 3
+
+
 def _quality_line(data: dict) -> str | None:
     """One line of exact completeness facts from the column cards and the
     duplicate-row statement, or None when there is nothing to state."""
@@ -936,23 +960,32 @@ class ProfileReport:
         highest-interestingness claim; groups with more than one
         member also list up to three exemplar finding ids,
         expandable with `.finding(id)`. Groups are ordered by
-        report band (account, completeness, relations, column
-        structure, deviations), then by that claim's
-        interestingness. A `quality:` line after the account states
+        statement class (issue #271) — structure groups, then
+        shape groups, then hygiene groups, with account groups
+        (frame-scope statements and keys) ahead of all three —
+        then by that claim's interestingness within the class.
+        This order deliberately diverges from the findings
+        array's report-band order (account, completeness,
+        relations, column structure, deviations), which is
+        unchanged: the array keeps the order stored reports are
+        compared in, while the digest leads with the classes a
+        reader acts on first. A `quality:` line after the account states
         missing values, constant and empty columns, and duplicate rows,
         counted over all rows. When verified relationship families formed
         (schema 0.6), the header states how many statements were
         grouped, and a family lead's rolled line carries its grouped
-        member ids in a `[grouped: ...]` suffix; the lead presents
-        at the earliest band among itself and its members. Weak-tier
+        member ids in a `[grouped: ...]` suffix. Weak-tier
         tested associations (schema 0.7: significant after
         Benjamini–Hochberg correction but below the strong effect
         bar) never take individual digest lines: however many there
         are, they collapse into one line carrying the count and the
         strongest examples, pointing at `report.associations()` for
         the full table. When the rolled lines exceed `budget_chars`,
-        the digest takes lines from each band in turn, strongest
-        first, so that no band fills the budget alone, then ends with
+        the digest takes account lines first, then lines from the
+        structure and shape classes in turn, strongest first, so
+        that neither insight class fills the budget alone; hygiene
+        lines are taken only once every remaining insight line has
+        been refused by the budget. It then ends with
         a line stating what was omitted by category and how to retrieve
         it; it never exceeds the budget (budgets under ~200 characters
         return a truncated header). The full record stays in `.data` /
@@ -1018,19 +1051,6 @@ class ProfileReport:
             )
         header = "\n".join(lines) + "\n"
 
-        grouped_by_id = {f["id"]: f for f in data.get("grouped_findings") or []}
-
-        def band_of(f: dict) -> int:
-            # A family lead presents at the earliest band among
-            # itself and its grouped members (schema 0.6): the lead
-            # stands for the family's strongest content.
-            band = _report_band(f)
-            for mid in f.get("grouped_members") or []:
-                member = grouped_by_id.get(mid)
-                if member is not None:
-                    band = min(band, _report_band(member))
-            return band
-
         def weak_assoc(f: dict) -> bool:
             # Weak-tier tested associations (schema 0.7) collapse
             # into a single digest line below, however many there
@@ -1076,7 +1096,7 @@ class ProfileReport:
                 line += f" [grouped: {shown}]"
             rolled.append(
                 (
-                    band_of(head_finding),
+                    _statement_class(head_finding),
                     -(head_finding.get("interestingness") or 0),
                     line,
                     cat,
@@ -1090,7 +1110,7 @@ class ProfileReport:
             examples = "; ".join(f["claim"] for f in weak_sorted[:3])
             rolled.append(
                 (
-                    band_of(weak_sorted[0]),
+                    _statement_class(weak_sorted[0]),
                     -(weak_sorted[0].get("interestingness") or 0),
                     f"[associations] statistical/weak (x{len(weak)}): "
                     f"{len(weak)} tested association(s) below the strong "
@@ -1123,24 +1143,37 @@ class ProfileReport:
         full = header + "\n" + "\n".join(body_lines) + "\n"
         if len(full) <= budget_chars:
             return full
-        # Take lines from each band in turn.
+        # Take lines class by class (issue #271): account lines
+        # first, then round-robin across the two insight classes
+        # (structure, shape) so neither fills the budget alone,
+        # and hygiene lines only once every remaining insight line
+        # has been refused by the budget.
         queues: dict[int, list[int]] = {}
         for i, entry in enumerate(rolled):
             queues.setdefault(entry[0], []).append(i)
         kept_order: list[int] = []
         used = len(header) + 1 + len(omission(rolled)) + 1
+
+        def take(queue: list[int]) -> bool:
+            nonlocal used
+            while queue:
+                i = queue.pop(0)
+                if used + len(rolled[i][2]) + 1 <= budget_chars:
+                    kept_order.append(i)
+                    used += len(rolled[i][2]) + 1
+                    return True
+            return False
+
+        while take(queues.get(0, [])):
+            pass
         progressed = True
         while progressed:
             progressed = False
-            for band in sorted(queues):
-                queue = queues[band]
-                while queue:
-                    i = queue.pop(0)
-                    if used + len(rolled[i][2]) + 1 <= budget_chars:
-                        kept_order.append(i)
-                        used += len(rolled[i][2]) + 1
-                        progressed = True
-                        break
+            for rank in (1, 2):
+                if take(queues.get(rank, [])):
+                    progressed = True
+        while take(queues.get(3, [])):
+            pass
         # The omission line changes with what it lists, so it can come out
         # longer than the reserve. Give back the latest lines until it fits.
         while kept_order:
