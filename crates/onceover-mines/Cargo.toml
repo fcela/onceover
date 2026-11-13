@@ -10,6 +10,7 @@ description = "Predictability screening, decision tables, PRISM rules, dependenc
 [dependencies]
 onceover-report = { workspace = true }
 onceover-core = { workspace = true }
+onceover-deps = { workspace = true }
 rustc-hash = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }

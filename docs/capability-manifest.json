@@ -230,6 +230,14 @@
    "activation": "target_gated"
   },
   {
+   "id": "leakage",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [],
+   "activation": "target_gated"
+  },
+  {
    "id": "breaks",
    "categories": [
     "changes",

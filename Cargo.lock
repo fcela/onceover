@@ -1515,6 +1515,7 @@ dependencies = [
  "changeforest",
  "ndarray",
  "onceover-core",
+ "onceover-deps",
  "onceover-report",
  "polars",
  "rayon",
