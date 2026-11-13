@@ -217,9 +217,9 @@ Passing a bare string where a list is expected raises
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
 restricts a run to named detectors. The default set has 31 of
-the 39 registered detectors: `views` (experimental), `dates`,
-`pivot`, `period_associations`, `drift`, `granularity`, and
-`changeforest` are
+the 40 registered detectors: `views` (experimental), `dates`,
+`pivot`, `period_associations`, `drift`, `granularity`,
+`changeforest`, and `slice_shifts` are
 opt-in and run only when named — a default run records each as
 skipped in coverage, naming it opt-in. `expectations` and
 `group_contrast` are in the default set but engage only on

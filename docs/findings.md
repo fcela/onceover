@@ -42,7 +42,9 @@ used by package version 0.1.3.
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
 | `associations` | Type `group_contrast`; group column and value, group and rest row counts in the evidence | A declared subset of the rows against the rest of the table on one column, from the `group_contrast` detector (hint-gated on `hints.contrast`): means and medians with Cohen's d for numeric columns, level shares for categorical columns, the true share for boolean columns; reported only at the stated bars (below, "Group contrast") |
+| `associations` | Type `slice_shift`; the slice's conditions as structured predicates in the statement definition, the form (`tail_shift`, `median_shift`, or `level_share`) in the statement form, search-half, held-out-half and full-sample statistics in the evidence | A searched subset of the rows — a conjunction of categorical levels and numeric thresholds — under which a target column's distribution differs from the table-wide one, from the opt-in `slice_shifts` detector: the share of the slice's rows above the target's 95th percentile, or the slice median's shift in IQR units, for numeric targets; a level's share within the slice against its table-wide rate, for categorical targets. A slice is stated only when the shift clears the search bars on one half of a deterministic split of the shared sample and reappears at the confirmation bars on the held-out half, with Benjamini–Hochberg q ≤ 0.05 over the confirmation family; slices with identical row sets are stated once, and the coverage entry states how many slice × target candidates were searched (below, "Slice shifts") |
 | `associations` | Type `axis_shape`; `shape_form`, axis and response, Spearman rho and isotonic improvement in the evidence; form `saturating` adds the located knee, the two segment slopes and their ratio, and the bootstrap stability shares | The shape of a numeric response along an ordered axis, from the `ordered_axis` detector: `monotone` when the Spearman correlation and the isotonic fit over 20 equal-frequency bin medians both clear their bars, `monotone_with_reversal_blocks` when named adjacent bin-median moves against the trend exceed a quarter of the response's interquartile range (the blocks are the `reversal_blocks` payload), `non_monotone_reversal` when a block exceeds half the interquartile range, and `saturating` (or the weaker `rises_then_flattens` with no located knee) when a continuous two-segment fit on the bin medians bends to a post-knee slope at most 0.35 of the pre-knee slope and the bend is stable under row bootstrap. Any numeric column can be the axis; the statement is about the typical response, not a fitted model of individual rows |
+
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns under the cap wording, and names any columns dropped at extraction separately, under their own wording and count); also type `unscanned_series` from the breaks pass: the series that pass prescored over their full span but did not scan in depth past its series cap, with the reason, the cap, the eligible and examined counts, and each series' prescore in the evidence, so a reader of the findings alone can tell which series were not scanned in depth (the breaks coverage entry names the same series); also type `partial_period` from the `panel_coverage` detector: an observed period on the frame's time axis whose volume falls far below the typical period's — below 75% of the median period's row count and short by at least 4 rows, or below 75% of the median entity count and short by at least 2 entities, where the entity axis is the grain's non-axis factors or the frame's single identifier column, or a principal measure's total below 75% of its median period total, where the principal measures are the frame model's measure-role columns that extract to a numeric kind, ranked by non-null observation count and capped at 8 (a measure whose median total is not positive, or that carries negative values, is totalled but never flags: its sum is a level, not a volume) — stated with its position (first, last, or interior), its own counts, the typical counts, and the full per-period table in the evidence, the table carrying each principal measure's total per period and the evidence each measure's own total, typical total, and share of typical. A period is stated once however many of its volumes fall short; a shortfall on a second volume is a clause in the same statement, not a second statement. A period with no rows at all is a gap, not a partial period, and is not reported here; when the caller declares the same columns as `dimensions` hints, the declared panel check owns entity completeness and this statement reports row volume only. Each kind of shortfall (the row and entity counts, and the measure volume) singles out periods only when the periods short on that kind make up at most a quarter of all periods; past that share the median names no typical period for that kind and the coverage entry reports its spread instead, the kinds are judged separately so one kind's wide spread does not silence the other kind's statements, and a stated period carries clauses only for the kinds that were admitted |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
@@ -187,7 +189,9 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
 | `group_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
+| `slice_shift` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `axis_shape` | columns | relation | approximate | unconditional | ordered | — | regularity |
+
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `partial_period` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
@@ -602,6 +606,83 @@ is never contrasted, and a run that declares no contrast is
 unchanged: the contrast adds findings only when requested, and
 requesting one does not change any other finding.
 
+### Slice shifts
+
+A slice shift (`associations` category, type `slice_shift`)
+states that a target column behaves differently inside one
+searched subset of the rows than in the table as a whole. The
+group contrast above compares a subset the caller declared; this
+pass searches for the subset, so its control stack is the point
+of the statement. The `slice_shifts` detector is opt-in.
+
+The search space is bounded. Conditions are levels of
+bounded-cardinality categorical columns (string, boolean, and
+integer columns with at most 25 distinct values on the sample;
+at most 12 condition columns, keeping their most frequent
+levels) and thresholds on numeric columns (the value above the
+column's 75th or 90th percentile on the sample; at most 12
+threshold columns). A slice is one condition, or a conjunction
+of two — two levels of different columns, or one level and one
+threshold. At the deep budget the search extends to depth 3 as a
+beam: only depth-2 slices that cleared the search bars for some
+target are extended, by one further categorical level. A slice
+needs at least max(50, 1% of the sample) rows on the full sample
+and at least 25 rows in each half of the split. Targets are
+every numeric column (at most 24) and every eligible categorical
+column's levels (at most 8 target columns). A slice never
+conditions on its own target column. The pass runs on the shared
+sample (20,000 rows at the standard budget, 50,000 at deep) and
+stops at a stated work budget; its coverage entry states the
+candidates evaluated, the slice definitions examined of the
+total, and every cap that bound.
+
+The sample is split deterministically into two halves. A
+slice × target pair becomes a candidate when it clears a search
+bar on the first half: for a numeric target, at least 15% of the
+slice's rows above the target's global 95th percentile (the tail
+form), or a slice median at least 0.75 IQR from the global
+median (the median form); for a categorical level, a rate at
+least twice or at most half the global rate, differing by at
+least 0.02, with at least 5 expected positives. A candidate is
+confirmed when the same form reappears on the held-out half —
+tail share at least 10% and at least half the search-half share,
+a median shift of at least 0.5 IQR in
+the same direction, or a rate ratio of at least 1.5 (at most 0.5
+in the low direction), with a rate of exactly 0 on the search
+half confirmed when the held-out ratio is at most 0.25 — and
+when its held-out p-value (Mann–Whitney for numeric targets, a
+two-proportion z for rates) clears Benjamini–Hochberg q ≤ 0.05
+across the family of candidates that cleared the search bars.
+The evidence carries the search-half, held-out-half, and
+full-sample statistics, the p- and q-values, and the candidate
+counts; the validation method is the diagnostic holdout. The
+claim states the full-sample figures.
+
+Three selection rules then apply. Slices with identical row sets
+are one statement, kept at the shallowest description. A deeper
+slice whose row set is at least 90% the same as a shallower kept
+slice for the same target is demoted as a restatement, not
+removed. Findings are ranked by absolute effect size with
+support, capped at 20 in all and at 8 per target column; a large
+ratio on a small absolute difference never reaches the statement
+on the ratio alone, and one target's family of near-restatements
+cannot fill the statement cap. For a
+numeric tail statement whose slice concentrates the target's
+extreme values — at least 3 times its row share of the top-1%
+values, and at least 8 such values — the claim adds that share:
+a small slice can carry most of a column's extremes, and that is
+part of what the statement says. A slice defined by what the
+target means (the distribution of age inside a retired level, for
+example) is a true, replicable statement and is not suppressed;
+it competes on effect and support like any other.
+
+The statistics are measured on the pass's sample and split, so
+`report.verify` marks slice statements `not_checkable`: a recount
+on the full frame reproduces neither the sample's quantiles nor
+the split. The slice definition is carried as structured
+predicates in the statement definition, so the slice itself can
+be recounted on any row set directly.
+
 ## Consolidation and selection
 
 1. Enabled detectors produce candidate statements and evidence.
@@ -843,9 +924,9 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 30 of the 38 registered detectors. Seven are
+and activation. The default set has 31 of the 40 registered detectors. Eight are
 opt-in and run only when named in `detectors`: `views` (experimental),
-`changeforest`, and `dates`, `pivot`, `period_associations`, `drift`, and
+`changeforest`, `slice_shifts`, and `dates`, `pivot`, `period_associations`, `drift`, and
 `granularity` — the 2026-11-02 detector battery measured the last five
 producing no findings in 40 runs over 20 datasets, so a default run no
 longer spends time or report space on them; it records each as skipped in
