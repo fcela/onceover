@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
-    AssociationConfig, BreaksConfig, ChangeforestConfig, DiscConfig, DriftConfig, DtableConfig,
-    EncodeConfig, HConfig, HotspotConfig, PartitionsConfig, PrismConfig, RegimesConfig,
-    ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
+    AssociationConfig, AxisBatteryConfig, BreaksConfig, ChangeforestConfig, DiscConfig,
+    DriftConfig, DtableConfig, EncodeConfig, HConfig, HotspotConfig, PartitionsConfig, PrismConfig,
+    RegimesConfig, ScreenConfig, ShapesConfig, SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +124,7 @@ pub struct TierConfig {
     pub hotspots: HotspotConfig,
     pub views: ViewsConfig,
     pub changeforest: ChangeforestConfig,
+    pub axis_battery: AxisBatteryConfig,
     pub dep_pair_cap: usize,
     pub ident_pair_cap: usize,
     pub ident_multiterm_cap: usize,
@@ -162,6 +163,7 @@ impl TierConfig {
                 },
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
+                axis_battery: AxisBatteryConfig::disabled(),
                 dep_pair_cap: 0,
                 ident_pair_cap: 0,
                 ident_multiterm_cap: 0,
@@ -200,6 +202,7 @@ impl TierConfig {
                 hotspots: HotspotConfig::default(),
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
+                axis_battery: AxisBatteryConfig::default(),
                 // The discontinuity screen is the measured runtime
                 // outlier (2026-11-02 battery: 0.43 s median marginal,
                 // +83.0 s excess, concentrated on wide tables). The
@@ -310,6 +313,13 @@ impl TierConfig {
                 },
                 changeforest: ChangeforestConfig {
                     row_cap: 20_000,
+                    ..Default::default()
+                },
+                axis_battery: AxisBatteryConfig {
+                    row_cap: 50_000,
+                    max_responses: 24,
+                    max_pairs: 32,
+                    max_slices: 96,
                     ..Default::default()
                 },
                 dep_pair_cap: 2_016,

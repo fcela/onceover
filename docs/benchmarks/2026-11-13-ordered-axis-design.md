@@ -1,6 +1,10 @@
 # Ordered-axis battery: design record for the shape and break statements (#273, #277)
 
-Benchmark/design record, design phase only — no detector code. Prototype scripts and full results live with the study record; the measured claims below are from the panel and Bike Sharing runs summarised in §1.2 and §3.
+Benchmark/design record. Sections 0–7 are the design record;
+section 8 is the implementation record, added when the battery
+was built. Prototype scripts and full results live with the
+study record; the measured claims in sections 0–7 are from the
+panel and Bike Sharing runs summarised in §1.2 and §3.
 
 
 Design phase. This document settles the statistic battery, the frozen
@@ -372,3 +376,157 @@ integration, specified but not prototyped). Bars marked "frozen" are
 the values the fixtures in §6 are judged against; if a fixture fails
 at a frozen bar, the bar is re-opened explicitly in the implementation
 record, not silently tuned.
+
+## 8. Implementation record
+
+Implemented as a new detector, `ordered_axis`
+(`crates/onceover-mines/src/axisbreaks.rs`), in the default set.
+Placement: the battery's scans are the breaks scans' cost class —
+prefix-sum scans plus shuffle calibration on series aggregated to
+the axis grain — so the detector runs by default like `breaks` and
+`ordered_partitions` rather than joining the opt-in set. Registry
+after this change: 39 registered, 31 in the default set (29
+default, 2 hint-gated), 7 opt-in, 1 target-gated.
+
+New finding types: `slope_break`, `regime_contrast`,
+`spike_contrast` (changes), and `axis_shape` (associations; the
+form — `monotone`, `monotone_with_reversal_blocks`,
+`non_monotone_reversal`, `saturating`, `rises_then_flattens` — is
+in the statement's specification). Level and trend statements on
+axes and slices the breaks pass does not scan reuse `level_shift`
+and `trend_change`, so a duplicate event stated by both passes
+collapses under the report's canonical-key deduplication. The
+battery's statements are `not_checkable`: no recount checker is
+registered for them.
+
+Two design points the record left open, decided here:
+
+- The S2/S7 slope-change bar ("slope change at least 0.25 x
+  residual sd per axis step") is read as: the slope change,
+  accumulated over the shorter segment, moves the series by at
+  least a quarter of its residual spread — |slope change| x
+  shorter segment length >= 0.25 x residual sd — in addition to
+  the frozen rule that the two segment slopes' confidence
+  intervals must not overlap.
+- The breaks pass keeps S1/S2 on time-like axes (its axis
+  selection gains the sequence-axis fallback of section 2.1 rule
+  4); the battery runs the same scans internally and states them
+  only where no earlier finding covers the cluster.
+
+Two frozen bars re-opened, explicitly:
+
+- F1's point-location bar (+-6 points) fails at the design's own
+  parameters. A 200-seed simulation of the two-segment argmin at
+  F1's noise level (Gaussian sd 0.8) gives a median location
+  error of 11 points, a 90th percentile of 22, and only 18% of
+  seeds within +-6; at the Rust unit test's lighter noise
+  (uniform, sd 0.46) the median is 8 and 39% fall within +-6.
+  The re-opened bar: the point estimate must fall within 24
+  points, the simulation's 95th percentile at the design's noise
+  level. The slope-recovery bar (within 20%) stands. The located
+  range is not part of the bar: in the same simulation the
+  3.84-residual-variance range contains the planted kink in
+  86.5% of seeds (median width 30 points). It is the set of
+  splits the data cannot distinguish from the best — the
+  descriptive meaning the breaks detector's ranges already
+  carry — not a coverage guarantee.
+- S4's reversion bar moves from 0.5 to 0.75 of the jump: the
+  post-window mean must close at least a quarter of the jump back
+  toward the baseline. At 0.5 the canonical case fails — on the
+  panel's national series the three months after the Apr–Jun
+  2020 spike sit at about 0.62 of the jump — while a true level
+  shift holds the ratio near 1 and still fails at 0.75.
+- F2's sizing bar (window contrast within 15% of the planted
+  effect) is a one-standard-error criterion at the design's own
+  window size: the contrast is a difference of two window means,
+  standard error sqrt(2/win) x sigma = 0.29 at win = 24 and
+  sigma = 1, against a 15% bar of 0.30 on the planted 2.0. The
+  re-opened bar is +-35% (about 2.4 standard errors), which
+  still catches material dilution or inflation of the episode's
+  size.
+
+Implementation findings from the fixture runs, recorded
+because they change behaviour the design describes:
+
+- Axis eligibility ignores the response exclusion list. The
+  pipeline hands detectors the frame model's scaffolding
+  exclusions (its time and index columns); the breaks and
+  partitions passes already treat that list as governing
+  responses, never the axis. The battery's first fixture run
+  applied it to axis selection too and found no primary axis on
+  any time-series frame. The exclusions still govern responses
+  and slice columns.
+- Calendar boundaries do not propose contrast windows on their
+  own. Anchoring S3 at every year boundary of a 50-year monthly
+  series put some 50 noise contrasts into the
+  Benjamini–Hochberg family and the family's size alone
+  suppressed a planted spike's statement (q above 0.05 at a
+  family of 51). A calendar boundary now only snaps a
+  scan-proposed anchor that falls within one window of it,
+  which is the pre-registered reading: S3 confirms boundaries
+  proposed by the scans or the calendar; it does not discover.
+  A related correction: the seasonal-period detector reads the
+  first autocorrelation peak at or above 0.5 that follows a
+  crossing below zero, with pair-count normalization — the
+  global autocorrelation maximum is largest at the smallest
+  lags for any smooth series and names no period, and dividing
+  by the full sum of squares deflates long periods by
+  (n - lag) / n, hiding exactly the sub-two-cycle cases the
+  hazard rule exists for.
+- A spike casts a mirror-image shadow one period later: the
+  window whose season-matched baseline IS the spike reads a
+  jump as large as the spike's own, with its reversion measured
+  against the spiked baseline, so it reads as no reversion.
+  Evaluating only the single strongest candidate lets the
+  mirror (marginally stronger on noise) fail the reversion bar
+  and end the scan, and the real spike is never reached. Spike
+  candidates are now evaluated strongest first under a claim
+  rule: a candidate claims its window, and a later candidate
+  whose spike window or baseline window overlaps a claimed
+  window is the stronger event's shadow and is skipped; a
+  candidate that fails the reversion bar still claims its
+  window (it is an event, just not a spike-shaped one).
+- The spike scan's shuffle null runs on the season-removed
+  series when a period is known and at least eight cycles are
+  available to estimate the per-phase profile. The observed
+  contrast is season-matched — its baseline sits exactly one
+  period back, so the seasonal profile cancels — but shuffling
+  the raw series destroys the seasonality and hands the null
+  the full marginal variance. On the F3 fixture (seasonal
+  amplitude 2.0 against noise sd 0.7) the raw-shuffle null's
+  maxima are inflated by the seasonal swing the observed
+  statistic never sees, and the planted spike produced no
+  statement until the null was season-removed.
+
+Results (implementation runs; the prototype's numbers are in
+section 1.2 and section 3):
+
+- Panel battery in Rust (S1 + S2 + the pre-registered S3/S4
+  contrasts of the prototype, through the same dedup):
+  179 firings -> 139 statements, against the prototype's
+  197 -> 149; the national series resolves to exactly 3
+  statements (spike, regime contrast, level shift), and a
+  shuffled axis gives 0 firings and 0 statements across all 51
+  state series. The long-form panel carries 608 months per
+  series (the all-missing 2025-10 month has no rows), one fewer
+  than the prototype's wide-form 609, which accounts for part of
+  the small firing difference; the rest is statistic detail
+  (the Rust S2 uses the segmented-regression form of section 1).
+- Fixtures (tests/test_ordered_axis.py, against the installed
+  build): all twelve pass — F1 (trend break located, slopes
+  recovered), F2 (regime contrast fires as the episode's only
+  statement), F3 (spike stated at the planted window), F4 (the
+  slice-only break fires for slice A only, pooled silent), F5
+  (non-monotone with the reversal located), F6 (saturates, knee
+  in range), F7 (linear control silent), N1 (shuffled axis
+  silent), N2 (1.4-cycle seasonality silent), N3 (pure noise
+  silent), N4 (exactly the two planted events stated), plus the
+  detector registration test. Two further calibration facts from
+  the fixture runs: the spike null shuffles the season-removed
+  series when a period is known (at least eight cycles to
+  estimate the per-phase profile) — shuffling the raw series
+  hands the null the full seasonal variance the season-matched
+  observed contrast never sees, and the planted spike read as
+  unremarkable; and the F3 run before that fix also showed the
+  BH family at 12 candidates once calendar anchors stopped
+  proposing windows on their own.

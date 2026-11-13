@@ -129,6 +129,14 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // measure distribution; stated splits carry permutation
         // p-values, and the pass is heavier than the breaks scan.
         make("changeforest", vec![Changes], &[], OptIn),
+        // The ordered-axis battery (#273, #277): shape statements
+        // along any ordered axis and located breaks in a
+        // relationship or inside a slice, deduped against the
+        // breaks/changeforest/partition statements. Its scans are
+        // the breaks scans' cost class (prefix-sum scans plus
+        // shuffle calibration on aggregated series), so it runs
+        // in the default set like breaks and ordered_partitions.
+        make("ordered_axis", vec![Changes, Associations], &[], Default),
         make(
             "association_rules",
             vec![ConditionalRules, Associations],
@@ -210,10 +218,10 @@ mod tests {
     #[test]
     fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 38 registered: 30 default (28 Default + hint-gated
+        // 39 registered: 31 default (29 Default + hint-gated
         // expectations and group_contrast), 7 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 38);
-        assert_eq!(active.len(), 30);
+        assert_eq!(builtin_detectors().len(), 39);
+        assert_eq!(active.len(), 31);
         for id in [
             "views",
             "dates",
@@ -246,7 +254,7 @@ mod tests {
         for d in builtin_detectors() {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&28));
+        assert_eq!(counts.get("Default"), Some(&29));
         assert_eq!(counts.get("OptIn"), Some(&7));
         assert_eq!(counts.get("HintGated"), Some(&2));
         assert_eq!(counts.get("TargetGated"), Some(&1));

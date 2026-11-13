@@ -120,6 +120,10 @@ pub enum Pattern {
     /// means, variances and trends of every measure can be
     /// unchanged across the split.
     DistributionChange,
+    SlopeBreak,
+    RegimeContrast,
+    SpikeContrast,
+    AxisShape,
     OrderedPartition,
     /// A boolean flag on an entity × time grain that switches on
     /// within entities and never switches off (an absorbing state),
@@ -202,6 +206,10 @@ impl Pattern {
             Self::DuplicateEncoding => Category::ColumnRoles,
             Self::DistributionShift => Category::Changes,
             Self::DistributionChange => Category::Changes,
+            Self::SlopeBreak => Category::Changes,
+            Self::RegimeContrast => Category::Changes,
+            Self::SpikeContrast => Category::Changes,
+            Self::AxisShape => Category::Associations,
             Self::OrderedPartition => Category::Changes,
             Self::SeriesStructure => Category::Changes,
             Self::OneWayFlag => Category::Changes,
@@ -261,6 +269,10 @@ impl Pattern {
             Self::StepDiscontinuity => "step_discontinuity",
             Self::DistributionShift => "distribution_shift",
             Self::DistributionChange => "distribution_change",
+            Self::SlopeBreak => "slope_break",
+            Self::RegimeContrast => "regime_contrast",
+            Self::SpikeContrast => "spike_contrast",
+            Self::AxisShape => "axis_shape",
             Self::OrderedPartition => "ordered_partition",
             Self::OneWayFlag => "one_way_flag",
             Self::EntryBlock => "entry_block",
@@ -1022,6 +1034,42 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::SlopeBreak => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::ModelBased,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+            Pattern::RegimeContrast => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::ModelBased,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Regularity,
+            ),
+            Pattern::SpikeContrast => (
+                Sc::Sequence,
+                O::TemporalBehaviour,
+                E::Approximate,
+                C::Unconditional,
+                T::ChangeAcrossSegments,
+                None,
+                S::Deviation,
+            ),
+            Pattern::AxisShape => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Ordered,
+                None,
+                S::Regularity,
+            ),
         };
         Self {
             scope,
@@ -1084,6 +1132,7 @@ impl Facets {
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
             (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
+            (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
@@ -1104,6 +1153,9 @@ impl Facets {
             (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
             (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
             (Category::Changes, Some("distribution_change")) => Pattern::DistributionChange,
+            (Category::Changes, Some("slope_break")) => Pattern::SlopeBreak,
+            (Category::Changes, Some("regime_contrast")) => Pattern::RegimeContrast,
+            (Category::Changes, Some("spike_contrast")) => Pattern::SpikeContrast,
             (Category::Changes, Some("ordered_partition")) => Pattern::OrderedPartition,
             (Category::Changes, Some("one_way_flag")) => Pattern::OneWayFlag,
             (Category::Changes, Some("entry_block")) => Pattern::EntryBlock,
@@ -1517,9 +1569,34 @@ impl Finding {
             Pattern::LevelShift
             | Pattern::TrendChange
             | Pattern::VarianceChange
-            | Pattern::DistributionChange => {
+            | Pattern::DistributionChange
+            | Pattern::SlopeBreak => {
                 if let Some(v) = metrics.get("breakpoint") {
                     spec.definition.insert("breakpoint".into(), v.clone());
+                }
+            }
+            Pattern::RegimeContrast => {
+                spec.form = Some("regime_contrast".into());
+                for k in ["window_start", "window_end"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::SpikeContrast => {
+                spec.form = Some("spike_contrast".into());
+                for k in ["window_start", "window_end"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+            }
+            Pattern::AxisShape => {
+                if let Some(f) = metrics.get("shape_form").and_then(|v| v.as_str()) {
+                    spec.form = Some(f.to_string());
+                }
+                if let Some(v) = metrics.get("axis") {
+                    spec.definition.insert("axis".into(), v.clone());
                 }
             }
             Pattern::LongFormat => {
@@ -1827,11 +1904,11 @@ impl Finding {
             Category::Associations
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("statistical" | "period_association" | "group_contrast")
+                    Some("statistical" | "period_association" | "group_contrast" | "axis_shape")
                 ) =>
             {
                 return Err(
-                    "association type must be statistical, period_association, or group_contrast"
+                    "association type must be statistical, period_association, group_contrast, or axis_shape"
                         .into(),
                 );
             }
@@ -1848,6 +1925,9 @@ impl Finding {
                             | "step_discontinuity"
                             | "distribution_shift"
                             | "distribution_change"
+                            | "slope_break"
+                            | "regime_contrast"
+                            | "spike_contrast"
                             | "ordered_partition"
                             | "one_way_flag"
                             | "entry_block"
@@ -1856,7 +1936,7 @@ impl Finding {
                     )
                 ) =>
             {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, distribution_change, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
+                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, distribution_change, slope_break, regime_contrast, spike_contrast, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()
