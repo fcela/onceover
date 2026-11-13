@@ -150,6 +150,14 @@ pub enum Pattern {
     /// declared, not inferred — the counterpart to a statistical
     /// association, which relates two columns over all rows.
     GroupContrast,
+    /// A pooled association between two columns that does not
+    /// survive conditioning on a categorical dimension: within
+    /// every usable level of the stratifier the direction
+    /// reverses (form `reversal`), or the association is absent
+    /// (form `vanishing`). The pooled statement is an artefact
+    /// of the stratifier's mix; the conditioned statement is
+    /// the fact about the pair.
+    ConditionedAssociation,
     /// The share of a measure held by the top entities in each
     /// period of an entity × time grain: high in level, or rising
     /// materially across the period range. A panel statement —
@@ -185,9 +193,10 @@ impl Pattern {
             | Self::OrderConstraint
             | Self::OrderViolation => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
-            Self::StatisticalAssociation | Self::PeriodAssociation | Self::GroupContrast => {
-                Category::Associations
-            }
+            Self::StatisticalAssociation
+            | Self::PeriodAssociation
+            | Self::GroupContrast
+            | Self::ConditionedAssociation => Category::Associations,
             Self::Gap => Category::Gaps,
             Self::SequenceGap
             | Self::MissingCombinations
@@ -250,6 +259,7 @@ impl Pattern {
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
             Self::GroupContrast => "group_contrast",
+            Self::ConditionedAssociation => "conditioned_association",
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
@@ -883,6 +893,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::ConditionedAssociation => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::Gap | Pattern::SequenceGap => (
                 Sc::Sequence,
                 O::Structure,
@@ -1132,6 +1151,9 @@ impl Facets {
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
             (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
+            (Category::Associations, Some("conditioned_association")) => {
+                Pattern::ConditionedAssociation
+            }
             (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
@@ -1904,11 +1926,17 @@ impl Finding {
             Category::Associations
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("statistical" | "period_association" | "group_contrast" | "axis_shape")
+                    Some(
+                        "statistical"
+                            | "period_association"
+                            | "group_contrast"
+                            | "conditioned_association"
+                            | "axis_shape",
+                    )
                 ) =>
             {
                 return Err(
-                    "association type must be statistical, period_association, group_contrast, or axis_shape"
+                    "association type must be statistical, period_association, group_contrast, conditioned_association, or axis_shape"
                         .into(),
                 );
             }

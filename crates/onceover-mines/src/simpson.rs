@@ -1,22 +1,39 @@
 //! Simpson reversal check for strong association statements
-//! (issue #134, item 5).
+//! (issue #134, item 5), extended with the vanishing form and
+//! standalone conditioned findings (issue #276).
 //!
 //! A strong-tier association statement is unconditional: it
 //! reports the pooled direction of a pair. This module checks
-//! whether that direction reverses inside every usable stratum
-//! of a categorical dimension. When it does, the caller appends
-//! a qualification to the claim and attaches the `simpson`
-//! evidence payload built here; the finding itself is never
-//! removed or re-tiered.
+//! whether that direction survives inside the usable strata of
+//! a categorical dimension. Two outcomes are stated:
 //!
-//! The criterion is the textbook Simpson form, fixed in
-//! docs/benchmarks/2026-11-05-simpson-check.md before any corpus
-//! measurement: every usable stratum's signed effect has the
-//! opposite sign to the pooled signed effect. A stratum is
-//! usable when it holds at least 30 pair-complete rows and the
-//! effect is defined on them; a stratifier is evaluated only
-//! when at least two strata are usable and together they cover
-//! at least half of the pair-complete rows.
+//! - Reversal: the direction reverses inside every usable
+//!   stratum. The caller appends a qualification to the claim
+//!   and attaches the `simpson` evidence payload built here;
+//!   the pair finding itself is never removed or re-tiered,
+//!   and the caller additionally emits the reversal as its own
+//!   finding — it is often the most interesting fact about
+//!   the pair.
+//! - Vanishing: the association is absent inside every usable
+//!   stratum — each stratum's effect is small and the combined
+//!   within effect is certified near zero by an equivalence
+//!   bound. The pooled association is then carried by
+//!   differences between the stratifier's levels, not by a
+//!   relation within them. This is a different fact from
+//!   reversal and is stated separately, as a qualification on
+//!   the pair claim and as its own finding.
+//!
+//! The reversal criterion is the textbook Simpson form, fixed
+//! in docs/benchmarks/2026-11-05-simpson-check.md before any
+//! corpus measurement: every usable stratum's signed effect
+//! has the opposite sign to the pooled signed effect. A
+//! stratum is usable when it holds at least 30 pair-complete
+//! rows and the effect is defined on them; a stratifier is
+//! evaluated only when at least two strata are usable and
+//! together they cover at least half of the pair-complete
+//! rows. The vanishing criterion applies the same usability
+//! rules; its bounds are fixed in
+//! docs/benchmarks/2026-11-13-conditioned-dependence.md.
 
 use crate::dep::{pearson, spearman};
 use crate::encode::{EncodedMatrix, MISSING};
@@ -48,6 +65,31 @@ pub const MIN_WITHIN_Z: f64 = 3.84;
 /// to Pearson's r (Fieller, Hartley & Pearson 1957): the
 /// standard error is sqrt(1.06 / (n - 3)).
 const SPEARMAN_Z_VARIANCE: f64 = 1.06;
+
+/// Vanishing form: no usable stratum may carry an effect above
+/// this magnitude — a correlation of 0.15, or a log odds ratio
+/// of 0.35 (an odds ratio of about 1.42). A stratum above the
+/// bound holds a relation of its own, so the pooled association
+/// has not vanished within levels; it has moved.
+pub const VANISH_STRATUM_BOUND_CORR: f64 = 0.15;
+/// Vanishing form, log-odds scale: see `VANISH_STRATUM_BOUND_CORR`.
+pub const VANISH_STRATUM_BOUND_LOG_OR: f64 = 0.35;
+/// Vanishing form: the combined within effect, plus 1.96
+/// standard errors on the combining scale, must stay below
+/// this bound — 0.10 on the Fisher-z scale (a correlation of
+/// about 0.10), or 0.22 on the log-odds scale (an odds ratio
+/// of about 1.25). This is an equivalence statement, not a
+/// failure to reach significance: the within effect is
+/// certified small, with the stratum sizes setting the
+/// achievable bound.
+pub const VANISH_EQUIV_BOUND_Z: f64 = 0.10;
+/// Vanishing form, log-odds scale: see `VANISH_EQUIV_BOUND_Z`.
+pub const VANISH_EQUIV_BOUND_LOG_OR: f64 = 0.22;
+/// Vanishing form: the pooled effect must itself be material
+/// on the log-odds scale (an odds ratio of about 2) — below
+/// it there is no pooled association worth explaining away.
+/// Correlations use `MIN_DIRECTIONAL_EFFECT`.
+pub const MIN_POOLED_LOG_OR: f64 = 0.69;
 
 /// Which signed statistic a pair's direction is read from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +157,25 @@ pub struct SimpsonHit {
     /// (Fisher-z scale for correlations, Woolf for log odds
     /// ratios); at least `MIN_WITHIN_Z` in magnitude.
     pub within_z: f64,
+    pub strata: Vec<StratumEffect>,
+    /// Observed levels of the stratifying column.
+    pub levels_total: usize,
+    /// Share of the pair-complete rows the usable strata cover.
+    pub covered_share: f64,
+}
+
+/// A stratifier within whose levels a pair's pooled
+/// association is absent.
+pub struct VanishingHit {
+    pub stratifier: String,
+    /// Stratum-weighted within effect, on the reporting scale;
+    /// certified small by `within_bound`.
+    pub within: f64,
+    /// |within| + 1.96 standard errors on the combining scale
+    /// (Fisher z for correlations, raw for log odds ratios):
+    /// the certified upper bound on the within effect's
+    /// magnitude, below the form's equivalence bound.
+    pub within_bound: f64,
     pub strata: Vec<StratumEffect>,
     /// Observed levels of the stratifying column.
     pub levels_total: usize,
@@ -219,6 +280,93 @@ fn combine(stat: SignedStat, effects: &[(f64, f64)]) -> (f64, f64) {
     }
 }
 
+/// The combination on its own scale, with the standard error:
+/// returns (mean on the combining scale, standard error,
+/// effect back on the reporting scale). The vanishing form's
+/// equivalence bound is stated on the combining scale.
+fn combine_with_se(stat: SignedStat, effects: &[(f64, f64)]) -> (f64, f64, f64) {
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    for &(e, w) in effects {
+        if stat.is_correlation() {
+            num += w * e.clamp(-0.999999, 0.999999).atanh();
+        } else {
+            num += w * e;
+        }
+        den += w;
+    }
+    let mean = num / den;
+    let se = 1.0 / den.sqrt();
+    let reported = if stat.is_correlation() {
+        mean.tanh()
+    } else {
+        mean
+    };
+    (mean, se, reported)
+}
+
+/// One stratifier's usable strata over a pair's row universe:
+/// the stratum effects with their combination weights, and the
+/// coverage accounting both outcome checks share. None when
+/// fewer than two strata are usable or the usable strata cover
+/// less than half of the pair-complete rows.
+struct StrataData {
+    usable: Vec<StratumEffect>,
+    weights: Vec<(f64, f64)>,
+    covered: usize,
+    pair_rows: usize,
+}
+
+fn strata_data(
+    stat: SignedStat,
+    strat: &Stratifier,
+    universe: &[(Option<f64>, Option<f64>)],
+) -> Option<StrataData> {
+    let pair_rows = universe
+        .iter()
+        .filter(|(x, y)| x.is_some() && y.is_some())
+        .count();
+    if pair_rows == 0 {
+        return None;
+    }
+    // Bucket the pair-complete rows by stratum.
+    let mut buckets: Vec<Vec<(f64, f64)>> = vec![Vec::new(); strat.labels.len()];
+    for (pos, (x, y)) in universe.iter().enumerate() {
+        if let (Some(x), Some(y)) = (x, y) {
+            if let Some(code) = strat.codes.get(pos).copied().flatten() {
+                if (code as usize) < buckets.len() {
+                    buckets[code as usize].push((*x, *y));
+                }
+            }
+        }
+    }
+    let mut usable: Vec<StratumEffect> = Vec::new();
+    let mut weights: Vec<(f64, f64)> = Vec::new();
+    let mut covered = 0usize;
+    for (code, rows) in buckets.iter().enumerate() {
+        if rows.len() < MIN_STRATUM_ROWS {
+            continue;
+        }
+        if let Some((effect, weight)) = stratum_effect(stat, rows) {
+            covered += rows.len();
+            usable.push(StratumEffect {
+                level: strat.labels[code].clone(),
+                n: rows.len(),
+                effect,
+            });
+            weights.push((effect, weight));
+        }
+    }
+    if usable.len() < 2 || covered as f64 * 2.0 < pair_rows as f64 {
+        return None;
+    }
+    Some(StrataData {
+        usable,
+        weights,
+        covered,
+        pair_rows,
+    })
+}
+
 /// Check one pair against the candidate stratifiers, in the
 /// order given (column order at both call sites), and return
 /// the first stratifier that reverses the pooled direction.
@@ -238,13 +386,6 @@ pub fn reversal_for_pair(
     if pooled == 0.0 || !pooled.is_finite() {
         return None;
     }
-    let pair_rows = universe
-        .iter()
-        .filter(|(x, y)| x.is_some() && y.is_some())
-        .count();
-    if pair_rows == 0 {
-        return None;
-    }
     let mut considered = 0usize;
     for strat in stratifiers {
         if skip_cols.contains(&strat.col) {
@@ -256,53 +397,102 @@ pub fn reversal_for_pair(
         }
         considered += 1;
         budget.evals_left -= 1;
-        // Bucket the pair-complete rows by stratum.
-        let mut buckets: Vec<Vec<(f64, f64)>> = vec![Vec::new(); strat.labels.len()];
-        for (pos, (x, y)) in universe.iter().enumerate() {
-            if let (Some(x), Some(y)) = (x, y) {
-                if let Some(code) = strat.codes.get(pos).copied().flatten() {
-                    if (code as usize) < buckets.len() {
-                        buckets[code as usize].push((*x, *y));
-                    }
-                }
-            }
-        }
-        let mut usable: Vec<StratumEffect> = Vec::new();
-        let mut weights: Vec<(f64, f64)> = Vec::new();
-        let mut covered = 0usize;
-        for (code, rows) in buckets.iter().enumerate() {
-            if rows.len() < MIN_STRATUM_ROWS {
-                continue;
-            }
-            if let Some((effect, weight)) = stratum_effect(stat, rows) {
-                covered += rows.len();
-                usable.push(StratumEffect {
-                    level: strat.labels[code].clone(),
-                    n: rows.len(),
-                    effect,
-                });
-                weights.push((effect, weight));
-            }
-        }
-        if usable.len() < 2 || covered as f64 * 2.0 < pair_rows as f64 {
+        let Some(data) = strata_data(stat, strat, universe) else {
             continue;
-        }
+        };
         // The textbook form: every usable stratum reverses, and
         // the combined within effect is measurably nonzero —
         // opposite signs alone also arise when the association
         // vanishes within levels and only noise is left.
-        if !usable.iter().all(|s| s.effect * pooled < 0.0) {
+        if !data.usable.iter().all(|s| s.effect * pooled < 0.0) {
             continue;
         }
-        let (within, within_z) = combine(stat, &weights);
+        let (within, within_z) = combine(stat, &data.weights);
         if within_z.abs() >= MIN_WITHIN_Z {
             return Some(SimpsonHit {
                 stratifier: strat.name.clone(),
                 within,
                 within_z,
-                strata: usable,
+                strata: data.usable,
                 levels_total: strat.labels.len(),
-                covered_share: covered as f64 / pair_rows as f64,
+                covered_share: data.covered as f64 / data.pair_rows as f64,
+            });
+        }
+    }
+    None
+}
+
+/// Check one pair for the vanishing form, against the
+/// candidate stratifiers in the order given, and return the
+/// first stratifier within whose levels the pooled association
+/// is absent. Shares the evaluation budget with the reversal
+/// check: callers run it only when no reversal fired, so a
+/// stratifier is never evaluated twice for one pair.
+///
+/// The pooled effect must itself be material — on the
+/// correlation scale `MIN_DIRECTIONAL_EFFECT`, on the
+/// log-odds scale `MIN_POOLED_LOG_OR` — or there is nothing
+/// to explain away.
+pub fn vanishing_for_pair(
+    stat: SignedStat,
+    pooled: f64,
+    universe: &[(Option<f64>, Option<f64>)],
+    stratifiers: &[Stratifier],
+    skip_cols: &[usize],
+    budget: &mut SimpsonBudget,
+) -> Option<VanishingHit> {
+    if pooled == 0.0 || !pooled.is_finite() {
+        return None;
+    }
+    let material = if stat.is_correlation() {
+        pooled.abs() >= MIN_DIRECTIONAL_EFFECT
+    } else {
+        pooled.abs() >= MIN_POOLED_LOG_OR
+    };
+    if !material {
+        return None;
+    }
+    let stratum_bound = if stat.is_correlation() {
+        VANISH_STRATUM_BOUND_CORR
+    } else {
+        VANISH_STRATUM_BOUND_LOG_OR
+    };
+    let equiv_bound = if stat.is_correlation() {
+        VANISH_EQUIV_BOUND_Z
+    } else {
+        VANISH_EQUIV_BOUND_LOG_OR
+    };
+    let mut considered = 0usize;
+    for strat in stratifiers {
+        if skip_cols.contains(&strat.col) {
+            continue;
+        }
+        if considered >= MAX_STRATIFIERS_PER_PAIR || budget.evals_left == 0 {
+            budget.capped = true;
+            break;
+        }
+        considered += 1;
+        budget.evals_left -= 1;
+        let Some(data) = strata_data(stat, strat, universe) else {
+            continue;
+        };
+        // No usable stratum may carry a relation of its own.
+        if !data.usable.iter().all(|s| s.effect.abs() <= stratum_bound) {
+            continue;
+        }
+        // The combined within effect must be certified small:
+        // its magnitude plus 1.96 standard errors stays below
+        // the equivalence bound.
+        let (mean, se, within) = combine_with_se(stat, &data.weights);
+        let bound = mean.abs() + 1.96 * se;
+        if bound <= equiv_bound {
+            return Some(VanishingHit {
+                stratifier: strat.name.clone(),
+                within,
+                within_bound: bound,
+                strata: data.usable,
+                levels_total: strat.labels.len(),
+                covered_share: data.covered as f64 / data.pair_rows as f64,
             });
         }
     }
@@ -333,11 +523,101 @@ pub fn claim_clause(stat: SignedStat, pooled: f64, hit: &SimpsonHit) -> String {
     )
 }
 
+/// The claim clause appended to a pair finding whose
+/// association vanishes within a stratifier's levels.
+pub fn vanishing_claim_clause(stat: SignedStat, pooled: f64, hit: &VanishingHit) -> String {
+    let lo = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::INFINITY, f64::min);
+    let hi = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::NEG_INFINITY, f64::max);
+    format!(
+        "; the association vanishes within every level of {} (pooled {} {:+.3}; within-level {} from {:+.3} to {:+.3}, combined {:+.3})",
+        hit.stratifier,
+        stat.label(),
+        pooled,
+        stat.label(),
+        lo,
+        hi,
+        hit.within
+    )
+}
+
+/// The standalone statement for a reversal: the conditioned
+/// fact about the pair, stated on its own.
+pub fn reversal_statement(
+    stat: SignedStat,
+    pooled: f64,
+    x: &str,
+    y: &str,
+    hit: &SimpsonHit,
+) -> String {
+    let lo = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::INFINITY, f64::min);
+    let hi = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::NEG_INFINITY, f64::max);
+    format!(
+        "The association between {x} and {y} reverses within every level of {}: pooled {} {:+.3}, within-level {} from {:+.3} to {:+.3} (combined {:+.3}). The pooled direction is an artefact of the {} mix.",
+        hit.stratifier,
+        stat.label(),
+        pooled,
+        stat.label(),
+        lo,
+        hi,
+        hit.within,
+        hit.stratifier
+    )
+}
+
+/// The standalone statement for a vanishing association.
+pub fn vanishing_statement(
+    stat: SignedStat,
+    pooled: f64,
+    x: &str,
+    y: &str,
+    hit: &VanishingHit,
+) -> String {
+    let lo = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::INFINITY, f64::min);
+    let hi = hit
+        .strata
+        .iter()
+        .map(|s| s.effect)
+        .fold(f64::NEG_INFINITY, f64::max);
+    format!(
+        "The association between {x} and {y} vanishes within every level of {}: pooled {} {:+.3}, within-level {} from {:+.3} to {:+.3} (combined {:+.3}, certified below {:.2} in magnitude). The pooled association is carried by differences between levels of {}, not by a relation within them.",
+        hit.stratifier,
+        stat.label(),
+        pooled,
+        stat.label(),
+        lo,
+        hi,
+        hit.within,
+        hit.within_bound,
+        hit.stratifier
+    )
+}
+
 /// The `simpson` evidence payload for a qualified finding.
 /// Callers add the coding keys for binary statistics
 /// (`coded_level` / `coded_levels`) to the returned map.
 pub fn simpson_payload(stat: SignedStat, pooled: f64, hit: &SimpsonHit) -> Map<String, Value> {
     let mut m = Map::new();
+    m.insert("form".into(), json!("reversal"));
     m.insert("statistic".into(), json!(stat.key()));
     m.insert("stratifier".into(), json!(hit.stratifier));
     m.insert("pooled_effect".into(), json!(pooled));
@@ -355,6 +635,82 @@ pub fn simpson_payload(stat: SignedStat, pooled: f64, hit: &SimpsonHit) -> Map<S
     m.insert("strata_levels".into(), json!(hit.levels_total));
     m.insert("rows_covered_share".into(), json!(hit.covered_share));
     m
+}
+
+/// The `simpson` evidence payload for a vanishing finding;
+/// mirrors `simpson_payload` with the equivalence bound in
+/// place of the within z.
+pub fn vanishing_payload(stat: SignedStat, pooled: f64, hit: &VanishingHit) -> Map<String, Value> {
+    let mut m = Map::new();
+    m.insert("form".into(), json!("vanishing"));
+    m.insert("statistic".into(), json!(stat.key()));
+    m.insert("stratifier".into(), json!(hit.stratifier));
+    m.insert("pooled_effect".into(), json!(pooled));
+    m.insert("within_effect".into(), json!(hit.within));
+    m.insert("within_bound".into(), json!(hit.within_bound));
+    m.insert(
+        "strata".into(),
+        json!(hit
+            .strata
+            .iter()
+            .map(|s| json!({"level": s.level, "n": s.n, "effect": s.effect}))
+            .collect::<Vec<_>>()),
+    );
+    m.insert("strata_usable".into(), json!(hit.strata.len()));
+    m.insert("strata_levels".into(), json!(hit.levels_total));
+    m.insert("rows_covered_share".into(), json!(hit.covered_share));
+    m
+}
+
+/// Build the standalone conditioned finding for one hit. The
+/// claim is the caller's statement text (`reversal_statement`
+/// or `vanishing_statement`); the payload becomes the
+/// finding's `simpson` evidence block. The score sits above
+/// the strong-tier pair formula's range: the conditioned
+/// statement overturns or explains a statement the report
+/// already makes, which is the more valuable fact about the
+/// pair.
+#[allow(clippy::too_many_arguments)]
+pub fn conditioned_finding(
+    pooled: f64,
+    x: &str,
+    y: &str,
+    stratifier: &str,
+    form: &str,
+    claim: String,
+    payload: Map<String, Value>,
+    method: onceover_report::Method,
+) -> onceover_report::Finding {
+    let within = payload
+        .get("within_effect")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let score = if form == "reversal" {
+        (0.45 + 0.4 * within.abs()).min(0.95)
+    } else {
+        (0.45 + 0.3 * pooled.abs()).min(0.95)
+    };
+    let mut metrics = std::collections::BTreeMap::new();
+    metrics.insert("simpson".into(), Value::Object(payload));
+    metrics.insert("variables".into(), json!([x, y]));
+    metrics.insert("method".into(), json!("simpson_conditioning"));
+    let raw = std::collections::BTreeMap::from([
+        ("x".into(), json!(x)),
+        ("y".into(), json!(y)),
+        ("columns".into(), json!([x, y, stratifier])),
+    ]);
+    let mut finding = onceover_report::Finding::new(
+        onceover_report::Pattern::ConditionedAssociation,
+        raw,
+        claim,
+        onceover_report::EvidenceBasis::Estimated,
+        score,
+        metrics,
+        None,
+        method,
+    );
+    finding.specification.form = Some(form.to_string());
+    finding
 }
 
 /// Stratifying columns of a typed table over a row sample:
@@ -506,6 +862,129 @@ mod tests {
         assert!(hit.within < 0.0);
         assert!(hit.within_z <= -MIN_WITHIN_Z, "z = {}", hit.within_z);
         assert!((hit.covered_share - 1.0).abs() < 1e-12);
+    }
+
+    /// Two strata of 3,000 rows each. Within a stratum, y is
+    /// noise around the stratum's own mean, independent of x;
+    /// the stratum means of both x and y shift together, so the
+    /// pooled correlation is strong while the within-stratum
+    /// correlation is nil: the vanishing form.
+    fn vanishing_universe(within_slope: f64) -> (Universe, Vec<Option<u16>>) {
+        let mut universe = Vec::new();
+        let mut codes = Vec::new();
+        let mut state: u64 = 7;
+        let mut noise = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+        };
+        for g in 0..2u16 {
+            for i in 0..3000 {
+                let x = 100.0 * g as f64 + (i % 100) as f64;
+                let y = 50.0 * g as f64 + within_slope * (i % 100) as f64 + 2.0 * noise();
+                universe.push((Some(x), Some(y)));
+                codes.push(Some(g));
+            }
+        }
+        (universe, codes)
+    }
+
+    #[test]
+    fn vanishing_fires_on_group_means_only() {
+        let (universe, codes) = vanishing_universe(0.0);
+        let pooled = pooled_pearson(&universe);
+        assert!(pooled > 0.3, "pooled = {pooled}");
+        let strat = stratifier("g", 9, &["lo", "hi"], &codes);
+        let mut budget = SimpsonBudget::new();
+        let hit = vanishing_for_pair(
+            SignedStat::Pearson,
+            pooled,
+            &universe,
+            &[strat],
+            &[0, 1],
+            &mut budget,
+        )
+        .expect("vanishing must fire");
+        assert_eq!(hit.stratifier, "g");
+        assert!(hit.within.abs() < 0.05, "within = {}", hit.within);
+        assert!(hit.within_bound <= VANISH_EQUIV_BOUND_Z);
+        assert!((hit.covered_share - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn vanishing_does_not_fire_with_a_material_within_effect() {
+        // Within each stratum y rises with x: the association
+        // is real inside the levels, not carried by the mix.
+        let (universe, codes) = vanishing_universe(0.05);
+        let pooled = pooled_pearson(&universe);
+        let strat = stratifier("g", 9, &["lo", "hi"], &codes);
+        let mut budget = SimpsonBudget::new();
+        assert!(vanishing_for_pair(
+            SignedStat::Pearson,
+            pooled,
+            &universe,
+            &[strat],
+            &[0, 1],
+            &mut budget
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn vanishing_does_not_fire_below_the_pooled_floor() {
+        // No stratum shift in y: the pooled correlation is nil,
+        // so there is nothing to explain away even though the
+        // within effects are also nil.
+        let mut universe = Vec::new();
+        let mut codes = Vec::new();
+        for g in 0..2u16 {
+            for i in 0..200 {
+                universe.push((Some(i as f64), Some((i % 7) as f64)));
+                codes.push(Some(g));
+            }
+        }
+        let strat = stratifier("g", 9, &["lo", "hi"], &codes);
+        let mut budget = SimpsonBudget::new();
+        assert!(vanishing_for_pair(
+            SignedStat::Pearson,
+            0.05,
+            &universe,
+            &[strat],
+            &[0, 1],
+            &mut budget
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn vanishing_statement_names_stratifier_and_bound() {
+        let hit = VanishingHit {
+            stratifier: "region".into(),
+            within: 0.01,
+            within_bound: 0.08,
+            strata: vec![
+                StratumEffect {
+                    level: "north".into(),
+                    n: 900,
+                    effect: 0.02,
+                },
+                StratumEffect {
+                    level: "south".into(),
+                    n: 950,
+                    effect: -0.01,
+                },
+            ],
+            levels_total: 2,
+            covered_share: 1.0,
+        };
+        let s = vanishing_statement(SignedStat::Pearson, 0.62, "price", "sales", &hit);
+        assert!(s.contains("region"), "{s}");
+        assert!(s.contains("vanishes"), "{s}");
+        assert!(s.contains("0.08"), "{s}");
+        let clause = vanishing_claim_clause(SignedStat::Pearson, 0.62, &hit);
+        assert!(clause.contains("region"), "{clause}");
+        assert!(clause.contains("+0.620"), "{clause}");
     }
 
     /// Two strata whose pooled correlation comes from the group

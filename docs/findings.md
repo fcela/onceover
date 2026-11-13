@@ -42,7 +42,9 @@ used by package version 0.1.3.
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
 | `associations` | Type `group_contrast`; group column and value, group and rest row counts in the evidence | A declared subset of the rows against the rest of the table on one column, from the `group_contrast` detector (hint-gated on `hints.contrast`): means and medians with Cohen's d for numeric columns, level shares for categorical columns, the true share for boolean columns; reported only at the stated bars (below, "Group contrast") |
+| `associations` | Type `conditioned_association`; the pair, the stratifier, the pooled and within-level effects, and the `simpson` payload in the evidence | A pooled association that does not survive conditioning on a categorical column, from the Simpson check in the `numeric_dependence` and `association_rules` screens: form `reversal` when the direction reverses within every usable level of the stratifier, form `vanishing` when the association is absent within every usable level and the combined within effect is certified near zero (below, "Tested associations") |
 | `associations` | Type `axis_shape`; `shape_form`, axis and response, Spearman rho and isotonic improvement in the evidence; form `saturating` adds the located knee, the two segment slopes and their ratio, and the bootstrap stability shares | The shape of a numeric response along an ordered axis, from the `ordered_axis` detector: `monotone` when the Spearman correlation and the isotonic fit over 20 equal-frequency bin medians both clear their bars, `monotone_with_reversal_blocks` when named adjacent bin-median moves against the trend exceed a quarter of the response's interquartile range (the blocks are the `reversal_blocks` payload), `non_monotone_reversal` when a block exceeds half the interquartile range, and `saturating` (or the weaker `rises_then_flattens` with no located knee) when a continuous two-segment fit on the bin medians bends to a post-knee slope at most 0.35 of the pre-knee slope and the bend is stable under row bootstrap. Any numeric column can be the axis; the statement is about the typical response, not a fitted model of individual rows |
+
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns under the cap wording, and names any columns dropped at extraction separately, under their own wording and count); also type `unscanned_series` from the breaks pass: the series that pass prescored over their full span but did not scan in depth past its series cap, with the reason, the cap, the eligible and examined counts, and each series' prescore in the evidence, so a reader of the findings alone can tell which series were not scanned in depth (the breaks coverage entry names the same series); also type `partial_period` from the `panel_coverage` detector: an observed period on the frame's time axis whose volume falls far below the typical period's — below 75% of the median period's row count and short by at least 4 rows, or below 75% of the median entity count and short by at least 2 entities, where the entity axis is the grain's non-axis factors or the frame's single identifier column, or a principal measure's total below 75% of its median period total, where the principal measures are the frame model's measure-role columns that extract to a numeric kind, ranked by non-null observation count and capped at 8 (a measure whose median total is not positive, or that carries negative values, is totalled but never flags: its sum is a level, not a volume) — stated with its position (first, last, or interior), its own counts, the typical counts, and the full per-period table in the evidence, the table carrying each principal measure's total per period and the evidence each measure's own total, typical total, and share of typical. A period is stated once however many of its volumes fall short; a shortfall on a second volume is a clause in the same statement, not a second statement. A period with no rows at all is a gap, not a partial period, and is not reported here; when the caller declares the same columns as `dimensions` hints, the declared panel check owns entity completeness and this statement reports row volume only. Each kind of shortfall (the row and entity counts, and the measure volume) singles out periods only when the periods short on that kind make up at most a quarter of all periods; past that share the median names no typical period for that kind and the coverage entry reports its spread instead, the kinds are judged separately so one kind's wide spread does not silence the other kind's statements, and a stated period carries clauses only for the kinds that were admitted |
 | `intervals` | Observed interval statistics | Irregular spacing |
 | `intervals` | Type `row_inconsistency`; `kind` and the row positions in the evidence | From the `row_consistency` detector: `residual_outlier` for rows far from the line two tightly related columns otherwise follow, `swapped_values` for rows where two columns with disjoint usual ranges each hold a value from the other's range |
@@ -187,7 +189,9 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
 | `group_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
+| `conditioned_association` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `axis_shape` | columns | relation | approximate | unconditional | ordered | — | regularity |
+
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `partial_period` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
 | `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
@@ -562,6 +566,40 @@ demoted, or re-tiered, and the associations table is unchanged.
 At most 24 stratifiers are considered per pair and 400
 pair×stratifier evaluations run per screen; when a bound stops
 a check, the screen's coverage entry says so.
+
+The same check also tests the vanishing form. When no reversal
+fires, a stratifier qualifies when every usable stratum's
+effect is small (at most 0.15 for a correlation, 0.35 for a log
+odds ratio) and the combined within-stratum effect is
+certified near zero: its magnitude plus 1.96 standard errors
+on the combining scale stays below 0.10 (Fisher-z scale; 0.22
+for a log odds ratio). That is an equivalence statement, not a
+failure to reach significance — the stratum sizes set the
+achievable bound, so the form fires only when the data can
+certify the absence. A qualification is appended to the claim,
+the evidence gains a `simpson` payload with `form: vanishing`
+and the certified bound (`within_bound`), and the fact is the
+mirror of a reversal: the pooled association is carried by
+differences between the stratifier's levels, not by a relation
+within them. The pooled effect must itself be material (0.3
+for a correlation, 0.69 for a log odds ratio) or there is
+nothing to explain away.
+
+Either outcome is also emitted as a finding of its own
+(`associations` category, type `conditioned_association`, form
+`reversal` or `vanishing`): the conditioned fact is often the
+most interesting fact about the pair, and as a qualification
+alone it appears only as a footnote to a claim the reader may
+never reach. The standalone finding names the pair and the
+stratifier, states the pooled and within-level effects, and
+carries the same `simpson` payload (with its `form`) as its
+evidence. The two screens that run the check
+(`numeric_dependence` and `association_rules`) count both
+outcomes in their coverage entries. Conditioned findings are
+not recountable by `report.verify`: their statistics are
+stratified recomputations over the screen's row universe, and
+no checker is registered for them, so they read as
+not checkable.
 
 ### Group contrast
 
