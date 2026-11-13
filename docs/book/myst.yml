@@ -60,6 +60,7 @@ project:
         - file: methodology/drift.ipynb
         - file: methodology/changeforest.ipynb
         - file: methodology/slice_shifts.ipynb
+        - file: methodology/ordered_axis.ipynb
     - title: Part IV — Implementation
       children:
         - file: implementation/architecture.ipynb

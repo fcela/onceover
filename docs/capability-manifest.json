@@ -289,6 +289,15 @@
    "activation": "opt_in"
   },
   {
+   "id": "ordered_axis",
+   "categories": [
+    "changes",
+    "associations"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "association_rules",
    "categories": [
     "conditional_rules",

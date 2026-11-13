@@ -423,8 +423,9 @@ fn line_sse(ts: &[f64], ys: &[f64], slope: f64, intercept: f64) -> f64 {
 
 /// The time axis a series is scanned along. Date keys are days,
 /// datetime keys are microseconds; an integer axis (a declared
-/// `hints.time` column, or a year-like integer column when no date
-/// column exists) uses its raw values as keys and labels.
+/// `hints.time` column, a year-like integer column when no date
+/// column exists, or a strictly increasing integer sequence
+/// column) uses its raw values as keys and labels.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Axis {
     Date,
@@ -1050,8 +1051,12 @@ pub fn profile_breaks(
     // Axis selection, in order: a declared `hints.time` column of a
     // date, datetime, or integer type; the first date/datetime
     // column; a year-like integer column (every present value in
-    // 1900..=2100, at least 8 distinct). Panels keyed by integer
-    // years are the common case the third rule exists for.
+    // 1900..=2100, at least 8 distinct); a strictly increasing
+    // integer sequence column (at least 99% of adjacent present
+    // pairs increasing, at least 48 distinct values). Panels keyed
+    // by integer years are the common case the third rule exists
+    // for; the sequence rule admits row-order indices and other
+    // declared-order integer axes.
     fn axis_of(col: &TypedCol) -> Option<Axis> {
         match col {
             TypedCol::Date { .. } => Some(Axis::Date),
@@ -1091,12 +1096,36 @@ pub fn profile_breaks(
         }
         _ => None,
     });
-    let (time_col, axis) = match hinted.or(auto_date).or(year_like) {
+    // A strictly increasing integer sequence in row order (#273):
+    // a declared order the rows already follow — a sample index, a
+    // dose step, a reading number. At least 99% of adjacent present
+    // pairs increase and at least 48 distinct values are present.
+    let sequence = table.cols.iter().enumerate().find_map(|(i, c)| {
+        let present: Vec<i64> = match c {
+            TypedCol::I64 { vals } => vals.iter().flatten().copied().collect(),
+            TypedCol::U64 { vals } => (0..table.n)
+                .filter_map(|r| vals.at(r).and_then(|v| i64::try_from(v).ok()))
+                .collect(),
+            _ => return None,
+        };
+        if present.len() < 48 {
+            return None;
+        }
+        let pairs = present.len() - 1;
+        let increasing = present.windows(2).filter(|w| w[1] > w[0]).count();
+        let mut distinct = present.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        let is_sequence = distinct.len() >= 48 && increasing as f64 >= 0.99 * pairs as f64;
+        is_sequence.then_some((i, Axis::Integer))
+    });
+    let (time_col, axis) = match hinted.or(auto_date).or(year_like).or(sequence) {
         Some(pair) => pair,
         None => {
             return (
                 Vec::new(),
-                "no date, datetime, or year-like integer column; break scan skipped".to_string(),
+                "no date, datetime, year-like integer, or sequence column; break scan skipped"
+                    .to_string(),
             )
         }
     };

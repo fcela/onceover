@@ -1768,6 +1768,61 @@ fn profile_inner(
                     ),
                 }
             }
+            if check_deadline(&mut coverage, "ordered_axis") {
+                deadline_hit = true;
+            }
+            if !deadline_hit && enabled("ordered_axis") {
+                // The ordered-axis battery (#273, #277) runs after
+                // the breaks, ordered-partition, and changeforest
+                // passes so their statements are in `findings`:
+                // battery clusters inside an existing statement's
+                // range attach as corroboration instead of
+                // restating the event. Panel grain keys are
+                // excluded from its slice family (the panel passes
+                // own entity statements).
+                let hints = cfg.hints.as_ref();
+                let axis_hint = hints.and_then(|h| h.axis.as_deref());
+                let ordinals = hints.map(|h| h.ordinal.clone()).unwrap_or_default();
+                let entity_names: Vec<String> = {
+                    let axis_name = frame
+                        .info
+                        .axis
+                        .as_ref()
+                        .map(|a| a.name.clone())
+                        .unwrap_or_default();
+                    entity_columns(&table, &frame, &card_facts, &axis_name)
+                        .iter()
+                        .map(|&i| table.names[i].clone())
+                        .collect()
+                };
+                let out = onceover_mines::profile_ordered_axis(
+                    ttable,
+                    &scaffold_excluded,
+                    &tier.axis_battery,
+                    axis_hint,
+                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref())),
+                    &ordinals,
+                    &entity_names,
+                    &findings,
+                );
+                let info = match out.status {
+                    onceover_mines::AxisBatteryStatus::NotApplicable(d) => PassInfo::na(d),
+                    onceover_mines::AxisBatteryStatus::Ran(d) => {
+                        PassInfo::ran(format!("{d}{exclusion_note}"))
+                    }
+                    onceover_mines::AxisBatteryStatus::Capped(d) => {
+                        PassInfo::capped(format!("{d}{exclusion_note}"))
+                    }
+                };
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "ordered_axis".into(),
+                    info,
+                );
+                findings.extend(out.findings);
+            }
             if check_deadline(&mut coverage, "surprises") {
                 deadline_hit = true;
             }
@@ -2399,6 +2454,7 @@ fn profile_inner(
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "changeforest"=>"rows missing the axis value or any measure value are excluded",
                 "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",
+                "ordered_axis"=>"rows missing the axis or the response are excluded from each series and pair; series aggregate rows sharing an axis value by their mean",
                 "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",
