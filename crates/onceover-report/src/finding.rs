@@ -48,6 +48,7 @@ impl Category {
 pub enum Pattern {
     MissingValues,
     SentinelValues,
+    PredictableMissingness,
     ValueConcentration,
     Hotspot,
     CategoricalRole,
@@ -171,7 +172,9 @@ pub enum Pattern {
 impl Pattern {
     pub fn category(self) -> Category {
         match self {
-            Self::MissingValues | Self::SentinelValues => Category::Missingness,
+            Self::MissingValues | Self::SentinelValues | Self::PredictableMissingness => {
+                Category::Missingness
+            }
             Self::ValueConcentration | Self::Hotspot => Category::Concentration,
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
@@ -232,6 +235,7 @@ impl Pattern {
         match self {
             Self::MissingValues => "missing_values",
             Self::SentinelValues => "sentinel_values",
+            Self::PredictableMissingness => "predictable_missingness",
             Self::ValueConcentration => "value_concentration",
             Self::Hotspot => "hotspot",
             Self::CategoricalRole => "categorical_role",
@@ -689,6 +693,15 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Deviation,
             ),
+            Pattern::PredictableMissingness => (
+                Sc::Column,
+                O::Distribution,
+                E::ModelBased,
+                C::Unconditional,
+                T::Atemporal,
+                Some(Q::Completeness),
+                S::Regularity,
+            ),
             Pattern::ValueConcentration => (
                 Sc::Column,
                 O::Distribution,
@@ -1112,6 +1125,9 @@ impl Facets {
     ) -> Self {
         let pattern = match (category, finding_type) {
             (Category::Missingness, Some("sentinel_values")) => Pattern::SentinelValues,
+            (Category::Missingness, Some("predictable_missingness")) => {
+                Pattern::PredictableMissingness
+            }
             (Category::Missingness, _) => Pattern::MissingValues,
             (Category::Concentration, Some("hotspot")) => Pattern::Hotspot,
             (Category::Concentration, Some("concentration_over_time")) => {

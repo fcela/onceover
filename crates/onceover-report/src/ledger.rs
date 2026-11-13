@@ -1881,6 +1881,46 @@ pub fn select_findings_counted(
             }
         }
     }
+    // Candidates the global report cap left unreached were never
+    // offered to admission, so their per-detector overage went
+    // uncounted — whether the cap disclosure appeared would
+    // depend on where other passes' findings rank. The disclosure
+    // states how many of a detector's statements are past its cap
+    // and not selected; the loop below measures exactly that for
+    // the unreached tail. Family members whose lead was selected
+    // are excluded: reached, they would be grouped under the
+    // lead, not refused.
+    if selected.len() >= policy.max_findings {
+        // Shadow admission over the unreached statements, in rank
+        // order, tracking only the per-detector counters: the
+        // statements that would have filled a detector's cap fill
+        // it here, and the ones past it are counted. The real
+        // counters are untouched — none of these statements is
+        // admitted.
+        let mut shadow_counts = admission.per_detector.clone();
+        for key in &order {
+            let Some(f) = by_key.get(key) else {
+                continue;
+            };
+            if member_of
+                .get(key)
+                .is_some_and(|fi| fam_state.get(fi) == Some(&FamState::LeadSelected))
+            {
+                continue;
+            }
+            let Some(detector) = f.evidence.first().map(|e| e.method.detector.clone()) else {
+                continue;
+            };
+            if let Some(&cap) = policy.max_findings_per_detector.get(&detector) {
+                let count = shadow_counts.entry(detector.clone()).or_default();
+                if *count >= cap {
+                    *admission.capped.entry(detector).or_default() += 1;
+                } else {
+                    *count += 1;
+                }
+            }
+        }
+    }
     // Attach the grouped member ids to their leads, and count the
     // families that actually grouped at least one statement.
     let mut family_count = 0;

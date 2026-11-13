@@ -815,6 +815,193 @@ pub fn screen_target(
     })
 }
 
+/// The result of screening one column's missingness indicator:
+/// how well the other columns identify the rows where the column
+/// is absent, measured on a held-out quarter.
+pub struct IndicatorScreen {
+    /// Holdout AUC of the boosted indicator model.
+    pub auc: f64,
+    /// Driver columns (name, share of total split gain), strongest
+    /// first, under the same shortlist bars as the target screens.
+    pub drivers: Vec<(String, f64)>,
+    pub n_train: usize,
+    pub n_holdout: usize,
+    pub rounds: usize,
+}
+
+/// AUC of `scores` against a boolean label, by the rank-sum
+/// identity with average ranks for tied scores. None when either
+/// class is absent.
+fn auc_rank_sum(scores: &[f64], labels: &[bool]) -> Option<f64> {
+    let n_pos = labels.iter().filter(|&&l| l).count();
+    let n_neg = labels.len() - n_pos;
+    if n_pos == 0 || n_neg == 0 {
+        return None;
+    }
+    let mut order: Vec<usize> = (0..scores.len()).collect();
+    order.sort_by(|&a, &b| scores[a].total_cmp(&scores[b]).then(a.cmp(&b)));
+    let mut rank_sum_pos = 0.0f64;
+    let mut i = 0usize;
+    while i < order.len() {
+        let mut j = i + 1;
+        while j < order.len() && scores[order[j]] == scores[order[i]] {
+            j += 1;
+        }
+        // Ranks i+1..=j (1-based), averaged over the tie block.
+        let avg_rank = (i + 1 + j) as f64 / 2.0;
+        for &idx in &order[i..j] {
+            if labels[idx] {
+                rank_sum_pos += avg_rank;
+            }
+        }
+        i = j;
+    }
+    let auc =
+        (rank_sum_pos - n_pos as f64 * (n_pos as f64 + 1.0) / 2.0) / (n_pos as f64 * n_neg as f64);
+    Some(auc)
+}
+
+/// Screen one column's missingness indicator against every other
+/// column: fit the house GBM (squared loss on the 0/1 indicator)
+/// on a seeded 75/25 split of the encoded rows and measure the
+/// holdout AUC. The target column's own features and the columns
+/// in `excluded_cols` never enter the predictor pool. Returns
+/// None when the indicator carries no learnable signal (holdout
+/// R² at or below zero) or the split lacks either class in
+/// usable numbers.
+pub fn screen_missing_indicator(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    ci: usize,
+    missing: &[bool],
+    cfg: &ScreenConfig,
+    excluded_cols: &[usize],
+) -> Option<IndicatorScreen> {
+    if missing.len() != enc.n || enc.n < 100 {
+        return None;
+    }
+    let n_pos_total = missing.iter().filter(|&&m| m).count();
+    if n_pos_total == 0 || n_pos_total == enc.n {
+        return None;
+    }
+    let y: Vec<f32> = missing.iter().map(|&m| if m { 1.0 } else { 0.0 }).collect();
+
+    // Deterministic holdout, seeded like the target screens but
+    // salted so the split differs from the column's own screen.
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15
+        ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
+        ^ 0x4D49_5353_494E_4721);
+    let mut order: Vec<u32> = (0..enc.n as u32).collect();
+    for i in (1..order.len()).rev() {
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        order.swap(i, j);
+    }
+    order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
+    let n_hold = order.len() / 4;
+    let (train, holdout) = order.split_at(order.len() - n_hold);
+    let count_pos = |rows: &[u32]| rows.iter().filter(|&&r| missing[r as usize]).count();
+    if count_pos(holdout) < 5 || count_pos(holdout) == holdout.len() {
+        return None;
+    }
+    if count_pos(train) < 10 || count_pos(train) == train.len() {
+        return None;
+    }
+    let min_leaf = (train.len() / 200).clamp(10, 1_000);
+
+    let mut selected: Vec<usize> = (0..enc.bins.len())
+        .filter(|&f| enc.feat_cols[f] != ci && !excluded_cols.contains(&enc.feat_cols[f]))
+        .collect();
+    if selected.len() > cfg.max_predictors {
+        let ind_bins: Vec<u8> = missing.iter().map(|&m| u8::from(m)).collect();
+        let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
+        let mut scored: Vec<(usize, f64)> = selected
+            .iter()
+            .map(|&f| {
+                (
+                    f,
+                    crate::screen::information(&ind_bins, &enc.bins[f], &screen_rows),
+                )
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
+        });
+        selected = scored.into_iter().map(|(f, _)| f).collect();
+        selected.truncate(cfg.max_predictors);
+    }
+    if selected.is_empty() {
+        return None;
+    }
+    let n_feats = selected.len();
+    let packed = pack_features(enc, &selected);
+    let (r2, rounds, gains, trees, base) = boost_numeric(
+        enc.n, cfg, &y, train, holdout, &packed, n_feats, None, min_leaf,
+    );
+    if r2.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+        return None;
+    }
+    let model = FittedGbm {
+        selected: selected.clone(),
+        best_gains: gains.clone(),
+        holdout_r2: r2,
+        n_holdout: holdout.len(),
+        rounds,
+        present: Vec::new(),
+        y: Vec::new(),
+        base,
+        learning_rate: cfg.learning_rate,
+        trees,
+    };
+    let scores: Vec<f64> = holdout
+        .iter()
+        .map(|&p| {
+            let row = &packed[p as usize * n_feats..(p as usize + 1) * n_feats];
+            model.predict_row(row)
+        })
+        .collect();
+    let labels: Vec<bool> = holdout.iter().map(|&p| missing[p as usize]).collect();
+    let auc = auc_rank_sum(&scores, &labels)?;
+
+    // Aggregate split gains to the column level before ranking:
+    // a column can own several encoded features, and the claim
+    // names columns.
+    let mut by_col: Vec<(usize, f64)> = Vec::new();
+    for (f, gv) in gains.iter().enumerate() {
+        if *gv <= 0.0 {
+            continue;
+        }
+        let col = enc.feat_cols[selected[f]];
+        match by_col.iter_mut().find(|(c, _)| *c == col) {
+            Some(entry) => entry.1 += gv,
+            None => by_col.push((col, *gv)),
+        }
+    }
+    let total: f64 = by_col.iter().map(|(_, g)| g).sum();
+    by_col.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let driver_idx = select_driver_idx(&by_col, total);
+    let drivers: Vec<(String, f64)> = driver_idx
+        .iter()
+        .map(|&i| {
+            let (col, gv) = by_col[i];
+            (
+                table.names[col].clone(),
+                if total > 0.0 { gv / total } else { 0.0 },
+            )
+        })
+        .collect();
+    if drivers.is_empty() {
+        return None;
+    }
+    Some(IndicatorScreen {
+        auc,
+        drivers,
+        n_train: train.len(),
+        n_holdout: holdout.len(),
+        rounds,
+    })
+}
+
 /// The categorical boosting loop: one-versus-rest logistic trees
 /// per class, early-stopped on holdout accuracy. Returns (best
 /// holdout accuracy, majority baseline, rounds at best, cumulative
@@ -1561,5 +1748,27 @@ mod tests {
             .results
             .iter()
             .all(|r| !r.inputs.iter().any(|i| i == "n0")));
+    }
+
+    #[test]
+    fn auc_rank_sum_orders_and_ties() {
+        // Perfect separation scores 1, reversed scores 0.
+        let scores = [0.1, 0.2, 0.8, 0.9];
+        let labels = [false, false, true, true];
+        assert_eq!(auc_rank_sum(&scores, &labels), Some(1.0));
+        let labels = [true, true, false, false];
+        assert_eq!(auc_rank_sum(&scores, &labels), Some(0.0));
+        // All scores tied: the labels carry no ranking, AUC 0.5.
+        let scores = [0.5, 0.5, 0.5, 0.5];
+        let labels = [true, false, true, false];
+        assert_eq!(auc_rank_sum(&scores, &labels), Some(0.5));
+        // One cross-class tie, counted as half a concordant pair:
+        // 3.5 of 4 pairs.
+        let scores = [0.1, 0.5, 0.5, 0.9];
+        let labels = [false, true, false, true];
+        assert_eq!(auc_rank_sum(&scores, &labels), Some(0.875));
+        // An absent class is not a measurement.
+        let labels = [true, true, true, true];
+        assert_eq!(auc_rank_sum(&scores, &labels), None);
     }
 }
