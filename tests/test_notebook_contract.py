@@ -79,7 +79,15 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
     assert "dates" in detectors
 
     orders = ex.orders_fixture(seed=2024)
-    report = onceover.profile(orders, detectors=detectors)
+    # The worked example reads individual statements, so it
+    # profiles with a raised findings cap (the notebook does the
+    # same). At the default cap of 100 this fixture's report is
+    # under selection pressure — 103 distinct statements — and the
+    # hygiene reserve turns away statements the notebook reads,
+    # among them the phone formats statement and the order_date
+    # gap statement; the report's selection coverage entry
+    # discloses those refusals with counts.
+    report = onceover.profile(orders, detectors=detectors, max_findings=200)
 
     # The lookups the notebook performs (notebooks/onceover_example.py).
     assert ex.measured(ex.find(report, "uniqueness", column="source_order_ref"))["duplicates"] == 3

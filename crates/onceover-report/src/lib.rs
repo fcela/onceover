@@ -18,7 +18,7 @@ pub use hints::{
 };
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
-    SelectionOutcome, SelectionPolicy, SelectionSummary,
+    statement_class, SelectionOutcome, SelectionPolicy, SelectionSummary, StatementClass,
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.

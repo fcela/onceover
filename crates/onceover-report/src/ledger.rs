@@ -36,6 +36,23 @@
 //! one chain of levels collapse under a constructed lead stating
 //! the structure, and a declared hierarchy that holds leads its
 //! own restatements.
+//!
+//! Statement classes (issue #271): selection also computes a class
+//! per statement — account, structure, shape, hygiene — from its
+//! facets and (category, type) by the fixed rule in
+//! `statement_class`. The classes change admission only under cap
+//! pressure (distinct statements beyond `max_findings`): account
+//! statements are admitted in full, structure and shape statements
+//! in score order under a per-(category, type, form) group cap
+//! and pressure-only per-detector caps for `breaks` and `views`,
+//! and hygiene statements last, up to a reserve — so a report
+//! under pressure rations statement kinds instead of letting
+//! cross-category score comparisons and uncapped detectors fill
+//! it with one kind. Without pressure, admission is exactly the
+//! standing score order and membership is unchanged. The
+//! selection summary carries the per-class candidate, selected,
+//! and turned-away counts, so what the pressure rules turned
+//! away is measured, never silent.
 use crate::{
     Category, Evidence, EvidenceBasis, Facets, Finding, FindingGroup, Pattern, Sampling, Scope,
     Specification, Subject,
@@ -57,6 +74,19 @@ pub struct SelectionSummary {
     pub families: usize,
     #[serde(default)]
     pub grouped_statements: usize,
+    /// Statement-class accounting (issue #271): per-class counts
+    /// over the distinct statements the ledger ranked (plus
+    /// constructed family leads) — how many candidates each class
+    /// offered, how many were selected, and how many were turned
+    /// away (candidates − selected − grouped). Class names are
+    /// `StatementClass::as_str` values. Additive and
+    /// serde-defaulted, like the family counts above.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub candidates_by_class: BTreeMap<String, usize>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub selected_by_class: BTreeMap<String, usize>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub capped_by_class: BTreeMap<String, usize>,
 }
 
 /// The result of selection: the selected findings in presentation
@@ -69,6 +99,126 @@ pub struct SelectionOutcome {
     pub grouped: Vec<Finding>,
     pub capped: BTreeMap<String, usize>,
     pub families: usize,
+    /// Statements the per-group cap turned away under cap
+    /// pressure (issue #271), by "category/type[/form]" group
+    /// label. Empty when no group cap bound.
+    pub group_capped: BTreeMap<String, usize>,
+    /// The same per-group-cap refusals counted by the detector
+    /// that produced the statement (its first evidence record),
+    /// so coverage can name the detector a group cap bound, in
+    /// the same pattern as the per-detector cap counts.
+    pub group_capped_by_detector: BTreeMap<String, usize>,
+    /// Hygiene statements the class reserve turned away under
+    /// cap pressure (issue #271). Zero when the reserve did not
+    /// bind.
+    pub reserve_capped: usize,
+    /// Per-class counts over the ranked candidate statements
+    /// (issue #271): candidates offered, selected, and turned
+    /// away, keyed by `StatementClass::as_str`.
+    pub candidates_by_class: BTreeMap<String, usize>,
+    pub selected_by_class: BTreeMap<String, usize>,
+    pub capped_by_class: BTreeMap<String, usize>,
+}
+
+/// The statement class of a finding (issue #271): a
+/// selection-time property computed from the finding's facets
+/// and (category, type) by a fixed rule — the same rule the
+/// selection study measured report mixes with, so design and
+/// measurement cannot drift apart. First match wins:
+///
+/// - **account** — frame-scope statements and uniqueness
+///   statements: what the frame is.
+/// - **structure** — relations and conditional statements:
+///   duplicate encodings, dependencies, associations,
+///   value- or segment-conditioned statements, conditional
+///   rules.
+/// - **shape** — changes along an axis, and isolated extremes
+///   (`intervals` / `extreme_value`).
+/// - **hygiene** — everything else: formats, missingness
+///   counts, concentration, column roles, ordering, gaps,
+///   duplicates, unconditional interval statements.
+///
+/// The class is not a report field: it orders admission under
+/// cap pressure and orders the digest's finding lines, and is
+/// otherwise invisible in the report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StatementClass {
+    Account,
+    Structure,
+    Shape,
+    Hygiene,
+}
+
+impl StatementClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Account => "account",
+            Self::Structure => "structure",
+            Self::Shape => "shape",
+            Self::Hygiene => "hygiene",
+        }
+    }
+
+    /// The admission phase under cap pressure: account first,
+    /// structure and shape together, hygiene last.
+    fn phase(self) -> usize {
+        match self {
+            Self::Account => 0,
+            Self::Structure | Self::Shape => 1,
+            Self::Hygiene => 2,
+        }
+    }
+}
+
+pub fn statement_class(f: &Finding) -> StatementClass {
+    use crate::Conditionality as C;
+    if f.facets.scope == Scope::Frame || f.category == Category::Uniqueness {
+        return StatementClass::Account;
+    }
+    if f.finding_type.as_deref() == Some("duplicate_encoding")
+        || matches!(
+            f.category,
+            Category::Dependencies | Category::Associations | Category::ConditionalRules
+        )
+        || matches!(
+            f.facets.conditionality,
+            C::ValueConditioned | C::SegmentConditioned
+        )
+    {
+        return StatementClass::Structure;
+    }
+    if f.category == Category::Changes
+        || (f.category == Category::Intervals && f.finding_type.as_deref() == Some("extreme_value"))
+    {
+        return StatementClass::Shape;
+    }
+    StatementClass::Hygiene
+}
+
+/// The (category, type, form) group a statement belongs to for
+/// the group cap (issue #271) — the same triple the digest
+/// rolls findings up by.
+fn group_key(f: &Finding) -> (String, Option<String>, Option<String>) {
+    (
+        f.category.as_str().to_string(),
+        f.finding_type.clone(),
+        f.specification.form.clone(),
+    )
+}
+
+/// The coverage label of a statement's group: "category/type",
+/// with "/form" appended when the statement carries a form.
+fn group_label(f: &Finding) -> String {
+    let mut label = f.category.as_str().to_string();
+    if let Some(t) = &f.finding_type {
+        label.push('/');
+        label.push_str(t);
+    }
+    if let Some(form) = &f.specification.form {
+        label.push('/');
+        label.push_str(form);
+    }
+    label
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -97,6 +247,38 @@ pub struct SelectionPolicy {
     /// `select_findings_counted` and reported in coverage, so a cap
     /// is never silent. Detectors absent from the map are uncapped.
     pub max_findings_per_detector: BTreeMap<String, usize>,
+    /// Per-detector caps that bind only under cap pressure
+    /// (issue #271): when the distinct statement count exceeds
+    /// `max_findings`, at most this many selected statements may
+    /// be attributed to each named detector. `breaks` and
+    /// `views` are rationed here rather than in the standing map
+    /// above: the selection study measured their floods on
+    /// capped reports (53 breaks statements of 100 selected),
+    /// but also measured `views` producing 42 statements on a
+    /// report whose candidates fit under the cap — a standing
+    /// cap would change that uncapped report's membership,
+    /// which the design forbids: without pressure, admission is
+    /// exactly the standing one. Refusals count in the same
+    /// per-detector capped counts as the standing caps, and are
+    /// reported in coverage the same way.
+    #[serde(default)]
+    pub pressure_detector_caps: BTreeMap<String, usize>,
+    /// Per-(category, type, form) group cap on selected
+    /// statements (issue #271): at most this many selected
+    /// statements may share one group — the triple the digest
+    /// rolls findings up by. The cap binds only under cap
+    /// pressure (distinct statements beyond `max_findings`) and
+    /// never counts grouped family members, which spend no slot.
+    /// Turned-away counts are returned by
+    /// `select_findings_counted` and reported in coverage.
+    pub max_findings_per_group: usize,
+    /// The hygiene reserve (issue #271): under cap pressure, at
+    /// most this many of the `max_findings` slots may be taken
+    /// by hygiene-class statements (see `statement_class`).
+    /// Hygiene is admitted last; if structure and shape
+    /// candidates run out first, the report is shorter than
+    /// `max_findings` rather than padded past the reserve.
+    pub hygiene_reserve: usize,
 }
 impl Default for SelectionPolicy {
     fn default() -> Self {
@@ -117,6 +299,17 @@ impl Default for SelectionPolicy {
                 ("row_consistency".to_string(), 20),
                 ("series".to_string(), 20),
             ]),
+            // Issue #271: the two detectors the selection study
+            // measured flooding capped reports (53 breaks
+            // statements of 100 selected on one corpus report)
+            // are capped at the cap family's upper value, but
+            // only under cap pressure — see the field doc.
+            pressure_detector_caps: BTreeMap::from([
+                ("breaks".to_string(), 25),
+                ("views".to_string(), 25),
+            ]),
+            max_findings_per_group: 12,
+            hygiene_reserve: 20,
         }
     }
 }
@@ -1246,6 +1439,18 @@ struct Admission<'a> {
     targets: BTreeMap<String, usize>,
     per_detector: BTreeMap<String, usize>,
     capped: BTreeMap<String, usize>,
+    /// Class rationing state (issue #271). `pressure` is set
+    /// when the distinct statement count exceeds
+    /// `max_findings`; only then do the group cap, the
+    /// pressure-only per-detector caps, and the hygiene
+    /// reserve bind.
+    pressure: bool,
+    group_counts: BTreeMap<(String, Option<String>, Option<String>), usize>,
+    group_capped: BTreeMap<String, usize>,
+    group_capped_by_detector: BTreeMap<String, usize>,
+    pressure_per_detector: BTreeMap<String, usize>,
+    hygiene_count: usize,
+    reserve_capped: usize,
 }
 
 impl Admission<'_> {
@@ -1290,6 +1495,76 @@ impl Admission<'_> {
         selected.push(f);
         Some(id)
     }
+
+    /// Admission under the class rationing of issue #271,
+    /// wrapped around the standing checks. Without cap pressure
+    /// this is exactly `admit`. Under pressure, a hygiene
+    /// statement at the reserve, a non-account statement at
+    /// its (category, type, form) group cap, and a statement
+    /// whose detector is at its pressure-only per-detector cap
+    /// are refused before the standing checks run, so a
+    /// rationed statement spends no rule, target, or detector
+    /// quota; the refusal is counted in `reserve_capped`,
+    /// `group_capped`, or the per-detector `capped` map.
+    /// Rationing counters advance only on a successful
+    /// admission, so they count selected statements exactly.
+    fn admit_rationed(&mut self, f: Finding, selected: &mut Vec<Finding>) -> Option<String> {
+        if !self.pressure {
+            return self.admit(f, selected);
+        }
+        let class = statement_class(&f);
+        if class == StatementClass::Hygiene && self.hygiene_count >= self.policy.hygiene_reserve {
+            self.reserve_capped += 1;
+            return None;
+        }
+        let key = group_key(&f);
+        if class != StatementClass::Account
+            && self.group_counts.get(&key).copied().unwrap_or(0)
+                >= self.policy.max_findings_per_group
+        {
+            *self.group_capped.entry(group_label(&f)).or_default() += 1;
+            if let Some(detector) = f.evidence.first().map(|e| e.method.detector.clone()) {
+                *self.group_capped_by_detector.entry(detector).or_default() += 1;
+            }
+            return None;
+        }
+        // The pressure-only per-detector caps (issue #271): a
+        // statement attributed — by its first evidence record,
+        // as in the standing caps — to a detector at its
+        // pressure cap is refused here, counted in the same
+        // per-detector capped map the standing caps use.
+        let detector = f.evidence.first().map(|e| e.method.detector.clone());
+        if let Some(detector) = &detector {
+            if let Some(&cap) = self.policy.pressure_detector_caps.get(detector) {
+                if self
+                    .pressure_per_detector
+                    .get(detector)
+                    .copied()
+                    .unwrap_or(0)
+                    >= cap
+                {
+                    *self.capped.entry(detector.clone()).or_default() += 1;
+                    return None;
+                }
+            }
+        }
+        let id = self.admit(f, selected)?;
+        if class != StatementClass::Account {
+            *self.group_counts.entry(key).or_default() += 1;
+        }
+        if let Some(detector) = &detector {
+            if self.policy.pressure_detector_caps.contains_key(detector) {
+                *self
+                    .pressure_per_detector
+                    .entry(detector.clone())
+                    .or_default() += 1;
+            }
+        }
+        if class == StatementClass::Hygiene {
+            self.hygiene_count += 1;
+        }
+        Some(id)
+    }
 }
 
 pub fn finalize_ledger(findings: Vec<Finding>) -> Vec<Finding> {
@@ -1301,10 +1576,13 @@ pub fn select_findings(findings: Vec<Finding>, policy: &SelectionPolicy) -> Vec<
 }
 
 /// Selection, additionally returning the statements grouped under
-/// verified relationship families (issue #116) and how many
+/// verified relationship families (issue #116), how many
 /// statements each per-detector cap in the policy turned away
-/// (detector -> count). Callers that assemble a report surface the
-/// cap counts in coverage so the caps are disclosed, never silent.
+/// (detector -> count), and — under cap pressure — how many the
+/// per-group cap and the hygiene reserve turned away, with the
+/// per-class candidate/selected/turned-away counts (issue #271).
+/// Callers that assemble a report surface the cap counts in
+/// coverage so the caps are disclosed, never silent.
 pub fn select_findings_counted(
     findings: Vec<Finding>,
     policy: &SelectionPolicy,
@@ -1457,7 +1735,38 @@ pub fn select_findings_counted(
     let mut fam_state: BTreeMap<usize, FamState> = BTreeMap::new();
     let mut lead_ids: BTreeMap<usize, String> = BTreeMap::new();
     let mut grouped_member_ids: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    // Statement classes and cap pressure (issue #271). The class
+    // counts describe the candidate pool the outcome reports:
+    // every ranked statement plus the constructed family leads,
+    // which compete for slots without being ranked statements.
+    // Pressure — distinct statements beyond the report cap — is
+    // the only condition under which the class admission order
+    // and the rationing caps bind; without it the loop below is
+    // the standing one, statement for statement.
+    let pressure = ranked.len() > policy.max_findings;
+    let mut class_of: BTreeMap<String, StatementClass> = BTreeMap::new();
+    let mut candidates_by_class: BTreeMap<String, usize> = BTreeMap::new();
+    for f in &ranked {
+        let class = statement_class(f);
+        class_of.insert(f.canonical_key(), class);
+        *candidates_by_class
+            .entry(class.as_str().to_string())
+            .or_default() += 1;
+    }
+    for lead in virtual_leads.values() {
+        *candidates_by_class
+            .entry(statement_class(lead).as_str().to_string())
+            .or_default() += 1;
+    }
     let order: Vec<String> = ranked.iter().map(|f| f.canonical_key()).collect();
+    let mut sequence: Vec<String> = order.clone();
+    if pressure {
+        // Class-major admission order: account statements first,
+        // structure and shape together, hygiene last. The sort
+        // is stable, so the standing demotion-adjusted score
+        // order holds inside each phase.
+        sequence.sort_by_key(|k| class_of.get(k).map_or(2, |c| c.phase()));
+    }
     let mut by_key: BTreeMap<String, Finding> =
         ranked.into_iter().map(|f| (f.canonical_key(), f)).collect();
     let mut admission = Admission {
@@ -1467,10 +1776,17 @@ pub fn select_findings_counted(
         targets: BTreeMap::new(),
         per_detector: BTreeMap::new(),
         capped: BTreeMap::new(),
+        pressure,
+        group_counts: BTreeMap::new(),
+        group_capped: BTreeMap::new(),
+        group_capped_by_detector: BTreeMap::new(),
+        pressure_per_detector: BTreeMap::new(),
+        hygiene_count: 0,
+        reserve_capped: 0,
     };
     let mut selected: Vec<Finding> = Vec::new();
     let mut grouped: Vec<Finding> = Vec::new();
-    for key in &order {
+    for key in &sequence {
         if selected.len() >= policy.max_findings {
             break;
         }
@@ -1495,7 +1811,10 @@ pub fn select_findings_counted(
                         .or_else(|| by_key.remove(&lead_key))
                         .expect("family lead present");
                     let lead_detector = lead.evidence.first().map(|e| e.method.detector.clone());
-                    match admission.admit(lead, &mut selected) {
+                    let lead_capped_before = lead_detector
+                        .as_ref()
+                        .map_or(0, |d| admission.capped.get(d).copied().unwrap_or(0));
+                    match admission.admit_rationed(lead, &mut selected) {
                         Some(id) => {
                             fam_state.insert(fi, FamState::LeadSelected);
                             lead_ids.insert(fi, id);
@@ -1513,14 +1832,25 @@ pub fn select_findings_counted(
                                 // refusal must not inflate the
                                 // capped count the report states
                                 // for the detector's own statements.
-                                // (Only the per-detector cap can
-                                // turn a constructed lead away: it
-                                // is neither a rule nor a prediction.)
+                                // (Only a per-detector cap —
+                                // standing, or pressure-only under
+                                // cap pressure — can turn a
+                                // constructed lead away: it is
+                                // neither a rule nor a prediction.
+                                // A group-cap refusal under cap
+                                // pressure also lands here; it did
+                                // not touch the capped count, and
+                                // the before/after comparison
+                                // leaves it alone.)
                                 if let Some(detector) = &lead_detector {
-                                    if let Some(count) = admission.capped.get_mut(detector) {
-                                        *count -= 1;
-                                        if *count == 0 {
+                                    let now = admission.capped.get(detector).copied().unwrap_or(0);
+                                    if now > lead_capped_before {
+                                        if now == 1 {
                                             admission.capped.remove(detector);
+                                        } else if let Some(count) =
+                                            admission.capped.get_mut(detector)
+                                        {
+                                            *count = now - 1;
                                         }
                                     }
                                 }
@@ -1537,7 +1867,7 @@ pub fn select_findings_counted(
             continue;
         };
         let is_lead = lead_of.get(key).copied();
-        match admission.admit(f, &mut selected) {
+        match admission.admit_rationed(f, &mut selected) {
             Some(id) => {
                 if let Some(fi) = is_lead {
                     fam_state.insert(fi, FamState::LeadSelected);
@@ -1616,11 +1946,49 @@ pub fn select_findings_counted(
             .then(b.interestingness.total_cmp(&a.interestingness))
             .then(a.canonical_key().cmp(&b.canonical_key()))
     });
+    // Per-class accounting (issue #271): selected and grouped
+    // counted from the outcome lists; turned away is what the
+    // candidate pool offered beyond them.
+    let mut selected_by_class: BTreeMap<String, usize> = BTreeMap::new();
+    for f in &selected {
+        *selected_by_class
+            .entry(statement_class(f).as_str().to_string())
+            .or_default() += 1;
+    }
+    let mut grouped_by_class: BTreeMap<String, usize> = BTreeMap::new();
+    for f in &grouped {
+        *grouped_by_class
+            .entry(statement_class(f).as_str().to_string())
+            .or_default() += 1;
+    }
+    let mut capped_by_class: BTreeMap<String, usize> = BTreeMap::new();
+    for (class, n) in &candidates_by_class {
+        let away = n
+            .saturating_sub(selected_by_class.get(class).copied().unwrap_or(0))
+            .saturating_sub(grouped_by_class.get(class).copied().unwrap_or(0));
+        if away > 0 {
+            capped_by_class.insert(class.clone(), away);
+        }
+    }
+    // The per-class counts are recorded only under cap pressure:
+    // without pressure nothing was rationed, and the summary
+    // keeps exactly its standing shape.
+    let (candidates_by_class, selected_by_class, capped_by_class) = if pressure {
+        (candidates_by_class, selected_by_class, capped_by_class)
+    } else {
+        (BTreeMap::new(), BTreeMap::new(), BTreeMap::new())
+    };
     SelectionOutcome {
         selected,
         grouped,
         capped: admission.capped,
         families: family_count,
+        group_capped: admission.group_capped,
+        group_capped_by_detector: admission.group_capped_by_detector,
+        reserve_capped: admission.reserve_capped,
+        candidates_by_class,
+        selected_by_class,
+        capped_by_class,
     }
 }
 
