@@ -236,13 +236,17 @@ def test_simpson_needs_a_measured_within_effect():
     # Within-level effects of x and y are zero by construction, so
     # their signs are coin flips: about a quarter of seeds give both
     # levels the sign opposite to the pooled effect. None of them
-    # may be stated as a reversal.
+    # may be stated as a reversal. The pooled association comes only
+    # from the group means, so the vanishing form is the designed
+    # outcome on this fixture and may fire; a reversal may not.
     for seed in range(20):
         report = onceover.profile(_group_mean_pair(seed))
         f, _ = _strong_finding(report, {"x", "y"})
         assert f is not None, "the pooled pair is a strong statement"
         assert "direction reverses" not in f["claim"], (seed, f["claim"])
-        assert _any_simpson(report) == []
+        assert all(
+            q.get("form") != "reversal" for _, q in _any_simpson(report)
+        ), (seed, _any_simpson(report))
 
 
 def _simpson_mixed(seed=13):
@@ -293,5 +297,15 @@ def test_simpson_qualification_on_nominal_2x2_pair():
     assert q["coded_level_b"] in ("yes", "no")
     assert q["pooled_effect"] * q["within_effect"] < 0
     assert all(row["effect"] * q["pooled_effect"] < 0 for row in q["strata"])
-    # No other strong statement in this frame reverses.
-    assert len(_any_simpson(report)) == 1
+    # No other strong statement in this frame reverses. The one
+    # reversal appears twice: as the clause payload on the pair's
+    # claim and as its standalone conditioned finding.
+    reversals = [
+        (f, q) for f, q in _any_simpson(report) if q.get("form") == "reversal"
+    ]
+    assert len(reversals) == 2
+    assert all({"t", "o"} <= set(f["subject"]["columns"]) for f, _ in reversals)
+    # The standalone conditioned finding names the stratifier too.
+    conditioned = [f for f, _ in reversals if f["type"] == "conditioned_association"]
+    assert len(conditioned) == 1
+    assert set(conditioned[0]["subject"]["columns"]) == {"t", "o", "s"}
