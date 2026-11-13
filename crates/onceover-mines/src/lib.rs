@@ -5,6 +5,7 @@
 //! and date/sequence intelligence.
 
 pub mod association;
+pub mod axisbreaks;
 pub mod breaks;
 pub mod changeforest;
 pub mod contrast;
@@ -38,6 +39,9 @@ pub use targets::TargetProfile;
 pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, pair_associations, AssociationConfig};
+pub use axisbreaks::{
+    profile_ordered_axis, AxisBatteryConfig, AxisBatteryOutcome, AxisBatteryStatus,
+};
 pub use breaks::{profile_breaks, BreaksConfig};
 pub use changeforest::{
     changeforest_pass, ChangeforestConfig, ChangeforestInput, ChangeforestOutcome,

@@ -200,7 +200,7 @@ fn missing_date_column_skips_the_pass() {
     let cov = report.coverage.get("breaks").expect("breaks coverage");
     assert!(cov
         .detail
-        .contains("no date, datetime, or year-like integer column"));
+        .contains("no date, datetime, year-like integer, or sequence column"));
     assert!(report
         .findings
         .iter()

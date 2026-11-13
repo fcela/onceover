@@ -40,14 +40,14 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_activation_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 38
+    assert len(registry) == 39
     by_activation = {}
     for d in registry.values():
         by_activation.setdefault(d["activation"], []).append(d["id"])
     assert sorted(by_activation["opt_in"]) == sorted(OPT_IN)
     assert by_activation["hint_gated"] == ["expectations", "group_contrast"]
     assert by_activation["target_gated"] == ["target_shapes"]
-    assert len(by_activation["default"]) == 28
+    assert len(by_activation["default"]) == 29
 
 
 def test_default_run_discloses_opt_in_passes_as_skipped():

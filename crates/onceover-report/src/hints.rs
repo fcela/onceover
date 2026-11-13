@@ -69,6 +69,20 @@ pub struct ProfileHints {
     /// The time / ordering axis column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<String>,
+    /// A declared ordering axis for the ordered-axis battery
+    /// (#273): any column whose values order the rows — a dose, an
+    /// age, a sequence number — named when the profiler should scan
+    /// for shape and break statements along it even though it is
+    /// not a date, datetime, or year-like column. Takes precedence
+    /// over automatic axis selection for that battery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<String>,
+    /// Declared level orders for categorical columns, finest
+    /// semantics only: a column named here becomes an ordered axis
+    /// for shape statements, with positions given by the listed
+    /// order. Alphabetical or frequency order is never inferred.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ordinal: BTreeMap<String, Vec<String>>,
     /// Columns the rows are claimed to be ordered by, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<String>,
