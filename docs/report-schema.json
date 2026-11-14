@@ -1134,7 +1134,8 @@
           "enum": [
             "time",
             "cycle",
-            "dimension"
+            "dimension",
+            "binned"
           ]
         },
         "label": {
@@ -1161,6 +1162,12 @@
         },
         "statement": {
           "type": "string"
+        },
+        "rates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameStructureRate"
+          }
         }
       },
       "required": [
@@ -1288,6 +1295,43 @@
         "method",
         "seed",
         "cap"
+      ]
+    },
+    "frameStructureRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "response": {
+          "type": "string"
+        },
+        "on_label": {
+          "type": "string"
+        },
+        "base_rate": {
+          "type": "number"
+        },
+        "peak_group": {
+          "type": "string"
+        },
+        "peak_rate": {
+          "type": "number"
+        },
+        "peak_support": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lift": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "response",
+        "on_label",
+        "base_rate",
+        "peak_group",
+        "peak_rate",
+        "peak_support",
+        "lift"
       ]
     }
   },

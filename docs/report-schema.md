@@ -115,15 +115,35 @@ A near key is likewise a finding (category `duplicates`,
 algorithm `near_key_axis`, scope `frame`).
 
 `dominant` lists the frame's dominant structures, strongest first
-(at most two): `kind` (`time`, `cycle`, or `dimension`), `label`
+(at most two): `kind` (`time`, `cycle`, `dimension`, or `binned` —
+a continuous measure's quantile bins), `label`
 ("shared time pattern", "annual cycle", "weekly cycle", "daily
-cycle", or the dimension column's name), `grouping` (what was
-grouped by), `shares` (the measures the grouping organises,
-strongest first: the share of each measure's variance that sits
+cycle", or the grouping column's name), `grouping` (what was
+grouped by), `shares` (the responses the grouping organises,
+strongest first: the share of each response's variance that sits
 between groups), `peak` (the highest-mean group for the strongest
-measure: `label`, `measure`, `mean`), and `statement`. A grouping
-is stated only when it organises at least 0.10 of some measure's
-variance; up to two groupings are stated, strongest first.
+measure: `label`, `measure`, `mean`), `rates` (the binary
+responses the grouping organises, strongest first, at most two:
+for each, the `response` column, its `on_label` — the higher of
+its two levels in sorted order — the `base_rate` over the whole
+frame, and the peak group's `peak_group`, `peak_rate`,
+`peak_support`, and `lift` over the base rate), and `statement`.
+The responses are the measures — a column named as a weight is
+not one — plus every two-level column (a flag, or a dimension
+with exactly two levels), measured as the rate of its on state
+and scored by the same eta-squared on its 0/1 indicator.
+Duplicate and rollup encodings among the candidate groupings are
+collapsed before scoring, so two encodings of one grouping never
+occupy both slots, and two encodings of one binary outcome are
+measured once. A grouping whose two groups restate a binary
+response under another column's encoding is not used as a
+grouping, and a grouping never claims a response it determines
+exactly — constant within every group — since that share is 1 by
+construction. A grouping is stated only when it organises at
+least 0.10 of some response's variance; up to two groupings are
+stated, strongest first. A peak is stated only when the spread
+of its group means reaches a tenth of the measure's own range;
+a smaller spread is not a headline peak.
 
 The selected findings are presented in report-band order:
 frame-scope and uniqueness findings (the account) first, then
