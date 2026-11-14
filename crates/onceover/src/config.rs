@@ -5,8 +5,9 @@ use std::time::Duration;
 use onceover_deps::{DupeConfig, FdConfig};
 use onceover_mines::{
     AssociationConfig, AxisBatteryConfig, BreaksConfig, ChangeforestConfig, DiscConfig,
-    DriftConfig, DtableConfig, EncodeConfig, HConfig, HotspotConfig, PartitionsConfig, PrismConfig,
-    RegimesConfig, ScreenConfig, ShapesConfig, SliceConfig, SurpriseConfig, ViewsConfig,
+    DriftConfig, DtableConfig, EncodeConfig, HConfig, HotspotConfig, ModelFailureConfig,
+    PartitionsConfig, PrismConfig, RegimesConfig, ScreenConfig, ShapesConfig, SliceConfig,
+    SurpriseConfig, ViewsConfig,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,6 +126,7 @@ pub struct TierConfig {
     pub views: ViewsConfig,
     pub changeforest: ChangeforestConfig,
     pub slices: SliceConfig,
+    pub modelfail: ModelFailureConfig,
     pub axis_battery: AxisBatteryConfig,
     pub dep_pair_cap: usize,
     pub ident_pair_cap: usize,
@@ -165,6 +167,7 @@ impl TierConfig {
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
                 slices: SliceConfig::default(),
+                modelfail: ModelFailureConfig::default(),
                 axis_battery: AxisBatteryConfig::disabled(),
                 dep_pair_cap: 0,
                 ident_pair_cap: 0,
@@ -205,6 +208,7 @@ impl TierConfig {
                 views: ViewsConfig::default(),
                 changeforest: ChangeforestConfig::default(),
                 slices: SliceConfig::default(),
+                modelfail: ModelFailureConfig::default(),
                 axis_battery: AxisBatteryConfig::default(),
                 // The discontinuity screen is the measured runtime
                 // outlier (2026-11-02 battery: 0.43 s median marginal,
@@ -326,6 +330,7 @@ impl TierConfig {
                     max_depth: 3,
                     ..Default::default()
                 },
+                modelfail: ModelFailureConfig::default(),
                 axis_battery: AxisBatteryConfig {
                     row_cap: 50_000,
                     max_responses: 24,

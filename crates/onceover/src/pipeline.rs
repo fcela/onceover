@@ -11,7 +11,8 @@ use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, hotspots, identities,
     prism_rules, profile_breaks, profile_discontinuities, profile_drift, profile_interactions,
-    profile_regimes, profile_surprises, profile_target_shapes, screen_predictability,
+    profile_regimes, profile_surprises, profile_target_shapes, screen_model_failures,
+    screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings_counted, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -104,6 +105,7 @@ fn profile_inner(
     // caller did not explicitly restrict the detector set.
     if cfg.target.is_some() && cfg.detectors.is_none() {
         active.insert("target_shapes".into());
+        active.insert("model_failures".into());
     }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
@@ -123,6 +125,7 @@ fn profile_inner(
     }
     tier.views.row_cap = tier.encode.row_cap;
     tier.slices.row_cap = tier.encode.row_cap;
+    tier.modelfail.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);
@@ -145,6 +148,7 @@ fn profile_inner(
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
     tier.slices.deadline = pass_deadline;
+    tier.modelfail.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
@@ -2445,6 +2449,54 @@ fn profile_inner(
         }
     }
 
+    // ---------- model-failure slices (target-gated) ----------
+    if check_deadline(&mut coverage, "model_failures") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("model_failures") {
+        match &cfg.target {
+            Some(target) => {
+                // The cross-fit fits on the shared encoding when the
+                // model-based block produced one; at the quick tier
+                // (or after a deadline skip) it encodes locally,
+                // the fallback the hotspots pass uses.
+                let local_enc;
+                let enc = match &shared_encoding {
+                    Some(enc) => enc,
+                    None => {
+                        local_enc = encode(&table, &tier.encode).0;
+                        &local_enc
+                    }
+                };
+                let (f, cov) = screen_model_failures(
+                    &table,
+                    enc,
+                    target,
+                    &tier.screen,
+                    &tier.modelfail,
+                    &scaffold_excluded,
+                );
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "model_failures".into(),
+                    PassInfo::ran(cov),
+                );
+                findings.extend(f);
+            }
+            None => {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "model_failures".into(),
+                    PassInfo::skipped("no target designated".to_string()),
+                );
+            }
+        }
+    }
+
     findings.retain(|f| f.evidence.iter().any(|e| selected(&e.method.detector)));
     for f in &mut findings {
         for evidence in &mut f.evidence {
@@ -2456,6 +2508,7 @@ fn profile_inner(
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
+                "model_failures"=>"rows missing the target are excluded from fitting and from the search; rows missing a condition value are outside the slice",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "changeforest"=>"rows missing the axis value or any measure value are excluded",

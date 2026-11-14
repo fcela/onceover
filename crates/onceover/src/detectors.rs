@@ -116,6 +116,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         make("regimes", vec![Dependencies, Changes], &["gbm"], Default),
         make("interactions", vec![Dependencies], &["gbm"], Default),
         make("target_shapes", vec![Dependencies], &[], TargetGated),
+        make("model_failures", vec![Dependencies], &[], TargetGated),
         make("breaks", vec![Changes, Gaps], &[], Default),
         make("ordered_partitions", vec![Changes], &[], Default),
         make("surprises", vec![Intervals], &[], Default),
@@ -188,10 +189,10 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // HintGated. Opt-in detectors (views, dates, pivot,
         // period_associations, drift, granularity, changeforest,
         // slice_shifts) run only when
-        // explicitly requested via detectors=[...]; target-gated
-        // target_shapes runs only when a target is designated (the
-        // pipeline adds it then) or when explicitly requested
-        // together with a target.
+        // explicitly requested via detectors=[...]; the target-gated
+        // detectors (target_shapes, model_failures) run only when a
+        // target is designated (the pipeline adds them then) or
+        // when explicitly requested together with a target.
         specs
             .iter()
             .filter(|d| matches!(d.activation, Activation::Default | Activation::HintGated))
@@ -231,9 +232,9 @@ mod tests {
     #[test]
     fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 40 registered: 31 default (29 Default + hint-gated
-        // expectations and group_contrast), 8 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 40);
+        // 41 registered: 31 default (29 Default + hint-gated
+        // expectations and group_contrast), 8 opt-in, 2 target-gated.
+        assert_eq!(builtin_detectors().len(), 41);
         assert_eq!(active.len(), 31);
         for id in [
             "views",
@@ -245,6 +246,7 @@ mod tests {
             "changeforest",
             "slice_shifts",
             "target_shapes",
+            "model_failures",
         ] {
             assert!(!active.contains(id), "{id} must not be in the default set");
         }
@@ -271,6 +273,6 @@ mod tests {
         assert_eq!(counts.get("Default"), Some(&29));
         assert_eq!(counts.get("OptIn"), Some(&8));
         assert_eq!(counts.get("HintGated"), Some(&2));
-        assert_eq!(counts.get("TargetGated"), Some(&1));
+        assert_eq!(counts.get("TargetGated"), Some(&2));
     }
 }

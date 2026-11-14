@@ -217,14 +217,14 @@ Passing a bare string where a list is expected raises
 categories each produces and each detector's activation (also
 frozen in `docs/capability-manifest.json`). `detectors=[...]`
 restricts a run to named detectors. The default set has 31 of
-the 40 registered detectors: `views` (experimental), `dates`,
+the 41 registered detectors: `views` (experimental), `dates`,
 `pivot`, `period_associations`, `drift`, `granularity`,
 `changeforest`, and `slice_shifts` are
 opt-in and run only when named — a default run records each as
 skipped in coverage, naming it opt-in. `expectations` and
 `group_contrast` are in the default set but engage only on
 declared hints. Passing
-`target="y"` additionally enables the target-gated shape pass.
+`target="y"` additionally enables the target-gated passes (the shape pass and the model-failure pass, which states where a cross-fitted model of the target fails).
 The full category and type reference is `docs/findings.md`.
 
 ## Empty and partial results
