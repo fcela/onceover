@@ -73,6 +73,14 @@ pub enum Pattern {
     ArithmeticIdentity,
     PredictiveDependency,
     PiecewiseDependency,
+    /// One column that on its own nearly determines a designated
+    /// target: its chance-corrected share of the target's entropy
+    /// (categorical target) or its directed dependence on the
+    /// target (numeric target) clears a high bar and dwarfs every
+    /// other column, or it determines the target exactly on the
+    /// evaluated rows. The shape of a column derived from the
+    /// outcome or recorded after it.
+    LeakageSignature,
     OrderConstraint,
     /// A pair order that fails on a substantial, one-sided share of
     /// rows: too many violations for the near-universal order
@@ -200,7 +208,8 @@ impl Pattern {
             | Self::PredictiveDependency
             | Self::PiecewiseDependency
             | Self::OrderConstraint
-            | Self::OrderViolation => Category::Dependencies,
+            | Self::OrderViolation
+            | Self::LeakageSignature => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation
             | Self::PeriodAssociation
@@ -264,6 +273,7 @@ impl Pattern {
                 "functional"
             }
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
+            Self::LeakageSignature => "leakage_signature",
             Self::OrderConstraint => "order_constraint",
             Self::OrderViolation => "order_violation",
             Self::ConditionalRule => "if_then",
@@ -869,6 +879,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::LeakageSignature => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::PiecewiseDependency => (
                 Sc::Columns,
                 O::Relation,
@@ -1160,6 +1179,7 @@ impl Facets {
             (Category::Formats, _) => Pattern::FormatVariation,
             (Category::Dependencies, Some("order_constraint")) => Pattern::OrderConstraint,
             (Category::Dependencies, Some("order_violation")) => Pattern::OrderViolation,
+            (Category::Dependencies, Some("leakage_signature")) => Pattern::LeakageSignature,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -1942,10 +1962,16 @@ impl Finding {
             Category::Dependencies => {
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("functional" | "predictive" | "order_constraint" | "order_violation")
+                    Some(
+                        "functional"
+                            | "predictive"
+                            | "order_constraint"
+                            | "order_violation"
+                            | "leakage_signature",
+                    )
                 ) {
                     return Err(
-                        "dependency type must be functional, predictive, order_constraint, or order_violation"
+                        "dependency type must be functional, predictive, order_constraint, order_violation, or leakage_signature"
                             .into(),
                     );
                 }
