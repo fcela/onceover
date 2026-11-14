@@ -37,6 +37,17 @@ const MAX_NEAR_DUPLICATE_STATEMENTS: usize = 3;
 /// the coincidences expected if the compared columns were
 /// independent (see `chance_pairs`).
 const MIN_OVER_CHANCE: f64 = 4.0;
+/// The chance baseline is stated in the claim once it reaches this
+/// many expected coincident pairs: below it the baseline is a
+/// fraction of one pair and the raw count already says everything.
+const CHANCE_CLAIM_MIN: f64 = 1.0;
+/// Once the coincident pairs expected by chance reach this share
+/// of the table, the near-duplicate score is capped at
+/// `CHANCE_CAPPED_SCORE` however far the observed count sits above
+/// chance: a table where chance alone repeats one row in a hundred
+/// is a low-resolution table before it is a duplicated one.
+const CHANCE_SHARE_FLOOR: f64 = 0.01;
+const CHANCE_CAPPED_SCORE: f64 = 0.70;
 /// A compared column enters the chance model only when it raises
 /// the distinct count of the columns already in it by more than this
 /// share; otherwise it is determined by them and adds no resolution.
@@ -162,6 +173,67 @@ fn chance_pairs(table: &TypedTable, left_out: usize, probs: &[(usize, f64)]) -> 
     chance
 }
 
+/// The over-chance ratio of a near-duplicate count: the observed
+/// rows against the coincident pairs expected by chance, with the
+/// baseline floored at one pair so a near-zero baseline cannot
+/// produce an unbounded ratio.
+fn over_chance(extra: usize, chance: f64) -> f64 {
+    extra as f64 / chance.max(1.0)
+}
+
+/// The score of a near-duplicate statement. The share term (how
+/// much of the table repeats) is multiplied by a saturating
+/// function of the log over-chance ratio, so two tables with the
+/// same raw repeat count score differently when chance explains
+/// very different amounts of it, and the score is capped once the
+/// expected-by-chance share of the table passes the floor above.
+fn near_duplicate_score(extra: usize, n: usize, chance: f64) -> f64 {
+    let share_term = (extra as f64 / n as f64 / 0.1).min(1.0);
+    let ratio = over_chance(extra, chance);
+    let chance_factor = if ratio <= 1.0 {
+        0.0
+    } else {
+        (ratio.ln() / 6.0).min(1.0)
+    };
+    let mut score = 0.68 + 0.2 * share_term * chance_factor;
+    if chance / n as f64 > CHANCE_SHARE_FLOOR {
+        score = score.min(CHANCE_CAPPED_SCORE);
+    }
+    score
+}
+
+/// The chance baseline as it is stated in a claim: whole pairs at
+/// three figures or more, one decimal below that.
+fn fmt_chance(chance: f64) -> String {
+    if chance >= 100.0 {
+        format!("{chance:.0}")
+    } else if chance >= 10.0 {
+        format!("{chance:.1}")
+    } else {
+        format!("{chance:.2}")
+    }
+}
+
+/// The near-duplicate claim. When the chance baseline is
+/// non-trivial it is stated in the claim with the over-chance
+/// ratio, so the count reads against what the compared columns'
+/// own value distributions already explain.
+fn near_duplicate_claim(extra: usize, n: usize, name: &str, chance: f64) -> String {
+    let base = format!(
+        "{extra} rows repeat another row on every column except {name} ({:.2}% of {n} rows)",
+        100.0 * extra as f64 / n as f64,
+    );
+    if chance >= CHANCE_CLAIM_MIN {
+        format!(
+            "{base}; {} expected by chance ({:.1}x the chance baseline)",
+            fmt_chance(chance),
+            over_chance(extra, chance)
+        )
+    } else {
+        base
+    }
+}
+
 fn hashable(col: &TypedCol) -> bool {
     !matches!(col, TypedCol::Null { .. } | TypedCol::Other { .. })
 }
@@ -229,19 +301,16 @@ fn near_duplicates(table: &TypedTable, findings: &mut Vec<Finding>) -> Option<St
         findings.push(Finding::new(
             Pattern::NearDuplicateRows,
             BTreeMap::from([("columns".to_string(), json!([name]))]),
-            format!(
-                "{extra} rows repeat another row on every column except {name} ({:.2}% of {} rows)",
-                100.0 * extra as f64 / table.n as f64,
-                table.n
-            ),
+            near_duplicate_claim(extra, table.n, name, chance),
             EvidenceBasis::Measured,
-            0.68 + 0.2 * (extra as f64 / table.n as f64 / 0.1).min(1.0),
+            near_duplicate_score(extra, table.n, chance),
             BTreeMap::from([
                 ("n".to_string(), json!(table.n)),
                 ("varying_column".to_string(), json!(name)),
                 ("near_duplicates".to_string(), json!(extra)),
                 ("exact_repeats".to_string(), json!(exact_repeats)),
                 ("expected_by_chance".to_string(), json!(chance)),
+                ("over_chance".to_string(), json!(over_chance(extra, chance))),
             ]),
             Some(format!(
                 "check whether these are one record entered twice with a different {name}"
@@ -508,4 +577,52 @@ pub fn profile_row_consistency(
         detail.push_str(&note);
     }
     (findings, detail)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn score_uses_the_chance_baseline() {
+        // Identical raw counts and table size: the statement whose
+        // repeats chance cannot explain scores above the one chance
+        // largely explains.
+        let low_chance = near_duplicate_score(200, 5000, 0.01);
+        let high_chance = near_duplicate_score(200, 5000, 25.0);
+        assert!(low_chance > high_chance, "{low_chance} vs {high_chance}");
+    }
+
+    #[test]
+    fn score_is_capped_once_chance_is_a_material_share() {
+        // 812.8 expected of 48,842 rows is above the 1% floor, so
+        // even a saturating share term cannot lift the score past
+        // the cap.
+        assert!(near_duplicate_score(6322, 48842, 812.8) <= CHANCE_CAPPED_SCORE);
+        // The same count against a trivial baseline is not capped.
+        assert!(near_duplicate_score(6322, 48842, 0.01) > CHANCE_CAPPED_SCORE);
+    }
+
+    #[test]
+    fn titanic_numbers_state_the_baseline_and_cap_the_score() {
+        // The issue's measured Titanic statement: 242 of 891 rows
+        // repeat except `age`, against 17.7 pairs expected by
+        // chance. The baseline is 2% of the table, so the claim
+        // states it and the score is capped however large the
+        // repeat share is (the raw-share formula gave 0.88).
+        let claim = near_duplicate_claim(242, 891, "age", 17.7);
+        assert!(claim.contains("17.7 expected by chance"), "{claim}");
+        assert!(claim.contains("13.7x"), "{claim}");
+        assert_eq!(near_duplicate_score(242, 891, 17.7), CHANCE_CAPPED_SCORE);
+    }
+
+    #[test]
+    fn claim_states_the_baseline_only_when_it_is_non_trivial() {
+        let stated = near_duplicate_claim(6322, 48842, "fnlwgt", 812.8);
+        assert!(stated.contains("813 expected by chance"), "{stated}");
+        assert!(stated.contains("7.8x"), "{stated}");
+        let quiet = near_duplicate_claim(199, 53940, "price", 0.012);
+        assert!(!quiet.contains("expected by chance"), "{quiet}");
+        assert!(quiet.starts_with("199 rows repeat another row"), "{quiet}");
+    }
 }

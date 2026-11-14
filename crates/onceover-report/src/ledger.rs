@@ -417,9 +417,39 @@ fn score(f: &Finding) -> f64 {
 /// Frame-scope findings (the account's own statements: the
 /// factorized grain, the near key) are account content whatever
 /// their category.
+/// Whether a duplicate statement's own evidence shows it barely
+/// beats the chance baseline its pass computed: an over-chance
+/// ratio under 10 (the near-duplicate statement bar is 4x), or a
+/// baseline that already accounts for more than 1% of the table
+/// with a ratio under 20. Such a statement is a property of the
+/// compared columns' resolution before it is a data-quality fact,
+/// so it does not take band-1 placement. A duplicate statement
+/// with no chance baseline in its evidence, or one that clears
+/// chance by a wide margin, keeps its band.
+fn duplicate_barely_beats_chance(f: &Finding) -> bool {
+    f.evidence.iter().any(|e| {
+        let Some(chance) = metric(e, "expected_by_chance") else {
+            return false;
+        };
+        let ratio = metric(e, "over_chance").or_else(|| {
+            let observed = metric(e, "near_duplicates").or_else(|| metric(e, "n_redundant"))?;
+            Some(observed / chance.max(1.0))
+        });
+        let Some(ratio) = ratio else { return false };
+        let chance_share = metric(e, "n")
+            .filter(|n| *n > 0.0)
+            .map(|n| chance / n)
+            .unwrap_or(0.0);
+        ratio < 10.0 || (chance_share > 0.01 && ratio < 20.0)
+    })
+}
+
 pub fn report_band(f: &Finding) -> u8 {
     if f.facets.scope == Scope::Frame {
         return 0;
+    }
+    if f.category == Category::Duplicates && duplicate_barely_beats_chance(f) {
+        return 3;
     }
     match f.category {
         Category::Uniqueness => 0,

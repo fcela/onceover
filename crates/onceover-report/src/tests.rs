@@ -1360,6 +1360,66 @@ fn selection_orders_by_report_band_before_score() {
 }
 
 #[test]
+fn duplicate_that_barely_beats_chance_leaves_band_1() {
+    // 6,322 observed against 812.8 expected by chance (7.8x, and
+    // the baseline is 1.7% of the table): the statement is not
+    // worth band-1 placement.
+    let barely = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["fnlwgt"]))]),
+        "6322 rows repeat another row on every column except fnlwgt".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(48842)),
+            ("near_duplicates".into(), json!(6322)),
+            ("expected_by_chance".into(), json!(812.8)),
+            ("over_chance".into(), json!(7.8)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(barely.category, Category::Duplicates);
+    assert_eq!(report_band(&barely), 3);
+    // The same count against a trivial baseline keeps band 1.
+    let clear = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["price"]))]),
+        "199 rows repeat another row on every column except price".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(53940)),
+            ("near_duplicates".into(), json!(199)),
+            ("expected_by_chance".into(), json!(0.012)),
+            ("over_chance".into(), json!(199.0)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(report_band(&clear), 1);
+    // The issue's measured Titanic statement: 242 observed against
+    // 17.7 expected (13.7x, and the baseline is 2% of the table)
+    // also leaves band 1.
+    let titanic = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["age"]))]),
+        "242 rows repeat another row on every column except age".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(891)),
+            ("near_duplicates".into(), json!(242)),
+            ("expected_by_chance".into(), json!(17.7)),
+            ("over_chance".into(), json!(13.7)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(report_band(&titanic), 3);
+}
+
+#[test]
 fn frame_scope_findings_lead_the_report() {
     // A frame-scope statement (the account's grain / near-key
     // findings) is band 0 whatever its category.
