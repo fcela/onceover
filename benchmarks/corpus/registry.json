@@ -26,7 +26,8 @@
      "columns_any": [
       "pregnant"
      ],
-     "note": "pregnant is 98.6% false; the concentration itself is expected."
+     "expect": "missed",
+     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated — it appears when the cap widens (present at max_findings=5000, interestingness 0.83) — but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
     },
     {
      "kind": "finding",
@@ -722,7 +723,8 @@
      "columns_any": [
       "revision_number"
      ],
-     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run."
+     "expect": "missed",
+     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated — it appears when the cap widens (present at max_findings=5000, interestingness 0.88) — but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
     },
     {
      "kind": "finding",
@@ -1529,7 +1531,7 @@
      "type": "functional",
      "target": "registered",
      "expect": "found",
-     "note": "(cnt, casual) -> registered holds exactly (0 violations in 17,379 rows), one direction of the cnt = casual + registered identity, verified independently in the 2026-11-03 case study; the identity itself is a documented case below. The (casual, registered) -> cnt direction remains in the report; under the chance-corrected scoring (issue #128) this direction falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md. Re-baselined 2026-11-13 under report selection: the statement is now retained in the report as a grouped member under the verified relationship family led by the (casual, registered) -> cnt direction, rather than displaced entirely, so the expectation is 'found' on the strength of the grouped record; it is still not a standalone finding."
+     "note": "(cnt, casual) -> registered holds exactly (0 violations in 17,379 rows), one direction of the cnt = casual + registered identity, verified independently in the 2026-11-03 case study; the identity itself is a documented case below. The (casual, registered) -> cnt direction remains in the report; under the chance-corrected scoring (issue #128) this direction falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md. Re-baselined 2026-11-13 under report selection: the statement is now retained in the report as a grouped member under the verified relationship family led by the (casual, registered) -> cnt direction, rather than displaced entirely, so the expectation is 'found' on the strength of the grouped record; it is still not a standalone finding. The grouped retention then broke silently: the selection walk stopped at the cap, and on this table the cap fills before the walk reaches the family's members, so the lead stood in the report with no grouped members. Repaired 2026-11-14 (issue #294): the walk now continues past a full cap for members of already-selected leads, which spend no selection slot."
     },
     {
      "kind": "finding",
