@@ -37,6 +37,7 @@ used by package version 0.1.3.
 | `dependencies` | Type `functional` | Inputs determine a target, subject to scope, comparison, tolerance and exceptions; the same type carries exact arithmetic identities from the `identities` detector — pairwise affine fits, and multi-term identities (unit-coefficient sums and differences, products, ratios, and fitted linear combinations) over two or three terms, plus exact decompositions of four to eight parts found by a components-first search: candidate parts are the columns lying between zero and the target on at least 99% of sampled rows where both are present (a part cannot exceed the whole), at most 24 of them by mean share of the target, assembled by subtracting parts from the target on the sample and verified on every row under the same exactness standard (at least 99.9% of complete rows within the identity tolerance) |
 | `dependencies` | Type `order_constraint` | One column is at most another on every evaluated row, or all but a small counted share of them, from the `order_constraints` detector: the two columns share a kind family (numeric, date, or datetime with the same unit) and compatible ranges; the claim names the direction, the evaluated rows, the violation count and share, the rows tied, and the worst violation with its row; pairs already tied by an exact functional dependency in either direction are stated but ranked below unrelated pairs, and violations of a near-universal order rank above exact orders |
 | `dependencies` | Type `order_violation` | The complementary statement from the same `order_constraints` scan, for a pair whose order fails in bulk: one direction's violations pass the `order_constraint` certification share (1% of evaluated rows) but are systematic — at least 20 rows and at least 5% of the evaluated rows, while the reverse direction's violations are at least twice as many — and the two columns track each other on a comparable scale (the median row distance \|a − b\| / max(\|a\|, \|b\|) over sampled complete rows is at most 0.2, recorded in the evidence as `pair_distance`, and their medians agree within a factor of 2.5 when both are non-zero), which keeps the statement off pairs that merely overlap numerically, such as an age in years against a duration in seconds. The claim names the violated direction, the violating row count and share, the reverse direction's violation count and share, and the worst violation with its row; the violating rows are listed in the evidence. The same type carries the part-against-whole form (`violation_kind: part_whole` in the evidence, against `systematic` for the form above): a part sits far from its whole by construction — a quarter-share part has a median row distance near 0.75 — so the comparable-scale gate can never pass for it, and a part corrupted to exceed its total in bulk would otherwise be stated by no pass, because the identity scan states a decomposition only when it holds on at least 99.9% of rows. When one direction's violations number at least 20 and between 5% and 40% of the evaluated rows and one column is a component of the other, the statement fires without the scale gate and without the asymmetry term — the whole exceeding the part on the remaining rows is what a bound looks like, not a competing order. The component relation is established by identity (`part_whole_basis: identity`): the whole minus the part equals a sum of one to three other columns, within the identity tolerance, on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows — judged on the held rows because the corrupted rows are the ones where the decomposition breaks; or by containment (`part_whole_basis: containment`): both columns respect the shared zero floor on at least 99% of the evaluated rows, and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it, but on fewer than half of them — the whole is sometimes just the part, and columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole. Where the decomposition verifies on at least 99.9% of all evaluated rows, the identity statement is the one that fires and this statement stays silent for the pair: the same failure is not stated twice |
+| `dependencies` | Type `model_failure` | Where a cross-fitted model of the designated target fails, from the `model_failures` detector (target-gated): the house GBM is cross-fitted in 5 folds so every residual is out-of-fold, and the slice search (the slice-shift search's condition space, split-sample confirmation and Benjamini–Hochberg control, unchanged) runs over the residuals. Two forms: `bias` — the slice's mean residual differs from the model's overall mean residual by at least half the overall mean absolute error, confirmed on the held-out half in the same direction; for a binary target the claim states the slice's event rate and mean predicted probability against the overall pair. `accuracy` — the slice's mean absolute error reaches 1.5 times the model's overall mean absolute error, confirmed at a ratio of at least 1.25 with at least half the excess retained. Every claim names the slice, its size, its error and the model's overall error. When the model's pooled out-of-fold fit is at or near chance (R² ≤ 0.01 numeric, AUC ≤ 0.55 binary) the pass records that in coverage and states nothing; categorical targets with more than two classes are not evaluated |
 | `dependencies` | Type `predictive` | Drivers support prediction of a target under recorded validation: the claim names the driver shortlist with each driver's share of the model's split gain, and the evidence records every input the model used |
 | `conditional_rules` | Type `if_then`; structured conditions and outcome | A conditional outcome, qualified by observed frequency and baseline |
 | `associations` | Type `statistical` | Statistical association without claiming a particular mapping |
@@ -187,6 +188,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `order_constraint` | columns | relation | exact, or approximate when the order has violations | unconditional | atemporal | — | regularity |
 | `order_violation` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
+| `model_failure` | columns | relation | model_based | segment_conditioned | atemporal | — | regularity |
 | `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
 | `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
 | `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
@@ -724,6 +726,73 @@ the split. The slice definition is carried as structured
 predicates in the statement definition, so the slice itself can
 be recounted on any row set directly.
 
+### Model failure slices
+
+A model failure (`dependencies` category, type `model_failure`)
+states that a model of the designated target fails inside one
+searched subset of the rows. The group contrast compares a subset
+the caller declared, and the slice shift searches for a subset
+where a column's distribution differs; this pass searches for a
+subset where a fitted model's errors are one-sided or large. The
+`model_failures` detector is target-gated: it runs only when a
+target is designated.
+
+The model is the house GBM — the predictability screen's model,
+with the same configuration — fitted by cross-fitting in 5
+folds, so every modelled row's residual is out-of-fold: the
+row's prediction comes from the fold model that held the row
+out. In-sample residuals are never used; they shrink where the
+model overfits and would hide or manufacture failure slices. If
+the cross-fitted model's pooled out-of-fold fit is at or near
+chance — R² at or below 0.01 for a numeric target, AUC at or
+below 0.55 for a binary target — the pass records that in its
+coverage entry and states nothing: where the model fails is not
+a meaningful question for a model that does not fit anywhere.
+Categorical targets with more than two classes are not evaluated
+(the coverage entry says so); numeric and binary targets are.
+
+The search space, the sample split, the confirmation and the
+multiplicity control are the slice search's, unchanged.
+Conditions are levels of bounded-cardinality categorical
+columns and thresholds on numeric columns (the value above the
+column's 75th or 90th percentile), at most 12 columns of each
+kind; a slice is one condition or a conjunction of two, and
+never conditions on the target column. A slice needs at least
+max(50, 1% of the modelled rows) rows on the full residual set
+and at least 25 rows in each half of the deterministic split.
+Two failure forms are searched. A slice becomes a bias candidate
+when its search-half mean residual is at least 0.5 × the model's
+overall mean absolute error away from the overall mean residual,
+and an accuracy candidate when its search-half mean absolute
+error reaches 1.5 × the overall mean absolute error. A candidate
+is confirmed when the same form reappears on the held-out half —
+for bias, the same direction with at least 0.3 × the overall
+mean absolute error and at least half the search-half effect;
+for accuracy, a ratio of at least 1.25 with at least half the
+search-half excess retained — and when its held-out p-value
+(Mann–Whitney, slice against complement, on signed residuals
+for bias and absolute residuals for accuracy) clears
+Benjamini–Hochberg q ≤ 0.05 across the family of candidates
+that cleared the search bars.
+
+The claim states the slice, its size, its error, and the
+model's overall error: for a numeric target, the slice's mean
+residual against the overall mean residual (bias) or its mean
+absolute error against the overall mean absolute error with the
+ratio (accuracy); for a binary target, the slice's event rate
+and mean predicted probability against the overall pair (bias),
+or its mean absolute probability error against the overall one
+(accuracy). Slices with identical row sets are one statement,
+kept at the shallowest description; a deeper slice whose row
+set is at least 90% the same as a shallower kept slice for the
+same form is demoted as a restatement, not removed. Findings
+are ranked by effect size with support, capped at 20 in all
+and at 10 per form. The statistics are measured on the
+cross-fitted residuals and the split, so `report.verify` marks
+these statements `not_checkable`; the slice definition is
+carried as structured predicates, so the slice itself can be
+recounted on any row set directly.
+
 ## Consolidation and selection
 
 1. Enabled detectors produce candidate statements and evidence.
@@ -990,7 +1059,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 31 of the 40 registered detectors. Eight are
+and activation. The default set has 31 of the 41 registered detectors. Eight are
 opt-in and run only when named in `detectors`: `views` (experimental),
 `changeforest`, `slice_shifts`, and `dates`, `pivot`, `period_associations`, `drift`, and
 `granularity` — the 2026-11-02 detector battery measured the last five
@@ -999,7 +1068,7 @@ longer spends time or report space on them; it records each as skipped in
 coverage, naming it opt-in (the benchmark record is
 `docs/benchmarks/2026-11-02-detector-opt-in.md`).
 `expectations` and `group_contrast` are in the default set but hint-gated:
-they engage only on declared hints. `target_shapes` is target-gated: it runs when a target is
+they engage only on declared hints. `target_shapes` and `model_failures` are target-gated: they run when a target is
 designated. Required detectors may execute to supply shared target
 descriptions without contributing their own findings. An empty selection
 still returns column summaries and coverage but no detector findings.
