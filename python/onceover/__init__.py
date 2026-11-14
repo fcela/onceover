@@ -65,8 +65,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (31 of the
-        40 registered detectors). Excluded unless requested: the opt-in
+        Detector IDs to select; None selects the default set (32 of the
+        41 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift", "granularity", "changeforest"
         and "slice_shifts" — each records

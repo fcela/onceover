@@ -1513,6 +1513,35 @@ fn profile_inner(
         }
     }
 
+    // ---------- per-level contrasts ----------
+    // The automatic counterpart of the declared group contrast:
+    // every level of every low-cardinality categorical against
+    // the pooled rest on every numeric measure (location,
+    // scale, constant multiple), plus the calendar parts of
+    // the frame's date axis as derived groupings. Exact
+    // quantile work; runs at every budget like the other
+    // exact scans.
+    if check_deadline(&mut coverage, "level_contrasts") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("level_contrasts") {
+        let axis_ticks = crate::frame::axis_ticks_micros(&table, &frame);
+        let axis_name = frame.info.axis.as_ref().map(|a| a.name.as_str());
+        let input = onceover_mines::LevelContrastInput {
+            axis_name,
+            axis_ticks: axis_ticks.as_deref(),
+        };
+        let out = onceover_mines::profile_level_contrasts(&table, &input);
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "level_contrasts".into(),
+            PassInfo::ran(out.detail),
+        );
+        findings.extend(out.findings);
+    }
+
     // ---------- model-based passes (standard / deep) ----------
     if cfg.budget != Budget::Quick {
         if check_deadline(&mut coverage, "predictability_screen") {
@@ -2457,6 +2486,7 @@ fn profile_inner(
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
+                "level_contrasts"=>"rows missing the grouping value or the measure are excluded from that pair's comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "changeforest"=>"rows missing the axis value or any measure value are excluded",
                 "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",

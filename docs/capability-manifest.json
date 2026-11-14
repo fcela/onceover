@@ -173,6 +173,14 @@
    "activation": "hint_gated"
   },
   {
+   "id": "level_contrasts",
+   "categories": [
+    "associations"
+   ],
+   "requires": [],
+   "activation": "default"
+  },
+  {
    "id": "gbm",
    "categories": [
     "dependencies"

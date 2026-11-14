@@ -159,6 +159,20 @@ pub enum Pattern {
     /// of the stratifier's mix; the conditioned statement is
     /// the fact about the pair.
     ConditionedAssociation,
+    /// One level of a categorical column against the pooled rest
+    /// on a numeric measure: the level's median and interquartile
+    /// range against the rest's, stated when the location shift
+    /// clears a stated fraction of the pooled spread or the IQR
+    /// ratio clears the scale bar (forms `location`, `scale`,
+    /// `location_scale`), or when the level's values sit at a
+    /// near-constant multiple of the rest's distribution (form
+    /// `constant_multiple` — the unit-error shape). The grouping
+    /// can also be a calendar part of the table's date axis
+    /// (day of week, month of year, hour of day). Where the
+    /// group contrast compares one declared subset with the
+    /// rest, this pattern is the automatic scan: every level of
+    /// every low-cardinality categorical, found not declared.
+    LevelContrast,
     /// A conjunction of conditions (a slice), searched rather than
     /// declared, under which a target column's distribution differs
     /// from the table-wide one: a tail share, a median shift, or a
@@ -205,7 +219,8 @@ impl Pattern {
             Self::StatisticalAssociation
             | Self::PeriodAssociation
             | Self::GroupContrast
-            | Self::ConditionedAssociation => Category::Associations,
+            | Self::ConditionedAssociation
+            | Self::LevelContrast => Category::Associations,
             Self::SliceShift => Category::Associations,
             Self::Gap => Category::Gaps,
             Self::SequenceGap
@@ -271,6 +286,7 @@ impl Pattern {
             Self::PeriodAssociation => "period_association",
             Self::GroupContrast => "group_contrast",
             Self::ConditionedAssociation => "conditioned_association",
+            Self::LevelContrast => "level_contrast",
             Self::SliceShift => "slice_shift",
             Self::Gap => "gap",
             Self::SequenceGap => "sequence_gap",
@@ -923,6 +939,15 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::LevelContrast => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::Gap | Pattern::SequenceGap => (
                 Sc::Sequence,
                 O::Structure,
@@ -1178,6 +1203,7 @@ impl Facets {
             (Category::Associations, Some("conditioned_association")) => {
                 Pattern::ConditionedAssociation
             }
+            (Category::Associations, Some("level_contrast")) => Pattern::LevelContrast,
             (Category::Associations, Some("slice_shift")) => Pattern::SliceShift,
             (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,
             (Category::Associations, _) => Pattern::StatisticalAssociation,
@@ -1839,6 +1865,24 @@ impl Finding {
                     json!("rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive"),
                 );
             }
+            Pattern::LevelContrast => {
+                // The level is part of the statement's identity:
+                // naming it in the definition keeps each level's
+                // contrast its own statement (the ledger merges
+                // findings that share a canonical key).
+                if let Some(f) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(f.to_owned());
+                }
+                for k in ["level", "calendar_part", "axis"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the grouping value or the measure are excluded from that pair's comparison"),
+                );
+            }
             _ => {}
         }
         let basis = if matches!(pattern, Pattern::CategoricalRole | Pattern::IdentifierRole) {
@@ -1995,12 +2039,13 @@ impl Finding {
                             | "group_contrast"
                             | "conditioned_association"
                             | "slice_shift"
-                            | "axis_shape",
+                            | "axis_shape"
+                            | "level_contrast",
                     )
                 ) =>
             {
                 return Err(
-                    "association type must be statistical, period_association, group_contrast, conditioned_association, slice_shift, or axis_shape"
+                    "association type must be statistical, period_association, group_contrast, conditioned_association, slice_shift, axis_shape, or level_contrast"
                         .into(),
                 );
             }

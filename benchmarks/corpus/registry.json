@@ -806,14 +806,24 @@
     {
      "kind": "finding",
      "category": "duplicates",
-     "expect": "found",
-     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for."
+     "expect": "known_miss",
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged — verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report."
     },
     {
      "kind": "documented_case",
      "ref": "Restatements (EDGAR-wide behavior)",
-     "status": "found",
-     "note": "Found since 2026-11-05: 1,970 rows repeat another row on every column except value."
+     "status": "missed",
+     "note": "Found since 2026-11-05: 1,970 rows repeat another row on every column except value. Status changed 2026-11-14 (issue #275): the near-duplicate statement is displaced from the capped report by the level_contrasts statements; the restatement structure itself is unchanged in the data (1,970 rows, verified 2026-11-14)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "level_contrast",
+     "expect": "found",
+     "columns_any": [
+      "value"
+     ],
+     "note": "Added 2026-11-14 with the detector's first corpus expectations (issue #275): per-level contrasts on value — JPMorgan Chase (cik 19617) median 391,154,000,000 against 14,042,000,000 pooled, and December period_end values 16.49x as variable as a typical month — verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
     },
     {
      "kind": "finding",
@@ -1461,9 +1471,19 @@
      "note": "17 exact duplicate rows in the first run (distinct from the duplicate timestamps below, which no finding reports)."
     },
     {
+     "kind": "finding",
+     "category": "associations",
+     "type": "level_contrast",
+     "expect": "found",
+     "columns_any": [
+      "traffic_volume"
+     ],
+     "note": "Added 2026-11-14 with the detector's first corpus expectations (issue #275): hour-of-day contrasts on traffic_volume from the date_time axis (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
+    },
+    {
      "kind": "max_findings",
-     "value": 70,
-     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour. Raised to 70 on 2026-11-06 by six functional statements on date_time (40,575 distinct values in 48,204 rows), which the dependency screen used to dismiss as near-unique on its 2,048-row sample: the hours recorded twice agree exactly on traffic_volume, holiday and snow_1h, and nearly on temp, rain_1h and clouds_all."
+     "value": 89,
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour. Raised to 70 on 2026-11-06 by six functional statements on date_time (40,575 distinct values in 48,204 rows), which the dependency screen used to dismiss as near-unique on its 2,048-row sample: the hours recorded twice agree exactly on traffic_volume, holiday and snow_1h, and nearly on temp, rain_1h and clouds_all Raised to 89 on 2026-11-14 (issue #275): the level_contrasts detector adds 20 selected statements on this frame — hour-of-day contrasts on traffic_volume (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), weather scale contrasts on rain_1h, clouds_all and temp, and holiday contrasts — spot-verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
     },
     {
      "kind": "documented_case",
