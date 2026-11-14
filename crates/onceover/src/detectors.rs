@@ -110,6 +110,16 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // Hint-gated like expectations: engages only when the
         // caller declares a group contrast in the hints.
         make("group_contrast", vec![Associations], &[], HintGated),
+        // The automatic per-level scan (issue #275): every level
+        // of every low-cardinality categorical against the pooled
+        // rest on every numeric measure — location, scale, and
+        // the constant-multiple form — with rank-sum tests under
+        // one Benjamini-Hochberg family. The declared group
+        // contrast's undeclared counterpart. Its scans are exact
+        // quantile work in the breaks cost class, so it runs in
+        // the default set like the mixed-pair screen whose
+        // scale/shape blindness it covers.
+        make("level_contrasts", vec![Associations], &[], Default),
         make("gbm", vec![Dependencies], &[], Default),
         make("decision_tables", vec![Dependencies], &["gbm"], Default),
         make("prism", vec![ConditionalRules], &["gbm"], Default),
@@ -231,10 +241,10 @@ mod tests {
     #[test]
     fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 40 registered: 31 default (29 Default + hint-gated
+        // 41 registered: 32 default (30 Default + hint-gated
         // expectations and group_contrast), 8 opt-in, 1 target-gated.
-        assert_eq!(builtin_detectors().len(), 40);
-        assert_eq!(active.len(), 31);
+        assert_eq!(builtin_detectors().len(), 41);
+        assert_eq!(active.len(), 32);
         for id in [
             "views",
             "dates",
@@ -268,7 +278,7 @@ mod tests {
         for d in builtin_detectors() {
             *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&29));
+        assert_eq!(counts.get("Default"), Some(&30));
         assert_eq!(counts.get("OptIn"), Some(&8));
         assert_eq!(counts.get("HintGated"), Some(&2));
         assert_eq!(counts.get("TargetGated"), Some(&1));

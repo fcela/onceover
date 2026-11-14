@@ -44,6 +44,7 @@ used by package version 0.1.3.
 | `associations` | Type `group_contrast`; group column and value, group and rest row counts in the evidence | A declared subset of the rows against the rest of the table on one column, from the `group_contrast` detector (hint-gated on `hints.contrast`): means and medians with Cohen's d for numeric columns, level shares for categorical columns, the true share for boolean columns; reported only at the stated bars (below, "Group contrast") |
 | `associations` | Type `conditioned_association`; the pair, the stratifier, the pooled and within-level effects, and the `simpson` payload in the evidence | A pooled association that does not survive conditioning on a categorical column, from the Simpson check in the `numeric_dependence` and `association_rules` screens: form `reversal` when the direction reverses within every usable level of the stratifier, form `vanishing` when the association is absent within every usable level and the combined within effect is certified near zero (below, "Tested associations") |
 | `associations` | Type `slice_shift`; the slice's conditions as structured predicates in the statement definition, the form (`tail_shift`, `median_shift`, or `level_share`) in the statement form, search-half, held-out-half and full-sample statistics in the evidence | A searched subset of the rows — a conjunction of categorical levels and numeric thresholds — under which a target column's distribution differs from the table-wide one, from the opt-in `slice_shifts` detector: the share of the slice's rows above the target's 95th percentile, or the slice median's shift in IQR units, for numeric targets; a level's share within the slice against its table-wide rate, for categorical targets. A slice is stated only when the shift clears the search bars on one half of a deterministic split of the shared sample and reappears at the confirmation bars on the held-out half, with Benjamini–Hochberg q ≤ 0.05 over the confirmation family; slices with identical row sets are stated once, and the coverage entry states how many slice × target candidates were searched (below, "Slice shifts") |
+| `associations` | Type `level_contrast`; grouping column, level, measure column, form, level and pooled-rest medians and IQRs, the shift in pooled IQRs, the IQR ratio, rank-sum p- and q-values in the evidence | One level of a low-cardinality categorical against the pooled rest of the rows on one numeric measure, from the `level_contrasts` detector: form `location` when the level's median clears 0.5 pooled IQRs from the rest's, form `scale` when its IQR ratio clears 1.5 or 2/3 with medians in agreement, form `location_scale` when both clear, and form `constant_multiple` when the level's nine decile quotients against the rest concentrate at one quotient at least 1.25x from 1 — the unit-error shape. Calendar parts of the frame's date axis (day of week, month of year, hour of day) enter as groupings of the same scan (below, "Per-level contrasts") |
 | `associations` | Type `axis_shape`; `shape_form`, axis and response, Spearman rho and isotonic improvement in the evidence; form `saturating` adds the located knee, the two segment slopes and their ratio, and the bootstrap stability shares | The shape of a numeric response along an ordered axis, from the `ordered_axis` detector: `monotone` when the Spearman correlation and the isotonic fit over 20 equal-frequency bin medians both clear their bars, `monotone_with_reversal_blocks` when named adjacent bin-median moves against the trend exceed a quarter of the response's interquartile range (the blocks are the `reversal_blocks` payload), `non_monotone_reversal` when a block exceeds half the interquartile range, and `saturating` (or the weaker `rises_then_flattens` with no located knee) when a continuous two-segment fit on the bin medians bends to a post-knee slope at most 0.35 of the pre-knee slope and the bend is stable under row bootstrap. Any numeric column can be the axis; the statement is about the typical response, not a fitted model of individual rows |
 
 | `gaps` | Domain, reference, interval bounds or absent values | Absences relative to an expected sequence or calendar; the `series` detector checks the time axis against the grid of its modal step, in the default set, while the opt-in `dates` detector also checks other date columns; also type `unexamined_columns` from the views pass: the columns that pass did not examine — past its column cap, with the kept set chosen by the pairwise-dependence pre-screen, or left outside the search when its work budget ran out — with the reason, the cap, and the eligible and examined counts in the evidence, so a reader of the findings alone can tell that part of the table went unexamined (the views coverage entry names the same columns under the cap wording, and names any columns dropped at extraction separately, under their own wording and count); also type `unscanned_series` from the breaks pass: the series that pass prescored over their full span but did not scan in depth past its series cap, with the reason, the cap, the eligible and examined counts, and each series' prescore in the evidence, so a reader of the findings alone can tell which series were not scanned in depth (the breaks coverage entry names the same series); also type `partial_period` from the `panel_coverage` detector: an observed period on the frame's time axis whose volume falls far below the typical period's — below 75% of the median period's row count and short by at least 4 rows, or below 75% of the median entity count and short by at least 2 entities, where the entity axis is the grain's non-axis factors or the frame's single identifier column, or a principal measure's total below 75% of its median period total, where the principal measures are the frame model's measure-role columns that extract to a numeric kind, ranked by non-null observation count and capped at 8 (a measure whose median total is not positive, or that carries negative values, is totalled but never flags: its sum is a level, not a volume) — stated with its position (first, last, or interior), its own counts, the typical counts, and the full per-period table in the evidence, the table carrying each principal measure's total per period and the evidence each measure's own total, typical total, and share of typical. A period is stated once however many of its volumes fall short; a shortfall on a second volume is a clause in the same statement, not a second statement. A period with no rows at all is a gap, not a partial period, and is not reported here; when the caller declares the same columns as `dimensions` hints, the declared panel check owns entity completeness and this statement reports row volume only. Each kind of shortfall (the row and entity counts, and the measure volume) singles out periods only when the periods short on that kind make up at most a quarter of all periods; past that share the median names no typical period for that kind and the coverage entry reports its spread instead, the kinds are judged separately so one kind's wide spread does not silence the other kind's statements, and a stated period carries clauses only for the kinds that were admitted |
@@ -193,6 +194,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `group_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `conditioned_association` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `slice_shift` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
+| `level_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
 | `axis_shape` | columns | relation | approximate | unconditional | ordered | — | regularity |
 
 | `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
@@ -647,6 +649,83 @@ is never contrasted, and a run that declares no contrast is
 unchanged: the contrast adds findings only when requested, and
 requesting one does not change any other finding.
 
+### Per-level contrasts
+
+A per-level contrast (`associations` category, type
+`level_contrast`) is the group contrast's automatic
+counterpart: no group is declared. The `level_contrasts`
+detector scans every low-cardinality categorical column (at
+most 25 distinct values) against every numeric measure and
+compares each level with the pooled rest of the rows — the
+comparison the pair screens cannot state, because they test
+level means and are blind to a level that is off in scale or
+shape while its mean is unremarkable. A level and its rest
+each need at least 30 rows with both values present, and a
+pair needs at least 3 distinct values overall.
+
+Three statement forms carry the measured numbers. Form
+`location`: the level's median differs from the rest's median
+by at least 0.5 pooled IQRs (the IQR of the pair's rows
+pooled), backed by a Mann–Whitney rank-sum test. Form
+`scale`: the level's IQR is at least 1.5 times the median
+IQR of the other levels, or at most two thirds of it, backed
+by a rank-sum test on absolute deviations from each row's
+own level median; when the medians also clear the location
+bar the form is `location_scale`. The scale comparison is
+made against the other levels' typical spread, not the
+pooled rest's IQR: the pooled rest is a mixture, and a
+mixture's IQR inflates whenever one level is shifted, which
+would make every other level look narrow by comparison. Form `constant_multiple`: the level's nine
+decile quotients against the rest's deciles concentrate at
+one quotient at least 1.25× from 1 (quotient coefficient of
+variation at most 0.025, largest decile deviation at most
+0.06) — the shape of a unit error, where the quotient itself
+is the actionable fact; a multiple is stated instead of the
+location and scale forms for that level, only when the
+rest's deciles sit on one side of zero, and only when the
+level's IQR ratio moves with the quotient — same direction,
+at least half its size on the log scale. A rescaling scales
+the spread by the same factor as the values; a pure location
+shift on a distribution bounded away from zero also
+concentrates its decile quotients, but leaves the spread
+unchanged, and is stated as a location contrast instead. Location and scale
+p-values across the whole scan form one enumerable family
+(levels × measures × the two tests) and are corrected
+together by Benjamini–Hochberg; a form is stated only when
+its effect bar clears and its q-value is at most 0.05. When
+exactly one level of a grouping clears the location bar, the
+claim adds how far the most-shifted other level sits from
+its own pooled rest.
+
+Two selection rules keep the scan from restating one fact
+as several. A contrast that falls under its bar once the
+pair's most extreme level on that form is set aside is not
+stated: the location shift is recomputed against the rest
+without the most-shifted level, and the IQR ratio against
+the typical level without the widest or narrowest one. With
+the extreme level counted, every other level of a small
+grouping inherits a mirror contrast from it alone; the
+primary level's own statement carries the fact. A grouping with exactly two levels states its contrast
+once, keeping the larger effect — the two levels are each
+other's rest, so a second statement would be the first one
+mirrored.
+
+Calendar parts of the frame's date axis enter the same scan
+as derived groupings: day of week, month of year, and hour of
+day (the last only when the axis carries times of day, not
+bare dates). A calendar level is eligible only when its rows
+span at least two distinct cycles — two different weeks for
+a weekday, two different years for a month, two different
+days for an hour — so a short extract cannot state a
+"weekend" contrast observed once. Findings are ranked by
+effect size and capped at 20, and at most 400 pairs are
+examined; the coverage entry states the groupings and
+measures considered, the pairs examined, the levels tested,
+the size of the Benjamini–Hochberg family, and how many
+findings were reported. The detector is in the default set:
+its scans are exact quantile work in the same cost class as
+the other exact passes, and it runs at every budget.
+
 ### Slice shifts
 
 A slice shift (`associations` category, type `slice_shift`)
@@ -990,7 +1069,7 @@ report = onceover.profile(df, detectors=["prism", "association_rules"], max_rule
 ```
 
 Each registry entry lists its ID, produced categories, resource dependencies,
-and activation. The default set has 31 of the 40 registered detectors. Eight are
+and activation. The default set has 32 of the 41 registered detectors. Eight are
 opt-in and run only when named in `detectors`: `views` (experimental),
 `changeforest`, `slice_shifts`, and `dates`, `pivot`, `period_associations`, `drift`, and
 `granularity` — the 2026-11-02 detector battery measured the last five
