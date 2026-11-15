@@ -538,7 +538,57 @@ fn profile_inner(
                     }));
                 }
                 ev.insert("duplicate_groups".to_string(), json!(groups_json));
-                findings.push(Finding::new(
+                // The support of the compared columns: how many
+                // distinct rows they can form at all, the product of
+                // their distinct counts (a column with missing
+                // values counts one more value for the missing
+                // state). When the table has realised nearly every
+                // combination the support allows, the repeats are
+                // forced by the support itself: three five-level
+                // columns form 125 possible rows, so 5,000 draws
+                // repeat earlier rows whatever the recording
+                // process did. That is a cardinality fact, stated
+                // as concentration, not a duplicate-rows claim.
+                let distinct_rows = table.n - dup.n_redundant;
+                let support: f64 = comparable
+                    .iter()
+                    .map(|&c| {
+                        (info[c].distinct + usize::from(info[c].null_count > 0)).max(1) as f64
+                    })
+                    .product();
+                ev.insert("distinct_rows".to_string(), json!(distinct_rows));
+                ev.insert(
+                    "support_size".to_string(),
+                    json!(if support.is_finite() {
+                        support
+                    } else {
+                        f64::MAX
+                    }),
+                );
+                let saturated = table.n >= 100
+                    && comparable.len() >= 2
+                    && support <= table.n as f64
+                    && distinct_rows as f64 >= 0.9 * support;
+                if saturated {
+                    findings.push(Finding::new(
+                        Pattern::ValueConcentration,
+                        BTreeMap::from([("columns".into(), json!(comparable.iter().map(|&c| table.names[c].clone()).collect::<Vec<_>>()))]),
+                        format!(
+                            "the compared columns form only {} distinct rows in {} rows: their {} possible combinations are nearly all realised, so repeated rows are expected from the small support",
+                            distinct_rows, table.n, support as u64
+                        ),
+                        onceover_report::EvidenceBasis::Measured,
+                        0.50,
+                        ev,
+                        Some("repeats are forced by the number of possible rows; read this as a cardinality fact about the compared columns, not as duplicated records".into()),
+                        Method::new(
+                            "row_duplicates",
+                            "support_saturation",
+                            "exact row hashing + verification; support size from the compared columns' distinct counts (onceover v0.1)",
+                        ),
+                    ));
+                } else {
+                    findings.push(Finding::new(
                     Pattern::Duplicates,
                     BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
                     format!(
@@ -555,6 +605,7 @@ fn profile_inner(
                         "exact row hashing + verification (onceover v0.1)",
                     ),
                 ));
+                }
             }
             None => {
                 stamp_insert(
