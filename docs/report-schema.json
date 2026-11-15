@@ -326,7 +326,7 @@
           "$ref": "#/$defs/subject"
         },
         "type": {
-          "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values | predictable_missingness; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows | near_duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation | boundary_mass | content_anomaly; dependencies: functional | predictive | order_constraint | order_violation; conditional_rules: if_then; associations: statistical | period_association | group_contrast | conditioned_association | slice_shift | level_contrast | axis_shape; gaps: gap | sequence_gap | missing_combinations | unexamined_columns | unscanned_series | partial_period; intervals: interval_variation | extreme_value | categorical_outlier | row_inconsistency; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition | series_structure | one_way_flag | entry_block | exit_block | first_activity | slope_break | regime_contrast | spike_contrast.",
+          "description": "Subtype within the category; always present. Values by category: missingness: missing_values | sentinel_values | predictable_missingness; concentration: value_concentration | hotspot (plus modal_share | spike_cells from the views pass); column_roles: categorical_role | identifier_role | duplicate_encoding | long_format; uniqueness: uniqueness; duplicates: duplicate_rows | near_duplicate_rows; formats: format_variation | heaping | digit_preference | benford_deviation | boundary_mass | content_anomaly; dependencies: functional | predictive | order_constraint | order_violation | model_failure | leakage_signature; conditional_rules: if_then; associations: statistical | period_association | group_contrast | conditioned_association | slice_shift | level_contrast | axis_shape; gaps: gap | sequence_gap | missing_combinations | unexamined_columns | unscanned_series | partial_period; intervals: interval_variation | extreme_value | categorical_outlier | row_inconsistency; ordering: column_ordering; changes: residual_level | level_shift | trend_change | variance_change | transient_excursion | step_discontinuity | distribution_shift | ordered_partition | series_structure | one_way_flag | entry_block | exit_block | first_activity | slope_break | regime_contrast | spike_contrast.",
           "type": "string"
         }
       },
@@ -1134,7 +1134,8 @@
           "enum": [
             "time",
             "cycle",
-            "dimension"
+            "dimension",
+            "binned"
           ]
         },
         "label": {
@@ -1161,6 +1162,12 @@
         },
         "statement": {
           "type": "string"
+        },
+        "rates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameStructureRate"
+          }
         }
       },
       "required": [
@@ -1288,6 +1295,43 @@
         "method",
         "seed",
         "cap"
+      ]
+    },
+    "frameStructureRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "response": {
+          "type": "string"
+        },
+        "on_label": {
+          "type": "string"
+        },
+        "base_rate": {
+          "type": "number"
+        },
+        "peak_group": {
+          "type": "string"
+        },
+        "peak_rate": {
+          "type": "number"
+        },
+        "peak_support": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lift": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "response",
+        "on_label",
+        "base_rate",
+        "peak_group",
+        "peak_rate",
+        "peak_support",
+        "lift"
       ]
     }
   },

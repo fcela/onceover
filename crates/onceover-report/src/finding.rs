@@ -73,6 +73,14 @@ pub enum Pattern {
     ArithmeticIdentity,
     PredictiveDependency,
     PiecewiseDependency,
+    /// One column that on its own nearly determines a designated
+    /// target: its chance-corrected share of the target's entropy
+    /// (categorical target) or its directed dependence on the
+    /// target (numeric target) clears a high bar and dwarfs every
+    /// other column, or it determines the target exactly on the
+    /// evaluated rows. The shape of a column derived from the
+    /// outcome or recorded after it.
+    LeakageSignature,
     OrderConstraint,
     /// A pair order that fails on a substantial, one-sided share of
     /// rows: too many violations for the near-universal order
@@ -80,6 +88,13 @@ pub enum Pattern {
     /// crossing. The complementary statement to OrderConstraint
     /// from the same scan.
     OrderViolation,
+    /// A slice of rows where a cross-fitted model of the designated
+    /// target fails: its out-of-fold errors inside the slice are
+    /// one-sided (the bias form) or materially larger than the
+    /// model's overall error (the accuracy form). Stated by the
+    /// target-gated model-failure pass, against the model's overall
+    /// error as the baseline.
+    ModelFailure,
     ConditionalRule,
     StatisticalAssociation,
     PeriodAssociation,
@@ -214,7 +229,9 @@ impl Pattern {
             | Self::PredictiveDependency
             | Self::PiecewiseDependency
             | Self::OrderConstraint
-            | Self::OrderViolation => Category::Dependencies,
+            | Self::OrderViolation
+            | Self::ModelFailure
+            | Self::LeakageSignature => Category::Dependencies,
             Self::ConditionalRule => Category::ConditionalRules,
             Self::StatisticalAssociation
             | Self::PeriodAssociation
@@ -279,8 +296,10 @@ impl Pattern {
                 "functional"
             }
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
+            Self::LeakageSignature => "leakage_signature",
             Self::OrderConstraint => "order_constraint",
             Self::OrderViolation => "order_violation",
+            Self::ModelFailure => "model_failure",
             Self::ConditionalRule => "if_then",
             Self::StatisticalAssociation => "statistical",
             Self::PeriodAssociation => "period_association",
@@ -885,7 +904,25 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::LeakageSignature => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::PiecewiseDependency => (
+                Sc::Columns,
+                O::Relation,
+                E::ModelBased,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::ModelFailure => (
                 Sc::Columns,
                 O::Relation,
                 E::ModelBased,
@@ -1185,6 +1222,8 @@ impl Facets {
             (Category::Formats, _) => Pattern::FormatVariation,
             (Category::Dependencies, Some("order_constraint")) => Pattern::OrderConstraint,
             (Category::Dependencies, Some("order_violation")) => Pattern::OrderViolation,
+            (Category::Dependencies, Some("model_failure")) => Pattern::ModelFailure,
+            (Category::Dependencies, Some("leakage_signature")) => Pattern::LeakageSignature,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -1883,6 +1922,41 @@ impl Finding {
                     json!("rows missing the grouping value or the measure are excluded from that pair's comparison"),
                 );
             }
+            Pattern::ModelFailure => {
+                if let Some(v) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(v.to_owned());
+                }
+                if let Some(conds) = raw.get("conditions").and_then(Value::as_array) {
+                    for c in conds {
+                        let (Some(column), Some(op), Some(value)) = (
+                            c.get("column").and_then(Value::as_str),
+                            c.get("op").and_then(Value::as_str),
+                            c.get("value"),
+                        ) else {
+                            continue;
+                        };
+                        let operator = match op {
+                            "eq" => Operator::Eq,
+                            "gt" => Operator::Gt,
+                            _ => continue,
+                        };
+                        let mut p = Predicate {
+                            column: column.to_owned(),
+                            operator,
+                            value: value.clone(),
+                            transform: None,
+                        };
+                        p.canonicalize();
+                        spec.conditions.push(p);
+                    }
+                    spec.conditions
+                        .sort_by_key(|p| serde_json::to_string(p).unwrap());
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the target are excluded from fitting and from the search; rows missing a condition value are outside the slice"),
+                );
+            }
             _ => {}
         }
         let basis = if matches!(pattern, Pattern::CategoricalRole | Pattern::IdentifierRole) {
@@ -1986,10 +2060,17 @@ impl Finding {
             Category::Dependencies => {
                 if !matches!(
                     self.finding_type.as_deref(),
-                    Some("functional" | "predictive" | "order_constraint" | "order_violation")
+                    Some(
+                        "functional"
+                            | "predictive"
+                            | "order_constraint"
+                            | "order_violation"
+                            | "model_failure"
+                            | "leakage_signature",
+                    )
                 ) {
                     return Err(
-                        "dependency type must be functional, predictive, order_constraint, or order_violation"
+                        "dependency type must be functional, predictive, order_constraint, order_violation, model_failure, or leakage_signature"
                             .into(),
                     );
                 }

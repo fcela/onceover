@@ -1154,6 +1154,46 @@ fn identity_family_groups_rotations_and_fds() {
 }
 
 #[test]
+fn family_members_ranked_past_the_cap_still_group() {
+    // The identity leads and is selected first; unrelated
+    // statements fill the remaining slots; the family's FD
+    // members rank below all of them. Grouped members spend no
+    // selection slot, so they are grouped even though the cap
+    // is already full when the walk reaches them. (Regression:
+    // the walk used to stop at the cap, and the members
+    // vanished from the report while their lead stood in it —
+    // the bike-sharing corpus family's three directions under
+    // its selected identity lead.)
+    let policy = SelectionPolicy {
+        max_findings: 3,
+        ..Default::default()
+    };
+    let mut findings = vec![identity("sum", &["casual", "registered"], "cnt", 0.99)];
+    for i in 0..4 {
+        let lhs = format!("f{i}");
+        let rhs = format!("g{i}");
+        findings.push(exact_fd(&[&lhs], &rhs, 0.95 - i as f64 * 0.01));
+    }
+    findings.push(exact_fd(&["casual", "registered"], "cnt", 0.60));
+    findings.push(exact_fd(&["cnt", "registered"], "casual", 0.59));
+    findings.push(exact_fd(&["cnt", "casual"], "registered", 0.58));
+    let outcome = select_findings_counted(findings, &policy);
+    assert_eq!(outcome.selected.len(), 3);
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.grouped.len(), 3);
+    let lead = outcome
+        .selected
+        .iter()
+        .find(|f| f.specification.form.as_deref() == Some("sum"))
+        .expect("the identity leads and is selected");
+    assert_eq!(lead.grouped_members.len(), 3);
+    for member in &outcome.grouped {
+        assert_eq!(member.grouped_under.as_deref(), Some(lead.id.as_str()));
+        assert!(lead.grouped_members.contains(&member.id));
+    }
+}
+
+#[test]
 fn linear_combination_rotations_group_with_the_sum() {
     // The scan reports the sum in one direction and fitted linear
     // combinations in the rotated directions (b = -a + c,
@@ -1357,6 +1397,66 @@ fn selection_orders_by_report_band_before_score() {
             Category::Changes,      // band 4: deviations, despite the top detector score
         ]
     );
+}
+
+#[test]
+fn duplicate_that_barely_beats_chance_leaves_band_1() {
+    // 6,322 observed against 812.8 expected by chance (7.8x, and
+    // the baseline is 1.7% of the table): the statement is not
+    // worth band-1 placement.
+    let barely = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["fnlwgt"]))]),
+        "6322 rows repeat another row on every column except fnlwgt".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(48842)),
+            ("near_duplicates".into(), json!(6322)),
+            ("expected_by_chance".into(), json!(812.8)),
+            ("over_chance".into(), json!(7.8)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(barely.category, Category::Duplicates);
+    assert_eq!(report_band(&barely), 3);
+    // The same count against a trivial baseline keeps band 1.
+    let clear = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["price"]))]),
+        "199 rows repeat another row on every column except price".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(53940)),
+            ("near_duplicates".into(), json!(199)),
+            ("expected_by_chance".into(), json!(0.012)),
+            ("over_chance".into(), json!(199.0)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(report_band(&clear), 1);
+    // The issue's measured Titanic statement: 242 observed against
+    // 17.7 expected (13.7x, and the baseline is 2% of the table)
+    // also leaves band 1.
+    let titanic = Finding::new(
+        Pattern::NearDuplicateRows,
+        BTreeMap::from([("columns".into(), json!(["age"]))]),
+        "242 rows repeat another row on every column except age".into(),
+        EvidenceBasis::Measured,
+        0.7,
+        BTreeMap::from([
+            ("n".into(), json!(891)),
+            ("near_duplicates".into(), json!(242)),
+            ("expected_by_chance".into(), json!(17.7)),
+            ("over_chance".into(), json!(13.7)),
+        ]),
+        None,
+        Method::new("row_consistency", "leave_one_column_out_hash", "test"),
+    );
+    assert_eq!(report_band(&titanic), 3);
 }
 
 #[test]

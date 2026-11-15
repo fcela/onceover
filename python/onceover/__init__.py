@@ -66,7 +66,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
     detectors : list[str], optional
         Detector IDs to select; None selects the default set (32 of the
-        41 registered detectors). Excluded unless requested: the opt-in
+        43 registered detectors). Excluded unless requested: the opt-in
         detectors "views" (experimental), "dates", "pivot",
         "period_associations", "drift", "granularity", "changeforest"
         and "slice_shifts" — each records
@@ -1294,4 +1294,16 @@ class ProfileReport:
         return self._native.__repr__()
 
     def _repr_markdown_(self) -> str:
-        return self._native.to_markdown()
+        # The notebook display is the digest, not the full report:
+        # a full markdown report runs to tens of thousands of
+        # characters on a finding-rich table, which floods the cell
+        # output. The digest is budgeted for exactly this surface.
+        # The footer names the full surfaces and states no omitted
+        # count: the digest rolls findings up into groups, so a
+        # count of rendered findings is not defined by its text.
+        return (
+            self.to_digest()
+            + "\nFull report: `report.to_markdown()`; a larger "
+            "digest: `report.to_digest(n)`; a subset of findings: "
+            "`report.select(...)`.\n"
+        )

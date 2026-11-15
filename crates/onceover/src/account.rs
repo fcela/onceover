@@ -21,12 +21,30 @@
 //!
 //! The dominant structure: candidate groupings — the time axis
 //! itself, the axis's calendar cycles (month of year, day of week,
-//! hour of day), and each dimension column — are scored by the
-//! share of each measure's variance that sits between groups
-//! (eta-squared). The strongest groupings are stated with their
-//! peak. Nothing is stated below a 0.10 share: a frame with no
-//! organising grouping gets no dominant-structure line rather than
-//! a dressed-up weak one.
+//! hour of day), each dimension column, and each continuous
+//! measure binned into quantile bins — are scored by the share of
+//! each response's variance that sits between groups
+//! (eta-squared). The responses are the measures plus every
+//! two-level column: a flag, or a dimension with exactly two
+//! levels, is measured as the rate of its on state (the higher
+//! level in sorted order), and a grouping that organises a binary
+//! response states the peak group's rate, its lift over the base
+//! rate, and its support alongside the variance share. Duplicate
+//! and rollup encodings among the candidate groupings are
+//! collapsed before scoring, so two encodings of one grouping
+//! never occupy both account slots. Two vacuity guards keep the
+//! account from stating constructions as structure: a grouping
+//! whose two groups restate a binary response under another
+//! column's encoding is not used as a grouping, and a grouping
+//! never claims a response it determines exactly — constant
+//! within every group — since that share is 1 by construction.
+//! A column named as a weight is
+//! not a measure for the account. The strongest groupings are
+//! stated with their peak, subject to a materiality bar: a peak
+//! whose group-mean spread is below a tenth of the measure's own
+//! range is not stated. Nothing is stated below a 0.10 share: a
+//! frame with no organising grouping gets no dominant-structure
+//! line rather than a dressed-up weak one.
 //!
 //! Restatement demotion: findings whose subject is contained in
 //! the calendar family (the axis, its parts, and every column the
@@ -44,7 +62,7 @@ use onceover_deps::fd::DepsOutcome;
 use onceover_deps::hashutil;
 use onceover_report::{
     round4, EvidenceBasis, Finding, FrameDominant, FrameGrain, FrameGrainFactor, FrameNearKey,
-    FrameStructurePeak, FrameStructureShare, Method, Pattern, Scope,
+    FrameStructurePeak, FrameStructureRate, FrameStructureShare, Method, Pattern, Scope,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -69,6 +87,40 @@ const GRAIN_VERIFY_MAX_ROWS: usize = 2_000_000;
 /// measure's variance to be stated at all; up to two groupings are
 /// stated, strongest first.
 const DOMINANT_MIN_SHARE: f64 = 0.10;
+/// Materiality bar for a rendered peak: the spread between the
+/// highest and lowest group means must reach this fraction of the
+/// measure's own range (maximum minus minimum), or the peak is
+/// not stated as a headline claim.
+const PEAK_MATERIALITY_FRACTION: f64 = 0.10;
+/// A binary rate contrast is stated only when the peak group's
+/// rate exceeds the lowest eligible group's rate by at least this
+/// many rate points.
+const RATE_MIN_CONTRAST: f64 = 0.10;
+/// A group needs at least this many rows carrying the response
+/// before its rate can be the stated peak rate.
+const RATE_PEAK_MIN_SUPPORT: usize = 20;
+
+/// Whether a column name marks it as a weight (a sampling or case
+/// weight, not a measurement of the row): a whole name token of
+/// `weight` / `weights` / `wt`, or the census `fnlwgt` spelling.
+pub(crate) fn weight_like_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if lower == "fnlwgt" {
+        return true;
+    }
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|t| matches!(t, "weight" | "weights" | "wt"))
+}
+
+fn fmt_pct(x: f64) -> String {
+    let p = x * 100.0;
+    if (p - p.round()).abs() < 0.05 {
+        format!("{}", p.round() as i64)
+    } else {
+        format!("{p:.1}")
+    }
+}
 
 fn fmt_int(n: usize) -> String {
     let s = n.to_string();
@@ -184,7 +236,7 @@ pub fn compute_account(
 ) -> Account {
     let ticks = axis_ticks_micros(table, frame);
     let (grain, findings, replaced, unresolved) = compute_grain(table, frame, facts, deps, &ticks);
-    let dominant = dominant_structure(table, frame, &ticks);
+    let dominant = dominant_structure(table, frame, facts, &ticks);
     Account {
         grain,
         dominant,
@@ -486,6 +538,10 @@ struct Grouping {
     peak_labels: Option<BTreeMap<i64, String>>,
     /// Peak-group label from the key, for calendar groupings.
     peak_label_fn: Option<fn(i64) -> String>,
+    /// The source column of a categorical grouping (a dimension
+    /// column, or the measure a binned grouping bins); None for
+    /// the time and cycle groupings.
+    source: Option<usize>,
 }
 
 fn month_name(m: i64) -> String {
@@ -536,9 +592,250 @@ fn time_peak_label(day_aligned: bool, all_month_starts: bool, key: i64) -> Strin
     dateutil::iso_datetime(key)
 }
 
+/// One two-level response: a flag column, or a column with
+/// exactly two distinct levels, measured as the rate of its on
+/// state. The on state is the higher level in sorted order (the
+/// affirmative label for labelled outcomes: "yes" over "no",
+/// ">50K" over "<=50K", 1 over 0, true over false).
+struct BinaryResponse {
+    col: usize,
+    name: String,
+    on_label: String,
+    values: Vec<Option<f64>>,
+    base_rate: f64,
+}
+
+/// The frame's binary responses, in column order, with duplicate
+/// encodings collapsed: a second column whose on/off pattern is
+/// the same as (or the complement of) an earlier response on
+/// every row is the same outcome under another encoding and is
+/// not measured twice.
+fn binary_responses(
+    table: &TypedTable,
+    frame: &FrameModel,
+    facts: &[CardFacts],
+) -> Vec<BinaryResponse> {
+    let axis_cols: HashSet<String> = axis_subject_columns(frame).into_iter().collect();
+    let mut out: Vec<BinaryResponse> = Vec::new();
+    for (i, role) in frame.roles.iter().enumerate() {
+        let role = role.as_deref();
+        if !matches!(role, Some("flag" | "dimension" | "measure")) {
+            continue;
+        }
+        if axis_cols.contains(&table.names[i]) || weight_like_name(&table.names[i]) {
+            continue;
+        }
+        let (values, on_label): (Vec<Option<f64>>, String) = if role == Some("flag") {
+            let Some(states) = onceover_core::two_valued_flag_states(table, i) else {
+                continue;
+            };
+            let on_label = if matches!(table.cols[i], TypedCol::Bool { .. }) {
+                "true".to_string()
+            } else {
+                "1".to_string()
+            };
+            (
+                states
+                    .iter()
+                    .map(|s| s.map(|b| if b { 1.0 } else { 0.0 }))
+                    .collect(),
+                on_label,
+            )
+        } else if facts[i].distinct == 2 {
+            if table.cols[i].is_numeric() {
+                let mut lo = f64::INFINITY;
+                let mut hi = f64::NEG_INFINITY;
+                for r in 0..table.n {
+                    if let Some(x) = table.cols[i].numeric_at(r) {
+                        if x.is_finite() {
+                            lo = lo.min(x);
+                            hi = hi.max(x);
+                        }
+                    }
+                }
+                if !lo.is_finite() || lo == hi {
+                    continue;
+                }
+                (
+                    (0..table.n)
+                        .map(|r| {
+                            table.cols[i]
+                                .numeric_at(r)
+                                .map(|x| if x == hi { 1.0 } else { 0.0 })
+                        })
+                        .collect(),
+                    fmt_num(hi),
+                )
+            } else {
+                let mut levels: BTreeSet<String> = BTreeSet::new();
+                for r in 0..table.n {
+                    if !table.cols[i].is_null_at(r) {
+                        levels.insert(render_value(&table.cols[i], r));
+                    }
+                }
+                if levels.len() != 2 {
+                    continue;
+                }
+                let on = levels.iter().next_back().expect("two levels").clone();
+                (
+                    (0..table.n)
+                        .map(|r| {
+                            if table.cols[i].is_null_at(r) {
+                                None
+                            } else {
+                                Some(if render_value(&table.cols[i], r) == on {
+                                    1.0
+                                } else {
+                                    0.0
+                                })
+                            }
+                        })
+                        .collect(),
+                    on,
+                )
+            }
+        } else {
+            continue;
+        };
+        let support = values.iter().flatten().count();
+        if support < 30 {
+            continue;
+        }
+        let base_rate = values.iter().flatten().sum::<f64>() / support as f64;
+        if base_rate <= 0.0 || base_rate >= 1.0 {
+            continue;
+        }
+        let duplicate = out.iter().any(|prev: &BinaryResponse| {
+            prev.values.len() == values.len()
+                && prev
+                    .values
+                    .iter()
+                    .zip(values.iter())
+                    .all(|(a, b)| match (a, b) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => a == b || a + b == 1.0,
+                        _ => false,
+                    })
+                && {
+                    // Equal everywhere or complement everywhere;
+                    // a mix is a different pattern.
+                    let mut same = true;
+                    let mut comp = true;
+                    for (a, b) in prev.values.iter().zip(values.iter()) {
+                        if let (Some(a), Some(b)) = (a, b) {
+                            if a != b {
+                                same = false;
+                            }
+                            if a + b != 1.0 {
+                                comp = false;
+                            }
+                        }
+                    }
+                    same || comp
+                }
+        });
+        if duplicate {
+            continue;
+        }
+        out.push(BinaryResponse {
+            col: i,
+            name: table.names[i].clone(),
+            on_label,
+            values,
+            base_rate,
+        });
+    }
+    out
+}
+
+/// Whether partition `a` refines partition `b`: every group of
+/// `a` sits inside a single group of `b`, over the rows where
+/// both groupings are present (at least 30 such rows).
+fn partition_refines(a: &[Option<i64>], b: &[Option<i64>]) -> bool {
+    let mut map: HashMap<i64, i64> = HashMap::new();
+    let mut both = 0usize;
+    for (x, y) in a.iter().zip(b.iter()) {
+        if let (Some(x), Some(y)) = (x, y) {
+            both += 1;
+            match map.get(x) {
+                Some(&yy) if yy != *y => return false,
+                _ => {
+                    map.insert(*x, *y);
+                }
+            }
+        }
+    }
+    both >= 30
+}
+
+/// Collapse duplicate and rollup encodings among the categorical
+/// groupings (dimension columns and binned measures): a grouping
+/// whose partition duplicates, refines, or is refined by an
+/// earlier kept grouping is another encoding of structure already
+/// in the account and is dropped. Time and cycle groupings are
+/// not categorical encodings and are always kept.
+fn collapse_groupings(groupings: Vec<Grouping>) -> Vec<Grouping> {
+    let mut kept: Vec<Grouping> = Vec::new();
+    for g in groupings {
+        if g.source.is_some() {
+            let redundant = kept.iter().filter(|k| k.source.is_some()).any(|k| {
+                partition_refines(&g.keys, &k.keys) || partition_refines(&k.keys, &g.keys)
+            });
+            if redundant {
+                continue;
+            }
+        }
+        kept.push(g);
+    }
+    kept
+}
+
+/// Whether a candidate grouping restates a binary response under
+/// another column's encoding: the grouping has exactly two groups,
+/// and on the rows where both are present the group indicator is
+/// the response's on/off pattern (or its complement) throughout.
+/// Such a grouping is the outcome wearing a grouping's clothes —
+/// grouping by it would state the response's own split as if it
+/// were structure in the frame — so it is not used as a grouping.
+/// A grouping on the response's own column is not covered here;
+/// the scoring loop drops that pair because the grouping
+/// determines the response exactly.
+fn grouping_restates_response(g: &Grouping, binaries: &[BinaryResponse]) -> bool {
+    let Some(source) = g.source else {
+        return false;
+    };
+    if g.kind != "dimension" && g.kind != "binned" {
+        return false;
+    }
+    binaries.iter().any(|b| {
+        if b.col == source {
+            return false;
+        }
+        let mut key_state: HashMap<i64, f64> = HashMap::new();
+        let mut shared = 0usize;
+        for (r, k) in g.keys.iter().enumerate() {
+            let (Some(key), Some(v)) = (k, b.values[r]) else {
+                continue;
+            };
+            shared += 1;
+            match key_state.get(key) {
+                Some(&prev) if prev != v => return false,
+                _ => {
+                    key_state.insert(*key, v);
+                }
+            }
+        }
+        shared >= 30
+            && key_state.len() == 2
+            && key_state.values().any(|&v| v == 1.0)
+            && key_state.values().any(|&v| v == 0.0)
+    })
+}
+
 pub fn dominant_structure(
     table: &TypedTable,
     frame: &FrameModel,
+    facts: &[CardFacts],
     ticks: &Option<Vec<Option<i64>>>,
 ) -> Vec<FrameDominant> {
     let measures: Vec<usize> = frame
@@ -547,10 +844,11 @@ pub fn dominant_structure(
         .enumerate()
         .filter(|(_, r)| r.as_deref() == Some("measure"))
         .map(|(i, _)| i)
-        .filter(|&i| table.cols[i].is_numeric())
+        .filter(|&i| table.cols[i].is_numeric() && !weight_like_name(&table.names[i]))
         .take(24)
         .collect();
-    if measures.is_empty() || table.n < 30 {
+    let binaries = binary_responses(table, frame, facts);
+    if (measures.is_empty() && binaries.is_empty()) || table.n < 30 {
         return Vec::new();
     }
 
@@ -582,6 +880,7 @@ pub fn dominant_structure(
                     keys: ticks.clone(),
                     peak_labels: Some(peak_labels),
                     peak_label_fn: None,
+                    source: None,
                 });
             }
             // A cycle grouping is only meaningful when the axis
@@ -608,6 +907,7 @@ pub fn dominant_structure(
                         .collect(),
                     peak_labels: None,
                     peak_label_fn: Some(month_name),
+                    source: None,
                 });
             }
             if span_days >= 14 && step_days.is_some_and(|s| s <= 1.0) {
@@ -621,6 +921,7 @@ pub fn dominant_structure(
                         .collect(),
                     peak_labels: None,
                     peak_label_fn: Some(weekday_name),
+                    source: None,
                 });
             }
             let sub_day = present.iter().any(|t| t.rem_euclid(MICROS_PER_DAY) != 0);
@@ -635,6 +936,7 @@ pub fn dominant_structure(
                         .collect(),
                     peak_labels: None,
                     peak_label_fn: Some(|h| format!("{h:02}:00")),
+                    source: None,
                 });
             }
         }
@@ -675,16 +977,99 @@ pub fn dominant_structure(
             keys,
             peak_labels: Some(peak_labels),
             peak_label_fn: None,
+            source: Some(i),
         });
     }
+    // Continuous measures as candidate groupings, binned on their
+    // decile edges (duplicated edges from tied values collapse, so
+    // a partly discrete measure yields fewer bins). A binned
+    // grouping never scores its own source column as a response.
+    for &mi in &measures {
+        if facts[mi].distinct < 20 {
+            continue;
+        }
+        let mut vals: Vec<f64> = (0..table.n)
+            .filter_map(|r| table.cols[mi].numeric_at(r))
+            .filter(|x| x.is_finite())
+            .collect();
+        if vals.len() < 30 {
+            continue;
+        }
+        vals.sort_by(|a, b| a.total_cmp(b));
+        let mut edges: Vec<f64> = Vec::new();
+        for k in 1..10 {
+            let e = vals[(k * vals.len()) / 10];
+            if edges.last().is_none_or(|&last| e > last) {
+                edges.push(e);
+            }
+        }
+        if edges.len() < 2 {
+            continue;
+        }
+        let n_bins = edges.len() + 1;
+        let mut peak_labels: BTreeMap<i64, String> = BTreeMap::new();
+        for b in 0..n_bins {
+            let label = if b == 0 {
+                format!("up to {}", fmt_num(edges[0]))
+            } else if b == n_bins - 1 {
+                format!("{} and above", fmt_num(edges[edges.len() - 1]))
+            } else {
+                format!("{} to {}", fmt_num(edges[b - 1]), fmt_num(edges[b]))
+            };
+            peak_labels.insert(b as i64, label);
+        }
+        let keys: Vec<Option<i64>> = (0..table.n)
+            .map(|r| {
+                table.cols[mi]
+                    .numeric_at(r)
+                    .filter(|x| x.is_finite())
+                    .map(|x| edges.partition_point(|&e| e < x) as i64)
+            })
+            .collect();
+        let present_bins: BTreeSet<i64> = keys.iter().flatten().copied().collect();
+        if present_bins.len() < 3 {
+            continue;
+        }
+        let name = table.names[mi].clone();
+        groupings.push(Grouping {
+            kind: "binned",
+            label: name.clone(),
+            grouping: format!("{name} (quantile bins)"),
+            keys,
+            peak_labels: Some(peak_labels),
+            peak_label_fn: None,
+            source: Some(mi),
+        });
+    }
+    let groupings: Vec<Grouping> = collapse_groupings(groupings)
+        .into_iter()
+        .filter(|g| !grouping_restates_response(g, &binaries))
+        .collect();
 
-    // Score every (grouping, measure) pair by eta-squared: the
+    // The responses: the measures (a group's mean is the reading)
+    // and the binary responses (a group's rate is the reading).
+    // Both are scored by the same eta-squared, so a binary outcome
+    // competes with measures on one scale.
+    enum Response<'a> {
+        Measure(usize),
+        Binary(&'a BinaryResponse),
+    }
+    let mut responses: Vec<Response> = Vec::new();
+    for &mi in &measures {
+        responses.push(Response::Measure(mi));
+    }
+    for b in &binaries {
+        responses.push(Response::Binary(b));
+    }
+
+    // Score every (grouping, response) pair by eta-squared: the
     // between-group sum of squares over the total.
     struct Scored {
         order: usize,
         score: f64,
         shares: Vec<FrameStructureShare>,
         peak: Option<FrameStructurePeak>,
+        rates: Vec<FrameStructureRate>,
     }
     let mut scored: Vec<Scored> = Vec::new();
     for (order, g) in groupings.iter().enumerate() {
@@ -700,14 +1085,37 @@ pub fn dominant_structure(
         if !(2..=10_000).contains(&n_groups) {
             continue;
         }
+        let group_label = |key: i64| -> Option<String> {
+            match (&g.peak_labels, g.peak_label_fn) {
+                (Some(labels), _) => labels.get(&key).cloned(),
+                (None, Some(f)) => Some(f(key)),
+                (None, None) => None,
+            }
+        };
         let mut shares: Vec<FrameStructureShare> = Vec::new();
-        let mut best: Option<(f64, usize, i64, f64)> = None;
-        for &mi in &measures {
-            let col = &table.cols[mi];
+        let mut best: Option<(f64, usize, i64, f64, f64, f64)> = None;
+        let mut rate_candidates: Vec<(f64, FrameStructureRate)> = Vec::new();
+        for resp in &responses {
+            let (rcol, rname, binary): (usize, String, Option<&BinaryResponse>) = match resp {
+                Response::Measure(mi) => (*mi, table.names[*mi].clone(), None),
+                Response::Binary(b) => (b.col, b.name.clone(), Some(b)),
+            };
+            if g.source == Some(rcol) {
+                continue;
+            }
+            let value_at = |r: usize| -> Option<f64> {
+                match binary {
+                    Some(b) => b.values[r],
+                    None => table.cols[rcol].numeric_at(r),
+                }
+            };
             let mut sums: Vec<(usize, f64)> = vec![(0, 0.0); n_groups];
+            let mut group_lo: Vec<f64> = vec![f64::INFINITY; n_groups];
+            let mut group_hi: Vec<f64> = vec![f64::NEG_INFINITY; n_groups];
             let (mut cnt, mut sum, mut sumsq) = (0usize, 0.0f64, 0.0f64);
+            let (mut col_min, mut col_max) = (f64::INFINITY, f64::NEG_INFINITY);
             for (r, &gi) in row_group.iter().enumerate() {
-                let (Some(x), Some(gi)) = (col.numeric_at(r), gi) else {
+                let (Some(x), Some(gi)) = (value_at(r), gi) else {
                     continue;
                 };
                 if !x.is_finite() {
@@ -715,15 +1123,33 @@ pub fn dominant_structure(
                 }
                 sums[gi].0 += 1;
                 sums[gi].1 += x;
+                group_lo[gi] = group_lo[gi].min(x);
+                group_hi[gi] = group_hi[gi].max(x);
                 cnt += 1;
                 sum += x;
                 sumsq += x * x;
+                col_min = col_min.min(x);
+                col_max = col_max.max(x);
             }
             if cnt < 30 {
                 continue;
             }
             let total_ss = sumsq - sum * sum / cnt as f64;
             if total_ss <= 0.0 {
+                continue;
+            }
+            // A response the grouping determines exactly —
+            // constant within every group — has a share of 1 by
+            // construction: the grouping restates the response's
+            // own definition (a derived flag grouped by the column
+            // it is derived from, a group attribute grouped by the
+            // group). That is not structure the account states, so
+            // the pair is dropped.
+            let determined = sums
+                .iter()
+                .enumerate()
+                .all(|(gi, &(c, _))| c == 0 || group_lo[gi] == group_hi[gi]);
+            if determined {
                 continue;
             }
             let mut between_ss = 0.0;
@@ -736,24 +1162,78 @@ pub fn dominant_structure(
             let share = (between_ss / total_ss).clamp(0.0, 1.0);
             if share >= DOMINANT_MIN_SHARE {
                 shares.push(FrameStructureShare {
-                    measure: table.names[mi].clone(),
+                    measure: rname.clone(),
                     share: round4(share),
                 });
             }
-            if best.is_none_or(|(bs, _, _, _)| share > bs) {
+            if let Some(b) = binary {
+                if share < DOMINANT_MIN_SHARE {
+                    continue;
+                }
+                // The rate reading: the highest group rate among
+                // groups with enough support, against the lowest
+                // such rate and the response's base rate.
+                let mut peak: Option<(i64, f64, usize)> = None;
+                let mut low: Option<f64> = None;
+                for (key, &gi) in &group_ids {
+                    let (c, s) = sums[gi];
+                    if c < RATE_PEAK_MIN_SUPPORT {
+                        continue;
+                    }
+                    let rate = s / c as f64;
+                    low = Some(low.map_or(rate, |l: f64| l.min(rate)));
+                    if peak.is_none_or(|(_, pr, _)| rate > pr) {
+                        peak = Some((*key, rate, c));
+                    }
+                }
+                if let (Some((key, rate, support)), Some(low)) = (peak, low) {
+                    if rate - low >= RATE_MIN_CONTRAST {
+                        if let Some(label) = group_label(key) {
+                            rate_candidates.push((
+                                share,
+                                FrameStructureRate {
+                                    response: b.name.clone(),
+                                    on_label: b.on_label.clone(),
+                                    base_rate: round4(b.base_rate),
+                                    peak_group: label,
+                                    peak_rate: round4(rate),
+                                    peak_support: support,
+                                    lift: round4(if b.base_rate > 0.0 {
+                                        rate / b.base_rate
+                                    } else {
+                                        0.0
+                                    }),
+                                },
+                            ));
+                        }
+                    }
+                }
+                continue;
+            }
+            if best.is_none_or(|(bs, _, _, _, _, _)| share > bs) {
                 let mut peak: Option<(i64, f64)> = None;
+                let (mut mean_min, mut mean_max) = (f64::INFINITY, f64::NEG_INFINITY);
                 for (key, &gi) in &group_ids {
                     let (c, s) = sums[gi];
                     if c == 0 {
                         continue;
                     }
                     let mean = s / c as f64;
+                    mean_min = mean_min.min(mean);
+                    mean_max = mean_max.max(mean);
                     if peak.is_none_or(|(_, pm)| mean > pm) {
                         peak = Some((*key, mean));
                     }
                 }
                 if let Some((key, mean)) = peak {
-                    best = Some((share, mi, key, mean));
+                    best = Some((
+                        share,
+                        rcol,
+                        key,
+                        mean,
+                        mean_max - mean_min,
+                        col_max - col_min,
+                    ));
                 }
             }
         }
@@ -762,13 +1242,19 @@ pub fn dominant_structure(
         }
         shares.sort_by(|a, b| b.share.total_cmp(&a.share));
         shares.truncate(3);
+        rate_candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
+        rate_candidates.truncate(2);
+        let rates: Vec<FrameStructureRate> = rate_candidates.into_iter().map(|(_, r)| r).collect();
         let score = shares[0].share;
-        let peak = best.and_then(|(_, mi, key, mean)| {
-            let label = match (&g.peak_labels, g.peak_label_fn) {
-                (Some(labels), _) => labels.get(&key)?.clone(),
-                (None, Some(f)) => f(key),
-                (None, None) => return None,
-            };
+        // Materiality: a peak is stated only when the spread of
+        // the group means reaches the fraction of the measure's
+        // own range; a smaller spread is a level difference on a
+        // wide scale, not a headline peak.
+        let peak = best.and_then(|(_, mi, key, mean, spread, range)| {
+            if range <= 0.0 || spread < PEAK_MATERIALITY_FRACTION * range {
+                return None;
+            }
+            let label = group_label(key)?;
             Some(FrameStructurePeak {
                 label,
                 measure: table.names[mi].clone(),
@@ -780,11 +1266,12 @@ pub fn dominant_structure(
             score,
             shares,
             peak,
+            rates,
         });
     }
     // Selection: at most two groupings, strongest first. Every
     // scored grouping already clears the dominance bar on its
-    // strongest measure (a tenth of that measure's variance
+    // strongest response (a tenth of that response's variance
     // between the grouping's levels); the shares are printed in
     // the statement, so a 0.11 structure next to a 0.82 one is
     // self-calibrating. Below the bar the account states no
@@ -812,6 +1299,7 @@ pub fn dominant_structure(
                 "cycle" if g.grouping == "month of year" => "months of the year".to_string(),
                 "cycle" if g.grouping == "day of week" => "days of the week".to_string(),
                 "cycle" if g.grouping == "hour of day" => "hours of the day".to_string(),
+                "binned" => format!("{} quantile bins", g.label),
                 _ => format!("{} values", g.label),
             };
             let peak_phrase = match &s.peak {
@@ -841,15 +1329,37 @@ pub fn dominant_structure(
                 ),
                 None => String::new(),
             };
+            let rate_phrase = s
+                .rates
+                .iter()
+                .map(|r| {
+                    format!(
+                        "; the {} rate ({}) is highest for {} at {}% against a base rate of {}% (lift {}x; {} rows in the group)",
+                        r.response,
+                        r.on_label,
+                        r.peak_group,
+                        fmt_pct(r.peak_rate),
+                        fmt_pct(r.base_rate),
+                        fmt_num(r.lift),
+                        fmt_int(r.peak_support)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("");
             let statement = if g.kind == "dimension" {
                 format!(
-                    "the {} dimension organises the frame: {} sits between {}{}",
-                    g.label, share_text, between, peak_phrase
+                    "the {} dimension organises the frame: {} sits between {}{}{}",
+                    g.label, share_text, between, peak_phrase, rate_phrase
+                )
+            } else if g.kind == "binned" {
+                format!(
+                    "the {} quantile bins organise the frame: {} sits between {}{}{}",
+                    g.label, share_text, between, peak_phrase, rate_phrase
                 )
             } else {
                 format!(
-                    "the {} organises the frame: {} sits between {}{}",
-                    g.label, share_text, between, peak_phrase
+                    "the {} organises the frame: {} sits between {}{}{}",
+                    g.label, share_text, between, peak_phrase, rate_phrase
                 )
             };
             FrameDominant {
@@ -858,6 +1368,7 @@ pub fn dominant_structure(
                 grouping: g.grouping.clone(),
                 shares: s.shares.clone(),
                 peak: s.peak.clone(),
+                rates: s.rates.clone(),
                 statement,
             }
         })
@@ -1306,5 +1817,235 @@ mod tests {
             .evidence
             .iter()
             .any(|e| e.metrics.contains_key("triviality")));
+    }
+    #[test]
+    fn binary_response_is_stated_as_a_rate() {
+        // A two-level outcome organised by a dimension: the
+        // account states its rate, not only a variance share.
+        let mut grp = Vec::new();
+        let mut outcome = Vec::new();
+        let mut measure = Vec::new();
+        for g in 0..3 {
+            for i in 0..100 {
+                grp.push(["A", "B", "C"][g]);
+                outcome.push(if (i % 10) < [8, 5, 2][g] { "yes" } else { "no" });
+                measure.push(10.0 + g as f64 + (i % 7) as f64);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("grp".into(), grp).into(),
+            Series::new("outcome".into(), outcome).into(),
+            Series::new("measure".into(), measure).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        let dom = account
+            .dominant
+            .iter()
+            .find(|d| d.label == "grp")
+            .expect("grp grouping stated");
+        let rate = dom
+            .rates
+            .iter()
+            .find(|r| r.response == "outcome")
+            .expect("outcome rate recorded");
+        assert_eq!(rate.on_label, "yes");
+        assert_eq!(rate.peak_group, "A");
+        assert!(rate.peak_rate > 0.75 && rate.peak_rate < 0.85, "{rate:?}");
+        assert!(rate.lift > 1.4, "{rate:?}");
+        assert_eq!(rate.peak_support, 100);
+        assert!(
+            dom.statement.contains("outcome rate (yes)") && dom.statement.contains("base rate"),
+            "{}",
+            dom.statement
+        );
+    }
+
+    #[test]
+    fn outcome_encoding_is_not_a_grouping() {
+        // `alive` restates the `outcome` flag under a second
+        // encoding: grouping by it would state the outcome's own
+        // split as structure. The account groups by `grp` instead
+        // and states the outcome's rate there.
+        let mut grp = Vec::new();
+        let mut outcome = Vec::new();
+        let mut alive = Vec::new();
+        let mut measure = Vec::new();
+        for g in 0..3 {
+            for i in 0..100 {
+                let on = (i % 10) < [8, 5, 2][g];
+                grp.push(["A", "B", "C"][g]);
+                outcome.push(on);
+                alive.push(if on { "yes" } else { "no" });
+                measure.push(10.0 + g as f64 + (i % 7) as f64);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("grp".into(), grp).into(),
+            Series::new("outcome".into(), outcome).into(),
+            Series::new("alive".into(), alive).into(),
+            Series::new("measure".into(), measure).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        assert!(
+            account.dominant.iter().all(|d| d.label != "alive"),
+            "the outcome's own encoding must not headline: {:?}",
+            account
+                .dominant
+                .iter()
+                .map(|d| &d.statement)
+                .collect::<Vec<_>>()
+        );
+        let dom = account
+            .dominant
+            .iter()
+            .find(|d| d.label == "grp")
+            .expect("grp grouping stated");
+        assert!(
+            dom.rates.iter().any(|r| r.response == "outcome"),
+            "outcome rate stated under grp: {}",
+            dom.statement
+        );
+    }
+
+    #[test]
+    fn determined_response_is_not_claimed() {
+        // `adult` is derived from `who` exactly (man -> true), so
+        // the share of `adult` between `who` values is 1 by
+        // construction. With no other response in the frame, the
+        // account states no dominant structure.
+        let mut who = Vec::new();
+        let mut adult = Vec::new();
+        for g in 0..3 {
+            for _ in 0..100 {
+                who.push(["man", "woman", "child"][g]);
+                adult.push(g == 0);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("who".into(), who).into(),
+            Series::new("adult".into(), adult).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        assert!(
+            account.dominant.is_empty(),
+            "a determined response is not structure: {:?}",
+            account
+                .dominant
+                .iter()
+                .map(|d| &d.statement)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn duplicate_encodings_occupy_one_account_slot() {
+        // code and label are two encodings of one grouping; the
+        // account states at most one of them.
+        let mut code = Vec::new();
+        let mut label = Vec::new();
+        let mut fare = Vec::new();
+        for i in 0..300 {
+            let p = i % 3;
+            code.push((p + 1) as i64);
+            label.push(["First", "Second", "Third"][p]);
+            fare.push(90.0 - 30.0 * p as f64 + (i % 5) as f64);
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("code".into(), code).into(),
+            Series::new("label".into(), label).into(),
+            Series::new("fare".into(), fare).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        let labels: Vec<&str> = account.dominant.iter().map(|d| d.label.as_str()).collect();
+        assert!(
+            !(labels.contains(&"code") && labels.contains(&"label")),
+            "dominant: {labels:?}"
+        );
+        assert!(!labels.is_empty(), "the grouping is still stated");
+    }
+
+    #[test]
+    fn binned_measure_can_organise_a_response() {
+        // A continuous driver binned into quantile bins organises
+        // the response it drives.
+        let mut driver = Vec::new();
+        let mut price = Vec::new();
+        let mut grp = Vec::new();
+        for i in 0..600 {
+            let d = 0.2 + ((i * 37) % 200) as f64 / 40.0;
+            driver.push(d);
+            price.push(100.0 + 900.0 * d * d + (i % 13) as f64);
+            grp.push(["u", "v", "w"][i % 3]);
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("driver".into(), driver).into(),
+            Series::new("price".into(), price).into(),
+            Series::new("grp".into(), grp).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        let dom = account
+            .dominant
+            .iter()
+            .find(|d| d.kind == "binned" && d.label == "driver")
+            .expect("binned driver grouping stated");
+        assert!(
+            dom.shares.iter().any(|sh| sh.measure == "price"),
+            "shares: {:?}",
+            dom.shares
+        );
+    }
+
+    #[test]
+    fn immaterial_peak_is_not_stated() {
+        // The grouping organises the measure (group means differ
+        // against a small within-group spread), but the mean
+        // spread is a small fraction of the column's own range,
+        // which rare extreme rows set: no headline peak.
+        let mut grp = Vec::new();
+        let mut val = Vec::new();
+        for g in 0..3 {
+            for i in 0..400 {
+                grp.push(["A", "B", "C"][g]);
+                let mut v = 55.0 + 2.0 * g as f64 + ((i * 7) % 20) as f64 / 10.0 - 1.0;
+                if i % 199 == 0 {
+                    v += if g % 2 == 0 { 26.0 } else { -26.0 };
+                }
+                val.push(v);
+            }
+        }
+        let df = DataFrame::new_infer_height(vec![
+            Series::new("grp".into(), grp).into(),
+            Series::new("val".into(), val).into(),
+        ])
+        .unwrap();
+        let (table, facts) = facts_for(&df);
+        let frame = analyze_frame(&table, &facts, None);
+        let account = compute_account(&table, &frame, &facts, &empty_deps());
+        let dom = account
+            .dominant
+            .iter()
+            .find(|d| d.label == "grp")
+            .expect("grp grouping stated");
+        assert!(dom.peak.is_none(), "peak: {:?}", dom.peak);
+        assert!(
+            !dom.statement.contains("averages highest"),
+            "{}",
+            dom.statement
+        );
     }
 }

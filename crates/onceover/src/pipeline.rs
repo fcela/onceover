@@ -11,7 +11,8 @@ use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, hotspots, identities,
     prism_rules, profile_breaks, profile_discontinuities, profile_drift, profile_interactions,
-    profile_regimes, profile_surprises, profile_target_shapes, screen_predictability,
+    profile_regimes, profile_surprises, profile_target_shapes, screen_leakage,
+    screen_model_failures, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings_counted, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -104,6 +105,8 @@ fn profile_inner(
     // caller did not explicitly restrict the detector set.
     if cfg.target.is_some() && cfg.detectors.is_none() {
         active.insert("target_shapes".into());
+        active.insert("leakage".into());
+        active.insert("model_failures".into());
     }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
@@ -123,6 +126,7 @@ fn profile_inner(
     }
     tier.views.row_cap = tier.encode.row_cap;
     tier.slices.row_cap = tier.encode.row_cap;
+    tier.modelfail.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);
@@ -145,6 +149,7 @@ fn profile_inner(
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
     tier.slices.deadline = pass_deadline;
+    tier.modelfail.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
     let mut coverage: BTreeMap<String, PassInfo> = BTreeMap::new();
     let mut last_mark = Instant::now();
@@ -533,7 +538,57 @@ fn profile_inner(
                     }));
                 }
                 ev.insert("duplicate_groups".to_string(), json!(groups_json));
-                findings.push(Finding::new(
+                // The support of the compared columns: how many
+                // distinct rows they can form at all, the product of
+                // their distinct counts (a column with missing
+                // values counts one more value for the missing
+                // state). When the table has realised nearly every
+                // combination the support allows, the repeats are
+                // forced by the support itself: three five-level
+                // columns form 125 possible rows, so 5,000 draws
+                // repeat earlier rows whatever the recording
+                // process did. That is a cardinality fact, stated
+                // as concentration, not a duplicate-rows claim.
+                let distinct_rows = table.n - dup.n_redundant;
+                let support: f64 = comparable
+                    .iter()
+                    .map(|&c| {
+                        (info[c].distinct + usize::from(info[c].null_count > 0)).max(1) as f64
+                    })
+                    .product();
+                ev.insert("distinct_rows".to_string(), json!(distinct_rows));
+                ev.insert(
+                    "support_size".to_string(),
+                    json!(if support.is_finite() {
+                        support
+                    } else {
+                        f64::MAX
+                    }),
+                );
+                let saturated = table.n >= 100
+                    && comparable.len() >= 2
+                    && support <= table.n as f64
+                    && distinct_rows as f64 >= 0.9 * support;
+                if saturated {
+                    findings.push(Finding::new(
+                        Pattern::ValueConcentration,
+                        BTreeMap::from([("columns".into(), json!(comparable.iter().map(|&c| table.names[c].clone()).collect::<Vec<_>>()))]),
+                        format!(
+                            "the compared columns form only {} distinct rows in {} rows: their {} possible combinations are nearly all realised, so repeated rows are expected from the small support",
+                            distinct_rows, table.n, support as u64
+                        ),
+                        onceover_report::EvidenceBasis::Measured,
+                        0.50,
+                        ev,
+                        Some("repeats are forced by the number of possible rows; read this as a cardinality fact about the compared columns, not as duplicated records".into()),
+                        Method::new(
+                            "row_duplicates",
+                            "support_saturation",
+                            "exact row hashing + verification; support size from the compared columns' distinct counts (onceover v0.1)",
+                        ),
+                    ));
+                } else {
+                    findings.push(Finding::new(
                     Pattern::Duplicates,
                     BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
                     format!(
@@ -550,6 +605,7 @@ fn profile_inner(
                         "exact row hashing + verification (onceover v0.1)",
                     ),
                 ));
+                }
             }
             None => {
                 stamp_insert(
@@ -2474,6 +2530,83 @@ fn profile_inner(
         }
     }
 
+    // ---------- leakage signatures (opt-in via a designated target) ----------
+    if check_deadline(&mut coverage, "leakage") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("leakage") {
+        match &cfg.target {
+            Some(target) => {
+                let (f, cov) = screen_leakage(&table, target);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "leakage".into(),
+                    PassInfo::ran(cov),
+                );
+                findings.extend(f);
+            }
+            None => {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "leakage".into(),
+                    PassInfo::skipped("no target designated".to_string()),
+                );
+            }
+        }
+    }
+
+    // ---------- model-failure slices (target-gated) ----------
+    if check_deadline(&mut coverage, "model_failures") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("model_failures") {
+        match &cfg.target {
+            Some(target) => {
+                // The cross-fit fits on the shared encoding when the
+                // model-based block produced one; at the quick tier
+                // (or after a deadline skip) it encodes locally,
+                // the fallback the hotspots pass uses.
+                let local_enc;
+                let enc = match &shared_encoding {
+                    Some(enc) => enc,
+                    None => {
+                        local_enc = encode(&table, &tier.encode).0;
+                        &local_enc
+                    }
+                };
+                let (f, cov) = screen_model_failures(
+                    &table,
+                    enc,
+                    target,
+                    &tier.screen,
+                    &tier.modelfail,
+                    &scaffold_excluded,
+                );
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "model_failures".into(),
+                    PassInfo::ran(cov),
+                );
+                findings.extend(f);
+            }
+            None => {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "model_failures".into(),
+                    PassInfo::skipped("no target designated".to_string()),
+                );
+            }
+        }
+    }
+
     findings.retain(|f| f.evidence.iter().any(|e| selected(&e.method.detector)));
     for f in &mut findings {
         for evidence in &mut f.evidence {
@@ -2485,6 +2618,8 @@ fn profile_inner(
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
+                "leakage"=>"complete cases per predictor: rows missing the predictor or the target excluded from that predictor's evaluation",
+                "model_failures"=>"rows missing the target are excluded from fitting and from the search; rows missing a condition value are outside the slice",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "level_contrasts"=>"rows missing the grouping value or the measure are excluded from that pair's comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",

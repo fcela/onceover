@@ -165,3 +165,59 @@ A record re-entered inside a table whose compared columns coincide often by chan
 not separable from those coincidences by this count and is not stated. On the sales
 table with 300 lines re-entered under new line ids, 1,906 rows repeat except the line id,
 1,606 of them already in the table before the re-entry, and no statement is made.
+
+## Amendment, 14 November 2026: the baseline stated, scored, and banded (issue #284)
+
+The 6 November amendment recorded the chance baseline as `expected_by_chance`
+in the evidence, but the claim never mentioned it and the score ignored it:
+the near-duplicate score was a function of the raw repeat share only, so two
+tables with identical observed counts scored identically whether chance
+explained 0.01 pairs or 800. Exact duplicates had no baseline at all. Three
+changes, measured below against the 0.1.5 build on the same frames:
+
+- **The claim states the baseline** once it reaches one expected pair:
+  "; B expected by chance (Rx the chance baseline)", with the ratio recorded
+  as `over_chance` (the baseline floored at one pair). Below one expected
+  pair the claim keeps its original form.
+- **The score uses the baseline**: the share term is multiplied by a
+  saturating function of the log over-chance ratio, ln(R) / 6 capped at 1,
+  and the score is capped at 0.70 once the expected pairs exceed 1% of the
+  rows. A duplicate statement that barely beats its baseline — a ratio
+  under 10, or under 20 with a baseline above 1% of the rows — is placed in
+  report band 3, not band 1.
+- **Exact duplicates are read against the support**: the product of the
+  compared columns' distinct counts (a column with missing values counts
+  one more value), recorded as `support_size` with the realised
+  `distinct_rows`. When a table of at least 100 rows over at least two
+  compared columns has realised at least 90% of a support no larger than
+  the table itself, the repeats are forced by the support and are stated
+  as a `value_concentration` cardinality statement (score 0.50) instead of
+  a duplicate-rows claim.
+
+| Frame | Before (0.1.5) | After |
+|---|---|---|
+| Three independent 5-level columns, 5,000 rows, seed 1 | First finding and digest headline: "4875 rows repeat earlier values across the compared columns (125 groups, largest 61)", score 0.70 | No duplicates statement. Concentration statement: "the compared columns form only 125 distinct rows in 5000 rows: their 125 possible combinations are nearly all realised, so repeated rows are expected from the small support" (`support_size` 125, `distinct_rows` 125) |
+| Adult, except `final_weight` | "6322 rows repeat another row on every column except final_weight (12.94% of 48842 rows)", score 0.88; the 812.8 expected pairs sat in the evidence only | Claim gains "; 813 expected by chance (7.8x the chance baseline)"; score 0.70 (capped: the baseline is 1.7% of the rows); report band 3 |
+| Adult, except `age` | "95 rows repeat another row on every column except age (0.19% of 48842 rows)", score 0.684 | Claim gains "; 2.22 expected by chance (42.8x the chance baseline)"; score 0.682; band 1 kept |
+| Adult, except `occupation` | "77 rows repeat another row on every column except occupation (0.16% of 48842 rows)", score 0.683 | Baseline 0.49 pairs, below the one-pair floor, so the claim is unchanged; score 0.682 |
+| Diamonds (53,940 rows; the local copy carries no `price` column) | Top statement against a 0.012-pair baseline | "242 rows repeat another row on every column except y (0.45% of 53940 rows)", baseline 0.012 pairs — below the floor, claim unchanged; score 0.688 against 0.689 from the raw-share formula |
+
+Titanic itself was not available locally for a re-run; its measured 0.1.5
+statement (242 of 891 rows except `age`, 17.7 expected pairs, raw-share
+score 0.88) is pinned by unit tests instead: the claim reads "242 rows
+repeat another row on every column except age (27.16% of 891 rows); 17.7
+expected by chance (13.7x the chance baseline)", the score is capped at
+0.70, and the statement sits in band 3.
+
+Regression fixtures: the seed-1 noise control above; a planted block of
+400 near duplicates on high-cardinality columns (baseline under one pair,
+score 0.86, above the Adult statement's capped 0.70); 300 planted exact
+duplicates on a wide support (the duplicate-rows statement fires,
+`n_redundant` 300, support larger than the table).
+
+Corpus: exit 1, 90 of 93 expectations machine-verified — exactly the
+three standing failures recorded under issue #294 (thyroid `pregnant`,
+adventureworks `revision_number`, bike-sharing-hourly grouped family). No
+duplicates expectation changed: Adult verifies 12 of 12 and the SEC EDGAR
+restatement statement stands. Gate: release check passes, 422 Rust tests
+passed, 630 Python tests passed (12 skipped), strict book build exit 0.
