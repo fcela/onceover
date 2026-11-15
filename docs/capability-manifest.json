@@ -238,6 +238,14 @@
    "activation": "target_gated"
   },
   {
+   "id": "model_failures",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [],
+   "activation": "target_gated"
+  },
+  {
    "id": "breaks",
    "categories": [
     "changes",
