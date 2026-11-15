@@ -965,6 +965,18 @@ pub fn analyze_frame(
             );
             continue;
         }
+        // (i2) a numeric column named as a weight is not a
+        // measurement of the row: a sampling weight (the census
+        // `fnlwgt` / `final_weight` shape) or a case weight
+        // records how the row was sampled, not a quantity the
+        // row carries. It receives no role, so the measure
+        // consumers (the account's responses, the panel passes)
+        // never read it as one.
+        if col.is_numeric() && crate::account::weight_like_name(name) {
+            evidence[i] =
+                format!("numeric column named as a weight ({name}); a weight is not a measurement");
+            continue;
+        }
         // (i/j) the rest: numeric measures, text
         if numeric_grid {
             roles[i] = Some("measure".into());
