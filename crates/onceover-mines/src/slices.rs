@@ -224,14 +224,14 @@ pub struct SliceOutcome {
 // Small statistics helpers.
 // ---------------------------------------------------------------------
 
-fn splitmix64(mut x: u64) -> u64 {
+pub(crate) fn splitmix64(mut x: u64) -> u64 {
     x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^ (x >> 31)
 }
 
-fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
+pub(crate) fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
     }
@@ -242,14 +242,14 @@ fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
     sorted[lo] * (1.0 - frac) + sorted[hi] * frac
 }
 
-fn median_sorted(sorted: &[f64]) -> f64 {
+pub(crate) fn median_sorted(sorted: &[f64]) -> f64 {
     quantile_sorted(sorted, 0.5)
 }
 
 /// Two-sided Mann–Whitney U p-value (normal approximation with
 /// tie correction and continuity correction) for slice values
 /// `a` against complement values `b`.
-fn mann_whitney_p(a: &[f64], b: &[f64]) -> f64 {
+pub(crate) fn mann_whitney_p(a: &[f64], b: &[f64]) -> f64 {
     let n1 = a.len() as f64;
     let n2 = b.len() as f64;
     if n1 < 3.0 || n2 < 3.0 {
@@ -361,7 +361,7 @@ struct CatTargetCol {
 /// the sample positions. Eligible: string, boolean, and integer
 /// columns whose distinct non-null count is within
 /// `2..=max_levels`. Returns (labels per row, distinct labels).
-fn level_labels(
+pub(crate) fn level_labels(
     table: &TypedTable,
     col: usize,
     sample: &[u32],
@@ -445,7 +445,7 @@ fn level_labels(
 
 /// JSON value for a level of `col`, matching the column's kind so
 /// the statement definition carries the value in its own type.
-fn level_json(table: &TypedTable, col: usize, label: &str) -> Value {
+pub(crate) fn level_json(table: &TypedTable, col: usize, label: &str) -> Value {
     match &table.cols[col] {
         TypedCol::Bool { .. } => json!(label == "true"),
         TypedCol::I64 { .. } => label
@@ -460,7 +460,7 @@ fn level_json(table: &TypedTable, col: usize, label: &str) -> Value {
     }
 }
 
-fn bits_for(n: usize, mut set: impl FnMut(usize) -> bool) -> Vec<u64> {
+pub(crate) fn bits_for(n: usize, mut set: impl FnMut(usize) -> bool) -> Vec<u64> {
     let mut bits = vec![0u64; n.div_ceil(64)];
     for i in 0..n {
         if set(i) {
@@ -470,22 +470,22 @@ fn bits_for(n: usize, mut set: impl FnMut(usize) -> bool) -> Vec<u64> {
     bits
 }
 
-fn bits_and(a: &[u64], b: &[u64]) -> Vec<u64> {
+pub(crate) fn bits_and(a: &[u64], b: &[u64]) -> Vec<u64> {
     a.iter().zip(b).map(|(x, y)| x & y).collect()
 }
 
-fn bits_count(bits: &[u64]) -> usize {
+pub(crate) fn bits_count(bits: &[u64]) -> usize {
     bits.iter().map(|w| w.count_ones() as usize).sum()
 }
 
-fn bits_hash(bits: &[u64]) -> u64 {
+pub(crate) fn bits_hash(bits: &[u64]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     bits.hash(&mut h);
     h.finish()
 }
 
 /// Iterate the sample positions set in `bits`.
-fn bits_positions(bits: &[u64]) -> impl Iterator<Item = usize> + '_ {
+pub(crate) fn bits_positions(bits: &[u64]) -> impl Iterator<Item = usize> + '_ {
     bits.iter().enumerate().flat_map(|(w, &word)| {
         (0..64).filter_map(move |b| {
             if word >> b & 1 == 1 {

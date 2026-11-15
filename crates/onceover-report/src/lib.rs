@@ -394,13 +394,38 @@ pub struct FrameStructurePeak {
     pub mean: f64,
 }
 
+/// One binary response's rate reading under a dominant grouping:
+/// the rate of the response's on state in the peak group, against
+/// the response's base rate over the whole frame.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FrameStructureRate {
+    /// The two-level column measured as a rate.
+    pub response: String,
+    /// The level counted as on (the higher level in sorted order).
+    pub on_label: String,
+    /// The on rate over every row carrying the response.
+    pub base_rate: f64,
+    /// The group whose on rate is highest (among groups with at
+    /// least the stated minimum support).
+    pub peak_group: String,
+    /// The on rate in the peak group.
+    pub peak_rate: f64,
+    /// Rows in the peak group carrying the response.
+    pub peak_support: usize,
+    /// peak_rate / base_rate.
+    pub lift: f64,
+}
+
 /// One dominant structure: a grouping — the time axis itself, a
-/// calendar cycle of the axis, or a dimension column — that organises
-/// a large share of the variance of the frame's measures.
+/// calendar cycle of the axis, a dimension column, or a continuous
+/// measure's quantile bins — that organises a large share of the
+/// variance of the frame's responses (measures and two-level
+/// columns measured as rates).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct FrameDominant {
-    /// time | cycle | dimension
+    /// time | cycle | dimension | binned
     pub kind: String,
     /// Reader-facing name: "shared time pattern", "annual cycle",
     /// "daily cycle", or the dimension column's name.
@@ -415,6 +440,10 @@ pub struct FrameDominant {
     /// is meaningful (time, cycle, and dimension groupings).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peak: Option<FrameStructurePeak>,
+    /// The binary responses the grouping organises, strongest
+    /// first (at most two), each with its rate reading.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rates: Vec<FrameStructureRate>,
     /// The account sentence, exactly as the digest states it.
     pub statement: String,
 }

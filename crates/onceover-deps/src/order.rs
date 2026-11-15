@@ -75,13 +75,19 @@
 //! no pass: the identity scan states a decomposition only when
 //! it holds on at least 99.9% of rows, which bulk corruption
 //! breaks. When a direction's violations number at least 20 and
-//! between 5% and 40% of the evaluated rows, and one column is a
+//! between 5% and 25% of the evaluated rows, and one column is a
 //! component of the other, the direction is reported as a
 //! part-against-whole violation in the same statement shape,
-//! without the scale gate and without the asymmetry requirement:
-//! the component relation is the evidence the pair is a bound,
-//! and the whole exceeding the part on the remaining rows is
-//! what a bound looks like, not a competing order. The relation
+//! without the scale gate. The identity route needs no asymmetry
+//! requirement — the decomposition is the evidence the pair is
+//! a bound. The containment route keeps it: two unrelated
+//! non-negative columns share a zero floor and touch their
+//! diagonal by accident, and cross at comparable rates in both
+//! directions, so a containment pair is reported only when the
+//! reverse direction's violations are at least twice the stated
+//! direction's; for a genuine component the whole exceeding the
+//! part on the remaining rows is what a bound looks like, not
+//! a competing order. The relation
 //! is established two ways (see `part_whole_relation`). By
 //! identity: the whole minus the part equals a sum of one to
 //! three other columns, within the identity tolerance, on at
@@ -144,7 +150,7 @@ const SYSTEMATIC_ASYMMETRY: f64 = 2.0;
 /// direction's sample violation share must not pass this bound, so
 /// pairs that sit closer to a reverse order than to a broken one
 /// are not verified for the statement.
-const SCREEN_SYSTEMATIC_MAX_SHARE: f64 = 0.40;
+const SCREEN_SYSTEMATIC_MAX_SHARE: f64 = 0.25;
 /// The systematic statement's scale gate: the two columns must
 /// track their diagonal — the median over sampled complete rows
 /// of |a − b| / max(|a|, |b|) is at most this. A bound pair (a
@@ -1321,20 +1327,42 @@ fn dispatch<T: ScanVal>(
                 // share bars as the systematic rule, with the
                 // share also capped at the screening admission
                 // bound (past it the part is above the whole as
-                // often as below it), and the scale gate and the
-                // asymmetry term replaced by the component test.
-                // Temporal pairs are not components of anything,
-                // and the test works in f64, so both columns must
-                // be exactly representable there.
+                // often as below it), and the scale gate
+                // replaced by the component test. The asymmetry
+                // term is kept for a component established by
+                // containment — two unrelated columns that
+                // share a zero floor cross at comparable rates
+                // in both directions, which is not a broken
+                // bound — while a component established by
+                // identity needs no such term: the decomposition
+                // itself certifies the pair. Temporal pairs are
+                // not components of anything, and the test works
+                // in f64, so both columns must be exactly
+                // representable there.
                 let variant = |viol: usize| {
                     viol >= MIN_SYSTEMATIC_VIOLATIONS
                         && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
                         && (viol as f64) <= SCREEN_SYSTEMATIC_MAX_SHARE * d.n as f64
                 };
+                // A component verdict admits the statement,
+                // except a containment verdict on a pair whose
+                // reverse direction fails comparably often.
+                // The reverse count is exact, as in the
+                // systematic rule: every evaluated row violates
+                // one direction, violates the other, or ties.
+                let component = |viol: usize, verdict: PartWhole| match verdict {
+                    PartWhole::Component(basis) if basis != "containment" => Some(basis),
+                    PartWhole::Component(basis) => {
+                        let other = d.n - d.equal - viol;
+                        ((other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64).then_some(basis)
+                    }
+                    _ => None,
+                };
                 if want_fs && variant(d.fs.violations) {
-                    if let PartWhole::Component(basis) =
-                        part_whole_relation(av, bv, table, i, j, excluded)
-                    {
+                    if let Some(basis) = component(
+                        d.fs.violations,
+                        part_whole_relation(av, bv, table, i, j, excluded),
+                    ) {
                         let mut c = make(
                             i,
                             j,
@@ -1353,9 +1381,10 @@ fn dispatch<T: ScanVal>(
                     }
                 }
                 if want_sf && variant(d.sf.violations) {
-                    if let PartWhole::Component(basis) =
-                        part_whole_relation(bv, av, table, j, i, excluded)
-                    {
+                    if let Some(basis) = component(
+                        d.sf.violations,
+                        part_whole_relation(bv, av, table, j, i, excluded),
+                    ) {
                         let mut c = make(
                             j,
                             i,
@@ -1792,7 +1821,7 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             );
             metrics.insert(
                 "method".into(),
-                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a part-against-whole violation when its violations number at least 20 and between 5% and 40% of the evaluated rows and one column is a component of the other — by identity, when the whole minus the part equals a sum of one to three other columns within the identity tolerance (1e-9 absolute + 1e-9 relative) on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows, or by containment, when both columns respect the shared zero floor on at least 99% of the evaluated rows and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it but on fewer than half of them (columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole) — and no exact sum identity states the decomposition (one matching on at least 99.9% of all evaluated rows is the identity pass's statement, and this one stays silent for the pair); the comparable-scale gate of the systematic form does not apply, because a part's distance from its whole is set by the other components, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a part-against-whole violation when its violations number at least 20 and between 5% and 25% of the evaluated rows and one column is a component of the other — by identity, when the whole minus the part equals a sum of one to three other columns within the identity tolerance (1e-9 absolute + 1e-9 relative) on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows, or by containment, when both columns respect the shared zero floor on at least 99% of the evaluated rows and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it but on fewer than half of them (columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole), and the reverse direction's violations are at least twice the stated direction's — and no exact sum identity states the decomposition (one matching on at least 99.9% of all evaluated rows is the identity pass's statement, and this one stays silent for the pair); the comparable-scale gate of the systematic form does not apply, because a part's distance from its whole is set by the other components, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
             );
         } else {
             metrics.insert(
@@ -2309,6 +2338,35 @@ mod tests {
         assert_eq!(m["violation_kind"], json!("part_whole"));
         assert_eq!(m["part_whole_basis"], json!("containment"));
         f.validate().unwrap();
+    }
+
+    #[test]
+    fn unordered_pair_sharing_a_zero_floor_is_not_stated() {
+        // Two independent columns over {0, .., 4}: both respect
+        // the zero floor and the slack reaches it on about a
+        // fifth of the held rows, so the containment reading
+        // certifies the pair — but each direction violates the
+        // other on about 40% of rows. Neither direction is a
+        // broken bound, and the pair earns no order finding.
+        fn draws(seed: u64, n: usize) -> Vec<i64> {
+            let mut state = seed;
+            (0..n)
+                .map(|_| {
+                    state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+                    let mut z = state;
+                    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+                    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+                    ((z ^ (z >> 31)) % 5) as i64
+                })
+                .collect()
+        }
+        let df = df! { "a" => draws(1, 5000), "b" => draws(2, 5000) }.unwrap();
+        let out = scan(&df);
+        assert!(
+            pair_findings(&out, "a", "b").is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
     }
 
     #[test]
