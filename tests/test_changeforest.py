@@ -5,7 +5,7 @@ time, so it has no statement for a change that leaves every
 single-series summary intact. The changeforest detector segments
 the measures jointly with a random-forest classifier gain
 (Londschien, Bühlmann & Kovács, JMLR 24 (2023)) and states a
-`distribution_change` where the joint distribution changes, kept
+`joint_distribution_change` where the joint distribution changes, kept
 when the permutation p-value is at most 0.01. The fixtures are
 generated with the standard library only, so the tests also run
 on the no-numpy wheel leg.
@@ -53,10 +53,10 @@ def _covariance_frame():
     return pl.DataFrame({"date": _days(N), **measures})
 
 
-def test_covariance_shift_states_distribution_changes():
-    report = onceover.profile(_covariance_frame(), detectors=["changeforest"])
-    assert report.coverage["changeforest"]["status"] == "ran_exact"
-    changes = _of_type(report, "distribution_change")
+def test_covariance_shift_states_joint_distribution_changes():
+    report = onceover.profile(_covariance_frame(), detectors=["distribution_change"])
+    assert report.coverage["distribution_change"]["status"] == "ran_exact"
+    changes = _of_type(report, "joint_distribution_change")
     splits = sorted(_metrics(f)["split_row"] for f in changes)
     # Both planted splits must be stated, within tolerance. The
     # count is not asserted exactly: at a per-segment permutation
@@ -90,8 +90,8 @@ def test_shape_change_with_level_and_variance_held():
     var = sum((v - mean) ** 2 for v in folded) / n
     series = raw[:600] + [(v - mean) / math.sqrt(var) for v in folded[600:]]
     df = pl.DataFrame({"date": _days(n), "y": series})
-    report = onceover.profile(df, detectors=["changeforest"])
-    changes = _of_type(report, "distribution_change")
+    report = onceover.profile(df, detectors=["distribution_change"])
+    changes = _of_type(report, "joint_distribution_change")
     splits = sorted(_metrics(f)["split_row"] for f in changes)
     assert any(570 <= s <= 630 for s in splits), f"no split near 600: {splits}"
 
@@ -101,7 +101,7 @@ def test_mean_shift_control_breaks_still_states_level_shift():
     y = [rng.gauss(0.0, 1.0) for _ in range(N)]
     y = [v + (3.0 if i >= 300 else 0.0) for i, v in enumerate(y)]
     df = pl.DataFrame({"date": _days(N), "y": y})
-    report = onceover.profile(df, detectors=["breaks", "changeforest"])
+    report = onceover.profile(df, detectors=["breaks", "distribution_change"])
     assert _of_type(report, "level_shift"), "the breaks control regressed"
 
 
@@ -113,28 +113,28 @@ def test_no_change_control_states_nothing():
             **{f"m{j}": [rng.gauss(0.0, 1.0) for _ in range(N)] for j in range(3)},
         }
     )
-    report = onceover.profile(df, detectors=["changeforest"])
-    assert _of_type(report, "distribution_change") == []
+    report = onceover.profile(df, detectors=["distribution_change"])
+    assert _of_type(report, "joint_distribution_change") == []
 
 
 def test_two_profiles_produce_identical_findings():
     df = _covariance_frame()
-    a = onceover.profile(df, detectors=["changeforest"])
-    b = onceover.profile(df, detectors=["changeforest"])
+    a = onceover.profile(df, detectors=["distribution_change"])
+    b = onceover.profile(df, detectors=["distribution_change"])
     assert a.findings == b.findings
 
 
 def test_default_run_records_changeforest_as_opt_in():
     report = onceover.profile(_covariance_frame())
-    entry = report.coverage["changeforest"]
+    entry = report.coverage["distribution_change"]
     assert entry["status"] == "skipped"
     assert "opt-in" in entry["detail"]
-    assert _of_type(report, "distribution_change") == []
+    assert _of_type(report, "joint_distribution_change") == []
 
 
-def test_verify_marks_distribution_change_not_checkable():
-    report = onceover.profile(_covariance_frame(), detectors=["changeforest"])
-    changes = _of_type(report, "distribution_change")
+def test_verify_marks_joint_distribution_change_not_checkable():
+    report = onceover.profile(_covariance_frame(), detectors=["distribution_change"])
+    changes = _of_type(report, "joint_distribution_change")
     assert changes
     checks = report.verify(_covariance_frame())
     rows = checks.filter(pl.col("id") == changes[0]["id"])

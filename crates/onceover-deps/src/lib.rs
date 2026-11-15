@@ -33,7 +33,7 @@ pub use sorted::sortedness;
 pub struct ColInfo {
     pub name: String,
     pub dtype: String,
-    pub role: String,
+    pub card_role: String,
     pub n: usize,
     pub null_count: usize,
     pub distinct: usize,

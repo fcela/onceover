@@ -207,7 +207,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                 if likely_cat {
                     "categorical"
                 } else if distinct_ratio >= 0.98 {
-                    "identifier"
+                    "unique"
                 } else {
                     "continuous"
                 }
@@ -526,7 +526,7 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     let card = ColumnCard {
         name: name.to_string(),
         dtype: dtype.to_string(),
-        role,
+        card_role: role,
         // Semantic roles are assigned by the frame model in the
         // pipeline, which has the cross-column view; the card pass
         // itself leaves them unset.
@@ -559,12 +559,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn constant_and_identifier_roles() {
+    fn constant_and_unique_roles() {
         let col = TypedCol::I64 {
             vals: vec![Some(1); 10].into(),
         };
         let out = column_card("c", "int64", &col);
-        assert_eq!(out.card.role, "constant");
+        assert_eq!(out.card.card_role, "constant");
         assert!(out
             .findings
             .iter()
@@ -573,7 +573,7 @@ mod tests {
         let ids: Vec<Option<i64>> = (0..500).map(Some).collect();
         let col = TypedCol::I64 { vals: ids.into() };
         let out = column_card("id", "int64", &col);
-        assert_eq!(out.card.role, "identifier");
+        assert_eq!(out.card.card_role, "unique");
         assert!(out
             .findings
             .iter()
@@ -585,7 +585,7 @@ mod tests {
     fn likely_categorical_numeric() {
         let vals: Vec<Option<i64>> = (0..1000).map(|i| Some(i % 5)).collect();
         let out = column_card("code", "int64", &TypedCol::I64 { vals: vals.into() });
-        assert_eq!(out.card.role, "categorical");
+        assert_eq!(out.card.card_role, "categorical");
         assert!(out
             .findings
             .iter()
@@ -605,7 +605,7 @@ mod tests {
             })
             .collect();
         let out = column_card("d", "string", &TypedCol::Str { vals });
-        assert_eq!(out.card.role, "categorical");
+        assert_eq!(out.card.card_role, "categorical");
         assert!(out
             .findings
             .iter()

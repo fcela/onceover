@@ -100,7 +100,7 @@ def test_subset_extreme_needs_an_ordinary_global_value():
         "group": [f"G{v}" for v in rng.integers(0, 8, size=n)],
         "value": values,
     })
-    report = onceover.profile(frame, detectors=["surprises"])
+    report = onceover.profile(frame, detectors=["outliers"])
     assert not [c for c in _claims(report, "9999") if c.startswith("within")]
 
 
@@ -113,5 +113,5 @@ def test_later_columns_keep_their_extreme_scan():
         data[f"m{i}"] = rng.standard_t(2, size=n)
     data["late"] = rng.normal(size=n)
     data["late"][7] = 500.0
-    report = onceover.profile(pl.DataFrame(data), detectors=["surprises"])
+    report = onceover.profile(pl.DataFrame(data), detectors=["outliers"])
     assert any(c.startswith("late ") for c in _claims(report, "500"))

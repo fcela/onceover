@@ -851,7 +851,7 @@ mod tests {
             .map(|(i, col)| {
                 let card = onceover_core::column_card(&table.names[i], &table.dtypes[i], col);
                 crate::frame::CardFacts {
-                    card_role: card.card.role.clone(),
+                    card_role: card.card.card_role.clone(),
                     distinct: card.card.distinct,
                     null_count: card.card.null_count,
                     numeric_min: card.card.numeric_stats.as_ref().and_then(|s| s.min),
@@ -1252,7 +1252,7 @@ mod tests {
             .map(|(i, col)| {
                 let card = onceover_core::column_card(&table.names[i], &table.dtypes[i], col);
                 crate::frame::CardFacts {
-                    card_role: card.card.role.clone(),
+                    card_role: card.card.card_role.clone(),
                     distinct: card.card.distinct,
                     null_count: card.card.null_count,
                     numeric_min: None,
@@ -1287,7 +1287,7 @@ mod tests {
             .map(|(i, col)| {
                 let card = onceover_core::column_card(&table.names[i], &table.dtypes[i], col);
                 crate::frame::CardFacts {
-                    card_role: card.card.role.clone(),
+                    card_role: card.card.card_role.clone(),
                     distinct: card.card.distinct,
                     null_count: card.card.null_count,
                     numeric_min: None,

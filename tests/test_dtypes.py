@@ -82,7 +82,7 @@ def test_decimal_profiles_as_a_number():
     rep = onceover.profile(df, budget="standard")
     card = rep.columns["price"]
     assert card["dtype"] == "decimal"
-    assert card["role"] == "continuous"
+    assert card["card_role"] == "continuous"
     assert card["semantic_role"] == "measure"
     assert card["distinct"] == 40
     stats = card["numeric_stats"]
@@ -121,7 +121,7 @@ def test_decimal_affine_identity_is_detected():
     assert select(
         report,
         "dependencies",
-        subtype="functional",
+        subtype="affine",
         form="affine",
         column="double_price",
         include_grouped=True,
@@ -139,7 +139,7 @@ def test_duration_profiles_as_a_number():
     rep = onceover.profile(df, budget="standard")
     card = rep.columns["elapsed"]
     assert card["dtype"] == "duration"
-    assert card["role"] == "continuous"
+    assert card["card_role"] == "continuous"
     assert card["semantic_role"] == "measure"
     assert card["distinct"] == 40
     stats = card["numeric_stats"]
@@ -206,7 +206,7 @@ def test_duration_affine_identity_is_detected():
     assert select(
         report,
         "dependencies",
-        subtype="functional",
+        subtype="affine",
         form="affine",
         column="double_elapsed",
         include_grouped=True,
@@ -228,7 +228,7 @@ def test_time_is_counted_but_not_analysed():
     # carries no numeric_stats entry at all.
     assert "numeric_stats" not in card
     assert "semantic_role" not in card
-    assert card["role"] == "other"
+    assert card["card_role"] == "other"
     # Coverage states the treatment plainly, naming the column.
     detail = rep.coverage["extraction"]["detail"]
     assert "time-of-day" in detail

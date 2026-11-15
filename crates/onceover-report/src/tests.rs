@@ -448,73 +448,91 @@ fn ordered_partition_finding_validates_and_survives_selection() {
 
 #[test]
 fn facets_derive_the_stated_category_for_every_pattern() {
+    // The pattern-to-category table survives as a test expectation,
+    // not as a second mechanism: a finding's category is derived
+    // from its facets (Facets::derive_category) with the pattern's
+    // names_target flag, under the canonical construction
+    // Finding::new uses (empty metrics, empty specification,
+    // two-column subject).
     use crate::finding::Pattern::*;
-    let patterns = [
-        MissingValues,
-        SentinelValues,
-        ValueConcentration,
-        Hotspot,
-        CategoricalRole,
-        IdentifierRole,
-        Uniqueness,
-        Duplicates,
-        FormatVariation,
-        Heaping,
-        DigitPreference,
-        BenfordDeviation,
-        FunctionalDependency,
-        OrderConstraint,
-        OrderViolation,
-        AffineDependency,
-        ArithmeticIdentity,
-        PredictiveDependency,
-        PiecewiseDependency,
-        ConditionalRule,
-        StatisticalAssociation,
-        PeriodAssociation,
-        Gap,
-        SequenceGap,
-        MissingCombinations,
-        IntervalVariation,
-        ColumnOrdering,
-        ResidualShift,
-        LevelShift,
-        TrendChange,
-        VarianceChange,
-        LongFormat,
-        ExtremeValue,
-        CategoricalOutlier,
-        TransientExcursion,
-        StepDiscontinuity,
-        DuplicateEncoding,
-        DistributionShift,
-        DistributionChange,
-        OrderedPartition,
-        OneWayFlag,
-        SliceShift,
+    let expected: &[(Pattern, Category)] = &[
+        (MissingValues, Category::Missingness),
+        (SentinelValues, Category::Missingness),
+        (PredictableMissingness, Category::Missingness),
+        (ValueConcentration, Category::Concentration),
+        (ModalShare, Category::Concentration),
+        (SpikeCells, Category::Concentration),
+        (Hotspot, Category::Concentration),
+        (ConcentrationOverTime, Category::Concentration),
+        (OutlierEntity, Category::Concentration),
+        (CategoricalRole, Category::ColumnRoles),
+        (IdentifierRole, Category::ColumnRoles),
+        (LongFormat, Category::ColumnRoles),
+        (DuplicateEncoding, Category::ColumnRoles),
+        (Uniqueness, Category::Uniqueness),
+        (Duplicates, Category::Duplicates),
+        (NearDuplicateRows, Category::Duplicates),
+        (FormatVariation, Category::Formats),
+        (Heaping, Category::Formats),
+        (DigitPreference, Category::Formats),
+        (BenfordDeviation, Category::Formats),
+        (BoundaryMass, Category::Formats),
+        (ContentAnomaly, Category::Formats),
+        (FunctionalDependency, Category::Dependencies),
+        (AffineDependency, Category::Dependencies),
+        (ArithmeticIdentity, Category::Dependencies),
+        (PredictiveDependency, Category::Dependencies),
+        (PiecewiseDependency, Category::Dependencies),
+        (LeakageSignature, Category::Dependencies),
+        (OrderConstraint, Category::Dependencies),
+        (OrderViolation, Category::Dependencies),
+        (ModelFailure, Category::Dependencies),
+        (ConditionalRule, Category::ConditionalRules),
+        (StatisticalAssociation, Category::Associations),
+        (PeriodAssociation, Category::Associations),
+        (GroupContrast, Category::Associations),
+        (ConditionedAssociation, Category::Associations),
+        (LevelContrast, Category::Associations),
+        (SliceShift, Category::Associations),
+        (AxisShape, Category::Associations),
+        (Gap, Category::Gaps),
+        (SequenceGap, Category::Gaps),
+        (MissingCombinations, Category::Gaps),
+        (PartialPeriod, Category::Gaps),
+        (RowInconsistency, Category::Anomalies),
+        (IntervalVariation, Category::Anomalies),
+        (ExtremeValue, Category::Anomalies),
+        (CategoricalOutlier, Category::Anomalies),
+        (ColumnOrdering, Category::Ordering),
+        (ResidualShift, Category::Changes),
+        (LevelShift, Category::Changes),
+        (TrendChange, Category::Changes),
+        (VarianceChange, Category::Changes),
+        (TransientExcursion, Category::Changes),
+        (StepDiscontinuity, Category::Changes),
+        (DistributionShift, Category::Changes),
+        (DistributionChange, Category::Changes),
+        (SlopeBreak, Category::Changes),
+        (RegimeContrast, Category::Changes),
+        (SpikeContrast, Category::Changes),
+        (OrderedPartition, Category::Changes),
+        (SeriesStructure, Category::Changes),
+        (OneWayFlag, Category::Changes),
+        (EntryBlock, Category::Changes),
+        (ExitBlock, Category::Changes),
+        (FirstActivity, Category::Changes),
     ];
-    for pattern in patterns {
-        let directed = matches!(
-            pattern,
-            FunctionalDependency
-                | OrderConstraint
-                | OrderViolation
-                | AffineDependency
-                | ArithmeticIdentity
-                | PredictiveDependency
-                | PiecewiseDependency
-                | ConditionalRule
-        );
-        let subject = Subject::columns(["a".to_string(), "b".to_string()]);
+    assert_eq!(expected.len(), Pattern::ALL.len());
+    for (pattern, category) in expected {
         let facets = Facets::for_pattern(
-            pattern,
+            *pattern,
             &Specification::default(),
             &Details::new(),
-            &subject,
+            &Subject::columns(vec!["a".to_string(), "b".to_string()]),
         );
         assert_eq!(
-            facets.derive_category(directed),
-            pattern.category(),
+            facets.derive_category(pattern.names_target()),
+            *category,
             "pattern {pattern:?}"
         );
     }
@@ -537,7 +555,7 @@ fn conditional_rule_and_dependency_differ_only_in_conditionality() {
     );
     assert_eq!(fd.scope, rule.scope);
     assert_eq!(fd.object, rule.object);
-    assert_eq!(fd.evidence, rule.evidence);
+    assert_eq!(fd.support, rule.support);
     assert_eq!(fd.temporality, rule.temporality);
     assert_eq!(fd.status, rule.status);
     assert_ne!(fd.conditionality, rule.conditionality);
@@ -756,7 +774,7 @@ fn identity_with_coefficients(
     let claim = format!("identity over {}", subject.columns.join(", "));
     Finding::from_statement(
         Category::Dependencies,
-        Some("functional".into()),
+        Some("arithmetic_identity".into()),
         subject,
         Specification {
             form: Some(form.into()),
@@ -1512,7 +1530,7 @@ fn statement_class_first_matching_rule_decides() {
     let f = classed(Category::Uniqueness, "unique_key", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Account);
     // Structure: duplicate_encoding by type, whatever the category.
-    let f = classed(Category::Intervals, "duplicate_encoding", "a", 0.5);
+    let f = classed(Category::Anomalies, "duplicate_encoding", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Structure);
     // Structure: the relation categories.
     let f = classed(Category::Dependencies, "functional", "a", 0.5);
@@ -1528,10 +1546,10 @@ fn statement_class_first_matching_rule_decides() {
     // Shape: changes, and extreme values in intervals.
     let f = classed(Category::Changes, "level_shift", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Shape);
-    let f = classed(Category::Intervals, "extreme_value", "a", 0.5);
+    let f = classed(Category::Anomalies, "extreme_value", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Shape);
     // Hygiene: everything else.
-    let f = classed(Category::Intervals, "value_range", "a", 0.5);
+    let f = classed(Category::Anomalies, "value_range", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Hygiene);
     let f = classed(Category::Missingness, "missing_values", "a", 0.5);
     assert_eq!(statement_class(&f), StatementClass::Hygiene);
@@ -1787,26 +1805,33 @@ fn pressure_detector_caps_bind_under_pressure() {
 
 #[test]
 fn pattern_taxonomy_is_complete_and_self_consistent() {
-    // 67 patterns: the 65 of the standing taxonomy plus the two
-    // views-pass patterns (modal_share, spike_cells) that
-    // Finding::from_statement callers name directly.
-    assert_eq!(Pattern::ALL.len(), 67);
+    // 65 patterns, including the two views-pass patterns
+    // (modal_share, spike_cells) that Finding::from_statement
+    // callers name directly.
+    assert_eq!(Pattern::ALL.len(), 65);
     let mut pairs = std::collections::BTreeSet::new();
     for pattern in Pattern::ALL {
+        let facets = Facets::for_pattern(
+            *pattern,
+            &Specification::default(),
+            &Details::new(),
+            &Subject::columns(vec!["a".to_string(), "b".to_string()]),
+        );
+        let category = facets.derive_category(pattern.names_target());
         assert!(
-            Pattern::types_for(pattern.category()).contains(&pattern.subtype()),
+            Pattern::types_for(category).contains(&pattern.subtype()),
             "type {} missing from its category's derived list",
             pattern.subtype()
         );
-        pairs.insert((pattern.category(), pattern.subtype()));
+        pairs.insert((category, pattern.subtype()));
     }
-    // 64 distinct (category, type) pairs: "functional" is shared
-    // by three patterns and "predictive" by two.
+    // 64 distinct (category, type) pairs: "predictive" is shared
+    // by two patterns; every other pattern carries its own type.
     assert_eq!(pairs.len(), 64);
 }
 
 #[test]
-fn derived_type_lists_match_the_previously_handwritten_allowlists() {
+fn derived_type_lists_match_the_taxonomy() {
     let as_set = |category: Category| {
         Pattern::types_for(category)
             .into_iter()
@@ -1816,6 +1841,8 @@ fn derived_type_lists_match_the_previously_handwritten_allowlists() {
         as_set(Category::Dependencies),
         [
             "functional",
+            "affine",
+            "arithmetic_identity",
             "predictive",
             "order_constraint",
             "order_violation",
@@ -1846,15 +1873,15 @@ fn derived_type_lists_match_the_previously_handwritten_allowlists() {
     assert_eq!(
         as_set(Category::Changes),
         [
-            "residual_level",
+            "residual_shift",
             "series_structure",
             "level_shift",
             "trend_change",
             "variance_change",
             "transient_excursion",
             "step_discontinuity",
-            "distribution_shift",
-            "distribution_change",
+            "predictor_drift",
+            "joint_distribution_change",
             "slope_break",
             "regime_contrast",
             "spike_contrast",
@@ -1898,4 +1925,167 @@ fn selection_records_invalid_findings_instead_of_dropping_them_silently() {
     assert_eq!(dropped.category, Category::Dependencies);
     assert_eq!(dropped.finding_type.as_deref(), Some("bogus"));
     assert!(dropped.reason.contains("dependency type must be"));
+}
+
+#[test]
+fn registered_forms_name_real_types_in_one_category_each() {
+    let categories = [
+        Category::Missingness,
+        Category::Concentration,
+        Category::ColumnRoles,
+        Category::Uniqueness,
+        Category::Duplicates,
+        Category::Formats,
+        Category::Dependencies,
+        Category::ConditionalRules,
+        Category::Associations,
+        Category::Gaps,
+        Category::Anomalies,
+        Category::Ordering,
+        Category::Changes,
+    ];
+    assert!(!FORMS.is_empty());
+    for spec in FORMS {
+        let homes = categories
+            .iter()
+            .filter(|c| Pattern::types_for(**c).contains(&spec.finding_type))
+            .count();
+        assert_eq!(
+            homes, 1,
+            "form {} names type {}, which must live in exactly one category",
+            spec.form, spec.finding_type
+        );
+        assert!(
+            !spec.definition.is_empty(),
+            "form {} carries no definition",
+            spec.form
+        );
+    }
+    // No duplicate (form, type) pairs.
+    let mut seen = std::collections::BTreeSet::new();
+    for spec in FORMS {
+        assert!(
+            seen.insert((spec.form, spec.finding_type)),
+            "duplicate registration for form {}",
+            spec.form
+        );
+    }
+}
+
+#[test]
+fn form_literals_assigned_in_the_sources_are_registered() {
+    // Every form string the detectors assign — in a specification
+    // position (a spec.form assignment, a form field or metrics
+    // entry with a literal value) or returned from a match arm in
+    // the producer crates — must be in the registry. Validation is
+    // the runtime guard; this scan is the compile-time one, so a
+    // new form cannot be emitted without registering it.
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+    let registered: std::collections::BTreeSet<&str> =
+        FORMS.iter().map(|f| f.form).collect();
+    let mut scanned = 0usize;
+    let mut unregistered = Vec::new();
+    for crate_dir in ["onceover-report", "onceover-mines", "onceover-deps", "onceover"] {
+        let src_dir = format!("{root}/{crate_dir}/src");
+        let Ok(entries) = std::fs::read_dir(&src_dir) else {
+            continue; // packaged crate without sibling sources
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            scanned += 1;
+            for lit in form_literals_in(&path, &text) {
+                if !registered.contains(lit.as_str()) {
+                    unregistered.push(format!("{}: {lit}", path.display()));
+                }
+            }
+        }
+    }
+    assert!(scanned > 10, "the scan must actually read the sources");
+    assert!(
+        unregistered.is_empty(),
+        "form literals assigned but not registered: {unregistered:?}"
+    );
+}
+
+/// String literals in the textual positions where a specification
+/// form is assigned. Two producers compute a form in a match —
+/// levels.rs (location / scale / location_scale) and axisbreaks.rs
+/// (the shape forms) — so match-arm returns are collected in those
+/// two files only, minus their two stat-kind labels, which are not
+/// specification forms. slices.rs translates its internal candidate
+/// kinds into forms inside a `json!(if ..)` expression, so a
+/// `"form"` metrics entry whose value is not a literal opens a
+/// short window in which literals are collected.
+fn form_literals_in(path: &std::path::Path, src: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let needles = [
+        "form = Some(\"",
+        "form: Some(\"",
+        "form: \"",
+        "\"form\".into(), json!(\"",
+        "\"form\", json!(\"",
+        "\"form\": \"",
+    ];
+    for needle in needles {
+        let mut rest = src;
+        while let Some(i) = rest.find(needle) {
+            let after = &rest[i + needle.len()..];
+            if let Some(end) = after.find('"') {
+                out.insert(after[..end].to_string());
+            }
+            rest = &rest[i + needle.len()..];
+        }
+    }
+    let snake = |lit: &str| {
+        !lit.is_empty() && lit.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+    };
+    let lines: Vec<&str> = src.lines().collect();
+    for (idx, line) in lines.iter().enumerate() {
+        if line.contains("\"form\".into(), json!(if") {
+            for follow in &lines[idx..(idx + 9).min(lines.len())] {
+                let mut rest = *follow;
+                while let Some(i) = rest.find('"') {
+                    let after = &rest[i + 1..];
+                    match after.find('"') {
+                        Some(end) if snake(&after[..end]) => {
+                            out.insert(after[..end].to_string());
+                            rest = &after[end + 1..];
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    // slices.rs's search candidates carry an internal `form` field
+    // holding the search kind ("tail" | "median" | "rate"); it is
+    // translated to a specification form at finding construction.
+    if name == "slices.rs" {
+        out.remove("rate");
+    }
+    if name == "levels.rs" || name == "axisbreaks.rs" {
+        for line in lines {
+            let line = line.trim();
+            if let Some(i) = line.find("=> \"") {
+                let after = &line[i + 4..];
+                if let Some(end) = after.find('"') {
+                    let lit = &after[..end];
+                    // slope_break is a finding type the axis scan
+                    // also produces; level_scan is a scan label.
+                    // Neither is a specification form.
+                    if snake(lit) && lit != "slope_break" && lit != "level_scan" {
+                        out.insert(lit.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
 }

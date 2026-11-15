@@ -52,7 +52,7 @@ def test_cli_digest_is_the_default_rendering(tmp_path, capsys):
     assert main([str(csv)]) == 0
     out = capsys.readouterr().out
     assert out.startswith("profile digest: 200 rows x 3 columns")
-    assert "schema 0.7" in out
+    assert "schema 0.8" in out
 
 
 def test_cli_digest_budget(tmp_path, capsys):

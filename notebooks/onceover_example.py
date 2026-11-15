@@ -80,13 +80,13 @@ def notebook_detectors():
     (docs/benchmarks/2026-11-02-detector-opt-in.md), so a bare
     ``profile()`` call no longer yields the finding. The selection is
     derived from the registry, so it tracks the default set as that
-    set evolves; only ``dates`` is named explicitly.
+    set evolves; only ``date_gaps`` is named explicitly.
     """
     import onceover
 
     ids = [d["id"] for d in onceover.available_detectors()
-           if d["activation"] in ("default", "hint_gated")]
-    return ids + ["dates"]
+           if d["membership"] == "default_set"]
+    return ids + ["date_gaps"]
 
 
 def find(report, category, *, subtype=None, form=None, column=None, inputs=None, target=None):

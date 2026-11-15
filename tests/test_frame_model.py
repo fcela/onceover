@@ -52,7 +52,7 @@ def _targets(report):
 def test_split_calendar_roles_and_assembled_axis():
     report = onceover.profile(_beijing_mini())
     roles = _roles(report)
-    assert roles["No"] == "index"
+    assert roles["No"] == "row_number"
     for part in ("year", "month", "day", "hour"):
         assert roles[part] == "timestamp_part", part
     assert roles["station"] == "dimension"
@@ -63,7 +63,7 @@ def test_split_calendar_roles_and_assembled_axis():
     assert axis["parts"] == ["year", "month", "day", "hour"]
     # The card carries the same assignment, with its evidence.
     card = report.data["columns"]["No"]
-    assert card["semantic_role"] == "index"
+    assert card["semantic_role"] == "row_number"
     assert card["semantic_role_evidence"]
 
 

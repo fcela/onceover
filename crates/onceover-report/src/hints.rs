@@ -4,8 +4,11 @@
 //! a panel's completeness cannot be tested without knowing the
 //! dimensions and the axis, and a column that should be ordered but is
 //! not is silent. Hints supply that knowledge. They are configuration,
-//! not findings: the expectations pass checks them exactly and tags
-//! its evidence `reference_source: "declared"`.
+//! not findings: the expectations pass checks the declared
+//! structure it covers exactly and tags its evidence
+//! `reference_source: "declared"`; the remaining keys are
+//! instructions to the run or presentation, applied by the
+//! pipeline.
 
 use crate::finding::Finding;
 use serde::{Deserialize, Serialize};
@@ -76,13 +79,13 @@ pub struct ProfileHints {
     /// not a date, datetime, or year-like column. Takes precedence
     /// over automatic axis selection for that battery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub axis: Option<String>,
+    pub ordered_axis: Option<String>,
     /// Declared level orders for categorical columns, finest
     /// semantics only: a column named here becomes an ordered axis
     /// for shape statements, with positions given by the listed
     /// order. Alphabetical or frequency order is never inferred.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub ordinal: BTreeMap<String, Vec<String>>,
+    pub level_order: BTreeMap<String, Vec<String>>,
     /// Columns the rows are claimed to be ordered by, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<String>,
@@ -99,7 +102,7 @@ pub struct ProfileHints {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub measures: Vec<String>,
     /// Declared semantic roles, per column: one of the frame model's
-    /// role vocabulary (identifier, index, timestamp, timestamp_part,
+    /// role vocabulary (identifier, row_number, timestamp, timestamp_part,
     /// dimension, flag, measure, text). An entry overrides the inferred
     /// role for that column; entries naming an unknown column or a
     /// role outside the vocabulary are ignored.
@@ -149,11 +152,19 @@ pub struct ProfileHints {
     /// against the rest of the table by the group_contrast pass.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contrast: Option<GroupContrast>,
+    /// Hint keys the caller supplied under their pre-0.8 names
+    /// (`axis`, `ordinal`), recorded by the binding that accepted
+    /// them so the pipeline can state the rename in coverage. Not
+    /// part of the serialized form.
+    #[serde(skip)]
+    pub deprecated_keys: Vec<String>,
 }
 
 impl ProfileHints {
     pub fn is_empty(&self) -> bool {
         self.time.is_none()
+            && self.ordered_axis.is_none()
+            && self.level_order.is_empty()
             && self.order_by.is_empty()
             && self.no_gaps.is_empty()
             && self.cadence.is_empty()
@@ -373,6 +384,29 @@ mod tests {
 
     fn columns(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn emptiness_covers_every_hint_key() {
+        // Every key in the vocabulary must register in is_empty:
+        // a caller who declares only one key has provided hints,
+        // and the pipeline states "no hints provided" from this
+        // check. The axis and level-order keys were the two the
+        // check missed.
+        assert!(ProfileHints::default().is_empty());
+        let axis_only = ProfileHints {
+            ordered_axis: Some("dose".to_string()),
+            ..Default::default()
+        };
+        assert!(!axis_only.is_empty());
+        let order_only = ProfileHints {
+            level_order: BTreeMap::from([(
+                "grade".to_string(),
+                vec!["low".to_string(), "high".to_string()],
+            )]),
+            ..Default::default()
+        };
+        assert!(!order_only.is_empty());
     }
 
     #[test]

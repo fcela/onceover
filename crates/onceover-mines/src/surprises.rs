@@ -486,7 +486,7 @@ fn make_finding(
                 .into(),
         ),
         Method::new(
-            "surprises",
+            "outliers",
             "robust isolation gap vs the subset bulk",
             "onceover subset-conditional surprise v1 (issue #31)",
         ),
@@ -731,7 +731,7 @@ fn make_categorical_finding(
                 .into(),
         ),
         Method::new(
-            "surprises",
+            "outliers",
             "near-degenerate conditional distribution",
             "onceover subset-conditional surprise v1 (issues #31, #68)",
         ),

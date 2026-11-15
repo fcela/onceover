@@ -62,7 +62,7 @@ def sensor_fixture(rows, seed):
 
 
 def metrics_for(finding):
-    return [e["metrics"] for e in finding["evidence"] if e["method"]["detector"] == "views"]
+    return [e["metrics"] for e in finding["evidence"] if e["method"]["detector"] == "row_clusters"]
 
 
 def summarize(report, truth, evaluated_rows):
@@ -105,7 +105,7 @@ def summarize(report, truth, evaluated_rows):
         "candidate_boundary_from_cluster_ranges": boundary,
         "candidate_boundary_error_rows": abs(boundary - truth["shift_row"]) if boundary is not None else None,
         "temperature_cluster_contrasts": contrasts, "associations": associations,
-        "coverage": report.coverage["views"],
+        "coverage": report.coverage["row_clusters"],
     }
 
 
@@ -132,10 +132,10 @@ def main():
         args.report_dir.mkdir(parents=True, exist_ok=True)
     for name, cap in [("standard", 20_000), ("full_sample", args.rows)]:
         started = time.perf_counter()
-        report = onceover.profile(frame, detectors=["views"], sample_rows=cap)
+        report = onceover.profile(frame, detectors=["row_clusters"], sample_rows=cap)
         elapsed = time.perf_counter() - started
         rendered = report.to_json()
-        repeated = onceover.profile(frame, detectors=["views"], sample_rows=cap).to_json()
+        repeated = onceover.profile(frame, detectors=["row_clusters"], sample_rows=cap).to_json()
         results[name] = summarize(report, truth, sample_rows(args.rows, cap))
         results[name].update(profile_seconds=elapsed, deterministic=rendered == repeated,
                              report_sha256=hashlib.sha256(rendered.encode()).hexdigest())
@@ -143,14 +143,14 @@ def main():
             (args.report_dir / f"sensor-{name}.json").write_text(rendered + "\n")
 
     noise = pl.DataFrame({"noise": np.random.default_rng(args.seed).normal(size=2000)})
-    control = onceover.profile(noise, detectors=["views"])
+    control = onceover.profile(noise, detectors=["row_clusters"])
     controls = {
         "stationary_noise_rows": noise.height,
         "stationary_noise_cluster_findings": [f for f in control.findings if f["category"] == "changes"],
     }
     # A small input avoids rerunning all default detectors on the sensor table.
     controls["views_disabled_by_default"] = (
-        onceover.profile(noise).coverage["views"]["detail"] == "detector not enabled")
+        onceover.profile(noise).coverage["row_clusters"]["detail"] == "detector not enabled")
     checks = {
         "standard_repeat_identical": results["standard"]["deterministic"],
         "full_sample_repeat_identical": results["full_sample"]["deterministic"],

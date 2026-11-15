@@ -1,4 +1,4 @@
-"""Standalone example for the `views` detector.
+"""Standalone example for the `row_clusters` detector.
 
 Two small demos, both runnable against the installed package:
 
@@ -32,7 +32,7 @@ def shared_partition():
     df = pl.DataFrame(
         {"temperature": temperature, "pressure": pressure, "humidity": humidity}
     )
-    report = onceover.profile(df, budget="standard", detectors=["views"])
+    report = onceover.profile(df, budget="standard", detectors=["row_clusters"])
     shared = [set(f["subject"]["columns"]) for f in report.findings
               if f["category"] == "associations"]
     assert {"temperature", "pressure"} in shared
@@ -47,7 +47,7 @@ def spikes():
     for i in (30, 100, 170):
         series[i] = 999.9
     df = pl.DataFrame({"temperature": series})
-    report = onceover.profile(df, budget="standard", detectors=["views"])
+    report = onceover.profile(df, budget="standard", detectors=["row_clusters"])
     rows = {cell["row"] for f in report.findings if f.get("type") == "spike_cells"
             for e in f["evidence"] for cell in e["metrics"].get("cells", [])}
     planted = {30, 100, 170}

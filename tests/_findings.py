@@ -14,7 +14,7 @@ def default_plus(*extra: str) -> list[str]:
     ids = [
         d["id"]
         for d in onceover.available_detectors()
-        if d["activation"] in ("default", "hint_gated")
+        if d["membership"] == "default_set"
     ]
     return ids + [e for e in extra if e not in ids]
 

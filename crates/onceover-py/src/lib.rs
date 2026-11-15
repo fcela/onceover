@@ -42,6 +42,30 @@ impl ProfileReportPy {
     }
 }
 
+/// Parse the hints JSON, accepting the pre-0.8 key names (`axis`,
+/// `ordinal`) as aliases for one release: they are renamed to the
+/// current keys before parsing, and the rename is recorded on the
+/// parsed hints so the pipeline can state it in coverage. When both
+/// spellings of a key are present, the current name wins and the
+/// old one is still recorded as used.
+fn parse_hints(text: &str) -> PyResult<onceover_report::ProfileHints> {
+    let mut value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| PyValueError::new_err(format!("invalid hints: {e}")))?;
+    let mut deprecated_keys: Vec<String> = Vec::new();
+    if let Some(obj) = value.as_object_mut() {
+        for (old, new) in [("axis", "ordered_axis"), ("ordinal", "level_order")] {
+            if let Some(v) = obj.remove(old) {
+                deprecated_keys.push(old.to_string());
+                obj.entry(new.to_string()).or_insert(v);
+            }
+        }
+    }
+    let mut hints: onceover_report::ProfileHints = serde_json::from_value(value)
+        .map_err(|e| PyValueError::new_err(format!("invalid hints: {e}")))?;
+    hints.deprecated_keys = deprecated_keys;
+    Ok(hints)
+}
+
 /// Give a Polars DataFrame a once-over.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -98,10 +122,7 @@ fn profile_py(
         None => None,
     };
     let hints = match hints {
-        Some(text) => Some(
-            serde_json::from_str::<onceover_report::ProfileHints>(&text)
-                .map_err(|e| PyValueError::new_err(format!("invalid hints: {e}")))?,
-        ),
+        Some(text) => Some(parse_hints(&text)?),
         None => None,
     };
     let source = match source {

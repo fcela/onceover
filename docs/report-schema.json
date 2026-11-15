@@ -70,14 +70,14 @@
         "numeric_stats": {
           "$ref": "#/$defs/numericStats"
         },
-        "role": {
+        "card_role": {
           "enum": [
             "all_null",
             "constant",
             "boolean",
             "categorical",
             "continuous",
-            "identifier",
+            "unique",
             "free_text",
             "date",
             "datetime",
@@ -100,7 +100,7 @@
         "semantic_role": {
           "enum": [
             "identifier",
-            "index",
+            "row_number",
             "timestamp",
             "timestamp_part",
             "dimension",
@@ -116,7 +116,7 @@
       "required": [
         "name",
         "dtype",
-        "role",
+        "card_role",
         "n",
         "null_count",
         "null_fraction",
@@ -213,14 +213,6 @@
             "role"
           ]
         },
-        "evidence": {
-          "enum": [
-            "exact",
-            "approximate",
-            "model_based",
-            "inferred"
-          ]
-        },
         "conditionality": {
           "enum": [
             "unconditional",
@@ -247,12 +239,20 @@
             "regularity",
             "deviation"
           ]
+        },
+        "support": {
+          "enum": [
+            "exact",
+            "approximate",
+            "model_based",
+            "inferred"
+          ]
         }
       },
       "required": [
         "scope",
         "object",
-        "evidence",
+        "support",
         "conditionality",
         "temporality",
         "status"
@@ -884,7 +884,7 @@
             {
               "enum": [
                 "identifier",
-                "index",
+                "row_number",
                 "timestamp",
                 "timestamp_part",
                 "dimension",
@@ -1385,7 +1385,7 @@
       "$ref": "#/$defs/overview"
     },
     "schema_version": {
-      "const": "0.7"
+      "const": "0.8"
     },
     "selection": {
       "$ref": "#/$defs/selection"

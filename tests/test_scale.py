@@ -32,7 +32,7 @@ def test_unique_and_dirty_keys_above_one_million_values(budget):
         # it is carried by the uniqueness findings above and the
         # grain statement. Pin the exclusion itself — if either
         # column becomes an eligible target again, this fails.
-        assert not select(report,"dependencies",subtype="functional",form="affine")
+        assert not select(report,"dependencies",subtype="affine",form="affine")
         detail=report.coverage["functional_dependencies"]["detail"]
         assert "frame-role target exclusions" in detail
         assert "id (index)" in detail and "dirty_id (identifier)" in detail
@@ -59,7 +59,7 @@ def test_late_columns_reach_models_dependencies_and_pair_screen(reverse):
     # grouped under the duplicate-encoding lead (schema 0.6) and
     # remains in the report as a grouped statement.
     assert select(report,"dependencies",subtype="functional",form="value_mapping",inputs=["late_code"],target="late_label",include_grouped=True)
-    assert select(report,"dependencies",subtype="functional",form="affine",column="late_affine")
+    assert select(report,"dependencies",subtype="affine",form="affine",column="late_affine")
     assert "all 2850 pairs screened" in report.coverage["dependence_screen"]["detail"]
 
 

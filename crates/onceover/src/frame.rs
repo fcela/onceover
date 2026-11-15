@@ -28,7 +28,7 @@ use std::collections::{BTreeSet, HashMap};
 /// The semantic role vocabulary of the frame model.
 pub const ROLE_VOCABULARY: [&str; 8] = [
     "identifier",
-    "index",
+    "row_number",
     "timestamp",
     "timestamp_part",
     "dimension",
@@ -854,7 +854,7 @@ pub fn analyze_frame(
         // per group
         if matches!(col, TypedCol::I64 { .. } | TypedCol::U64 { .. }) && fact.null_count == 0 {
             if let Some(start) = monotonic_run(table, i) {
-                roles[i] = Some("index".into());
+                roles[i] = Some("row_number".into());
                 evidence[i] = format!(
                     "values run consecutively from {start} in row order ({} rows)",
                     table.n
@@ -868,7 +868,7 @@ pub fn analyze_frame(
                 None
             };
             if let Some(g) = restart {
-                roles[i] = Some("index".into());
+                roles[i] = Some("row_number".into());
                 evidence[i] = format!(
                     "values restart and run consecutively within each level of {} ({} levels)",
                     table.names[g], facts[g].distinct
@@ -1296,7 +1296,7 @@ mod tests {
             .map(|(i, col)| {
                 let card = onceover_core::column_card(&table.names[i], &table.dtypes[i], col);
                 CardFacts {
-                    card_role: card.card.role.clone(),
+                    card_role: card.card.card_role.clone(),
                     distinct: card.card.distinct,
                     null_count: card.card.null_count,
                     numeric_min: card.card.numeric_stats.as_ref().and_then(|s| s.min),
@@ -1435,7 +1435,7 @@ mod tests {
         let model = analyze_frame(&table, &facts, None);
         let role =
             |name: &str| model.roles[table.names.iter().position(|n| n == name).unwrap()].clone();
-        assert_eq!(role("No").as_deref(), Some("index"));
+        assert_eq!(role("No").as_deref(), Some("row_number"));
         assert_eq!(role("year").as_deref(), Some("timestamp_part"));
         assert_eq!(role("month").as_deref(), Some("timestamp_part"));
         assert_eq!(role("hour").as_deref(), Some("timestamp_part"));
@@ -1472,7 +1472,7 @@ mod tests {
         .unwrap();
         let (table, facts) = facts_for(&df);
         let model = analyze_frame(&table, &facts, None);
-        assert_eq!(model.roles[0].as_deref(), Some("index"));
+        assert_eq!(model.roles[0].as_deref(), Some("row_number"));
         // The parsed string column is a timestamp, not a dimension.
         assert_eq!(model.roles[1].as_deref(), Some("timestamp"));
         let axis = model.info.axis.as_ref().expect("axis parsed");

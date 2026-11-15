@@ -1,7 +1,8 @@
 # Report schema
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
-`schema_version` is `"0.7"` in onceover 0.1.3. The machine-readable
+`schema_version` is `"0.8"` (the vocabulary renames of the
+semantics application; `"0.7"` was onceover 0.1.3). The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled
@@ -14,10 +15,10 @@ in `findings.md`.
 
 | key | content |
 |---|---|
-| `schema_version` | string, e.g. `"0.7"` |
+| `schema_version` | string, e.g. `"0.8"` |
 | `overview` | `n_rows`, `n_columns`, `headline` (one-line summary), `dtype_counts`, `role_counts`, `top_findings` (top five claim strings) |
-| `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `index`, `timestamp`, `timestamp_part`, `dimension`, `flag`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, `year_candidate`, or `week_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
-| `columns` | object keyed by column name; each entry: `name`, `dtype`, `role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
+| `frame` | the frame model: `roles` (one entry per column: `column`, `role` — `identifier`, `row_number`, `timestamp`, `timestamp_part`, `dimension`, `flag`, `measure`, or `text`, or null when no assignment was made — and `evidence`, the measurement the assignment rests on), when a time axis was found `axis` (`name`, `source` — `hint`, `native`, `string_parse`, `timestamp_parts`, `year_candidate`, or `week_candidate` — `description`, `confidence` — `declared`, `inferred`, or `low` — plus `parts` for an assembled axis, `source_column` when the axis is or was parsed from one column, and the measured span: `min`, `max`, `distinct_values`, and `step`, the modal step label), and the account computed from the model (schema 0.5): `grain` and `dominant`, inventoried under "The frame account" below. Absent in reports built outside the pipeline |
+| `columns` | object keyed by column name; each entry: `name`, `dtype`, `card_role`, `semantic_role` and `semantic_role_evidence` (the frame model's role for the column and its evidence; absent when no assignment was made), `n`, `null_count`, `null_fraction`, `distinct`, `distinct_ratio`, `numeric_stats`, `concentration`, `top_values` |
 | `findings` | list of finding objects (below) |
 | `grouped_findings` | statements grouped under a verified relationship family's lead (schema 0.6): full finding objects, each carrying `grouped_under`; absent when no family formed. Grouped statements are not in `findings` and spend no selection or digest slot; the family semantics are defined in `docs/findings.md`, "Verified relationship families" |
 | `associations` | every pair the association screens tested (schema 0.7): `a`, `b`, `kind` (`numeric`, `nominal`, `mixed`), pair-complete `n`, the effect sizes that screen computed (`pearson`, `spearman`, `xi_ab`, `xi_ba`; `cramers_v`; `eta`), the raw `p_value`, the Benjamini-Hochberg `q_value` over the pairs tested by the same screen in the run, and the reporting `tier` (`strong`, `weak`, `none`). Findings state the strong and weak pairs; this table is the full screen, including pairs that earned no statement. Absent when no association screen ran |
@@ -46,7 +47,7 @@ population number.
 
 The `frame` section records two judgements the pipeline makes
 before any detector runs. The semantic roles say what each column
-is for: an `index` is a monotonic integer sequence (including a
+is for: a `row_number` is a monotonic integer sequence (including a
 sequence that restarts per group), an `identifier` holds a
 distinct label per row (for whole numbers: packed close together, or
 named like a key) or is a whole-number column named like a key
@@ -83,7 +84,7 @@ Detectors consume the model in two ways. The temporal passes
 receive the axis, with string and part columns materialized as a
 real date or datetime column, so they run on frames whose time is
 stored as text or split into parts. And columns the model marks
-as scaffolding — `index`, `identifier`, and `timestamp` columns,
+as scaffolding — `row_number`, `identifier`, and `timestamp` columns,
 plus the part columns of an assembled axis — are excluded as
 detector targets and as discontinuity axes; every exclusion is
 recorded in the affected pass's `coverage` entry. Column cards
@@ -176,7 +177,7 @@ evidence metrics; the demotion counts are stated in the
 |---|---|
 | `id` | stable finding id within the report |
 | `category` | one of `dependencies`, `conditional_rules`, `concentration`, `gaps`, `changes`, `associations`, `uniqueness`, `duplicates`, `formats`, `missingness`, `intervals`, `column_roles`, `ordering` |
-| `facets` | the finding's properties as fields: `scope` (`column`, `columns`, `rows`, `sequence`, `frame`), `object` (`distribution`, `relation`, `structure`, `temporal_behaviour`, `role`), `evidence` (`exact`, `approximate`, `model_based`, `inferred`), `conditionality` (`unconditional`, `value_conditioned`, `segment_conditioned`), `temporality` (`atemporal`, `ordered`, `change_across_segments`), `status` (`regularity`, `deviation`), and `quality_dimension` (`completeness`, `uniqueness`, `validity`; only on data-quality findings). The category is derived from the facets by the fixed table in `docs/taxonomy-v1-design.md`; the per-type assignment is tabulated in `docs/findings.md` |
+| `facets` | the finding's properties as fields: `scope` (`column`, `columns`, `rows`, `sequence`, `frame`), `object` (`distribution`, `relation`, `structure`, `temporal_behaviour`, `role`), `support` (`exact`, `approximate`, `model_based`, `inferred`), `conditionality` (`unconditional`, `value_conditioned`, `segment_conditioned`), `temporality` (`atemporal`, `ordered`, `change_across_segments`), `status` (`regularity`, `deviation`), and `quality_dimension` (`completeness`, `uniqueness`, `validity`; only on data-quality findings). The category is derived from the facets by the fixed table in `docs/taxonomy-v1-design.md`; the per-type assignment is tabulated in `docs/findings.md` |
 | `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values`, `predictable_missingness` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the views pass, and `concentration_over_time` / `outlier_entity` from the series detector's panel scan (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows`, `near_duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` (formats); `functional`, `predictive`, `order_constraint`, `order_violation`, `model_failure`, `leakage_signature` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association`, `group_contrast`, `conditioned_association`, `slice_shift`, `level_contrast`, `axis_shape` (associations); `gap`, `sequence_gap`, `missing_combinations`, `unexamined_columns`, `unscanned_series`, `partial_period` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier`, `row_inconsistency` (intervals); `column_ordering` (ordering); `residual_level`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `distribution_shift`, `distribution_change`, `ordered_partition`, `series_structure`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity`, `slope_break`, `regime_contrast`, `spike_contrast` (changes) |
 | `subject` | what the finding is about: `columns` (list), usually `target` and/or `inputs`, `unit` |
 | `specification` | the pattern instance: a `definition` (e.g. comparison mode) and, for typed patterns, a `form` (`value_mapping`, `sum`, `linear_combination`, `piecewise_linear`, `hierarchy`, ...) |

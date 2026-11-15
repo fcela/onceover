@@ -22,7 +22,7 @@ __all__ = [
     "available_detectors",
 ]
 
-_SCHEMA_VERSION = "0.7"
+_SCHEMA_VERSION = "0.8"
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -66,71 +66,87 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
     detectors : list[str], optional
         Detector IDs to select; None selects the default set (32 of the
-        43 registered detectors). Excluded unless requested: the opt-in
-        detectors "views" (experimental), "dates", "pivot",
-        "period_associations", "drift", "granularity", "changeforest"
-        and "slice_shifts" — each records
-        a skipped coverage entry in default runs — and "target_shapes",
-        which runs when a target is designated. "expectations" and
-        "group_contrast" are in the default set but engage only when
-        `hints` declare what they check.
+        43 registered detectors). Excluded unless requested: the
+        on-request detectors "row_clusters" (experimental),
+        "date_gaps", "pivot", "period_associations", "drift",
+        "granularity", "distribution_change" and "slice_shifts" \u2014 each
+        records a skipped coverage entry in default runs \u2014 and the
+        target-triggered "target_shapes", "leakage", and
+        "model_failures", which run when a target is designated.
+        "expectations" and "group_contrast" are in the default set
+        but engage only when `hints` declare what they check.
         Required detectors can run as resources without contributing
         their own findings. `available_detectors()` reports each
-        detector's activation.
+        detector's membership (in the default set, or on request
+        only) and its trigger (every run, declared hints, or a
+        designated target).
     max_findings, max_rules : int
         Report-wide selection limits, applied across all contributing methods.
     hints : dict, optional
-        Declared structure the profiler cannot infer, checked exactly by
-        the "expectations" pass (evidence tagged
-        ``reference_source="declared"``). Keys: ``time`` (axis column),
-        ``order_by`` (columns rows are ordered by), ``no_gaps`` (columns
-        expected to form a complete sequence), ``cadence`` (per-column:
+        Declared knowledge about the table that the profiler cannot
+        infer. The keys fall in three classes. Structure to verify
+        \u2014 the "expectations" pass checks these exactly (evidence
+        tagged ``reference_source="declared"``): ``order_by``
+        (columns rows are ordered by), ``no_gaps`` (columns expected
+        to form a complete sequence), ``cadence`` (per-column:
         "daily", "business_day", "weekly", "monthly", or a day/step
-        count), ``dimensions`` and ``measures`` (panel structure),
+        count), ``hierarchies`` (known hierarchies: each entry is one
+        hierarchy's level columns, ordered finest to coarsest \u2014
+        every adjacent mapping is verified exactly; a hierarchy that
+        holds is stated once and the inferred restatements of the
+        chain group under it, a hierarchy that does not hold is
+        stated once as a deviation naming every broken mapping), and
+        ``dimensions`` with ``measures`` (a declared panel, whose
+        completeness over the declared axis is checked).
+        Instructions to the run: ``time`` (the report's axis
+        column), ``ordered_axis`` (an ordering column that is not a
+        date or datetime \u2014 a dose, an age, a sequence number \u2014
+        for the ordered-axis battery), ``level_order`` (per-column
+        declared level orders for categorical columns),
         ``roles`` (per-column semantic role override for the frame
-        model: one of "identifier", "index", "timestamp",
+        model: one of "identifier", "row_number", "timestamp",
         "timestamp_part", "dimension", "flag", "measure", "text"),
-        ``hierarchies`` (known hierarchies: each entry is one
-        hierarchy's level columns, ordered finest to coarsest — every
-        adjacent mapping is verified exactly; a hierarchy that holds
-        is stated once and the inferred restatements of the chain
-        group under it, a hierarchy that does not hold is stated once
-        as a deviation naming every broken mapping), and
-        ``exclude_columns`` (columns removed before profiling starts:
-        no card, and no finding can name them; the
-        ``column_exclusions`` coverage entry states the exclusion and
-        its user-declared source), and ``labels`` (per-column display
-        labels: claims and interpretations name the column by its
-        label instead of the raw column name, while subjects,
-        evidence, metrics, and column cards keep the raw name and
-        finding ids are unchanged — labels are presentation, never
-        identity. Substitution is scoped to each finding: a finding's
-        prose uses a column's label only when the finding's own
-        subject or specification names that column. A label that
-        names a different column, one label declared for two columns,
-        an empty label, or a label for an unknown column is not
-        applied: the raw name is kept and the ``labels`` coverage
-        entry states each case), and ``contrast``
-        (a group contrast: ``{"column": name, "value": scalar}``
-        declares one subset of the rows — the rows where the column
-        equals the value, or a boolean column's true rows when
-        ``value`` is omitted — and the "group_contrast" pass profiles
-        that subset against the rest of the table, column by column).
-        Unknown columns or unusable types are reported in the pass
-        coverage, not raised. The column the
+        ``exclude_columns`` (columns removed before profiling
+        starts: no card, and no finding can name them; the
+        ``column_exclusions`` coverage entry states the exclusion
+        and its user-declared source), and ``contrast`` (a group
+        contrast: ``{"column": name, "value": scalar}`` declares one
+        subset of the rows \u2014 the rows where the column equals the
+        value, or a boolean column's true rows when ``value`` is
+        omitted \u2014 and the "group_contrast" pass profiles that
+        subset against the rest of the table, column by column).
+        Presentation: ``labels`` (per-column display labels: claims
+        and interpretations name the column by its label instead of
+        the raw column name, while subjects, evidence, metrics, and
+        column cards keep the raw name and finding ids are unchanged
+        \u2014 labels are presentation, never identity. Substitution is
+        scoped to each finding: a finding's prose uses a column's
+        label only when the finding's own subject or specification
+        names that column. A label that names a different column,
+        one label declared for two columns, an empty label, or a
+        label for an unknown column is not applied: the raw name is
+        kept and the ``labels`` coverage entry states each case).
+        The pre-0.8 key names ``axis`` and ``ordinal`` are accepted
+        as aliases for ``ordered_axis`` and ``level_order`` for one
+        release; the ``hints`` coverage entry states the rename when
+        they are used. Unknown columns or unusable types are
+        reported in the pass coverage, not raised. The column the
         frame model assembles as the report's time axis is excluded
-        from target roles and from being profiled as a measure by the
-        series pass by structure, whatever its assigned role; a
+        from target roles and from being profiled as a measure by
+        the series pass by structure, whatever its assigned role; a
         ``roles`` entry for the axis column overrides that default.
     target : str, optional
-        Designate a response column for the opt-in target-aware mode.
-        Adds the ``target_shapes`` pass, which reports the shape of
-        each numeric predictor's relationship to the target (linear /
-        binned-curve / single-step R² shares) where a shape is
-        decisive. Every other detector behaves exactly as without it.
-        When ``detectors`` is given explicitly, ``target_shapes``
-        runs only if listed. An unknown or non-numeric target is
-        reported in the pass coverage, not raised.
+        Designate a response column; part of the same declaration
+        surface as `hints`. Engages the target-triggered passes:
+        ``target_shapes`` (the shape of each numeric predictor's
+        relationship to the target \u2014 linear / binned-curve /
+        single-step R\u00b2 shares \u2014 where a shape is decisive),
+        ``leakage`` (a column that determines the target, or relates
+        to it far more strongly than any other), and
+        ``model_failures`` (slices where a cross-fitted model of the
+        target fails). When ``detectors`` is given explicitly, the
+        target-triggered passes run only if listed. An unknown
+        target is reported in the passes' coverage, not raised.
     timing : bool, optional
         Record per-pass wall time as ``elapsed_ms`` in each coverage
         entry: the interval between the previous entry being recorded
@@ -345,7 +361,7 @@ def _statement_class(finding: dict) -> int:
     ):
         return 1
     if cat == "changes" or (
-        cat == "intervals" and finding.get("type") == "extreme_value"
+        cat == "anomalies" and finding.get("type") == "extreme_value"
     ):
         return 2
     return 3
@@ -366,8 +382,8 @@ def _quality_line(data: dict) -> str | None:
         parts.append(
             f"missing values in {len(gaps)} column(s), most in {name} ({rate:.1%})"
         )
-    empty = sum(1 for card in columns.values() if card.get("role") == "all_null")
-    constant = sum(1 for card in columns.values() if card.get("role") == "constant")
+    empty = sum(1 for card in columns.values() if card.get("card_role") == "all_null")
+    constant = sum(1 for card in columns.values() if card.get("card_role") == "constant")
     if empty:
         parts.append(f"{empty} empty column(s)")
     if constant:
@@ -409,10 +425,11 @@ def _account_lines(frame: dict) -> list[str]:
 
 def available_detectors():
     """Available detector IDs, produced categories, resource dependencies,
-    activation, and a one-line purpose per detector: "default" (runs in
-    the default set), "opt_in" (runs only when explicitly selected),
-    "hint_gated" (default set, engages only on declared hints), or
-    "target_gated" (runs when a target is designated)."""
+    membership, trigger, and a one-line purpose per detector. Membership
+    is "default_set" (runs in the default set) or "on_request" (runs
+    only when explicitly selected); trigger is "always", "hints"
+    (engages only on declared hints), or "target" (engages only when
+    a target is designated)."""
     from onceover._native import available_detectors as _available
     return _json.loads(_available())
 
@@ -474,7 +491,7 @@ def _column_diff(base_columns: dict, other_columns: dict) -> dict:
         return {
             "name": name,
             "dtype": card.get("dtype"),
-            "role": card.get("role"),
+            "card_role": card.get("card_role"),
         }
 
     added, removed, retyped, changed = [], [], [], []
@@ -602,7 +619,7 @@ class ProfileReport:
         target=None,
         scope=None,
         object=None,
-        evidence=None,
+        support=None,
         conditionality=None,
         temporality=None,
         quality_dimension=None,
@@ -615,7 +632,7 @@ class ProfileReport:
         `column` matches membership in the finding's subject columns;
         `target` matches the subject target. The remaining arguments
         match the finding's facets exactly (`scope`, `object`,
-        `evidence`, `conditionality`, `temporality`,
+        `support`, `conditionality`, `temporality`,
         `quality_dimension`, `status`); a facet filter never matches a
         finding that does not carry the facet. With no filters,
         returns all findings. With `include_grouped=True`, grouped
@@ -625,7 +642,7 @@ class ProfileReport:
         facet_filters = {
             "scope": scope,
             "object": object,
-            "evidence": evidence,
+            "support": support,
             "conditionality": conditionality,
             "temporality": temporality,
             "quality_dimension": quality_dimension,
@@ -742,7 +759,7 @@ class ProfileReport:
 
         Columns: id, category, type, columns, inputs, target,
         interestingness, claim, n_evidence, basis, and the facet
-        columns scope, object, evidence_kind, conditionality,
+        columns scope, object, support_kind, conditionality,
         temporality, quality_dimension, status — plus
         detector_interestingness when the report carries it. Rows are in
         report order (highest interestingness first). The full evidence
@@ -764,7 +781,7 @@ class ProfileReport:
                 "type": f.get("type"),
                 "scope": facets.get("scope"),
                 "object": facets.get("object"),
-                "evidence_kind": facets.get("evidence"),
+                "support_kind": facets.get("support"),
                 "conditionality": facets.get("conditionality"),
                 "temporality": facets.get("temporality"),
                 "quality_dimension": facets.get("quality_dimension"),
@@ -787,7 +804,7 @@ class ProfileReport:
                 "type": pl.String,
                 "scope": pl.String,
                 "object": pl.String,
-                "evidence_kind": pl.String,
+                "support_kind": pl.String,
                 "conditionality": pl.String,
                 "temporality": pl.String,
                 "quality_dimension": pl.String,

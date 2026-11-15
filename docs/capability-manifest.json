@@ -12,7 +12,8 @@
     "formats"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Column summaries, role suggestions, missingness, concentration, string formats"
   },
   {
@@ -21,7 +22,8 @@
     "duplicates"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Repeated rows under the stated comparison and missing-value policy"
   },
   {
@@ -30,7 +32,8 @@
     "uniqueness"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Single-column, composite, and nearly unique keys"
   },
   {
@@ -39,7 +42,8 @@
     "column_roles"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Verified long layout and relationships in its wide form"
   },
   {
@@ -48,7 +52,8 @@
     "dependencies"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Exact or approximate value mappings, including multi-column determinants"
   },
   {
@@ -57,7 +62,8 @@
     "dependencies"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Pairwise order between two columns (a <= b), exact or with counted violations"
   },
   {
@@ -66,7 +72,8 @@
     "column_roles"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Alternative labels for a grouping and finer-to-coarser rollups"
   },
   {
@@ -75,7 +82,8 @@
     "ordering"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Order in the row sequence and late appended backfills"
   },
   {
@@ -84,7 +92,8 @@
     "formats"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Changes between fractional and integer-valued recording"
   },
   {
@@ -93,16 +102,18 @@
     "missingness"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Repeated, windowed candidate missing-value codes"
   },
   {
-   "id": "boundaries",
+   "id": "boundary_mass",
    "categories": [
     "formats"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Mass piled at a numeric column's minimum or maximum, and interior mass points in zero-inflated columns"
   },
   {
@@ -111,16 +122,18 @@
     "missingness"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Each column's missing rate, the grouping level, threshold, or time point it follows, and columns missing on the same rows"
   },
   {
-   "id": "content",
+   "id": "content_anomalies",
    "categories": [
     "formats"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "What text columns hold (numbers, dates, recognized formats), label variants and likely misspellings, repeated extremes, stray signs, zero inflation, separated modes, and far-out dates"
   },
   {
@@ -130,38 +143,42 @@
     "changes"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Absent steps on the time axis; trend, cycle and persistence of each measure; grouping levels that appear, end or shift share over time"
   },
   {
    "id": "row_consistency",
    "categories": [
     "duplicates",
-    "intervals"
+    "anomalies"
    ],
    "requires": [
     "numeric_dependence"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Rows repeating another on every column but one, rows far from the line two tight columns follow, and rows with two columns' values swapped"
   },
   {
-   "id": "digits",
+   "id": "digit_fingerprints",
    "categories": [
     "formats"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Heaping, terminal-digit preferences, and eligible Benford deviations"
   },
   {
-   "id": "dates",
+   "id": "date_gaps",
    "categories": [
     "gaps",
-    "intervals"
+    "anomalies"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Inferred calendar gaps and interval irregularity"
   },
   {
@@ -171,7 +188,8 @@
     "ordering"
    ],
    "requires": [],
-   "activation": "hint_gated",
+   "membership": "default_set",
+   "trigger": "hints",
    "purpose": "Declared sequences, calendars, ordering, and panel completeness"
   },
   {
@@ -180,7 +198,8 @@
     "gaps"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Per-period row and entity volume on the time axis, against the typical period"
   },
   {
@@ -189,7 +208,8 @@
     "associations"
    ],
    "requires": [],
-   "activation": "hint_gated",
+   "membership": "default_set",
+   "trigger": "hints",
    "purpose": "How one declared subset of the rows differs from the rest of the table"
   },
   {
@@ -198,16 +218,18 @@
     "associations"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Each level of a categorical column against the pooled rest on each numeric measure: location, scale, and constant-multiple contrasts, plus the date axis's calendar parts"
   },
   {
-   "id": "gbm",
+   "id": "predictability",
    "categories": [
     "dependencies"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Predictability of eligible columns from the other columns"
   },
   {
@@ -216,20 +238,22 @@
     "dependencies"
    ],
    "requires": [
-    "gbm"
+    "predictability"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Compact predictive tables selected by cross-validation"
   },
   {
-   "id": "prism",
+   "id": "covering_rules",
    "categories": [
     "conditional_rules"
    ],
    "requires": [
-    "gbm"
+    "predictability"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Multi-condition rules for categorical targets"
   },
   {
@@ -239,9 +263,10 @@
     "changes"
    ],
    "requires": [
-    "gbm"
+    "predictability"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Local linear equations and dated reference-model residual shifts"
   },
   {
@@ -250,9 +275,10 @@
     "dependencies"
    ],
    "requires": [
-    "gbm"
+    "predictability"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Non-additive predictor pairs under a fitted target model"
   },
   {
@@ -261,7 +287,8 @@
     "dependencies"
    ],
    "requires": [],
-   "activation": "target_gated",
+   "membership": "on_request",
+   "trigger": "target",
    "purpose": "Line, curve, and step comparisons for a designated numeric target"
   },
   {
@@ -270,7 +297,8 @@
     "dependencies"
    ],
    "requires": [],
-   "activation": "target_gated",
+   "membership": "on_request",
+   "trigger": "target",
    "purpose": "A column that determines the designated target exactly, or relates to it far more strongly than any other column does \u2014 the signature of a column derived from the outcome or recorded after it"
   },
   {
@@ -279,7 +307,8 @@
     "dependencies"
    ],
    "requires": [],
-   "activation": "target_gated",
+   "membership": "on_request",
+   "trigger": "target",
    "purpose": "Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error"
   },
   {
@@ -289,7 +318,8 @@
     "gaps"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Sustained level, trend, variance changes, and transient excursions"
   },
   {
@@ -298,16 +328,18 @@
     "changes"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Model-based recursive partitions of a numeric response along a time axis or a categorical dimension"
   },
   {
-   "id": "surprises",
+   "id": "outliers",
    "categories": [
-    "intervals"
+    "anomalies"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Isolated numeric values and context-breaking categorical values"
   },
   {
@@ -316,7 +348,8 @@
     "changes"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Axis-aligned and diagonal threshold jumps"
   },
   {
@@ -325,18 +358,20 @@
     "changes"
    ],
    "requires": [
-    "gbm"
+    "predictability"
    ],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Reference-period model-routing changes along a declared time axis"
   },
   {
-   "id": "changeforest",
+   "id": "distribution_change",
    "categories": [
     "changes"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection"
   },
   {
@@ -345,7 +380,8 @@
     "associations"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows"
   },
   {
@@ -355,7 +391,8 @@
     "associations"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level"
   },
   {
@@ -365,7 +402,8 @@
     "associations"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Pairwise nominal rules with train and diagnostic evidence"
   },
   {
@@ -374,7 +412,8 @@
     "concentration"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Combinations concentrated beyond their marginal frequencies"
   },
   {
@@ -383,7 +422,8 @@
     "associations"
    ],
    "requires": [],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Pearson, Spearman, and both directions of Chatterjee's xi"
   },
   {
@@ -394,7 +434,8 @@
    "requires": [
     "numeric_dependence"
    ],
-   "activation": "default",
+   "membership": "default_set",
+   "trigger": "always",
    "purpose": "Affine and small multi-term arithmetic relationships"
   },
   {
@@ -405,11 +446,12 @@
    "requires": [
     "numeric_dependence"
    ],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Changes in pairwise correlation across calendar or year periods"
   },
   {
-   "id": "views",
+   "id": "row_clusters",
    "categories": [
     "associations",
     "changes",
@@ -417,7 +459,8 @@
     "gaps"
    ],
    "requires": [],
-   "activation": "opt_in",
+   "membership": "on_request",
+   "trigger": "always",
    "purpose": "Experimental shared row partitions, cluster differences, and density findings"
   }
  ]

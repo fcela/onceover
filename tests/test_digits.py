@@ -140,5 +140,5 @@ def test_bounded_column_is_benford_ineligible():
     vals = [rng.uniform(1, 100) for _ in range(4000)]
     report = onceover.profile(pl.DataFrame({"amount": vals}))
     assert _of_type(report, "benford_deviation") == []
-    cov = report.coverage["digits"]["detail"]
+    cov = report.coverage["digit_fingerprints"]["detail"]
     assert "0 Benford-eligible" in cov

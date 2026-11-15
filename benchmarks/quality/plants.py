@@ -140,7 +140,7 @@ def conditional_extremes(seed: int):
     idx = np.where(g == "Q")[0][:6]
     v[idx] = 24.0 + rng.random(6) * 5.0
     cols = {"g": g, "v": v, **_noise(rng, n)}
-    spec = {"family": "surprises", "detectors": ["surprises"],
+    spec = {"family": "outliers", "detectors": ["outliers"],
             "types": {"extreme_value"},
             "columns": {"g", "v"}, "response": "v",
             "verify": lambda d: int(np.sum(d["v"] > 20)) == 6}
@@ -157,7 +157,7 @@ def rare_slice_outlier(seed: int):
     idx = np.where(g == "B")[0][:3]
     c[idx] = "rare"
     cols = {"g": g, "c": c, **_noise(rng, n)}
-    spec = {"family": "surprises", "detectors": ["surprises"],
+    spec = {"family": "outliers", "detectors": ["outliers"],
             "types": {"categorical_outlier"},
             "columns": {"g", "c"}, "response": "c",
             "verify": lambda d: int(np.sum(d["c"] == "rare")) == 3}

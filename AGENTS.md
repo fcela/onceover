@@ -43,7 +43,7 @@ A report is a JSON-shaped object (contract:
   `id`, a `category`, and a `type` (always present; the pair is
   the reliable key for filtering and grouping). Every finding also
   carries `facets` — its properties as fields (`scope`, `object`,
-  `evidence`, `conditionality`, `temporality`, `status`, and
+  `support`, `conditionality`, `temporality`, `status`, and
   `quality_dimension` on data-quality findings); the category is
   derived from the facets by a fixed table, so filtering on either
   agrees. `claim` is the
@@ -167,11 +167,11 @@ coverage rather than raised:
 ```python
 report = onceover.profile(df, hints={
     "time": "date",                 # time-axis column
-    "axis": "dose",                 # ordered axis for the
+    "ordered_axis": "dose",         # ordered axis for the
                                     # ordered-axis battery (shape
                                     # and break statements); wins
                                     # over automatic axis choice
-    "ordinal": {"grade": ["low", "mid", "high"]},
+    "level_order": {"grade": ["low", "mid", "high"]},
                                     # declared level order for a
                                     # categorical column; the order
                                     # is never inferred from names
@@ -182,8 +182,8 @@ report = onceover.profile(df, hints={
                                     # weekly | monthly | day count
     "dimensions": ["region"],
     "measures": ["revenue"],
-    "roles": {"row_no": "index"},   # semantic role override:
-                                    # identifier | index | timestamp |
+    "roles": {"row_no": "row_number"},   # semantic role override:
+                                    # identifier | row_number | timestamp |
                                     # timestamp_part | dimension |
                                     # flag | measure | text
     "hierarchies": [["unit", "team", "division"]],
@@ -214,17 +214,20 @@ Passing a bare string where a list is expected raises
 ## Detectors and targeting
 
 `onceover.available_detectors()` lists the detector set with the
-categories each produces and each detector's activation (also
-frozen in `docs/capability-manifest.json`). `detectors=[...]`
+categories each produces and each detector's `membership`
+(`default_set` or `on_request`) and `trigger` (`always`, `hints`,
+or `target`) (also frozen in `docs/capability-manifest.json`).
+`detectors=[...]`
 restricts a run to named detectors. The default set has 32 of
-the 43 registered detectors: `views` (experimental), `dates`,
+the 43 registered detectors: `row_clusters` (experimental), `date_gaps`,
 `pivot`, `period_associations`, `drift`, `granularity`,
-`changeforest`, and `slice_shifts` are
-opt-in and run only when named — a default run records each as
-skipped in coverage, naming it opt-in. `expectations` and
+`distribution_change`, `slice_shifts`, `target_shapes`, `leakage`,
+and `model_failures` are
+on request and run only when named — a default run records each as
+skipped in coverage, naming it on-request. `expectations` and
 `group_contrast` are in the default set but engage only on
 declared hints. Passing
-`target="y"` additionally enables the target-gated passes (the shape pass, the leakage screen, which states when one column nearly determines the target on its own, and the model-failure pass, which states where a cross-fitted model of the target fails).
+`target="y"` additionally enables the target-triggered passes (the shape pass, the leakage screen, which states when one column nearly determines the target on its own, and the model-failure pass, which states where a cross-fitted model of the target fails).
 The full category and type reference is `docs/findings.md`.
 
 ## Empty and partial results

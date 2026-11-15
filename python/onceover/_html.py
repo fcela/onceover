@@ -232,7 +232,7 @@ def _column_card(alt, charts, name, card):
     dtype = card.get("dtype")
     if dtype:
         parts.append(f' <span class="dtype">{_esc(dtype)}</span>')
-    role = card.get("semantic_role") or card.get("role")
+    role = card.get("semantic_role") or card.get("card_role")
     if role:
         parts.append(f' <span class="role">{_esc(role)}</span>')
     parts.append("</h3>")

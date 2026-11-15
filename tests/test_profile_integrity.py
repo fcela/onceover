@@ -105,10 +105,10 @@ def test_views_constants_do_not_hide_late_dependent_columns():
     x = [rng.gauss(0, 1) for _ in range(n)]
     data = {f"constant_{i}": [float(i)] * n for i in range(64)}
     data.update({"late_x": x, "late_y": x})
-    report = onceover.profile(pl.DataFrame(data), detectors=["views"], max_findings=500)
+    report = onceover.profile(pl.DataFrame(data), detectors=["row_clusters"], max_findings=500)
     assert any(set(f["subject"]["columns"]) == {"late_x", "late_y"}
                for f in report.select(category="associations"))
-    assert "late_x, late_y" not in report.coverage["views"]["detail"]
+    assert "late_x, late_y" not in report.coverage["row_clusters"]["detail"]
 
 
 def test_pivot_rules_keep_their_wide_population_and_validation():
@@ -192,7 +192,7 @@ def test_surprise_scan_retains_rare_unsampled_rows():
     n = 100_003
     values = [rng.gauss(50, 1) for _ in range(n)]
     values[-1] = 9999.0
-    r = onceover.profile(pl.DataFrame({"value": values}), detectors=["surprises"])
+    r = onceover.profile(pl.DataFrame({"value": values}), detectors=["outliers"])
     assert any(n - 1 in e["metrics"].get("extreme_rows", [])
                for f in r.findings for e in f["evidence"])
 

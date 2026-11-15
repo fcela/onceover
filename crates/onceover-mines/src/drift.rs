@@ -530,7 +530,7 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.finding_type.as_deref() == Some("distribution_shift")),
+                .any(|f| f.finding_type.as_deref() == Some("predictor_drift")),
             "expected a drift finding, got {} findings",
             findings.len()
         );
@@ -542,7 +542,7 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .all(|f| f.finding_type.as_deref() != Some("distribution_shift")),
+                .all(|f| f.finding_type.as_deref() != Some("predictor_drift")),
             "expected no drift finding, got {} findings",
             findings.len()
         );
@@ -554,7 +554,7 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.finding_type.as_deref() == Some("distribution_shift")),
+                .any(|f| f.finding_type.as_deref() == Some("predictor_drift")),
             "expected a drift finding, got {} findings",
             findings.len()
         );
@@ -566,7 +566,7 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .all(|f| f.finding_type.as_deref() != Some("distribution_shift")),
+                .all(|f| f.finding_type.as_deref() != Some("predictor_drift")),
             "stable data must not produce drift findings"
         );
     }

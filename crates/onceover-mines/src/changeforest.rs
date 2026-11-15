@@ -636,7 +636,7 @@ mod tests {
             "no stated split near planted 400: {ats:?}"
         );
         for f in &out.findings {
-            assert_eq!(f.finding_type.as_deref(), Some("distribution_change"));
+            assert_eq!(f.finding_type.as_deref(), Some("joint_distribution_change"));
             assert_eq!(f.category, onceover_report::Category::Changes);
         }
     }

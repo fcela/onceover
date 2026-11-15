@@ -76,7 +76,7 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
 
     ex = _load_example()
     detectors = ex.notebook_detectors()
-    assert "dates" in detectors
+    assert "date_gaps" in detectors
 
     orders = ex.orders_fixture(seed=2024)
     # The worked example reads individual statements, so it
@@ -93,7 +93,7 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
     assert ex.measured(ex.find(report, "uniqueness", column="source_order_ref"))["duplicates"] == 3
     ex.find(report, "dependencies", subtype="functional", form="value_mapping",
             inputs=["region_id"], target="manager")
-    ex.find(report, "dependencies", subtype="functional", form="affine",
+    ex.find(report, "dependencies", subtype="affine", form="affine",
             inputs=["quantity"], target="double_quantity")
     ex.find(report, "dependencies", subtype="predictive", target="churn",
             inputs=["tenure_months"])

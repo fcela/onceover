@@ -206,7 +206,7 @@ pub fn profile_duplicate_encodings_stopped(
     let mut eligible: Vec<usize> = Vec::new();
     for (i, col) in table.cols.iter().enumerate() {
         let ci = &info[i];
-        if ci.role == "identifier" || !label_like(col) {
+        if ci.card_role == "unique" || !label_like(col) {
             continue;
         }
         if ci.distinct < cfg.min_levels || ci.distinct * 2 > table.n {
@@ -469,7 +469,7 @@ mod tests {
                 ColInfo {
                     name: table.names[i].clone(),
                     dtype: table.dtypes[i].clone(),
-                    role: String::new(),
+                    card_role: String::new(),
                     n: table.n,
                     null_count: col.null_count(),
                     distinct: counts.distinct,
@@ -570,7 +570,7 @@ mod tests {
         let frame = df!["code" => &codes, "label" => &labels].unwrap();
         let table = extract(&frame);
         let mut info = info_for(&table);
-        info[0].role = "identifier".into();
+        info[0].card_role = "unique".into();
         let (findings, _) = profile_duplicate_encodings(&table, &info, &DupeConfig::default());
         assert!(findings.is_empty(), "{findings:?}");
     }

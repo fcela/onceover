@@ -29,7 +29,8 @@ fixture. The code prints the counts for the installed version.
 
 `overview.headline` gives the table's shape and a short result summary.
 `coverage` records completed, sampled, capped, and skipped passes. The
-experimental views detector is disabled by default; the drift detector
+experimental row_clusters detector is on request, not in the default
+set; the drift detector
 requires a declared time axis. A method absent from the findings may have
 found no eligible pattern, reached a search limit, or not run at all.
 
