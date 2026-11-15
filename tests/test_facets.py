@@ -35,7 +35,7 @@ def test_every_finding_carries_facets():
             "temporal_behaviour",
             "role",
         }
-        assert facets["evidence"] in {"exact", "approximate", "model_based", "inferred"}
+        assert facets["support"] in {"exact", "approximate", "model_based", "inferred"}
         assert facets["conditionality"] in {
             "unconditional",
             "value_conditioned",

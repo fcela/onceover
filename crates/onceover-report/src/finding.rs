@@ -430,7 +430,7 @@ pub const FORMS: &[FormSpec] = &[
     FormSpec { form: "rollup", finding_type: "duplicate_encoding", definition: "One column is the rollup of another under a mapping (continents of countries, categories of items)." },
     FormSpec { form: "hierarchy", finding_type: "duplicate_encoding", definition: "The mapping is the declared hierarchy; the statement leads its verified family of mappings." },
     FormSpec { form: "isolation_gap", finding_type: "extreme_value", definition: "The value is separated from the rest of the column by a wide empty gap." },
-    FormSpec { form: "tail_share", finding_type: "slice_shift", definition: "The slice's share of the target's upper tail against its share of rows." },
+    FormSpec { form: "tail_shift", finding_type: "slice_shift", definition: "The slice's rows sit in the target's upper tail at a higher rate than the table's rows." },
     FormSpec { form: "median_shift", finding_type: "slice_shift", definition: "The slice's median of the target against the table-wide median." },
     FormSpec { form: "level_share", finding_type: "slice_shift", definition: "The slice's share of one level of a categorical target against its share of rows." },
     FormSpec { form: "location", finding_type: "level_contrast", definition: "The level's median of the measure differs from the rest's median." },

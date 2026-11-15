@@ -128,7 +128,7 @@ def test_default_run_records_changeforest_as_opt_in():
     report = onceover.profile(_covariance_frame())
     entry = report.coverage["distribution_change"]
     assert entry["status"] == "skipped"
-    assert "opt-in" in entry["detail"]
+    assert "on-request" in entry["detail"]
     assert _of_type(report, "joint_distribution_change") == []
 
 

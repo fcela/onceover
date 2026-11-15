@@ -108,7 +108,7 @@ def summary(report):
     n = report.overview["n_rows"]
     dirty = find(report, "uniqueness", column="source_order_ref")
     fd = find(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="manager")
-    affine = find(report,"dependencies",subtype="functional",form="affine",inputs=["quantity"],target="double_quantity")
+    affine = find(report,"dependencies",subtype="affine",form="affine",inputs=["quantity"],target="double_quantity")
     gap = find(report,"gaps",subtype="gap",column="order_date")
     rule = measured(find(report,"dependencies",subtype="predictive",target="churn",inputs=["tenure_months"]))
     local = measured(find(report,"dependencies",subtype="predictive",form="piecewise_linear",target="line_total"))
@@ -202,7 +202,7 @@ def references(orders, report):
 
 def formula_check(orders, report):
     import numpy as np
-    affine=measured(find(report,"dependencies",subtype="functional",form="affine",inputs=["quantity"],target="double_quantity"))
+    affine=measured(find(report,"dependencies",subtype="affine",form="affine",inputs=["quantity"],target="double_quantity"))
     assert (orders["double_quantity"] == 2*orders["quantity"]).all()
     total=orders["line_total"].to_numpy()
     expected=np.round(orders["quantity"].to_numpy()*orders["unit_price"].to_numpy(),2)

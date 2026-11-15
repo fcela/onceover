@@ -491,7 +491,7 @@ pub fn changeforest_pass(
                     .into(),
             ),
             Method::new(
-                "changeforest",
+                "distribution_change",
                 "classifier_binary_segmentation",
                 "binary segmentation with random-forest classifier gains and permutation model selection (changeforest crate)",
             ),

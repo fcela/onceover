@@ -35,7 +35,7 @@ def test_unique_and_dirty_keys_above_one_million_values(budget):
         assert not select(report,"dependencies",subtype="affine",form="affine")
         detail=report.coverage["functional_dependencies"]["detail"]
         assert "frame-role target exclusions" in detail
-        assert "id (index)" in detail and "dirty_id (identifier)" in detail
+        assert "id (row_number)" in detail and "dirty_id (identifier)" in detail
 
 
 @pytest.mark.parametrize("reverse", [False, True])

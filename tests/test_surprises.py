@@ -24,7 +24,7 @@ def test_global_extreme_isolated():
     hits = surprises(onceover.profile(df))
     assert len(hits) == 1
     hit = hits[0]
-    assert hit["category"] == "intervals"
+    assert hit["category"] == "anomalies"
     assert "age" in hit["subject"]["columns"]
     metrics = hit["evidence"][0]["metrics"]
     assert metrics["extreme_values"] == [455.0]
@@ -115,7 +115,7 @@ def test_categorical_breaker_isolated():
     hits = categorical_outliers(onceover.profile(df))
     assert len(hits) == 1
     hit = hits[0]
-    assert hit["category"] == "intervals"
+    assert hit["category"] == "anomalies"
     metrics = hit["evidence"][0]["metrics"]
     assert metrics["outlier_rows"] == [7]
     assert metrics["outlier_values"] == ["bad"]

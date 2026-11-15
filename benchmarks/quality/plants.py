@@ -41,7 +41,7 @@ def affine_identity(seed: int):
     x = rng.normal(size=n)
     cols = {"x": x, "y": 3.0 * x + 2.0, **_noise(rng, n)}
     spec = {"family": "dependencies", "detectors": ["functional_dependencies", "identities"],
-            "types": {"functional", "arithmetic_identity"},
+            "types": {"affine", "arithmetic_identity"},
             "columns": {"x", "y"}, "response": "y",
             "verify": lambda d: bool(np.allclose(d["y"], 3.0 * d["x"] + 2.0))}
     return _frame(cols), spec

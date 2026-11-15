@@ -2018,10 +2018,11 @@ fn form_literals_assigned_in_the_sources_are_registered() {
 /// levels.rs (location / scale / location_scale) and axisbreaks.rs
 /// (the shape forms) — so match-arm returns are collected in those
 /// two files only, minus their two stat-kind labels, which are not
-/// specification forms. slices.rs translates its internal candidate
-/// kinds into forms inside a `json!(if ..)` expression, so a
-/// `"form"` metrics entry whose value is not a literal opens a
-/// short window in which literals are collected.
+/// specification forms. slices.rs computes its form in if/else
+/// expressions over its internal candidate kind, both for a
+/// `"form"` metrics entry and for the construction tuple, so a
+/// line testing the candidate kind opens a short window in which
+/// literals are collected.
 fn form_literals_in(path: &std::path::Path, src: &str) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     let needles = [
@@ -2069,6 +2070,22 @@ fn form_literals_in(path: &std::path::Path, src: &str) -> std::collections::BTre
     // translated to a specification form at finding construction.
     if name == "slices.rs" {
         out.remove("rate");
+        // The translated forms are the branch bodies of the if/else
+        // over the candidate kind, each on its own line just below
+        // the condition.
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("cand.form ==") {
+                for follow in &lines[idx..(idx + 6).min(lines.len())] {
+                    let lit_line = follow.trim().trim_end_matches(',');
+                    if lit_line.len() > 2 && lit_line.starts_with('"') && lit_line.ends_with('"') {
+                        let lit = &lit_line[1..lit_line.len() - 1];
+                        if snake(lit) {
+                            out.insert(lit.to_string());
+                        }
+                    }
+                }
+            }
+        }
     }
     if name == "levels.rs" || name == "axisbreaks.rs" {
         for line in lines {
