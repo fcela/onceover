@@ -290,6 +290,203 @@ pub(crate) fn fmt_q(q: f64) -> String {
     }
 }
 
+// ---------------------------------------------------------------------
+// Shared elementary statistics: one implementation per statistic,
+// here, so two passes can never disagree about a quantile, a rank
+// test, or a variance share by construction. Passes call these
+// instead of keeping local copies.
+// ---------------------------------------------------------------------
+
+/// Linear-interpolation quantile (the type-7 convention) of an
+/// ascending slice: pos = q·(n−1), interpolated between the
+/// bracketing order statistics. NaN on an empty slice.
+pub(crate) fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
+    quantile_at(sorted.len(), q, |i| sorted[i])
+}
+
+/// The same quantile over the values of ascending (value, row)
+/// pairs, for passes that carry row indices alongside the values.
+pub(crate) fn quantile_sorted_pairs(sorted: &[(f64, usize)], q: f64) -> f64 {
+    quantile_at(sorted.len(), q, |i| sorted[i].0)
+}
+
+fn quantile_at(len: usize, q: f64, at: impl Fn(usize) -> f64) -> f64 {
+    if len == 0 {
+        return f64::NAN;
+    }
+    let pos = q * (len - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = (lo + 1).min(len - 1);
+    let frac = pos - lo as f64;
+    at(lo) * (1.0 - frac) + at(hi) * frac
+}
+
+/// Nearest-rank quantile of an ascending slice: the order
+/// statistic at position q·(n−1), truncated, with no
+/// interpolation — the result is always a value present in the
+/// data. Kept for the row passes, whose robust scale and range
+/// bounds must be observed values; statistics stated in claims
+/// use `quantile_sorted` instead. Callers guarantee a non-empty
+/// slice.
+pub(crate) fn quantile_nearest_rank(sorted: &[f64], q: f64) -> f64 {
+    sorted[((q * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)]
+}
+
+/// Median of an ascending slice.
+pub(crate) fn median_sorted(sorted: &[f64]) -> f64 {
+    quantile_sorted(sorted, 0.5)
+}
+
+/// Interquartile range of an ascending slice.
+pub(crate) fn iqr_sorted(sorted: &[f64]) -> f64 {
+    quantile_sorted(sorted, 0.75) - quantile_sorted(sorted, 0.25)
+}
+
+/// Rank sum of sample `a` and the tie correction, from merging
+/// two ascending slices: returns (rank_sum_a, tie_term) with
+/// tie_term = Σ(t³ − t) over tie groups. Ranks and tie terms are
+/// sums of integers and half-integers, exact in f64 at any
+/// realistic sample size, so computing them by merging two
+/// pre-sorted slices or by sorting a combined copy cannot give
+/// different results.
+fn merged_rank_sum(a: &[f64], b: &[f64]) -> (f64, f64) {
+    let (mut i, mut j) = (0usize, 0usize);
+    let mut rank_sum_a = 0.0f64;
+    let mut tie_term = 0.0f64;
+    let mut pos = 0usize; // elements consumed, 0-based
+    while i < a.len() || j < b.len() {
+        let v = match (a.get(i), b.get(j)) {
+            (Some(&x), Some(&y)) => x.min(y),
+            (Some(&x), None) => x,
+            (None, Some(&y)) => y,
+            (None, None) => break,
+        };
+        let start = pos;
+        let mut in_a = 0usize;
+        while i < a.len() && a[i] == v {
+            i += 1;
+            pos += 1;
+            in_a += 1;
+        }
+        while j < b.len() && b[j] == v {
+            j += 1;
+            pos += 1;
+        }
+        let t = (pos - start) as f64;
+        if t > 1.0 {
+            tie_term += t * t * t - t;
+        }
+        // Average rank (1-based) over the tie group start..pos.
+        rank_sum_a += in_a as f64 * (start + pos + 1) as f64 / 2.0;
+    }
+    (rank_sum_a, tie_term)
+}
+
+/// (U statistic, null mean, null variance) for sample `a` against
+/// sample `b` from their merged rank sum and tie term.
+fn mann_whitney_u_stats(n1: f64, n2: f64, rank_sum_a: f64, tie_term: f64) -> (f64, f64, f64) {
+    let n = n1 + n2;
+    let u = rank_sum_a - n1 * (n1 + 1.0) / 2.0;
+    let mean = n1 * n2 / 2.0;
+    let var = n1 * n2 / 12.0 * ((n + 1.0) - tie_term / (n * (n - 1.0)));
+    (u, mean, var)
+}
+
+/// Two-sided Mann–Whitney U p-value (normal approximation with
+/// tie correction and continuity correction) for sample `a`
+/// against sample `b`; the inputs need not be sorted.
+pub(crate) fn mann_whitney_p(a: &[f64], b: &[f64]) -> f64 {
+    if a.len() < 3 || b.len() < 3 {
+        return 1.0;
+    }
+    let mut sa = a.to_vec();
+    let mut sb = b.to_vec();
+    sa.sort_by(|x, y| x.total_cmp(y));
+    sb.sort_by(|x, y| x.total_cmp(y));
+    let (rank_sum_a, tie_term) = merged_rank_sum(&sa, &sb);
+    let (u, mean, var) = mann_whitney_u_stats(a.len() as f64, b.len() as f64, rank_sum_a, tie_term);
+    if var <= 0.0 {
+        return 1.0;
+    }
+    let z = (u - mean).abs() - 0.5;
+    if z <= 0.0 {
+        return 1.0;
+    }
+    (2.0 * norm_sf(z / var.sqrt())).clamp(0.0, 1.0)
+}
+
+/// Two-sided rank-sum (Mann–Whitney) p-value with no continuity
+/// correction, for samples `a` and `b` that are already
+/// ascending: the level-contrast pass merges its pre-sorted
+/// slices, so no combined copy is built.
+pub(crate) fn rank_sum_p(a: &[f64], b: &[f64]) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 1.0;
+    }
+    let (rank_sum_a, tie_term) = merged_rank_sum(a, b);
+    let (u, mean, var) = mann_whitney_u_stats(a.len() as f64, b.len() as f64, rank_sum_a, tie_term);
+    if var <= 0.0 {
+        return 1.0;
+    }
+    let z = (u - mean) / var.sqrt();
+    (2.0 * norm_sf(z.abs())).clamp(1e-300, 1.0)
+}
+
+/// Between-group share of the total sum of squares
+/// (eta-squared), the raw decomposition the group-contrast
+/// passes report.
+pub(crate) fn eta_squared(ss_between: f64, ss_total: f64) -> f64 {
+    if ss_total > 0.0 {
+        ss_between / ss_total
+    } else {
+        0.0
+    }
+}
+
+/// Bias-adjusted eta-squared: the between-group share with the
+/// within-group mean square's expected contribution removed,
+/// clamped to [0, 1]. `ss_within` and `ss_total` are the usual
+/// ANOVA sums over `n` rows in `k` groups.
+pub(crate) fn adjusted_eta_squared(ss_within: f64, ss_total: f64, n: usize, k: usize) -> f64 {
+    let ms_within = ss_within / (n - k) as f64;
+    (((ss_total - ss_within) - (k - 1) as f64 * ms_within) / ss_total).clamp(0.0, 1.0)
+}
+
+/// Deterministic xorshift64* generator (shifts 12/25/27,
+/// multiplier 0x2545F4914F6CDD1D): the one implementation for
+/// every pass that needs reproducible shuffles, subsamples, or
+/// bootstraps for a fixed seed. The state is the raw seed value;
+/// a caller that wants a decorrelated stream xors its own domain
+/// constant into the seed before constructing.
+pub struct Lcg(pub u64);
+
+impl Lcg {
+    pub fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545F4914F6CDD1D)
+    }
+
+    /// Uniform in [0, 1).
+    pub fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// A shuffled copy of `y` (Fisher–Yates driven by this
+    /// stream).
+    pub fn shuffled(&mut self, y: &[f64]) -> Vec<f64> {
+        let mut idx: Vec<usize> = (0..y.len()).collect();
+        for i in (1..idx.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            idx.swap(i, j);
+        }
+        idx.iter().map(|&i| y[i]).collect()
+    }
+}
+
 /// Extract f64 pairs (pairwise-complete) from two numeric columns.
 pub fn pairs_of(a: &TypedCol, b: &TypedCol) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
@@ -389,7 +586,7 @@ fn chatterjee_parts(pairs: &[(f64, f64)]) -> Option<(f64, Vec<f64>, f64)> {
     // ...then break x-ties uniformly at random (Chatterjee's
     // recommendation; seeded => deterministic). Fixed orderings correlate
     // with data order and bias ξ badly when y encodes row position.
-    let mut rng = crate::gbm::Lcg(0x9E37_79B9_7F4A_7C15 ^ (n as u64));
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ (n as u64));
     let mut i = 0;
     while i < n {
         let mut j = i;
@@ -1446,6 +1643,113 @@ mod tests {
         let q2 = bh_qvalues(&[Some(0.04), Some(0.001)]);
         assert!(q2[0].unwrap() >= q2[1].unwrap());
         assert!((q2[1].unwrap() - 0.002).abs() < 1e-12);
+    }
+
+    #[test]
+    fn quantile_variants_return_their_distinct_values() {
+        // Type-7 interpolation on [10, 20, 30, 40]: the median
+        // falls between the two middle values, the quartiles a
+        // quarter and three quarters along the bracketing spans.
+        let v = [10.0, 20.0, 30.0, 40.0];
+        assert_eq!(quantile_sorted(&v, 0.0), 10.0);
+        assert_eq!(quantile_sorted(&v, 0.25), 17.5);
+        assert_eq!(quantile_sorted(&v, 0.5), 25.0);
+        assert_eq!(quantile_sorted(&v, 0.75), 32.5);
+        assert_eq!(quantile_sorted(&v, 1.0), 40.0);
+        assert_eq!(median_sorted(&v), 25.0);
+        assert_eq!(iqr_sorted(&v), 15.0);
+        assert!(quantile_sorted(&[], 0.5).is_nan());
+        // Nearest-rank on the same vector returns observed values
+        // only: pos = q·(n−1) truncated — 1.5 → index 1 at the
+        // median, 0.75 → index 0 at the first quartile.
+        assert_eq!(quantile_nearest_rank(&v, 0.5), 20.0);
+        assert_eq!(quantile_nearest_rank(&v, 0.25), 10.0);
+        assert_eq!(quantile_nearest_rank(&v, 0.75), 30.0);
+        assert_eq!(quantile_nearest_rank(&v, 1.0), 40.0);
+        // The pairs entry point computes the same statistic over
+        // the carried values.
+        let pairs = [(10.0, 3usize), (20.0, 1), (30.0, 4), (40.0, 2)];
+        assert_eq!(quantile_sorted_pairs(&pairs, 0.5), 25.0);
+        assert_eq!(quantile_sorted_pairs(&pairs, 0.25), 17.5);
+    }
+
+    #[test]
+    fn norm_sf_matches_known_values() {
+        assert!((norm_sf(0.0) - 0.5).abs() < 1e-12);
+        assert!((norm_sf(1.96) - 0.024_997_895_148_220_435).abs() < 1e-9);
+        assert!((norm_sf(-1.0) - 0.841_344_746_068_542_9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rank_tests_match_hand_computed_values() {
+        // a entirely below b: U = 0, mean 4.5, variance 5.25.
+        // With continuity correction z = (4.5 − 0.5)/√5.25,
+        // without it z = 4.5/√5.25 (reference values cross-checked
+        // against scipy.stats.mannwhitneyu, asymptotic).
+        let a = [1.0, 2.0, 3.0];
+        let b = [4.0, 5.0, 6.0];
+        assert!((mann_whitney_p(&a, &b) - 0.080_855_598_370_052_24).abs() < 1e-9);
+        assert!((rank_sum_p(&a, &b) - 0.049_534_613_435_626_706).abs() < 1e-9);
+        // Ties across the samples share average ranks:
+        // [1,2,2] against [2,3,4], no continuity correction.
+        let c = [1.0, 2.0, 2.0];
+        let d = [2.0, 3.0, 4.0];
+        assert!((rank_sum_p(&c, &d) - 0.104_570_993_064_372_84).abs() < 1e-9);
+        // Guards: too-small samples and empty inputs are null.
+        assert_eq!(mann_whitney_p(&[1.0, 2.0], &[3.0, 4.0]), 1.0);
+        assert_eq!(rank_sum_p(&[], &[1.0]), 1.0);
+        // Identical samples sit exactly on the null mean.
+        assert_eq!(rank_sum_p(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]), 1.0);
+    }
+
+    #[test]
+    fn eta_squared_variants_match_hand_computed_values() {
+        assert_eq!(eta_squared(30.0, 100.0), 0.3);
+        assert_eq!(eta_squared(30.0, 0.0), 0.0);
+        // ss_within 70 of 100 total, n = 50 in k = 5 groups:
+        // ms_within = 70/45, adjusted = (30 − 4·70/45)/100.
+        let adj = adjusted_eta_squared(70.0, 100.0, 50, 5);
+        assert!((adj - 0.237_777_777_777_777_78).abs() < 1e-12);
+        // A negative adjusted share clamps to zero.
+        assert_eq!(adjusted_eta_squared(99.0, 100.0, 10, 5), 0.0);
+    }
+
+    #[test]
+    fn lcg_stream_is_pinned() {
+        // The xorshift64* stream from raw state 42: the sequence
+        // every consumer of this generator was built against
+        // (the GBM passes' subsampling and the ordered-axis
+        // passes' shuffles entered through the two former copies
+        // of this step; both produced exactly this stream).
+        let mut rng = Lcg(42);
+        let seq: Vec<u64> = (0..5).map(|_| rng.next_u64()).collect();
+        assert_eq!(
+            seq,
+            vec![
+                0x56ce_4ab7_719b_a3a0,
+                0xc841_eb53_ebbb_2dda,
+                0xca46_6be0_c998_0276,
+                0xf1ac_c733_4a7b_70df,
+                0xc3af_4dd7_fb90_0a06,
+            ]
+        );
+        // The ordered-axis passes seeded through a constructor
+        // that xored the golden-ratio constant into the state;
+        // constructing with that state directly reproduces their
+        // stream (shown for seed 7).
+        let mut rng = Lcg(7 ^ 0x9E37_79B9_7F4A_7C15);
+        assert_eq!(rng.next_u64(), 0x65b7_a8ed_a2fb_02b4);
+        assert_eq!(rng.next_u64(), 0x9730_7627_2445_2fa1);
+        // next_f64 stays in [0, 1) and shuffled is a permutation.
+        let mut rng = Lcg(1234);
+        for _ in 0..100 {
+            let f = rng.next_f64();
+            assert!((0.0..1.0).contains(&f));
+        }
+        let mut rng = Lcg(99);
+        let mut shuffled = rng.shuffled(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        shuffled.sort_by(|x, y| x.total_cmp(y));
+        assert_eq!(shuffled, vec![1.0, 2.0, 3.0, 4.0, 5.0]);
     }
 
     #[test]

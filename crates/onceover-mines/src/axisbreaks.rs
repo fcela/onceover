@@ -36,6 +36,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::dep::Lcg;
 use onceover_core::{TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::{json, Value};
@@ -103,35 +104,13 @@ pub struct AxisBatteryOutcome {
 }
 
 // ----------------------------------------------------------------
-// Deterministic RNG (xorshift64*), so shuffles and bootstraps are
-// reproducible for a fixed seed.
+// Deterministic RNG: the crate's one xorshift64* stream
+// (`crate::dep::Lcg`), so shuffles and bootstraps are
+// reproducible for a fixed seed. This module's passes have
+// always seeded it with the golden-ratio constant xored in.
 
-pub struct Rng(u64);
-
-impl Rng {
-    pub fn new(seed: u64) -> Self {
-        Rng(seed ^ 0x9E37_79B9_7F4A_7C15)
-    }
-    pub fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-    /// Uniform in [0, 1).
-    pub fn next_f64(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-    }
-    pub fn shuffled(&mut self, y: &[f64]) -> Vec<f64> {
-        let mut idx: Vec<usize> = (0..y.len()).collect();
-        for i in (1..idx.len()).rev() {
-            let j = (self.next_u64() % (i as u64 + 1)) as usize;
-            idx.swap(i, j);
-        }
-        idx.iter().map(|&i| y[i]).collect()
-    }
+fn rng_seeded(seed: u64) -> Lcg {
+    Lcg(seed ^ 0x9E37_79B9_7F4A_7C15)
 }
 
 // ----------------------------------------------------------------
@@ -153,24 +132,10 @@ pub fn sd(v: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / (v.len() - 1) as f64).sqrt()
 }
 
-pub fn quantile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    if sorted.len() == 1 {
-        return sorted[0];
-    }
-    let pos = q * (sorted.len() - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    let frac = pos - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
-}
-
 pub fn iqr(v: &[f64]) -> f64 {
     let mut s = v.to_vec();
     s.sort_by(|a, b| a.total_cmp(b));
-    quantile(&s, 0.75) - quantile(&s, 0.25)
+    crate::dep::iqr_sorted(&s)
 }
 
 fn ranks(v: &[f64]) -> Vec<f64> {
@@ -221,27 +186,12 @@ pub fn spearman(x: &[f64], y: &[f64]) -> f64 {
     pearson(&ranks(x), &ranks(y))
 }
 
-/// Two-sided normal tail, for z statistics and large-sample
-/// correlation p-values.
-fn normal_sf(z: f64) -> f64 {
-    // Abramowitz–Stegun 7.1.26 via the complementary error
-    // function approximation used across the crate's statistics.
-    let x = z.abs() / std::f64::consts::SQRT_2;
-    let t = 1.0 / (1.0 + 0.327_591_1 * x);
-    let poly = t
-        * (0.254_829_592
-            + t * (-0.284_496_736
-                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
-    let erf = 1.0 - poly * (-x * x).exp();
-    (1.0 - erf) / 2.0
-}
-
 fn spearman_p(rho: f64, n: usize) -> f64 {
     if n < 4 || rho.abs() >= 1.0 {
         return if rho.abs() >= 1.0 { 1e-12 } else { 1.0 };
     }
     let t = rho * (((n - 2) as f64) / (1.0 - rho * rho)).sqrt();
-    (2.0 * normal_sf(t)).clamp(1e-12, 1.0)
+    (2.0 * crate::dep::norm_sf(t.abs())).clamp(1e-12, 1.0)
 }
 
 /// P-value for a scan statistic against the maxima of shuffled
@@ -268,25 +218,6 @@ fn scan_pvalue(observed: f64, null_maxima: &[f64]) -> f64 {
     let z = (observed - mu) / beta;
     let p = 1.0 - (-(-z).exp()).exp();
     p.clamp(1e-12, 1.0 / (1.0 + b))
-}
-
-/// Benjamini–Hochberg adjusted q-values, aligned with the input.
-pub fn bh_qvalues(pvals: &[f64]) -> Vec<f64> {
-    let m = pvals.len();
-    if m == 0 {
-        return Vec::new();
-    }
-    let mut order: Vec<usize> = (0..m).collect();
-    order.sort_by(|&a, &b| pvals[a].total_cmp(&pvals[b]));
-    let mut q = vec![1.0f64; m];
-    let mut running = 1.0f64;
-    for (rank_from_top, &idx) in order.iter().enumerate().rev() {
-        let rank = rank_from_top + 1;
-        let val = pvals[idx] * m as f64 / rank as f64;
-        running = running.min(val);
-        q[idx] = running.min(1.0);
-    }
-    q
 }
 
 // ----------------------------------------------------------------
@@ -522,7 +453,7 @@ pub fn window_contrast(
     boundary: usize,
     win: usize,
     shuffles: usize,
-    rng: &mut Rng,
+    rng: &mut Lcg,
 ) -> Option<ContrastHit> {
     let n = y.len();
     if boundary < win || boundary + win > n {
@@ -551,7 +482,7 @@ pub fn window_contrast(
         mean_before: mean(before),
         mean_after: mean(after),
         z,
-        p: (2.0 * normal_sf(z)).clamp(1e-12, 1.0),
+        p: (2.0 * crate::dep::norm_sf(z.abs())).clamp(1e-12, 1.0),
     })
 }
 
@@ -631,7 +562,7 @@ pub fn spike_scan(
     period: Option<usize>,
     jump_bar: f64,
     shuffles: usize,
-    rng: &mut Rng,
+    rng: &mut Lcg,
 ) -> Option<SpikeHit> {
     let cands = spike_candidates(y, len, period, jump_bar);
     if cands.is_empty() {
@@ -790,8 +721,8 @@ pub fn bin_pairs(x: &[f64], y: &[f64], n_bins: usize) -> Option<Bins> {
         let mut ys: Vec<f64> = rows.iter().map(|&r| y[r]).collect();
         xs.sort_by(|a, b| a.total_cmp(b));
         ys.sort_by(|a, b| a.total_cmp(b));
-        centers.push(quantile(&xs, 0.5));
-        medians.push(quantile(&ys, 0.5));
+        centers.push(crate::dep::quantile_sorted(&xs, 0.5));
+        medians.push(crate::dep::quantile_sorted(&ys, 0.5));
         counts.push(rows.len());
     }
     Some(Bins {
@@ -1099,7 +1030,7 @@ fn saturation_bars(bins: &Bins, rho: f64) -> Option<KneeFit> {
 /// range). When bars 1–4 hold but stability fails, the weaker
 /// "rises, then flattens" form is returned with no located knee
 /// claim beyond the point estimate.
-pub fn saturation_scan(x: &[f64], y: &[f64], bootstraps: usize, rng: &mut Rng) -> Option<SatHit> {
+pub fn saturation_scan(x: &[f64], y: &[f64], bootstraps: usize, rng: &mut Lcg) -> Option<SatHit> {
     let n = x.len();
     if n < 500 || n != y.len() {
         return None;
@@ -1161,7 +1092,8 @@ pub fn saturation_scan(x: &[f64], y: &[f64], bootstraps: usize, rng: &mut Rng) -
     let share = saturating as f64 / bootstraps as f64;
     knees.sort_by(|a, b| a.total_cmp(b));
     let knee_iqr_frac = if knees.len() >= 4 {
-        (quantile(&knees, 0.75) - quantile(&knees, 0.25)) / range
+        (crate::dep::quantile_sorted(&knees, 0.75) - crate::dep::quantile_sorted(&knees, 0.25))
+            / range
     } else {
         1.0
     };
@@ -1217,7 +1149,7 @@ impl AxisDef {
         }
         let mut gaps: Vec<f64> = keys.windows(2).map(|w| w[1] - w[0]).collect();
         gaps.sort_by(|a, b| a.total_cmp(b));
-        let med = quantile(&gaps, 0.5);
+        let med = crate::dep::quantile_sorted(&gaps, 0.5);
         match self.kind {
             AxisKind::Date => Some(med),
             AxisKind::Datetime => Some(med / 86_400_000_000.0),
@@ -1997,7 +1929,7 @@ fn scan_series(
     ctx_idx: usize,
     ctx: &SeriesCtx,
     cfg: &AxisBatteryConfig,
-    rng: &mut Rng,
+    rng: &mut Lcg,
     cands: &mut Vec<Cand>,
     counters: &mut Counters,
 ) {
@@ -2175,7 +2107,7 @@ pub fn profile_ordered_axis(
     if !cfg.is_enabled() {
         return na("ordered-axis battery disabled at this budget".into());
     }
-    let mut rng = Rng::new(cfg.seed);
+    let mut rng = rng_seeded(cfg.seed);
     let mut counters = Counters {
         series_scanned: 0,
         slices_evaluated: 0,
@@ -2473,7 +2405,10 @@ pub fn profile_ordered_axis(
     let family = cands.len() + shape_cands.len();
     let mut all_p: Vec<f64> = cands.iter().map(|c| c.p).collect();
     all_p.extend(shape_cands.iter().map(|c| c.p));
-    let qs = bh_qvalues(&all_p);
+    let qs: Vec<f64> = crate::dep::bh_qvalues(&all_p.iter().map(|&p| Some(p)).collect::<Vec<_>>())
+        .into_iter()
+        .map(|q| q.unwrap_or(1.0))
+        .collect();
     for (i, c) in cands.iter_mut().enumerate() {
         if let Some(f) = &mut c.firing {
             f.q = qs[i];
@@ -3137,7 +3072,7 @@ mod tests {
     use super::*;
 
     fn lcg_series(n: usize, seed: u64, f: impl Fn(usize, f64) -> f64) -> Vec<f64> {
-        let mut rng = Rng::new(seed);
+        let mut rng = rng_seeded(seed);
         (0..n)
             .map(|i| {
                 let noise = rng.next_f64() - 0.5;
@@ -3203,7 +3138,7 @@ mod tests {
     fn saturation_classifies_the_prototype_fixture() {
         // F6 at reduced size for test speed; the frozen fixture
         // itself is exercised in tests/test_ordered_axis.py.
-        let mut rng = Rng::new(42);
+        let mut rng = rng_seeded(42);
         let n = 4000;
         let x: Vec<f64> = (0..n).map(|_| rng.next_f64()).collect();
         let y: Vec<f64> = x
@@ -3225,7 +3160,7 @@ mod tests {
     #[test]
     fn shape_scan_names_the_reversal() {
         // F5's shape at reduced size.
-        let mut rng = Rng::new(43);
+        let mut rng = rng_seeded(43);
         let n = 5000;
         let x: Vec<f64> = (0..n).map(|_| 24.0 * rng.next_f64()).collect();
         let y: Vec<f64> = x
@@ -3273,12 +3208,18 @@ mod tests {
 
     #[test]
     fn bh_controls_a_null_family() {
+        let bh = |p: &[f64]| -> Vec<f64> {
+            crate::dep::bh_qvalues(&p.iter().map(|&v| Some(v)).collect::<Vec<_>>())
+                .into_iter()
+                .map(|q| q.unwrap_or(1.0))
+                .collect()
+        };
         let p: Vec<f64> = (0..100).map(|i| 0.01 + 0.0098 * i as f64).collect();
-        let q = bh_qvalues(&p);
+        let q = bh(&p);
         assert!(q.iter().all(|&v| v > 0.05));
         let mut p2 = vec![1e-9];
         p2.extend((0..99).map(|i| 0.01 + 0.0098 * i as f64));
-        let q2 = bh_qvalues(&p2);
+        let q2 = bh(&p2);
         assert!(q2[0] <= 0.05);
     }
 
@@ -3334,7 +3275,7 @@ mod tests {
 
         // Index of a month in the 1976-01-based panel.
         let idx = |year: usize, month: usize| (year - 1976) * 12 + (month - 1);
-        let run = |y: &[f64], rng: &mut Rng| -> (usize, Vec<Cluster>, Vec<Firing>) {
+        let run = |y: &[f64], rng: &mut Lcg| -> (usize, Vec<Cluster>, Vec<Firing>) {
             let n = y.len();
             let mut firings: Vec<Firing> = Vec::new();
             if let Some(h) = level_scan(y, 24) {
@@ -3409,7 +3350,7 @@ mod tests {
             (firings.len(), clusters, firings)
         };
 
-        let mut rng = Rng::new(777);
+        let mut rng = rng_seeded(777);
         let mut total_firings = 0usize;
         let mut total_statements = 0usize;
         for (name, y) in &series {
@@ -3439,7 +3380,7 @@ mod tests {
         );
         assert!(total_statements < total_firings);
         // Shuffled axis: the battery is silent.
-        let mut rng2 = Rng::new(778);
+        let mut rng2 = rng_seeded(778);
         let mut shuffled_statements = 0usize;
         for (_, y) in &series {
             let ys = rng2.shuffled(y);

@@ -325,10 +325,6 @@ fn near_duplicates(table: &TypedTable, findings: &mut Vec<Finding>) -> Option<St
     None
 }
 
-fn quantile(sorted: &[f64], q: f64) -> f64 {
-    sorted[((q * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)]
-}
-
 fn fit_line(pairs: &[(f64, f64)]) -> Option<(f64, f64)> {
     let n = pairs.len() as f64;
     let (mx, my) = pairs
@@ -363,7 +359,7 @@ fn residual_outliers(table: &TypedTable, a: usize, b: usize) -> Option<LineOutli
     let (s0, i0) = fit_line(&all)?;
     let mut abs0: Vec<f64> = all.iter().map(|(x, y)| (y - s0 * x - i0).abs()).collect();
     abs0.sort_by(f64::total_cmp);
-    let trim = 3.0 * 1.4826 * quantile(&abs0, 0.5);
+    let trim = 3.0 * 1.4826 * crate::dep::quantile_nearest_rank(&abs0, 0.5);
     let kept: Vec<(f64, f64)> = all
         .iter()
         .copied()
@@ -373,7 +369,7 @@ fn residual_outliers(table: &TypedTable, a: usize, b: usize) -> Option<LineOutli
     let residual = |x: f64, y: f64| (y - slope * x - intercept).abs();
     let mut abs: Vec<f64> = all.iter().map(|(x, y)| residual(*x, *y)).collect();
     abs.sort_by(f64::total_cmp);
-    let scale = 1.4826 * quantile(&abs, 0.5);
+    let scale = 1.4826 * crate::dep::quantile_nearest_rank(&abs, 0.5);
     // Exact relations belong to the identity passes.
     if scale <= 1e-9 * (1.0 + intercept.abs()) {
         return None;
@@ -416,7 +412,10 @@ fn swapped_values(table: &TypedTable, findings: &mut Vec<Finding>, measures: &[u
                 return None;
             }
             v.sort_by(f64::total_cmp);
-            let (lo, hi) = (quantile(&v, 0.05), quantile(&v, 0.95));
+            let (lo, hi) = (
+                crate::dep::quantile_nearest_rank(&v, 0.05),
+                crate::dep::quantile_nearest_rank(&v, 0.95),
+            );
             let margin = RANGE_MARGIN * (hi - lo);
             (hi > lo).then_some((lo - margin, hi + margin))
         })

@@ -54,21 +54,10 @@ pub struct ScreenOutcome {
 
 // ---------- deterministic RNG ----------
 
-pub struct Lcg(pub u64);
-
-impl Lcg {
-    pub fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        x.wrapping_mul(0x2545F4914F6CDD1D)
-    }
-    pub fn next_f64(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-    }
-}
+// The one xorshift64* implementation lives in `crate::dep`;
+// re-exported here because the screen passes in this module are
+// its heaviest consumers and callers name it through this path.
+pub use crate::dep::Lcg;
 
 /// Row-major packed copy of the feature bins (LightGBM-style): row p's
 /// F bin values are contiguous, so histogram construction fetches g/h once

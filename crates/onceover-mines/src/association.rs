@@ -1,6 +1,6 @@
 //! Bounded pairwise association rules for nominal encoded features.
 
-use crate::dep::{assoc_tier, bh_qvalues, chi2_sf, f_sf, fmt_q, Q_BAR};
+use crate::dep::{assoc_tier, bh_qvalues, chi2_sf, eta_squared, f_sf, fmt_q, Q_BAR};
 use crate::encode::{EncodedMatrix, MISSING};
 use onceover_report::{AssociationPair, EvidenceBasis, Finding};
 use onceover_report::{Method, Pattern};
@@ -468,7 +468,7 @@ pub fn pair_associations(
                         ssb += cnts[g] as f64 * (gm - mean) * (gm - mean);
                     }
                     if sst > 0.0 {
-                        let eta2 = ssb / sst;
+                        let eta2 = eta_squared(ssb, sst);
                         let eta = eta2.sqrt();
                         let ssw = sst - ssb;
                         let f = if ssw > 0.0 {

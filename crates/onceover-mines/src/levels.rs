@@ -42,6 +42,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::dep::{iqr_sorted, median_sorted, quantile_sorted, rank_sum_p};
 use onceover_core::{dateutil, TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::{json, Value};
@@ -280,88 +281,6 @@ fn calendar_groupings(input: &LevelContrastInput) -> Vec<Grouping> {
     out
 }
 
-/// Quantile of a sorted slice, linear interpolation (the
-/// type-7 convention).
-fn quantile(sorted: &[f64], p: f64) -> f64 {
-    if sorted.len() == 1 {
-        return sorted[0];
-    }
-    let h = (sorted.len() - 1) as f64 * p;
-    let lo = h.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
-}
-
-fn median(sorted: &[f64]) -> f64 {
-    quantile(sorted, 0.5)
-}
-
-fn iqr(sorted: &[f64]) -> f64 {
-    quantile(sorted, 0.75) - quantile(sorted, 0.25)
-}
-
-/// Two-sided normal tail (Abramowitz-Stegun 7.1.26, the
-/// approximation used across the crate's statistics).
-fn normal_sf(z: f64) -> f64 {
-    let x = z.abs() / std::f64::consts::SQRT_2;
-    let t = 1.0 / (1.0 + 0.327_591_1 * x);
-    let poly = t
-        * (0.254_829_592
-            + t * (-0.284_496_736
-                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
-    let erf = 1.0 - poly * (-x * x).exp();
-    (1.0 - erf) / 2.0
-}
-
-/// Rank-sum (Mann-Whitney) two-sided p-value for sample `a`
-/// against sample `b`, both sorted, with the standard tie
-/// correction. Ranks are computed by merging the two sorted
-/// slices, so no combined copy is built.
-fn rank_sum_p(a: &[f64], b: &[f64]) -> f64 {
-    let (n1, n2) = (a.len(), b.len());
-    if n1 == 0 || n2 == 0 {
-        return 1.0;
-    }
-    let n = (n1 + n2) as f64;
-    let (mut i, mut j) = (0usize, 0usize);
-    let mut rank_sum_a = 0.0f64;
-    let mut tie_correction = 0.0f64;
-    let mut pos = 0usize; // elements consumed, 0-based
-    while i < n1 || j < n2 {
-        let v = match (a.get(i), b.get(j)) {
-            (Some(&x), Some(&y)) => x.min(y),
-            (Some(&x), None) => x,
-            (None, Some(&y)) => y,
-            (None, None) => break,
-        };
-        let start = pos;
-        let mut in_a = 0usize;
-        while i < n1 && a[i] == v {
-            i += 1;
-            pos += 1;
-            in_a += 1;
-        }
-        while j < n2 && b[j] == v {
-            j += 1;
-            pos += 1;
-        }
-        let t = (pos - start) as f64;
-        if t > 1.0 {
-            tie_correction += t * t * t - t;
-        }
-        // Average rank (1-based) over the tie group start..pos.
-        rank_sum_a += in_a as f64 * (start + pos + 1) as f64 / 2.0;
-    }
-    let u = rank_sum_a - n1 as f64 * (n1 as f64 + 1.0) / 2.0;
-    let mean_u = n1 as f64 * n2 as f64 / 2.0;
-    let var = n1 as f64 * n2 as f64 / 12.0 * ((n + 1.0) - tie_correction / (n * (n - 1.0)));
-    if var <= 0.0 {
-        return 1.0;
-    }
-    let z = (u - mean_u) / var.sqrt();
-    (2.0 * normal_sf(z)).clamp(1e-300, 1.0)
-}
-
 /// Whether a candidate's constant-multiple evidence holds as
 /// a rescaling: the decile quotients concentrate at one
 /// quotient AND the level's IQR ratio moves with that
@@ -507,11 +426,12 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 continue;
             }
             let spread = {
-                let s = iqr(&pooled_sorted);
+                let s = iqr_sorted(&pooled_sorted);
                 if s > 0.0 {
                     s
                 } else {
-                    let s2 = quantile(&pooled_sorted, 0.9) - quantile(&pooled_sorted, 0.1);
+                    let s2 =
+                        quantile_sorted(&pooled_sorted, 0.9) - quantile_sorted(&pooled_sorted, 0.1);
                     if s2 > 0.0 {
                         s2
                     } else {
@@ -542,11 +462,11 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 .collect();
             let level_medians: Vec<f64> = sorted_buckets
                 .iter()
-                .map(|s| if s.is_empty() { 0.0 } else { median(s) })
+                .map(|s| if s.is_empty() { 0.0 } else { median_sorted(s) })
                 .collect();
             let level_iqrs: Vec<f64> = sorted_buckets
                 .iter()
-                .map(|s| if s.len() >= 2 { iqr(s) } else { 0.0 })
+                .map(|s| if s.len() >= 2 { iqr_sorted(s) } else { 0.0 })
                 .collect();
             let dev_buckets: Vec<Vec<f64>> = sorted_buckets
                 .iter()
@@ -572,7 +492,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 let level_sorted = sorted_buckets[li].clone();
                 let rest_sorted = rest_of(&pooled_sorted, &level_sorted);
                 let level_median = level_medians[li];
-                let rest_median = median(&rest_sorted);
+                let rest_median = median_sorted(&rest_sorted);
                 let level_iqr = level_iqrs[li];
                 let rest_iqr = {
                     let others: Vec<f64> = level_iqrs
@@ -582,11 +502,11 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         .map(|(_, v)| *v)
                         .collect();
                     if others.is_empty() {
-                        iqr(&rest_sorted)
+                        iqr_sorted(&rest_sorted)
                     } else {
                         let mut o = others;
                         o.sort_by(|a, b| a.total_cmp(b));
-                        median(&o)
+                        median_sorted(&o)
                     }
                 };
                 let shift = level_median - rest_median;
@@ -616,26 +536,26 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 // to mean anything.
                 let multiple = {
                     let deciles: Vec<f64> = (1..=9)
-                        .map(|k| quantile(&rest_sorted, k as f64 / 10.0))
+                        .map(|k| quantile_sorted(&rest_sorted, k as f64 / 10.0))
                         .collect();
                     let one_sided =
                         deciles.iter().all(|d| *d > 0.0) || deciles.iter().all(|d| *d < 0.0);
                     if one_sided && rest_median != 0.0 {
                         let quotients: Vec<f64> = (1..=9)
                             .map(|k| {
-                                quantile(&level_sorted, k as f64 / 10.0)
-                                    / quantile(&rest_sorted, k as f64 / 10.0)
+                                quantile_sorted(&level_sorted, k as f64 / 10.0)
+                                    / quantile_sorted(&rest_sorted, k as f64 / 10.0)
                             })
                             .collect();
                         let mut qs = quotients.clone();
                         qs.sort_by(|a, b| a.total_cmp(b));
-                        let k_hat = median(&qs);
+                        let k_hat = median_sorted(&qs);
                         if k_hat > 0.0 && (k_hat.ln().abs() >= MULTIPLE_MIN.ln()) {
                             let max_dev = quotients
                                 .iter()
                                 .map(|q| (q - k_hat).abs() / k_hat)
                                 .fold(0.0f64, f64::max);
-                            let cv = iqr(&qs) / k_hat;
+                            let cv = iqr_sorted(&qs) / k_hat;
                             if max_dev <= QUOTIENT_DEV_MAX && cv <= QUOTIENT_CV_MAX {
                                 Some((k_hat, max_dev))
                             } else {
@@ -702,7 +622,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         &sorted_buckets[li],
                     );
                     if reduced.len() >= MIN_SIDE_VALUES {
-                        let s = (level_medians[li] - median(&reduced)) / spread;
+                        let s = (level_medians[li] - median_sorted(&reduced)) / spread;
                         cand.std_shift_without_primary = Some(s);
                     }
                 }
@@ -742,7 +662,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         continue;
                     }
                     others.sort_by(|a, b| a.total_cmp(b));
-                    let typical = median(&others);
+                    let typical = median_sorted(&others);
                     let r = if typical > 0.0 {
                         level_iqrs[li] / typical
                     } else if level_iqrs[li] > 0.0 {
@@ -758,7 +678,11 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
 
     // ---------- BH over the whole enumerable family ----------
     let family_size = pvals.len();
-    let qvals = crate::axisbreaks::bh_qvalues(&pvals);
+    let qvals: Vec<f64> =
+        crate::dep::bh_qvalues(&pvals.iter().map(|&p| Some(p)).collect::<Vec<_>>())
+            .into_iter()
+            .map(|q| q.unwrap_or(1.0))
+            .collect();
     for (k, &(slot, is_location)) in p_index.iter().enumerate() {
         if is_location {
             candidates[slot].q_location = qvals[k];
