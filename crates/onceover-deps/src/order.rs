@@ -1502,11 +1502,10 @@ fn part_whole_relation<T: ScanVal>(
         })
         .collect();
     let mut pool: Vec<(usize, f64)> = Vec::new();
-    for c in 0..table.cols.len() {
+    for (c, col) in table.cols.iter().enumerate() {
         if c == part_idx || c == whole_idx || excluded.contains(&c) {
             continue;
         }
-        let col = &table.cols[c];
         if !matches!(
             col,
             TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
