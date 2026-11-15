@@ -1784,3 +1784,118 @@ fn pressure_detector_caps_bind_under_pressure() {
     assert_eq!(outcome.capped_by_class.get("shape"), Some(&15));
     assert_eq!(outcome.capped_by_class.get("hygiene"), Some(&65));
 }
+
+#[test]
+fn pattern_taxonomy_is_complete_and_self_consistent() {
+    // 67 patterns: the 65 of the standing taxonomy plus the two
+    // views-pass patterns (modal_share, spike_cells) that
+    // Finding::from_statement callers name directly.
+    assert_eq!(Pattern::ALL.len(), 67);
+    let mut pairs = std::collections::BTreeSet::new();
+    for pattern in Pattern::ALL {
+        assert!(
+            Pattern::types_for(pattern.category()).contains(&pattern.subtype()),
+            "type {} missing from its category's derived list",
+            pattern.subtype()
+        );
+        pairs.insert((pattern.category(), pattern.subtype()));
+    }
+    // 64 distinct (category, type) pairs: "functional" is shared
+    // by three patterns and "predictive" by two.
+    assert_eq!(pairs.len(), 64);
+}
+
+#[test]
+fn derived_type_lists_match_the_previously_handwritten_allowlists() {
+    let as_set = |category: Category| {
+        Pattern::types_for(category)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        as_set(Category::Dependencies),
+        [
+            "functional",
+            "predictive",
+            "order_constraint",
+            "order_violation",
+            "model_failure",
+            "leakage_signature"
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        as_set(Category::ConditionalRules),
+        ["if_then"].into_iter().collect()
+    );
+    assert_eq!(
+        as_set(Category::Associations),
+        [
+            "statistical",
+            "period_association",
+            "group_contrast",
+            "conditioned_association",
+            "slice_shift",
+            "axis_shape",
+            "level_contrast"
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        as_set(Category::Changes),
+        [
+            "residual_level",
+            "series_structure",
+            "level_shift",
+            "trend_change",
+            "variance_change",
+            "transient_excursion",
+            "step_discontinuity",
+            "distribution_shift",
+            "distribution_change",
+            "slope_break",
+            "regime_contrast",
+            "spike_contrast",
+            "ordered_partition",
+            "one_way_flag",
+            "entry_block",
+            "exit_block",
+            "first_activity"
+        ]
+        .into_iter()
+        .collect()
+    );
+    // The views pass names these two types through from_statement;
+    // they are part of the concentration taxonomy.
+    let concentration = as_set(Category::Concentration);
+    assert!(concentration.contains("modal_share"));
+    assert!(concentration.contains("spike_cells"));
+}
+
+#[test]
+fn validate_rejects_a_bogus_type_in_a_previously_unchecked_category() {
+    let mut finding = key_finding(None);
+    assert!(finding.validate().is_ok());
+    finding.finding_type = Some("bogus".into());
+    let err = finding.validate().unwrap_err();
+    assert!(
+        err.contains("uniqueness type must be"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn selection_records_invalid_findings_instead_of_dropping_them_silently() {
+    let mut invalid = fd_finding(0.9);
+    invalid.finding_type = Some("bogus".into());
+    let outcome =
+        select_findings_counted(vec![fd_finding(0.9), invalid], &SelectionPolicy::default());
+    assert_eq!(outcome.selected.len(), 1);
+    assert_eq!(outcome.dropped_invalid.len(), 1);
+    let dropped = &outcome.dropped_invalid[0];
+    assert_eq!(dropped.category, Category::Dependencies);
+    assert_eq!(dropped.finding_type.as_deref(), Some("bogus"));
+    assert!(dropped.reason.contains("dependency type must be"));
+}
