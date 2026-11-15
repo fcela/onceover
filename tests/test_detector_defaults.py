@@ -41,7 +41,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_activation_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 42
+    assert len(registry) == 43
     by_activation = {}
     for d in registry.values():
         by_activation.setdefault(d["activation"], []).append(d["id"])
@@ -52,7 +52,7 @@ def test_registry_activation_partition():
         "model_failures",
         "target_shapes",
     ]
-    assert len(by_activation["default"]) == 29
+    assert len(by_activation["default"]) == 30
 
 
 def test_default_run_discloses_opt_in_passes_as_skipped():
