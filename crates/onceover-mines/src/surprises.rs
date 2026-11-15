@@ -114,17 +114,6 @@ struct Extreme {
     bulk_share: f64,
 }
 
-fn quantile(sorted: &[(f64, usize)], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let pos = q * (sorted.len() - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    let frac = pos - lo as f64;
-    sorted[lo].0 * (1.0 - frac) + sorted[hi].0 * frac
-}
-
 /// Test the top-`k` values of `sorted` (ascending) as an extreme
 /// cluster against the remaining bulk; `high` selects the side.
 /// Returns the cluster when every member lies beyond the bulk's
@@ -145,10 +134,11 @@ fn test_cluster(
     } else {
         (&sorted[..k], &sorted[k..])
     };
-    let q1 = quantile(bulk, 0.25);
-    let q3 = quantile(bulk, 0.75);
+    let q1 = crate::dep::quantile_sorted_pairs(bulk, 0.25);
+    let q3 = crate::dep::quantile_sorted_pairs(bulk, 0.75);
     let iqr = q3 - q1;
-    let spread = quantile(bulk, 0.90) - quantile(bulk, 0.10);
+    let spread = crate::dep::quantile_sorted_pairs(bulk, 0.90)
+        - crate::dep::quantile_sorted_pairs(bulk, 0.10);
     if spread <= 0.0 {
         return None;
     }
@@ -1027,14 +1017,20 @@ fn scan_target(
     }
     // Near-constant columns are the concentration pass's story.
     vals.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-    if quantile(&vals, 0.75) - quantile(&vals, 0.25) <= 0.0 {
+    if crate::dep::quantile_sorted_pairs(&vals, 0.75)
+        - crate::dep::quantile_sorted_pairs(&vals, 0.25)
+        <= 0.0
+    {
         return None;
     }
     let tname = table.names[t].as_str();
     // A subset statement means an ordinary value is extreme for its
     // subset. Beyond the column's own fence, the value is the column's
     // tail, and which subset holds it says nothing.
-    let (q1, q3) = (quantile(&vals, 0.25), quantile(&vals, 0.75));
+    let (q1, q3) = (
+        crate::dep::quantile_sorted_pairs(&vals, 0.25),
+        crate::dep::quantile_sorted_pairs(&vals, 0.75),
+    );
     let global_lo = q1 - cfg.fence_iqr_mult * (q3 - q1);
     let global_hi = q3 + cfg.fence_iqr_mult * (q3 - q1);
     let mut reported_rows: std::collections::BTreeSet<usize> = Default::default();

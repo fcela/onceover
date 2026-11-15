@@ -85,11 +85,11 @@ use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::{json, Value};
 
 use crate::deadline::Deadline;
+use crate::dep::{mann_whitney_p, quantile_sorted};
 use crate::encode::EncodedMatrix;
 use crate::gbm::{crossfit_residuals, CrossfitOutcome, ScreenConfig};
 use crate::slices::{
-    bits_and, bits_count, bits_for, bits_hash, bits_positions, level_json, level_labels,
-    mann_whitney_p, quantile_sorted, splitmix64,
+    bits_and, bits_count, bits_for, bits_hash, bits_positions, level_json, level_labels, splitmix64,
 };
 
 /// Configuration for the model-failure pass. The search fields

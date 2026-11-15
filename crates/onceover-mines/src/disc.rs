@@ -749,21 +749,6 @@ pub fn type_gap(u_eval: &[f64], t_eval: &[f64], c0: f64) -> Option<(f64, f64)> {
     }
 }
 
-/// Empirical quantile with linear interpolation on a sorted slice.
-fn quantile_sorted(sorted: &[f64], p: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    if sorted.len() == 1 {
-        return sorted[0];
-    }
-    let pos = p * (sorted.len() - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    let frac = pos - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
-}
-
 /// Scan one unit (a projection `u` against a fixed background) and
 /// return its best candidate by |t_fit|: the coarse quantile grid
 /// first, then a fit-half-only refinement on a finer grid inside
@@ -908,7 +893,7 @@ fn quantile_cuts_sorted(sorted: &[f64], cells: usize) -> Vec<f64> {
         return Vec::new();
     }
     let mut cuts: Vec<f64> = (1..cells)
-        .map(|k| quantile_sorted(sorted, k as f64 / cells as f64))
+        .map(|k| crate::dep::quantile_sorted(sorted, k as f64 / cells as f64))
         .collect();
     cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
     cuts

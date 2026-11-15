@@ -929,7 +929,7 @@ fn eta_squared_blocks(xs: &[f64], blocks: usize) -> f64 {
             between += (hi - lo) as f64 * (m - grand) * (m - grand);
         }
     }
-    between / total
+    crate::dep::eta_squared(between, total)
 }
 
 /// Cheap whole-population prescore for one series' values in
@@ -1682,12 +1682,7 @@ fn median_of(vals: &[f64]) -> f64 {
     }
     let mut v: Vec<f64> = vals.to_vec();
     v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = v.len() / 2;
-    if v.len() % 2 == 1 {
-        v[mid]
-    } else {
-        0.5 * (v[mid - 1] + v[mid])
-    }
+    crate::dep::median_sorted(&v)
 }
 
 /// Points per week implied by the median interval between

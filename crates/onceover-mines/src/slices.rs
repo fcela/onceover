@@ -91,6 +91,7 @@
 //! the statement definition so the slice itself can be recounted
 //! on any row set directly.
 
+use crate::dep::{mann_whitney_p, median_sorted, quantile_sorted};
 use onceover_core::{sample_rows, TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::{json, Value};
@@ -224,76 +225,14 @@ pub struct SliceOutcome {
 // Small statistics helpers.
 // ---------------------------------------------------------------------
 
+/// SplitMix64 finalizer, used as a bit hash for slice
+/// signatures. This is a hash primitive, not a random stream —
+/// the crate's one stream generator is `crate::dep::Lcg`.
 pub(crate) fn splitmix64(mut x: u64) -> u64 {
     x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^ (x >> 31)
-}
-
-pub(crate) fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let pos = q * (sorted.len() - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    let frac = pos - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
-}
-
-pub(crate) fn median_sorted(sorted: &[f64]) -> f64 {
-    quantile_sorted(sorted, 0.5)
-}
-
-/// Two-sided Mann–Whitney U p-value (normal approximation with
-/// tie correction and continuity correction) for slice values
-/// `a` against complement values `b`.
-pub(crate) fn mann_whitney_p(a: &[f64], b: &[f64]) -> f64 {
-    let n1 = a.len() as f64;
-    let n2 = b.len() as f64;
-    if n1 < 3.0 || n2 < 3.0 {
-        return 1.0;
-    }
-    let mut combined: Vec<(f64, bool)> = a
-        .iter()
-        .map(|&v| (v, true))
-        .chain(b.iter().map(|&v| (v, false)))
-        .collect();
-    combined.sort_by(|x, y| x.0.total_cmp(&y.0));
-    let n = combined.len() as f64;
-    let mut rank_sum_a = 0.0f64;
-    let mut tie_term = 0.0f64;
-    let mut i = 0usize;
-    while i < combined.len() {
-        let mut j = i + 1;
-        while j < combined.len() && combined[j].0 == combined[i].0 {
-            j += 1;
-        }
-        let avg_rank = (i + 1 + j) as f64 / 2.0;
-        for item in &combined[i..j] {
-            if item.1 {
-                rank_sum_a += avg_rank;
-            }
-        }
-        let t = (j - i) as f64;
-        if t > 1.0 {
-            tie_term += t * (t * t - 1.0);
-        }
-        i = j;
-    }
-    let u = rank_sum_a - n1 * (n1 + 1.0) / 2.0;
-    let mean = n1 * n2 / 2.0;
-    let var = n1 * n2 / 12.0 * ((n + 1.0) - tie_term / (n * (n - 1.0)));
-    if var <= 0.0 {
-        return 1.0;
-    }
-    let z = (u - mean).abs() - 0.5;
-    if z <= 0.0 {
-        return 1.0;
-    }
-    let z = z / var.sqrt();
-    (2.0 * crate::dep::norm_sf(z)).clamp(0.0, 1.0)
 }
 
 /// Two-sided two-proportion z-test p-value.

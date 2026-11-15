@@ -172,9 +172,8 @@ fn adjusted_eta2(
         return None;
     }
     let determines = ss_within <= 0.0;
-    let ms_within = ss_within / (n - k) as f64;
-    let adjusted = ((ss_total - ss_within) - (k - 1) as f64 * ms_within) / ss_total;
-    Some((adjusted.clamp(0.0, 1.0), n, determines))
+    let adjusted = crate::dep::adjusted_eta_squared(ss_within, ss_total, n, k);
+    Some((adjusted, n, determines))
 }
 
 /// The per-column strength evaluation against one target: every

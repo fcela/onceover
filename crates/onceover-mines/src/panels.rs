@@ -1360,13 +1360,6 @@ fn fmt_pct(share: f64) -> String {
     format!("{:.1}%", 100.0 * share)
 }
 
-fn quantile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    sorted[((q * (sorted.len() - 1) as f64).round() as usize).min(sorted.len() - 1)]
-}
-
 /// One measure column's eligibility facts for the tail checks.
 struct MeasureFacts {
     values: usize,
@@ -1704,7 +1697,7 @@ fn concentration_finding(
     }
     let mut sorted = shares.clone();
     sorted.sort_by(f64::total_cmp);
-    let median_share = quantile(&sorted, 0.5);
+    let median_share = crate::dep::quantile_sorted(&sorted, 0.5);
     let third = ((shares.len() as f64) / 3.0).ceil() as usize;
     let early = shares[..third].iter().sum::<f64>() / third as f64;
     let late = shares[shares.len() - third..].iter().sum::<f64>() / third as f64;
@@ -1870,9 +1863,9 @@ fn outlier_finding(
         .collect();
     sorted.sort_by(f64::total_cmp);
     let n_entities = sorted.len();
-    let median = quantile(&sorted, 0.5);
-    let q1 = quantile(&sorted, 0.25);
-    let q3 = quantile(&sorted, 0.75);
+    let median = crate::dep::quantile_sorted(&sorted, 0.5);
+    let q1 = crate::dep::quantile_sorted(&sorted, 0.25);
+    let q3 = crate::dep::quantile_sorted(&sorted, 0.75);
     let typical = if median > 0.0 { median } else { q3 };
     if typical <= 0.0 {
         return None;
