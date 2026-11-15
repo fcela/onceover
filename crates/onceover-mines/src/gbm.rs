@@ -1002,6 +1002,454 @@ pub fn screen_missing_indicator(
     })
 }
 
+/// Out-of-fold residuals from cross-fitting the house GBM to one
+/// designated target: every modelled row's prediction comes from
+/// the fold model that held the row out, so the residuals measure
+/// the model's error on rows it never fit. `positions` are
+/// encoded-space rows in ascending order; `signed` and `abs` are
+/// the residuals against them (target − prediction). For a binary
+/// categorical target the prediction is the predicted probability
+/// of the second label (labels are in frequency order) and the
+/// residual is the 0/1 outcome minus that probability.
+pub struct CrossfitOutcome {
+    pub positions: Vec<u32>,
+    pub signed: Vec<f64>,
+    pub abs: Vec<f64>,
+    /// The target's value per position (the numeric value, or the
+    /// 0/1 outcome of the second label for a binary target) and the
+    /// model's out-of-fold prediction for it (the predicted value,
+    /// or the predicted event probability).
+    pub actual: Vec<f64>,
+    pub pred: Vec<f64>,
+    pub categorical: bool,
+    /// Class labels for a categorical target (frequency order);
+    /// empty for a numeric target.
+    pub labels: Vec<String>,
+    /// Held-out skill pooled over folds: R² for a numeric target,
+    /// AUC for a binary target.
+    pub skill: f64,
+    /// The no-skill reference the screen reports beside `skill`:
+    /// the majority-class rate for a binary target, 0 for numeric.
+    pub baseline: f64,
+    pub overall_bias: f64,
+    pub overall_mae: f64,
+    /// Binary targets only: the overall event (second-label) rate
+    /// and mean predicted probability — the baseline pair a bias
+    /// statement is read against. Both 0 for numeric targets.
+    pub event_rate: f64,
+    pub mean_pred: f64,
+    /// Boosting rounds at best, per fold.
+    pub fold_rounds: Vec<usize>,
+}
+
+/// The categorical boosting loop with the score matrix snapshotted
+/// at the best round, so a caller can turn the held-out ensemble's
+/// scores into probabilities. Mirrors `boost_categorical` exactly
+/// (same rounds, same early stopping); the one addition is that
+/// `extra_rows` — rows the caller wants predictions for, such as a
+/// cross-fitting fold's held-out rows — receive the same per-round
+/// score updates the holdout rows receive for evaluation. They are
+/// never fit on. Returns (best holdout accuracy, majority
+/// baseline, rounds at best, scores at best).
+#[allow(clippy::too_many_arguments)]
+fn boost_categorical_scored(
+    n_rows: usize,
+    cfg: &ScreenConfig,
+    ids: &[u8],
+    k: usize,
+    train: &[u32],
+    holdout: &[u32],
+    extra_rows: &[u32],
+    packed: &[u8],
+    n_feats: usize,
+    own_feat: Option<usize>,
+    min_leaf: usize,
+) -> (f64, f64, usize, Vec<Vec<f32>>) {
+    let mut class_count = vec![0u32; k];
+    for &p in train {
+        class_count[ids[p as usize] as usize] += 1;
+    }
+    let prior: Vec<f32> = class_count
+        .iter()
+        .map(|&x| x as f32 / train.len() as f32)
+        .collect();
+    let base: Vec<f32> = prior.iter().map(|&p| (p / (1.0 - p + 1e-9)).ln()).collect();
+    let mut scores = vec![base.clone(); n_rows];
+    let mut best_scores = scores.clone();
+    let baseline = prior.iter().cloned().fold(f32::MIN, f32::max) as f64;
+    let mut best_metric = 0.0f64;
+    let mut best_rounds = 0;
+    let mut stale = 0;
+    let max_rounds = if k > 5 {
+        cfg.max_rounds / 2
+    } else {
+        cfg.max_rounds
+    };
+    for round in 1..=max_rounds {
+        // Class-major sweeps over row-major `scores` (n_rows × k):
+        // the range loop over classes is intentional.
+        #[allow(clippy::needless_range_loop)]
+        for c in 0..k {
+            let mut g = vec![0.0f32; n_rows];
+            let mut h = vec![0.0f32; n_rows];
+            for &p in train {
+                let z = scores[p as usize][c];
+                let pc = 1.0 / (1.0 + (-z).exp());
+                let yc = if ids[p as usize] as usize == c {
+                    1.0
+                } else {
+                    0.0
+                };
+                g[p as usize] = pc - yc;
+                h[p as usize] = pc * (1.0 - pc);
+            }
+            let (root, nodes, _gains) = grow_tree(
+                packed,
+                n_feats,
+                train,
+                &g,
+                &h,
+                own_feat,
+                cfg.lambda,
+                min_leaf,
+                cfg.max_depth,
+            );
+            for &p in train.iter().chain(holdout.iter()).chain(extra_rows.iter()) {
+                scores[p as usize][c] +=
+                    cfg.learning_rate * tree_predict(&nodes, root, packed, n_feats, p as usize);
+            }
+        }
+        // Holdout accuracy (argmax score).
+        let correct = holdout
+            .iter()
+            .filter(|&&p| {
+                let mut best_c = 0usize;
+                let mut best_s = f32::MIN;
+                for (c, s) in scores[p as usize].iter().enumerate() {
+                    if *s > best_s {
+                        best_s = *s;
+                        best_c = c;
+                    }
+                }
+                best_c == ids[p as usize] as usize
+            })
+            .count();
+        let acc = correct as f64 / holdout.len().max(1) as f64;
+        if acc > best_metric + 1e-4 {
+            best_metric = acc;
+            best_rounds = round;
+            best_scores = scores.clone();
+            stale = 0;
+        } else {
+            stale += 1;
+            if stale >= cfg.patience {
+                break;
+            }
+        }
+    }
+    (best_metric, baseline, best_rounds, best_scores)
+}
+
+/// Quantile-bin a numeric target into at most 32 bins over its
+/// present rows (MISSING elsewhere), as the reference vector for
+/// the predictor shortlist's information score when the target is
+/// not itself an encoded feature.
+fn bin_numeric_target(ys: &[f32], present: &[u32]) -> Vec<u8> {
+    let mut bins = vec![MISSING; ys.len()];
+    let mut sorted: Vec<f64> = present.iter().map(|&p| ys[p as usize] as f64).collect();
+    if sorted.is_empty() {
+        return bins;
+    }
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let n_bins = 32.min(sorted.len());
+    for &p in present {
+        let v = ys[p as usize] as f64;
+        // Rank of v within the sorted present values.
+        let r = sorted.partition_point(|&x| x < v);
+        let b = (r * n_bins / sorted.len()).min(n_bins - 1);
+        bins[p as usize] = b as u8;
+    }
+    bins
+}
+
+/// Cross-fit the house GBM to the target in column `ci` and return
+/// every modelled row's out-of-fold residual. The fitting procedure
+/// is the predictability screen's — same target preparation, same
+/// per-fold predictor shortlist (information score on the fold's
+/// training rows, capped at `cfg.max_predictors`), same boosting
+/// loop with an internal 75/25 early-stopping split of the fold's
+/// training rows. Each fold's predictions for its held-out rows
+/// come from that fold's best-round ensemble.
+///
+/// Errors name why no residuals could be produced (the caller
+/// records the reason in coverage): an unfittable target, a
+/// categorical target with more than two classes (this evaluation
+/// covers numeric and binary targets), too few present rows, too
+/// few rows in the rarer class, or no predictor columns.
+pub fn crossfit_residuals(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    ci: usize,
+    cfg: &ScreenConfig,
+    excluded_cols: &[usize],
+    folds: usize,
+) -> Result<CrossfitOutcome, String> {
+    let folds = folds.max(2);
+    let target = prepare_target(table, enc, ci, cfg).ok_or_else(|| {
+        "the designated target is not a fittable column (constant, unsupported kind, or too many classes)"
+            .to_string()
+    })?;
+    let (present, labels): (Vec<u32>, Vec<String>) = match &target {
+        TargetKind::Numeric(ys) => (
+            (0..enc.n)
+                .filter(|&j| !ys[j].is_nan())
+                .map(|j| j as u32)
+                .collect(),
+            Vec::new(),
+        ),
+        TargetKind::Categorical(ids, labels) => {
+            if labels.len() != 2 {
+                return Err(format!(
+                    "categorical target '{}' has {} classes; the model-failure pass evaluates numeric and binary targets",
+                    table.names[ci],
+                    labels.len()
+                ));
+            }
+            (
+                (0..enc.n)
+                    .filter(|&j| ids[j] != MISSING)
+                    .map(|j| j as u32)
+                    .collect(),
+                labels.clone(),
+            )
+        }
+    };
+    if present.len() < 200 {
+        return Err(format!(
+            "fewer than 200 rows with a present target ({})",
+            present.len()
+        ));
+    }
+    if let TargetKind::Categorical(ids, _) = &target {
+        let n_event = present.iter().filter(|&&p| ids[p as usize] == 1).count();
+        let n_other = present.len() - n_event;
+        if n_event.min(n_other) < 20 {
+            return Err(format!(
+                "the rarer class of '{}' has {} rows; too few to cross-fit",
+                table.names[ci],
+                n_event.min(n_other)
+            ));
+        }
+    }
+    // Reference bins for the predictor shortlist: the target's own
+    // encoded feature when it has one, else bins built from the
+    // prepared target.
+    let own = enc.feat_cols.iter().position(|&c| c == ci);
+    let target_bins: Vec<u8> = match &target {
+        TargetKind::Numeric(ys) => bin_numeric_target(ys, &present),
+        TargetKind::Categorical(ids, _) => ids.clone(),
+    };
+    let reference: &[u8] = match own {
+        Some(o) => &enc.bins[o],
+        None => &target_bins,
+    };
+
+    // Seeded shuffle of the present rows; fold f is every
+    // `folds`-th row of the shuffled order.
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15
+        ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
+        ^ 0x4D4F_4445_4C46_4149);
+    let mut order = present.clone();
+    for i in (1..order.len()).rev() {
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        order.swap(i, j);
+    }
+    order.truncate((cfg.max_model_rows * 4).max(cfg.min_target_rows));
+    let fold_of: Vec<usize> = {
+        let mut f = vec![0usize; enc.n];
+        for (i, &p) in order.iter().enumerate() {
+            f[p as usize] = i % folds;
+        }
+        f
+    };
+    let modelled: Vec<u32> = order.clone();
+
+    let mut signed = vec![f64::NAN; enc.n];
+    let mut fold_rounds: Vec<usize> = Vec::new();
+    for fold in 0..folds {
+        let test: Vec<u32> = modelled
+            .iter()
+            .copied()
+            .filter(|&p| fold_of[p as usize] == fold)
+            .collect();
+        let pool: Vec<u32> = modelled
+            .iter()
+            .copied()
+            .filter(|&p| fold_of[p as usize] != fold)
+            .collect();
+        if test.is_empty() || pool.len() < 100 {
+            continue;
+        }
+        // Internal 75/25 split of the training pool for early
+        // stopping, seeded per fold from the same stream discipline
+        // as the screens (a fixed salt per fold index).
+        let mut frng = Lcg(0x9E37_79B9_7F4A_7C15
+            ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
+            ^ 0x4D4F_4445_4C46_4149
+            ^ ((fold as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)));
+        let mut shuffled = pool.clone();
+        for i in (1..shuffled.len()).rev() {
+            let j = (frng.next_u64() % (i as u64 + 1)) as usize;
+            shuffled.swap(i, j);
+        }
+        let n_hold = shuffled.len() / 4;
+        let (train, holdout) = shuffled.split_at(shuffled.len() - n_hold);
+        let train: Vec<u32> = train.to_vec();
+        let holdout: Vec<u32> = holdout.to_vec();
+        let min_leaf = (train.len() / 200).clamp(10, 1_000);
+
+        // Predictor shortlist on this fold's training rows only.
+        let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
+        let mut selected: Vec<usize> = (0..enc.bins.len())
+            .filter(|&f| enc.feat_cols[f] != ci && !excluded_cols.contains(&enc.feat_cols[f]))
+            .collect();
+        if selected.len() > cfg.max_predictors {
+            let mut scored: Vec<(usize, f64)> = selected
+                .iter()
+                .map(|&f| {
+                    (
+                        f,
+                        crate::screen::information(reference, &enc.bins[f], &screen_rows),
+                    )
+                })
+                .collect();
+            scored.sort_by(|a, b| {
+                b.1.total_cmp(&a.1)
+                    .then(enc.feat_names[a.0].cmp(&enc.feat_names[b.0]))
+            });
+            selected = scored.into_iter().map(|(f, _)| f).collect();
+            selected.truncate(cfg.max_predictors);
+        }
+        if selected.is_empty() {
+            return Err("no predictor columns available for the target".into());
+        }
+        let n_feats = selected.len();
+        let packed = pack_features(enc, &selected);
+        match &target {
+            TargetKind::Numeric(ys) => {
+                let (_r2, rounds, _gains, trees, base) = boost_numeric(
+                    enc.n, cfg, ys, &train, &holdout, &packed, n_feats, None, min_leaf,
+                );
+                fold_rounds.push(rounds);
+                for &p in &test {
+                    let mut pred = base as f64;
+                    for tree in &trees {
+                        pred += cfg.learning_rate as f64
+                            * tree_predict(tree, 0, &packed, n_feats, p as usize) as f64;
+                    }
+                    signed[p as usize] = ys[p as usize] as f64 - pred;
+                }
+            }
+            TargetKind::Categorical(ids, _) => {
+                let (_acc, _baseline, rounds, scores) = boost_categorical_scored(
+                    enc.n, cfg, ids, 2, &train, &holdout, &test, &packed, n_feats, None, min_leaf,
+                );
+                fold_rounds.push(rounds);
+                for &p in &test {
+                    let z = scores[p as usize][1] as f64 - scores[p as usize][0] as f64;
+                    let p1 = 1.0 / (1.0 + (-z).exp());
+                    let y01 = if ids[p as usize] == 1 { 1.0 } else { 0.0 };
+                    signed[p as usize] = y01 - p1;
+                }
+            }
+        }
+    }
+
+    // Assemble the outcome over the rows that received a prediction.
+    let mut positions: Vec<u32> = Vec::new();
+    let mut out_signed: Vec<f64> = Vec::new();
+    let mut out_abs: Vec<f64> = Vec::new();
+    let mut out_actual: Vec<f64> = Vec::new();
+    let mut out_pred: Vec<f64> = Vec::new();
+    for &p in &modelled {
+        let r = signed[p as usize];
+        if r.is_finite() {
+            positions.push(p);
+            out_signed.push(r);
+            out_abs.push(r.abs());
+            let actual = match &target {
+                TargetKind::Numeric(ys) => ys[p as usize] as f64,
+                TargetKind::Categorical(ids, _) => {
+                    if ids[p as usize] == 1 {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+            };
+            out_actual.push(actual);
+            out_pred.push(actual - r);
+        }
+    }
+    if positions.len() < 200 {
+        return Err(format!(
+            "cross-fitting produced residuals for {} rows; too few to search",
+            positions.len()
+        ));
+    }
+    // `positions` in ascending encoded order for a stable search.
+    let mut idx: Vec<usize> = (0..positions.len()).collect();
+    idx.sort_by_key(|&i| positions[i]);
+    let positions: Vec<u32> = idx.iter().map(|&i| positions[i]).collect();
+    let out_signed: Vec<f64> = idx.iter().map(|&i| out_signed[i]).collect();
+    let out_abs: Vec<f64> = idx.iter().map(|&i| out_abs[i]).collect();
+    let out_actual: Vec<f64> = idx.iter().map(|&i| out_actual[i]).collect();
+    let out_pred: Vec<f64> = idx.iter().map(|&i| out_pred[i]).collect();
+
+    let n = out_signed.len() as f64;
+    let overall_bias = out_signed.iter().sum::<f64>() / n;
+    let overall_mae = out_abs.iter().sum::<f64>() / n;
+    let (skill, baseline, event_rate, mean_pred) = match &target {
+        TargetKind::Numeric(ys) => {
+            let mean_y = positions
+                .iter()
+                .map(|&p| ys[p as usize] as f64)
+                .sum::<f64>()
+                / n;
+            let sse: f64 = out_signed.iter().map(|r| r * r).sum();
+            let sst: f64 = positions
+                .iter()
+                .map(|&p| (ys[p as usize] as f64 - mean_y).powi(2))
+                .sum();
+            let r2 = if sst > 0.0 { 1.0 - sse / sst } else { 0.0 };
+            (r2, 0.0, 0.0, 0.0)
+        }
+        TargetKind::Categorical(ids, _) => {
+            let labs: Vec<bool> = positions.iter().map(|&p| ids[p as usize] == 1).collect();
+            let auc = auc_rank_sum(&out_pred, &labs).unwrap_or(0.5);
+            let event_rate = labs.iter().filter(|&&l| l).count() as f64 / n;
+            let mean_pred = out_pred.iter().sum::<f64>() / n;
+            (auc, event_rate.max(1.0 - event_rate), event_rate, mean_pred)
+        }
+    };
+    Ok(CrossfitOutcome {
+        positions,
+        signed: out_signed,
+        abs: out_abs,
+        actual: out_actual,
+        pred: out_pred,
+        categorical: matches!(target, TargetKind::Categorical(..)),
+        labels,
+        skill,
+        baseline,
+        overall_bias,
+        overall_mae,
+        event_rate,
+        mean_pred,
+        fold_rounds,
+    })
+}
+
 /// The categorical boosting loop: one-versus-rest logistic trees
 /// per class, early-stopped on holdout accuracy. Returns (best
 /// holdout accuracy, majority baseline, rounds at best, cumulative

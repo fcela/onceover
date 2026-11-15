@@ -1818,7 +1818,20 @@ pub fn select_findings_counted(
     let mut grouped: Vec<Finding> = Vec::new();
     for key in &sequence {
         if selected.len() >= policy.max_findings {
-            break;
+            // The cap is full, so nothing further can be
+            // admitted — but the walk does not stop. A grouped
+            // member of a family whose lead is already selected
+            // spends no selection slot (see the family design
+            // above), so it is still collected below; every
+            // other unreached key is skipped here and measured
+            // by the shadow pass, exactly as when the walk
+            // stopped at the cap.
+            let groupable = member_of
+                .get(key)
+                .is_some_and(|&fi| fam_state.get(&fi) == Some(&FamState::LeadSelected));
+            if !groupable {
+                continue;
+            }
         }
         if let Some(&fi) = member_of.get(key) {
             match fam_state.get(&fi) {

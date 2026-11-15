@@ -1154,6 +1154,46 @@ fn identity_family_groups_rotations_and_fds() {
 }
 
 #[test]
+fn family_members_ranked_past_the_cap_still_group() {
+    // The identity leads and is selected first; unrelated
+    // statements fill the remaining slots; the family's FD
+    // members rank below all of them. Grouped members spend no
+    // selection slot, so they are grouped even though the cap
+    // is already full when the walk reaches them. (Regression:
+    // the walk used to stop at the cap, and the members
+    // vanished from the report while their lead stood in it —
+    // the bike-sharing corpus family's three directions under
+    // its selected identity lead.)
+    let policy = SelectionPolicy {
+        max_findings: 3,
+        ..Default::default()
+    };
+    let mut findings = vec![identity("sum", &["casual", "registered"], "cnt", 0.99)];
+    for i in 0..4 {
+        let lhs = format!("f{i}");
+        let rhs = format!("g{i}");
+        findings.push(exact_fd(&[&lhs], &rhs, 0.95 - i as f64 * 0.01));
+    }
+    findings.push(exact_fd(&["casual", "registered"], "cnt", 0.60));
+    findings.push(exact_fd(&["cnt", "registered"], "casual", 0.59));
+    findings.push(exact_fd(&["cnt", "casual"], "registered", 0.58));
+    let outcome = select_findings_counted(findings, &policy);
+    assert_eq!(outcome.selected.len(), 3);
+    assert_eq!(outcome.families, 1);
+    assert_eq!(outcome.grouped.len(), 3);
+    let lead = outcome
+        .selected
+        .iter()
+        .find(|f| f.specification.form.as_deref() == Some("sum"))
+        .expect("the identity leads and is selected");
+    assert_eq!(lead.grouped_members.len(), 3);
+    for member in &outcome.grouped {
+        assert_eq!(member.grouped_under.as_deref(), Some(lead.id.as_str()));
+        assert!(lead.grouped_members.contains(&member.id));
+    }
+}
+
+#[test]
 fn linear_combination_rotations_group_with_the_sum() {
     // The scan reports the sum in one direction and fitted linear
     // combinations in the rotated directions (b = -a + c,
