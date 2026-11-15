@@ -50,6 +50,8 @@ pub enum Pattern {
     SentinelValues,
     PredictableMissingness,
     ValueConcentration,
+    ModalShare,
+    SpikeCells,
     Hotspot,
     CategoricalRole,
     IdentifierRole,
@@ -212,7 +214,9 @@ impl Pattern {
             Self::MissingValues | Self::SentinelValues | Self::PredictableMissingness => {
                 Category::Missingness
             }
-            Self::ValueConcentration | Self::Hotspot => Category::Concentration,
+            Self::ValueConcentration | Self::ModalShare | Self::SpikeCells | Self::Hotspot => {
+                Category::Concentration
+            }
             Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
             Self::Uniqueness => Category::Uniqueness,
             Self::Duplicates | Self::NearDuplicateRows => Category::Duplicates,
@@ -278,6 +282,8 @@ impl Pattern {
             Self::SentinelValues => "sentinel_values",
             Self::PredictableMissingness => "predictable_missingness",
             Self::ValueConcentration => "value_concentration",
+            Self::ModalShare => "modal_share",
+            Self::SpikeCells => "spike_cells",
             Self::Hotspot => "hotspot",
             Self::CategoricalRole => "categorical_role",
             Self::IdentifierRole => "identifier_role",
@@ -339,6 +345,117 @@ impl Pattern {
             Self::OutlierEntity => "outlier_entity",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
+    }
+
+    /// Every pattern, in declaration order. Validation derives each
+    /// category's accepted type strings from this list, so a type
+    /// string exists in exactly one place: `subtype()`.
+    pub const ALL: &'static [Pattern] = &[
+        Pattern::MissingValues,
+        Pattern::SentinelValues,
+        Pattern::PredictableMissingness,
+        Pattern::ValueConcentration,
+        Pattern::ModalShare,
+        Pattern::SpikeCells,
+        Pattern::Hotspot,
+        Pattern::CategoricalRole,
+        Pattern::IdentifierRole,
+        Pattern::Uniqueness,
+        Pattern::Duplicates,
+        Pattern::FormatVariation,
+        Pattern::Heaping,
+        Pattern::DigitPreference,
+        Pattern::BenfordDeviation,
+        Pattern::BoundaryMass,
+        Pattern::ContentAnomaly,
+        Pattern::SeriesStructure,
+        Pattern::NearDuplicateRows,
+        Pattern::RowInconsistency,
+        Pattern::FunctionalDependency,
+        Pattern::AffineDependency,
+        Pattern::ArithmeticIdentity,
+        Pattern::PredictiveDependency,
+        Pattern::PiecewiseDependency,
+        Pattern::LeakageSignature,
+        Pattern::OrderConstraint,
+        Pattern::OrderViolation,
+        Pattern::ModelFailure,
+        Pattern::ConditionalRule,
+        Pattern::StatisticalAssociation,
+        Pattern::PeriodAssociation,
+        Pattern::Gap,
+        Pattern::SequenceGap,
+        Pattern::MissingCombinations,
+        Pattern::PartialPeriod,
+        Pattern::UnexaminedColumns,
+        Pattern::UnscannedSeries,
+        Pattern::IntervalVariation,
+        Pattern::ColumnOrdering,
+        Pattern::ResidualShift,
+        Pattern::LevelShift,
+        Pattern::TrendChange,
+        Pattern::VarianceChange,
+        Pattern::LongFormat,
+        Pattern::ExtremeValue,
+        Pattern::CategoricalOutlier,
+        Pattern::TransientExcursion,
+        Pattern::StepDiscontinuity,
+        Pattern::DuplicateEncoding,
+        Pattern::DistributionShift,
+        Pattern::DistributionChange,
+        Pattern::SlopeBreak,
+        Pattern::RegimeContrast,
+        Pattern::SpikeContrast,
+        Pattern::AxisShape,
+        Pattern::OrderedPartition,
+        Pattern::OneWayFlag,
+        Pattern::EntryBlock,
+        Pattern::ExitBlock,
+        Pattern::FirstActivity,
+        Pattern::GroupContrast,
+        Pattern::ConditionedAssociation,
+        Pattern::LevelContrast,
+        Pattern::SliceShift,
+        Pattern::ConcentrationOverTime,
+        Pattern::OutlierEntity,
+    ];
+
+    /// The distinct type strings accepted for `category`, in
+    /// declaration order, derived from `ALL`.
+    pub fn types_for(category: Category) -> Vec<&'static str> {
+        let mut types: Vec<&'static str> = Vec::new();
+        for pattern in Self::ALL {
+            if pattern.category() == category && !types.contains(&pattern.subtype()) {
+                types.push(pattern.subtype());
+            }
+        }
+        types
+    }
+}
+
+fn category_noun(category: Category) -> &'static str {
+    match category {
+        Category::Missingness => "missingness",
+        Category::Concentration => "concentration",
+        Category::ColumnRoles => "column role",
+        Category::Uniqueness => "uniqueness",
+        Category::Duplicates => "duplicates",
+        Category::Formats => "format",
+        Category::Dependencies => "dependency",
+        Category::ConditionalRules => "conditional rule",
+        Category::Associations => "association",
+        Category::Gaps => "gap",
+        Category::Intervals => "interval",
+        Category::Ordering => "ordering",
+        Category::Changes => "change",
+    }
+}
+
+fn join_types(types: &[&str]) -> String {
+    match types {
+        [] => String::new(),
+        [only] => (*only).to_string(),
+        [head @ .., last] => format!("{}, or {}", head.join(", "), last),
     }
 }
 
@@ -747,7 +864,7 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Regularity,
             ),
-            Pattern::ValueConcentration => (
+            Pattern::ValueConcentration | Pattern::ModalShare | Pattern::SpikeCells => (
                 Sc::Column,
                 O::Distribution,
                 E::Exact,
@@ -1206,6 +1323,8 @@ impl Facets {
                 Pattern::ConcentrationOverTime
             }
             (Category::Concentration, Some("outlier_entity")) => Pattern::OutlierEntity,
+            (Category::Concentration, Some("modal_share")) => Pattern::ModalShare,
+            (Category::Concentration, Some("spike_cells")) => Pattern::SpikeCells,
             (Category::Concentration, _) => Pattern::ValueConcentration,
             (Category::ColumnRoles, Some("identifier_role")) => Pattern::IdentifierRole,
             (Category::ColumnRoles, Some("long_format")) => Pattern::LongFormat,
@@ -2056,24 +2175,16 @@ impl Finding {
         if self.finding_type.is_none() {
             return Err("a finding must carry a type".into());
         }
+        let allowed = Pattern::types_for(self.category);
+        if !allowed.contains(&self.finding_type.as_deref().unwrap()) {
+            return Err(format!(
+                "{} type must be {}",
+                category_noun(self.category),
+                join_types(&allowed)
+            ));
+        }
         match self.category {
             Category::Dependencies => {
-                if !matches!(
-                    self.finding_type.as_deref(),
-                    Some(
-                        "functional"
-                            | "predictive"
-                            | "order_constraint"
-                            | "order_violation"
-                            | "model_failure"
-                            | "leakage_signature",
-                    )
-                ) {
-                    return Err(
-                        "dependency type must be functional, predictive, order_constraint, order_violation, model_failure, or leakage_signature"
-                            .into(),
-                    );
-                }
                 if self.subject.inputs.is_empty() || self.subject.target.is_none() {
                     return Err("a dependency requires inputs and a target".into());
                 }
@@ -2087,9 +2198,6 @@ impl Finding {
                 }
             }
             Category::ConditionalRules => {
-                if self.finding_type.as_deref() != Some("if_then") {
-                    return Err("conditional rule type must be if_then".into());
-                }
                 if self.specification.conditions.is_empty() || self.specification.outcome.is_none()
                 {
                     return Err("a rule requires predicates and an outcome".into());
@@ -2110,51 +2218,6 @@ impl Finding {
                         return Err("predicate column absent from subject".into());
                     }
                 }
-            }
-            Category::Associations
-                if !matches!(
-                    self.finding_type.as_deref(),
-                    Some(
-                        "statistical"
-                            | "period_association"
-                            | "group_contrast"
-                            | "conditioned_association"
-                            | "slice_shift"
-                            | "axis_shape"
-                            | "level_contrast",
-                    )
-                ) =>
-            {
-                return Err(
-                    "association type must be statistical, period_association, group_contrast, conditioned_association, slice_shift, axis_shape, or level_contrast"
-                        .into(),
-                );
-            }
-            Category::Changes
-                if !matches!(
-                    self.finding_type.as_deref(),
-                    Some(
-                        "residual_level"
-                            | "series_structure"
-                            | "level_shift"
-                            | "trend_change"
-                            | "variance_change"
-                            | "transient_excursion"
-                            | "step_discontinuity"
-                            | "distribution_shift"
-                            | "distribution_change"
-                            | "slope_break"
-                            | "regime_contrast"
-                            | "spike_contrast"
-                            | "ordered_partition"
-                            | "one_way_flag"
-                            | "entry_block"
-                            | "exit_block"
-                            | "first_activity",
-                    )
-                ) =>
-            {
-                return Err("change type must be residual_level, level_shift, trend_change, variance_change, transient_excursion, step_discontinuity, distribution_shift, distribution_change, slope_break, regime_contrast, spike_contrast, ordered_partition, one_way_flag, entry_block, exit_block, or first_activity".into());
             }
             Category::Duplicates
                 if self.subject.unit.is_none()

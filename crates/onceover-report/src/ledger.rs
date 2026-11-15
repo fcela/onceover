@@ -118,6 +118,19 @@ pub struct SelectionOutcome {
     pub candidates_by_class: BTreeMap<String, usize>,
     pub selected_by_class: BTreeMap<String, usize>,
     pub capped_by_class: BTreeMap<String, usize>,
+    /// Findings turned away before selection because they failed
+    /// validation, with the failure reason. Selection never drops
+    /// a finding silently: callers surface these in coverage.
+    pub dropped_invalid: Vec<InvalidFinding>,
+}
+
+/// A finding that failed validation at selection time: its stated
+/// category and type, and why validation rejected it.
+#[derive(Clone, Debug)]
+pub struct InvalidFinding {
+    pub category: Category,
+    pub finding_type: Option<String>,
+    pub reason: String,
 }
 
 /// The statement class of a finding (issue #271): a
@@ -1619,9 +1632,15 @@ pub fn select_findings_counted(
 ) -> SelectionOutcome {
     let mut statements = BTreeMap::<String, Finding>::new();
     let mut detector_scores = BTreeMap::<String, f64>::new();
+    let mut dropped_invalid: Vec<InvalidFinding> = Vec::new();
     for mut finding in findings {
         finding.subject.canonicalize();
-        if finding.validate().is_err() {
+        if let Err(reason) = finding.validate() {
+            dropped_invalid.push(InvalidFinding {
+                category: finding.category,
+                finding_type: finding.finding_type.clone(),
+                reason,
+            });
             continue;
         }
         let key = finding.canonical_key();
@@ -2072,6 +2091,7 @@ pub fn select_findings_counted(
         candidates_by_class,
         selected_by_class,
         capped_by_class,
+        dropped_invalid,
     }
 }
 

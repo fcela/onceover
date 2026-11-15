@@ -409,10 +409,10 @@ def _account_lines(frame: dict) -> list[str]:
 
 def available_detectors():
     """Available detector IDs, produced categories, resource dependencies,
-    and activation: "default" (runs in the default set), "opt_in" (runs
-    only when explicitly selected), "hint_gated" (default set, engages
-    only on declared hints), or "target_gated" (runs when a target is
-    designated)."""
+    activation, and a one-line purpose per detector: "default" (runs in
+    the default set), "opt_in" (runs only when explicitly selected),
+    "hint_gated" (default set, engages only on declared hints), or
+    "target_gated" (runs when a target is designated)."""
     from onceover._native import available_detectors as _available
     return _json.loads(_available())
 

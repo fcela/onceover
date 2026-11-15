@@ -2856,11 +2856,15 @@ fn profile_inner(
         ))
     };
     let rationed = !outcome.group_capped.is_empty() || outcome.reserve_capped > 0;
-    if !capped.is_empty() || grouping_note.is_some() || rationed {
+    if !capped.is_empty()
+        || grouping_note.is_some()
+        || rationed
+        || !outcome.dropped_invalid.is_empty()
+    {
         // Per-detector report caps, the per-group cap, the
-        // hygiene reserve, and family grouping are disclosed
-        // with counts, never applied silently (the
-        // demote-never-suppress rule).
+        // hygiene reserve, family grouping, and validation
+        // failures are disclosed with counts, never applied
+        // silently (the demote-never-suppress rule).
         let mut parts: Vec<String> = capped
             .iter()
             .map(|(detector, n)| {
@@ -2897,13 +2901,33 @@ fn profile_inner(
                 outcome.reserve_capped, cfg.selection.hygiene_reserve
             ));
         }
+        if !outcome.dropped_invalid.is_empty() {
+            let mut by_type: BTreeMap<String, usize> = BTreeMap::new();
+            for invalid in &outcome.dropped_invalid {
+                let label = format!(
+                    "{}/{}",
+                    invalid.category.as_str(),
+                    invalid.finding_type.as_deref().unwrap_or("none")
+                );
+                *by_type.entry(label).or_insert(0) += 1;
+            }
+            let breakdown: Vec<String> = by_type
+                .iter()
+                .map(|(label, n)| format!("{label} ×{n}"))
+                .collect();
+            parts.push(format!(
+                "{} finding(s) failed validation and were dropped before selection ({})",
+                outcome.dropped_invalid.len(),
+                breakdown.join(", ")
+            ));
+        }
         if let Some(note) = &grouping_note {
             parts.push(note.clone());
         }
         if let Some(note) = &demotion_note {
             parts.push(note.clone());
         }
-        let info = if capped.is_empty() && !rationed {
+        let info = if capped.is_empty() && !rationed && outcome.dropped_invalid.is_empty() {
             // Grouping alone bound nothing: the entry is an exact
             // run record, not a cap disclosure.
             PassInfo::ran(parts.join("; "))
