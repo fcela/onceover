@@ -11,8 +11,8 @@ use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, hotspots, identities,
     prism_rules, profile_breaks, profile_discontinuities, profile_drift, profile_interactions,
-    profile_regimes, profile_surprises, profile_target_shapes, screen_model_failures,
-    screen_predictability,
+    profile_regimes, profile_surprises, profile_target_shapes, screen_leakage,
+    screen_model_failures, screen_predictability,
 };
 use onceover_report::{
     group_findings, select_findings_counted, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -105,6 +105,7 @@ fn profile_inner(
     // caller did not explicitly restrict the detector set.
     if cfg.target.is_some() && cfg.detectors.is_none() {
         active.insert("target_shapes".into());
+        active.insert("leakage".into());
         active.insert("model_failures".into());
     }
     let enabled = |id: &str| active.contains(id);
@@ -2449,6 +2450,35 @@ fn profile_inner(
         }
     }
 
+    // ---------- leakage signatures (opt-in via a designated target) ----------
+    if check_deadline(&mut coverage, "leakage") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("leakage") {
+        match &cfg.target {
+            Some(target) => {
+                let (f, cov) = screen_leakage(&table, target);
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "leakage".into(),
+                    PassInfo::ran(cov),
+                );
+                findings.extend(f);
+            }
+            None => {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "leakage".into(),
+                    PassInfo::skipped("no target designated".to_string()),
+                );
+            }
+        }
+    }
+
     // ---------- model-failure slices (target-gated) ----------
     if check_deadline(&mut coverage, "model_failures") {
         deadline_hit = true;
@@ -2508,6 +2538,7 @@ fn profile_inner(
                 "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
+                "leakage"=>"complete cases per predictor: rows missing the predictor or the target excluded from that predictor's evaluation",
                 "model_failures"=>"rows missing the target are excluded from fitting and from the search; rows missing a condition value are outside the slice",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
