@@ -67,7 +67,7 @@ pub use hotspots::{hotspots, HotspotConfig, HotspotsOutcome};
 pub use hstat::{profile_interactions, HConfig};
 pub use ident::identities;
 pub use ident::multiterm_identities;
-pub use leakage::screen_leakage;
+pub use leakage::{determining_columns, screen_leakage};
 pub use levels::{profile_level_contrasts, LevelContrastInput, LevelsOutcome};
 pub use missingness::{profile_missingness, MissingnessAxis};
 pub use modelfail::{screen_model_failures, ModelFailureConfig};

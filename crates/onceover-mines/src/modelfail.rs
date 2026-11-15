@@ -45,6 +45,21 @@
 //!
 //! Every statement names the slice, its size, its error, and the
 //! model's overall error — no statement without its baseline.
+//!
+//! Before fitting, the pass excludes every column that
+//! determines the target exactly — the leakage screen's
+//! determination test, shared with it — from the model inputs
+//! and from the slice variables, and names the excluded columns
+//! in its coverage entry. A column that restates the target (one
+//! derived from the outcome, or the column a derived target was
+//! built from) would otherwise hand the cross-fit a perfect
+//! score and spend the statement budget on slices of itself:
+//! within an all-events slice the error is one minus the mean
+//! prediction by construction, so those statements restate the
+//! leak instead of locating a failure. The caller's own
+//! exclusions (frame-role and axis columns) are unaffected; the
+//! determination exclusion is added to them.
+//!
 //! Honest coverage: when the cross-fitted model's held-out fit is
 //! at or near chance — pooled out-of-fold R² ≤ 0.01 for a numeric
 //! target, pooled out-of-fold AUC ≤ 0.55 for a binary target — the
@@ -273,13 +288,37 @@ pub fn screen_model_failures(
             format!("designated target '{target_name}' is not a column of the frame"),
         );
     };
-    let cf = match crossfit_residuals(table, enc, target_col, screen_cfg, excluded_cols, cfg.folds)
-    {
+    // Columns that determine the target exactly are excluded
+    // from the fit and from the slice variables, on top of the
+    // caller's exclusions: fitted, one hands the model a perfect
+    // score; sliced on, it spends the statement budget restating
+    // the leak (issue #306). The coverage entry names them.
+    let determiners = crate::leakage::determining_columns(table, target_name);
+    let det_clause = if determiners.is_empty() {
+        String::new()
+    } else {
+        let names: Vec<String> = determiners
+            .iter()
+            .map(|&ci| format!("'{}'", table.names[ci]))
+            .collect();
+        format!(
+            "; {} column(s) excluded from the model inputs and the slice variables because each determines the target exactly: {}",
+            determiners.len(),
+            names.join(", ")
+        )
+    };
+    let mut excluded: Vec<usize> = excluded_cols.to_vec();
+    for &ci in &determiners {
+        if !excluded.contains(&ci) {
+            excluded.push(ci);
+        }
+    }
+    let cf = match crossfit_residuals(table, enc, target_col, screen_cfg, &excluded, cfg.folds) {
         Ok(cf) => cf,
         Err(reason) => {
             return (
                 Vec::new(),
-                format!("target '{target_name}' designated; {reason}"),
+                format!("target '{target_name}' designated; {reason}{det_clause}"),
             );
         }
     };
@@ -291,7 +330,7 @@ pub fn screen_model_failures(
         cfg.min_r2
     };
     let base = format!(
-        "target '{target_name}' designated ({kind}); {}-fold cross-fitted GBM on {} rows, out-of-fold {} {} (majority baseline {}), overall mean residual {}, mean absolute error {}",
+        "target '{target_name}' designated ({kind}); {}-fold cross-fitted GBM on {} rows, out-of-fold {} {} (majority baseline {}), overall mean residual {}, mean absolute error {}{det_clause}",
         cfg.folds,
         cf.positions.len(),
         skill_name,
@@ -312,7 +351,7 @@ pub fn screen_model_failures(
         );
     }
     let (findings, search_detail) =
-        search_failure_slices(table, target_name, target_col, enc, &cf, cfg, excluded_cols);
+        search_failure_slices(table, target_name, target_col, enc, &cf, cfg, &excluded);
     (findings, format!("{base}; {search_detail}"))
 }
 

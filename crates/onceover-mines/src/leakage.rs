@@ -177,22 +177,27 @@ fn adjusted_eta2(
     Some((adjusted.clamp(0.0, 1.0), n, determines))
 }
 
-pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, String) {
-    let Some(tci) = table.names.iter().position(|n| n == target_name) else {
-        return (
-            Vec::new(),
-            format!("designated target '{target_name}' is not a column of the frame"),
-        );
-    };
+/// The per-column strength evaluation against one target: every
+/// other column's univariate strength and its exact-determination
+/// flag, on complete cases. Shared by the leakage screen (which
+/// states the strongest signatures) and by
+/// `determining_columns` (which the model-failure screen uses to
+/// exclude determiners before fitting), so the determination
+/// test exists in exactly one place.
+struct Evaluation {
+    strengths: Vec<Strength>,
+    evaluated: usize,
+    target_categorical: bool,
+}
+
+/// Evaluate every predictor column against the target at index
+/// `tci`. Returns None when the target's type is not evaluated
+/// (neither categorical nor numeric).
+fn evaluate_strengths(table: &TypedTable, tci: usize) -> Option<Evaluation> {
     let target_categorical = is_categorical_col(table, tci);
     let target_vals = numeric_values(table, tci);
     if !target_categorical && target_vals.is_none() {
-        return (
-            Vec::new(),
-            format!(
-                "designated target '{target_name}' has a type the leakage screen does not evaluate"
-            ),
-        );
+        return None;
     }
     let rows: Vec<u32> = (0..table.n as u32).collect();
     let mut strengths: Vec<Strength> = Vec::new();
@@ -274,6 +279,62 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
             }
         }
     }
+    Some(Evaluation {
+        strengths,
+        evaluated,
+        target_categorical,
+    })
+}
+
+/// Columns that determine the target exactly, by the same tests
+/// the leakage screen states: zero functional-dependence
+/// violations for a categorical target (with the guard that the
+/// predictor's groups average at least four rows, so a near-unique
+/// column does not determine vacuously), a target constant within
+/// every level of a categorical predictor for a numeric target,
+/// or Chatterjee's xi at 0.999 or above for a numeric predictor.
+/// Returned in column order. The model-failure screen excludes
+/// these columns from its model inputs and its slice variables
+/// before fitting (issue #306): a column that restates the target
+/// would otherwise hand the cross-fit a perfect score and spend
+/// the statement budget on slices of itself.
+pub fn determining_columns(table: &TypedTable, target_name: &str) -> Vec<usize> {
+    let Some(tci) = table.names.iter().position(|n| n == target_name) else {
+        return Vec::new();
+    };
+    let Some(evaluation) = evaluate_strengths(table, tci) else {
+        return Vec::new();
+    };
+    let mut cols: Vec<usize> = evaluation
+        .strengths
+        .iter()
+        .filter(|s| s.determines)
+        .map(|s| s.ci)
+        .collect();
+    cols.sort_unstable();
+    cols
+}
+
+pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, String) {
+    let Some(tci) = table.names.iter().position(|n| n == target_name) else {
+        return (
+            Vec::new(),
+            format!("designated target '{target_name}' is not a column of the frame"),
+        );
+    };
+    let Some(evaluation) = evaluate_strengths(table, tci) else {
+        return (
+            Vec::new(),
+            format!(
+                "designated target '{target_name}' has a type the leakage screen does not evaluate"
+            ),
+        );
+    };
+    let Evaluation {
+        mut strengths,
+        evaluated,
+        target_categorical,
+    } = evaluation;
     // Rank: strength descending, column name as the tiebreak.
     strengths.sort_by(|a, b| {
         b.value
