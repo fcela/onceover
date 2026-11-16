@@ -643,16 +643,32 @@ def _fact_section(rep: dict, columns: set, designated: str | None) -> str:
     typ = rep.get("type")
     cat = rep.get("category")
     target = (rep.get("subject") or {}).get("target")
-    if designated and target == designated:
+    if typ == "leakage_signature":
         return "target"
-    if typ in _DIGEST_EXACT_TYPES:
-        return "redundant"
     if cat in ("missingness", "duplicates", "formats", "gaps"):
         return "wrong"
     if typ in ("sentinel_values", "boundary_mass"):
         return "wrong"
     if cat == "concentration" and len(columns) <= 1:
         return "wrong"
+    if designated and target == designated:
+        return "target"
+    if typ in _DIGEST_EXACT_TYPES:
+        return "redundant"
+    if (
+        designated
+        and target is None
+        and designated in columns
+        and cat in ("dependencies", "associations", "conditional_rules", "changes")
+    ):
+        # A relationship fact about the designated target, stated
+        # by a screen that does not mark its subject with a target
+        # (the level contrasts are the common case). Findings that
+        # carry a subject target of their own are routed by it:
+        # a predictability statement about another column names
+        # every screened input, the designated target included,
+        # without being a statement about the target.
+        return "target"
     if cat == "anomalies":
         return "anomalies"
     if cat == "concentration" and typ in ("outlier_entity", "spike_cells"):
@@ -1384,34 +1400,79 @@ class ProfileReport:
 
         designated = _designated_target(findings)
         facts, weak = _digest_facts(findings, data.get("grouped_findings") or [])
+        grain_statement = ((data.get("frame") or {}).get("grain") or {}).get(
+            "statement"
+        )
         sections: dict[str, list[tuple[str, dict]]] = {}
         for fact in facts:
             rep = fact["rep"]
+            if grain_statement and rep.get("claim") == grain_statement:
+                # The grain statement already opens the briefing in
+                # the row section; the key finding that states it
+                # does not take a second line.
+                continue
             section = _fact_section(rep, fact["columns"], designated)
             sections.setdefault(section, []).append(
                 (_digest_line_text(rep), rep)
             )
-        def section_order(entry):
-            # The target section leads with leak columns, then the
-            # driver statements, then the rest (issue #317 phase 2,
-            # section 4's own order).
-            text, rep = entry
-            typ = rep.get("type")
-            if typ == "leakage_signature":
-                head = 0
-            elif typ == "predictive":
-                head = 1
-            else:
-                head = 2
-            return (head, -(rep.get("interestingness") or 0), text)
+
+        def relationship_sequence(entries, allowance):
+            # The taking order inside a relationship section. Leak
+            # lines first. Then the predictability directory — a
+            # column's driver statement names its whole driver set
+            # at once — when the whole directory fits the section's
+            # allowance. A directory that cannot fit does not
+            # monopolise the section: the order then runs breadth
+            # across kinds, the strongest line of every kind
+            # present first, the directory's remainder after it,
+            # then the second line of every kind, and so on.
+            def score(e):
+                return (-(e[1].get("interestingness") or 0), e[0])
+
+            leakage = sorted(
+                (e for e in entries if e[1].get("type") == "leakage_signature"),
+                key=score,
+            )
+            directory = sorted(
+                (e for e in entries if e[1].get("type") == "predictive"),
+                key=score,
+            )
+            buckets: dict[tuple, list] = {}
+            for e in entries:
+                if e[1].get("type") in ("leakage_signature", "predictive"):
+                    continue
+                key = (e[1].get("category"), e[1].get("type"))
+                buckets.setdefault(key, []).append(e)
+            for bucket in buckets.values():
+                bucket.sort(key=score)
+
+            def rounds_from(depth):
+                out = []
+                while True:
+                    round_entries = [
+                        b[depth] for b in buckets.values() if len(b) > depth
+                    ]
+                    if not round_entries:
+                        return out
+                    round_entries.sort(key=score)
+                    out.extend(round_entries)
+                    depth += 1
+
+            dir_chars = sum(
+                len(t) + len(r.get("id") or "") + 4 for t, r in directory
+            )
+            if dir_chars <= allowance:
+                return leakage + directory + rounds_from(0)
+            first_round = [b[0] for b in buckets.values() if b]
+            if directory:
+                first_round.append(directory[0])
+            first_round.sort(key=score)
+            return leakage + first_round + directory[1:] + rounds_from(1)
 
         for name, entries in sections.items():
-            if name == "target":
-                entries.sort(key=section_order)
-            else:
-                entries.sort(
-                    key=lambda e: (-(e[1].get("interestingness") or 0), e[0])
-                )
+            entries.sort(
+                key=lambda e: (-(e[1].get("interestingness") or 0), e[0])
+            )
         if weak:
             weak_sorted = sorted(
                 weak, key=lambda x: -(x.get("interestingness") or 0)
@@ -1426,9 +1487,6 @@ class ProfileReport:
             )
             sections.setdefault("relationships", []).append(
                 (line, weak_sorted[0])
-            )
-            sections["relationships"].sort(
-                key=lambda e: (-(e[1].get("interestingness") or 0), e[0])
             )
         quality = _quality_line(data)
         if quality:
@@ -1481,6 +1539,8 @@ class ProfileReport:
             if not entries:
                 continue
             allowance = int(shares[name] * max(room, 0))
+            if name in ("target", "relationships"):
+                entries = relationship_sequence(entries, allowance)
             used = 0
             chosen = []
             rest = []
