@@ -175,3 +175,144 @@ candidates capped; the statement is present at max_findings=1000),
 was re-baselined to missed. Each note records its mechanism.
 Second run: **173/173 machine-verified expectations pass**;
 documented cases unchanged (found 17, missed 11, partial 4).
+
+## Follow-up: the default-mode must gap, closed
+
+The one unmet exit criterion above was must recall at 4k in
+default mode: 8/11 (73%) against the 90% bar, target mode
+already at 11/11. The three misses (bank
+subscription~duration, abalone rings~sex, bike cnt~hour) were
+each carried by a level-contrast fact ranking 21st–29th by
+score inside a 28–44-fact relationship section whose budget
+was fully spent. The follow-up changes digest selection only
+(`Report.to_digest`); no detector, finding type, or report
+field changed.
+
+What the taking order does now, inside a relationship
+section:
+
+- Level contrasts run breadth-first across measures, as the
+  section runs breadth-first across kinds. Keyed as a single
+  kind, the contrasts crowd onto a few measures — every
+  measure against one grouping, at near-identical scores — so
+  one grouping's contrasts fill the kind's early rounds and
+  the remaining measures' contrasts never arrive. Each
+  measure's strongest contrast is a first; among firsts, one
+  that locates the measure precedes one that only spreads it
+  (the location is the relationship; the spread refines it,
+  and on sentinel-driven measures the spread statement is
+  often a restatement of the sentinel's mass).
+- The lead families are offered in step. When the directory
+  fits, the break and regime statements (breadth rounds
+  across their kinds) and the measures' strongest level
+  statements alternate line for line, the strongest hotspot
+  statement joins at the second exchange, and the remaining
+  kinds follow in breadth rounds. When the directory does
+  not fit, the level statements run as one queue among the
+  kinds in the breadth rounds. The first version of this
+  follow-up offered every measure's strongest contrast in
+  the first round as a block; the family counts below show
+  what that cost, and the in-step order is the correction.
+- Numbers below a thousandth print in compact scientific
+  form at the same three significant figures (8.73e-04, not
+  0.000873): three significant figures in plain notation
+  prints six or more decimal places at that magnitude, and
+  the gate's long-decimal count caught one such line, on
+  lace-satellites, that the new contrast order brought into
+  the digest.
+
+### The gate, first head to final head
+
+Owner's gate, head 7aa54c34 (the table above) to head
+acdb48b6 (this follow-up):
+
+| metric | first head | final head |
+|---|---:|---:|
+| reference must at 4k, default (of 11) | 8 | **10** |
+| reference must at 4k, target | 11 | 11 |
+| reference should at 4k, default (of 12) | 6 | 4 |
+| reference should at 4k, target | 8 | 8 |
+| reference should at 8k, default | 11 | 10 |
+| repeated facts at 4k | 0 | 0 |
+| long decimals at 4k | 0 | 0 |
+| permuted relationship lines at 4k, default | 77 | 78 |
+| permuted relationship lines at 4k, target | 42 | 42 |
+| planted facts found at 4k (of 46) | 28 | 29 |
+| planted facts found in full reports | 33 | 33 |
+| invariance violations (total) | 430 | 430 |
+| truth mismatches / errors | 0 / 0 | 0 / 0 |
+| finding-line share (summed per-mille, default) | 10622 | 10624 |
+
+Held-out tables move only in line counts and timing; the
+held-out long-decimal count stays 0.
+
+### Exit criteria, restated
+
+- **Must recall at 4k ≥ 90% on non-held-out tables — met in
+  both modes.** Default 10/11 (91%), target 11/11. The one
+  remaining default-mode miss is abalone rings~sex, the
+  weakest of eight near-tied contrasts across sex (score
+  0.658 against 0.678–0.695 for the other measures); it is
+  stated at 8k and in the full report.
+- **Zero repeated facts — met** (gate, both modes; strict
+  harness, every table).
+- **≥ 80% of characters on finding lines — met** on the
+  reference tables (84–92% per digest); the strict harness
+  measures 83–94% except the panel table (56%), as before.
+- **Zero relationship statements on controls — met** on the
+  strict harness's fully permuted controls (0 in both
+  modes). The gate's permuted component moves 77 → 78 in
+  default mode; it was not zero before and is not zero now.
+- **Every target-mode digest names the target's strongest
+  driver directly — met**, unchanged.
+- **Held-out tables within 10 points — not met** on the
+  strict harness's held-out split (bank must 1/5 default,
+  2/5 target, unchanged from the first head); vacuous on
+  the gate registry, whose held-out tables carry no
+  reference statements.
+
+The should-tier costs, named: bank subscription~previous
+(the scale contrasts that stated it are remainders under
+the new order; it still matches at 8k, in the full report,
+and in target mode), bike cnt~temperature (its step line
+sat at the digest's tail and is displaced by the hotspot
+lead), and bank subscription~housing-loan at 8k (stated in
+the full report only).
+
+### Break and hotspot families in the digest (default mode, 4k)
+
+First head to final head, findings of each family reaching
+the digest as members of stated facts:
+
+- Breaks: **98 → 114** in total. metro-interstate-traffic's
+  starvation ends (0 → 16 of its 17 break findings);
+  hospital-dha 2 → 8. Falls: thyroid 5 → 3, abalone 12 → 11,
+  adventureworks 12 → 11, bike 31 → 30, bank 2 → 1.
+- Hotspots: **40 → 41** in total. bank 3 → 4; adventureworks
+  4 → 3 (the lost carrier was an if_then line, not a hotspot
+  line). The intermediate block design measured 88 breaks
+  and 35 hotspots; the in-step order is what recovered both.
+
+### Strict harness (secondary reading)
+
+| | must default | must target | must+should default | must+should target |
+|---|---:|---:|---:|---:|
+| first head | 12/23 | 15/23 | 21/41 | 25/41 |
+| final head | 13/23 | 15/23 | 22/41 | 25/41 |
+
+Bike's default-mode must moves 0/2 → 1/2 under strict
+matching (the gate's matcher credits both). Bank (held out)
+and abalone rows are unchanged: abalone default must 1/3 —
+under strict matching the rings~sex statement is one of its
+misses, as at the first head.
+
+### Verification on the final head
+
+pytest 737 passed (734 at the first head, plus three
+regression tests: contrast breadth across measures,
+location before scale-only, compact form below a
+thousandth). Corpus 173/173. Strict book build exit 0 with
+the digest-rendering notebooks re-executed. `cargo fmt
+--all -- --check` clean; the follow-up touches no Rust
+files, and the workspace clippy/test legs were not re-run
+locally on this head — CI carries them.
