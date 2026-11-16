@@ -4,8 +4,8 @@
                     (category, type) repeat an earlier finding line.
                     A line's column set is that of the finding it
                     stands for (the lead finding of a rolled-up group).
-    finding_lines   number of lines starting with "[" (one per
-                    statement or rolled-up group of statements).
+    finding_lines   number of lines the digest parser resolves to
+                    findings (one per statement or merged fact).
     finding_permille  characters on finding lines per thousand
                     characters of the digest (header, account,
                     coverage and omission lines hold the rest).

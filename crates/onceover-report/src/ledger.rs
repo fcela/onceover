@@ -173,12 +173,15 @@ impl StatementClass {
     }
 
     /// The admission phase under cap pressure: account first,
-    /// structure and shape together, hygiene last.
+    /// structure and shape together, hygiene last. Phase 1 is
+    /// reserved for the hygiene statements the reserve protects,
+    /// which `select_findings` sequences ahead of structure and
+    /// shape.
     fn phase(self) -> usize {
         match self {
             Self::Account => 0,
-            Self::Structure | Self::Shape => 1,
-            Self::Hygiene => 2,
+            Self::Structure | Self::Shape => 2,
+            Self::Hygiene => 3,
         }
     }
 }
@@ -1812,10 +1815,31 @@ pub fn select_findings_counted(
     let mut sequence: Vec<String> = order.clone();
     if pressure {
         // Class-major admission order: account statements first,
-        // structure and shape together, hygiene last. The sort
-        // is stable, so the standing demotion-adjusted score
-        // order holds inside each phase.
-        sequence.sort_by_key(|k| class_of.get(k).map_or(2, |c| c.phase()));
+        // then the hygiene statements the reserve protects,
+        // structure and shape together, then the remaining
+        // hygiene. The sort is stable, so the standing
+        // demotion-adjusted score order holds inside each phase.
+        // The reserve is a floor as well as a ceiling (issue
+        // #317 phase 2, settling #280): sequenced last, hygiene
+        // is displaced entirely whenever structure and shape
+        // fill the cap, which is what made the hygiene findings
+        // vanish from targeted reports.
+        let mut protected: BTreeSet<&str> = BTreeSet::new();
+        for k in &order {
+            if protected.len() >= policy.hygiene_reserve {
+                break;
+            }
+            if class_of.get(k) == Some(&StatementClass::Hygiene) {
+                protected.insert(k.as_str());
+            }
+        }
+        sequence.sort_by_key(|k| {
+            if protected.contains(k.as_str()) {
+                1
+            } else {
+                class_of.get(k).map_or(3, |c| c.phase())
+            }
+        });
     }
     let mut by_key: BTreeMap<String, Finding> =
         ranked.into_iter().map(|f| (f.canonical_key(), f)).collect();

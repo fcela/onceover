@@ -10,8 +10,10 @@ companion.
 """
 
 import json as _json
+import math
 import operator as _operator
 import os
+import re
 
 from onceover._many import MultiTableReport, profile_many
 from onceover._native import ProfileReport as _NativeProfileReport
@@ -466,19 +468,233 @@ def _quality_line(data: dict) -> str | None:
     return "quality: " + "; ".join(parts) if parts else None
 
 
-def _account_lines(frame: dict) -> list[str]:
-    """The digest's account block, from the report's `frame`
-    section: the grain statement, the time axis with its measured
-    span and step, and each dominant structure's statement. Empty
-    when the frame model computed no account (a frame with no axis,
-    no key candidate, and no organising grouping)."""
+# ------------------------------------------------------------------
+# The briefing digest (issue #317 phase 2): facts, sections, numbers
+#
+# A fact is a distinct set of stated columns. Findings that share
+# a column set state the same fact, however many detectors state
+# it and in whichever direction, so they merge into one digest
+# line before rendering. The stated columns of a finding are its
+# subject columns with the target appended; when the first
+# evidence block names drivers — a model-based finding lists
+# every screened input in its subject, but the columns it credits
+# are its drivers — the drivers replace the subject columns.
+# This is the same accounting the gate harness uses, so a fact
+# here is a fact there.
+
+_DIGEST_SECTION_ORDER = (
+    "row",
+    "wrong",
+    "redundant",
+    "target",
+    "relationships",
+    "anomalies",
+    "not_examined",
+)
+_DIGEST_SECTION_TITLES = {
+    "row": "What a row is",
+    "wrong": "What is wrong",
+    "redundant": "What is redundant",
+    "target": "What relates to the target",
+    "relationships": "Other relationships",
+    "anomalies": "Anomalies",
+    "not_examined": "Not examined",
+}
+# Shares of the finding-line budget, per section. When no target
+# is designated, the target section's share passes to the other
+# relationships.
+_DIGEST_SECTION_SHARES = {
+    "wrong": 0.24,
+    "redundant": 0.13,
+    "target": 0.26,
+    "relationships": 0.24,
+    "anomalies": 0.13,
+}
+# Finding types that state a fact exactly. An exact form is the
+# digest line for its fact; statistical restatements fold into it.
+_DIGEST_EXACT_TYPES = {"functional", "arithmetic_identity", "affine", "duplicate_encoding"}
+_DIGEST_NUMBER = re.compile(r"\d+\.\d+(?:[eE][+-]?\d+)?")
+
+
+def _digest_columns(finding: dict) -> list:
+    subj = finding.get("subject") or {}
+    cols = list(subj.get("columns") or [])
+    for ev in (finding.get("evidence") or [])[:1]:
+        drivers = (ev.get("metrics") or {}).get("drivers")
+        if (
+            isinstance(drivers, list)
+            and drivers
+            and all(isinstance(d, str) for d in drivers)
+        ):
+            cols = list(drivers)
+    target = subj.get("target")
+    if target and target not in cols:
+        cols.append(target)
+    return cols
+
+
+def _digest_numbers(text: str) -> str:
+    """Round the decimal numbers in a claim to three significant
+    figures. Integers — counts, years — are exact and stay exact.
+    Below a thousandth, three significant figures in plain
+    notation would print six or more decimal places, so the
+    compact scientific form carries the same precision."""
+
+    def sub(m: "re.Match") -> str:
+        try:
+            value = float(m.group(0))
+        except ValueError:
+            return m.group(0)
+        if value == 0:
+            return "0"
+        places = 2 - math.floor(math.log10(abs(value)))
+        rounded = round(value, places)
+        if rounded == int(rounded):
+            whole = int(rounded)
+            return f"{whole:,}" if abs(whole) >= 10000 else str(whole)
+        if abs(rounded) < 0.001:
+            return f"{rounded:.2e}"
+        return f"{rounded:,}"
+
+    return _DIGEST_NUMBER.sub(sub, text)
+
+
+def _digest_line_text(finding: dict) -> str:
+    return _digest_numbers(finding.get("claim") or "")
+
+
+def _fact_precedence(finding: dict) -> int:
+    """Which finding speaks for a fact: leak columns first, then
+    the exact forms, then order constraints, then rules, then the
+    statistical forms."""
+    typ = finding.get("type")
+    if typ == "leakage_signature":
+        return 0
+    if typ in _DIGEST_EXACT_TYPES:
+        return 1
+    if typ in ("order_constraint", "order_violation"):
+        return 2
+    if typ == "if_then":
+        return 3
+    return 4
+
+
+def _is_weak_association(finding: dict) -> bool:
+    if finding.get("type") != "statistical":
+        return False
+    return any(
+        (ev.get("metrics") or {}).get("tier") == "weak"
+        for ev in finding.get("evidence") or []
+    )
+
+
+def _digest_facts(findings: list, grouped: list) -> tuple[list, list]:
+    """Merge findings into facts: one entry per distinct column
+    set, carrying the representative finding (exact forms win),
+    every member finding, and the grouped members any member
+    leads. Weak-tier associations are returned separately: they
+    collapse into a single line and join a fact only when a
+    stronger finding states the same columns."""
+    grouped_by_id = {f["id"]: f for f in grouped}
+    weak = []
+    by_key: dict[tuple, dict] = {}
+    facts = []
+    for f in findings:
+        cols = _digest_columns(f)
+        if _is_weak_association(f):
+            weak.append((f, cols))
+            continue
+        key = tuple(sorted(cols)) if cols else ("", f["id"])
+        fact = by_key.get(key)
+        if fact is None:
+            fact = {"columns": set(cols), "members": [], "rep": f}
+            by_key[key] = fact
+            facts.append(fact)
+        fact["members"].append(f)
+        if (_fact_precedence(f), -(f.get("interestingness") or 0)) < (
+            _fact_precedence(fact["rep"]),
+            -(fact["rep"].get("interestingness") or 0),
+        ):
+            fact["rep"] = f
+    remaining_weak = []
+    for f, cols in weak:
+        fact = by_key.get(tuple(sorted(cols))) if cols else None
+        if fact is not None:
+            fact["members"].append(f)
+        else:
+            remaining_weak.append(f)
+    for fact in facts:
+        members = list(fact["members"])
+        for f in fact["members"]:
+            for mid in f.get("grouped_members") or []:
+                if mid in grouped_by_id:
+                    members.append(grouped_by_id[mid])
+        fact["members"] = members
+    return facts, remaining_weak
+
+
+def _designated_target(findings: list) -> str | None:
+    """The designated target, when the report carries one. The
+    report records no target field; the target-gated screens are
+    the record — their findings name the target they ran against.
+    A designated target neither screen stated a finding for
+    cannot be told apart from an ordinary column here."""
+    for f in findings:
+        if f.get("type") in ("leakage_signature", "model_failure"):
+            target = (f.get("subject") or {}).get("target")
+            if target:
+                return target
+    return None
+
+
+def _fact_section(rep: dict, columns: set, designated: str | None) -> str:
+    typ = rep.get("type")
+    cat = rep.get("category")
+    target = (rep.get("subject") or {}).get("target")
+    if typ == "leakage_signature":
+        return "target"
+    if cat in ("missingness", "duplicates", "formats", "gaps"):
+        return "wrong"
+    if typ in ("sentinel_values", "boundary_mass"):
+        return "wrong"
+    if cat == "concentration" and len(columns) <= 1:
+        return "wrong"
+    if designated and target == designated:
+        return "target"
+    if typ in _DIGEST_EXACT_TYPES:
+        return "redundant"
+    if (
+        designated
+        and target is None
+        and designated in columns
+        and cat in ("dependencies", "associations", "conditional_rules", "changes")
+    ):
+        # A relationship fact about the designated target, stated
+        # by a screen that does not mark its subject with a target
+        # (the level contrasts are the common case). Findings that
+        # carry a subject target of their own are routed by it:
+        # a predictability statement about another column names
+        # every screened input, the designated target included,
+        # without being a statement about the target.
+        return "target"
+    if cat == "anomalies":
+        return "anomalies"
+    if cat == "concentration" and typ in ("outlier_entity", "spike_cells"):
+        return "anomalies"
+    return "relationships"
+
+
+def _row_lines(frame: dict) -> list[str]:
+    """What a row is: the grain statement and the time axis, from
+    the report's `frame` section. The dominant-structure account
+    lines are not part of the briefing (issue #317 phase 2)."""
     lines: list[str] = []
     grain = frame.get("grain") or {}
     if grain.get("statement"):
-        lines.append("account: " + grain["statement"])
+        lines.append(grain["statement"])
     axis = frame.get("axis") or {}
     if axis:
-        line = "account: time axis — " + axis.get("description", axis.get("name", ""))
+        line = "time axis \u2014 " + axis.get("description", axis.get("name", ""))
         if axis.get("min") and axis.get("max"):
             line += f", {axis['min']} to {axis['max']}"
             if axis.get("step"):
@@ -486,10 +702,38 @@ def _account_lines(frame: dict) -> list[str]:
             if axis.get("distinct_values"):
                 line += f" ({axis['distinct_values']} distinct values)"
         lines.append(line)
-    for structure in frame.get("dominant") or []:
-        if structure.get("statement"):
-            lines.append("account: " + structure["statement"])
-    return lines
+    return lines[:2]
+
+
+def _not_examined_line(data: dict) -> str | None:
+    """What was not examined: passes that run by default and were
+    capped, cut by the deadline, or errored. Passes that run on
+    request are never listed. Detector membership comes from the
+    registry, so the list cannot drift from the default set."""
+    cov = data.get("coverage") or {}
+    try:
+        registry = {d["id"]: d.get("membership") for d in available_detectors()}
+    except Exception:
+        registry = {}
+    capped, errored = [], []
+    for key, entry in cov.items():
+        if key in ("selection", "deadline"):
+            continue
+        if registry.get(key) == "on_request":
+            continue
+        status = (entry or {}).get("status")
+        if status == "capped":
+            capped.append(key)
+        elif status == "error":
+            errored.append(key)
+    bits = []
+    if capped:
+        bits.append("capped: " + ", ".join(sorted(capped)))
+    if errored:
+        bits.append("errored: " + ", ".join(sorted(errored)))
+    if "deadline" in cov:
+        bits.append("the run was cut short by its deadline")
+    return "; ".join(bits) if bits else None
 
 
 def available_detectors():
@@ -1097,185 +1341,345 @@ class ProfileReport:
         return self._native.to_markdown()
 
     def to_digest(self, budget_chars: int = 4000) -> str:
-        """A context-budgeted plain-text digest of this report.
+        """A context-budgeted plain-text briefing of this report.
 
-        The digest leads with the account (frame-model step 2):
-        the grain statement, the time axis with its span and step,
-        and the dominant structure, straight from the report's
-        `frame` section. Then the header (shape, schema, headline,
-        coverage exceptions, finding counts by category), then one
-        line per rollup group — findings sharing category, type,
-        form, and target — with the group's
-        highest-interestingness claim; groups with more than one
-        member also list up to three exemplar finding ids,
-        expandable with `.finding(id)`. Groups are ordered by
-        statement class (issue #271) — structure groups, then
-        shape groups, then hygiene groups, with account groups
-        (frame-scope statements and keys) ahead of all three —
-        then by that claim's interestingness within the class.
-        This order deliberately diverges from the findings
-        array's report-band order (account, completeness,
-        relations, column structure, deviations), which is
-        unchanged: the array keeps the order stored reports are
-        compared in, while the digest leads with the classes a
-        reader acts on first. A `quality:` line after the account states
-        missing values, constant and empty columns, and duplicate rows,
-        counted over all rows. When verified relationship families formed
-        (schema 0.6), the header states how many statements were
-        grouped, and a family lead's rolled line carries its grouped
-        member ids in a `[grouped: ...]` suffix. Weak-tier
-        tested associations (schema 0.7: significant after
+        The briefing is organised by the questions a reader brings
+        to a new table, in sections, each with its own share of the
+        character budget so that no family of statements can crowd
+        out another: what a row is (the grain statement and the
+        time axis, from the report's `frame` section); what is
+        wrong (missingness and its structure, duplicates,
+        sentinels, impossible values, formats); what is redundant
+        (one line per family of findings that restate one another);
+        what relates to the target, when one is designated (leak
+        columns first, then the strongest drivers); other strong
+        relationships; anomalies; and what was not examined (only
+        passes that run by default and were capped, cut by the
+        deadline, or errored — passes that run on request are never
+        listed). The section on what is wrong keeps its share in
+        target mode too: designating a target no longer makes the
+        hygiene findings vanish. A section that cannot fill its
+        share passes what is left to the sections still holding
+        facts, in section order.
+
+        Inside the body, findings are merged into facts before
+        rendering — one line per distinct set of columns — so a
+        fact several detectors state is stated once.
+        When an exact form of a fact exists (a functional
+        dependency, an identity, an encoding), the exact form is
+        the line and the statistical restatements fold into it.
+        Each line is the representative finding's claim in plain
+        words, with its numbers rounded to three significant
+        figures, followed by that one finding's id in brackets;
+        the merged findings are reachable through the report.
+        Weak-tier tested associations (significant after
         Benjamini–Hochberg correction but below the strong effect
-        bar) never take individual digest lines: however many there
-        are, they collapse into one line carrying the count and the
-        strongest examples, pointing at `report.associations()` for
-        the full table. When the rolled lines exceed `budget_chars`,
-        the digest takes account lines first, then lines from the
-        structure and shape classes in turn, strongest first, so
-        that neither insight class fills the budget alone; hygiene
-        lines are taken only once every remaining insight line has
-        been refused by the budget. It then ends with
-        a line stating what was omitted by category and how to retrieve
-        it; it never exceeds the budget (budgets under ~200 characters
-        return a truncated header). The full record stays in `.data` /
-        `to_json()`.
+        bar) never take individual lines: however many there are,
+        they collapse into one line carrying the count and the
+        strongest examples, pointing at `report.associations()`.
+
+        When the lines exceed `budget_chars`, each section keeps
+        only what fits its share, strongest first, and the briefing
+        ends with a line stating how many facts were omitted and
+        how to retrieve them; it never exceeds the budget (budgets
+        under ~200 characters return a truncated header). The full
+        record stays in `.data` / `to_json()`.
         """
         data = self.data
         findings = data["findings"]
         overview = data.get("overview", {})
-        lines = [
+        profile_line = (
             f"profile digest: {overview.get('n_rows', '?')} rows x "
             f"{overview.get('n_columns', '?')} columns, "
             f"{len(findings)} findings, schema "
             f"{data.get('schema_version', '?')}"
-        ]
-        account_lines = _account_lines(data.get("frame") or {})
-        lines.extend(account_lines)
-        quality = _quality_line(data)
-        if quality:
-            lines.append(quality)
-        if overview.get("headline"):
-            lines.append("headline: " + overview["headline"])
+        )
+        fixed = [profile_line]
         source = data.get("source")
-        if source:
-            if source.get("basis") == "sampled":
-                lines.append(
-                    f"source: {source.get('kind')}, {source.get('rows')} rows; "
-                    f"profiled on a stratified sample of "
-                    f"{source.get('rows_profiled')} rows \u2014 findings "
-                    "describe the sample"
-                )
-            else:
-                lines.append(
-                    f"source: {source.get('kind')}, {source.get('rows')} "
-                    "rows, collected in full"
-                )
-        cov = data.get("coverage", {})
-        skipped = [
-            f"{k}={v.get('status')}"
-            for k, v in cov.items()
-            if v.get("status") not in ("ran_exact", "ran_sampled")
-        ]
-        lines.append(
-            "coverage: " + (", ".join(skipped) if skipped else "all passes ran")
+        if source and source.get("basis") == "sampled":
+            fixed.append(
+                f"source: {source.get('kind')}, {source.get('rows')} rows; "
+                f"profiled on a stratified sample of "
+                f"{source.get('rows_profiled')} rows \u2014 findings "
+                "describe the sample"
+            )
+        row_lines = _row_lines(data.get("frame") or {})
+        not_examined = _not_examined_line(data)
+
+        designated = _designated_target(findings)
+        facts, weak = _digest_facts(findings, data.get("grouped_findings") or [])
+        grain_statement = ((data.get("frame") or {}).get("grain") or {}).get(
+            "statement"
         )
-        cats: dict[str, int] = {}
-        for f in findings:
-            cats[f["category"]] = cats.get(f["category"], 0) + 1
-        lines.append(
-            "findings by category: "
-            + ", ".join(
-                f"{c} {n}"
-                for c, n in sorted(cats.items(), key=lambda kv: -kv[1])
-            )
-        )
-        selection = data.get("selection") or {}
-        n_grouped = selection.get("grouped_statements") or 0
-        if n_grouped:
-            lines.append(
-                f"grouped: {n_grouped} statement(s) grouped under "
-                f"{selection.get('families', 0)} verified relationship "
-                "families (the lead findings carry the grouped ids; "
-                "records in grouped_findings)"
-            )
-        header = "\n".join(lines) + "\n"
-
-        def weak_assoc(f: dict) -> bool:
-            # Weak-tier tested associations (schema 0.7) collapse
-            # into a single digest line below, however many there
-            # are: they are leads, not headline statements.
-            if f.get("type") != "statistical":
-                return False
-            return any(
-                (ev.get("metrics") or {}).get("tier") == "weak"
-                for ev in f.get("evidence") or []
+        sections: dict[str, list[tuple[str, dict]]] = {}
+        for fact in facts:
+            rep = fact["rep"]
+            if grain_statement and rep.get("claim") == grain_statement:
+                # The grain statement already opens the briefing in
+                # the row section; the key finding that states it
+                # does not take a second line.
+                continue
+            section = _fact_section(rep, fact["columns"], designated)
+            sections.setdefault(section, []).append(
+                (_digest_line_text(rep), rep)
             )
 
-        weak = [f for f in findings if weak_assoc(f)]
-        stated = [f for f in findings if not weak_assoc(f)]
+        def relationship_sequence(entries, allowance):
+            # The taking order inside a relationship section. Leak
+            # lines first. Then the predictability directory — a
+            # column's driver statement names its whole driver set
+            # at once — when the whole directory fits the section's
+            # allowance; after it, the section's lead families
+            # (break and regime statements; the measures'
+            # strongest level statements; the strongest hotspot)
+            # are offered in step,
+            # and the remaining kinds follow in breadth rounds. A
+            # directory that cannot fit does not monopolise the
+            # section: one breadth round across kinds comes first,
+            # the directory's remainder after it, then breadth
+            # rounds again.
+            def score(e):
+                return (-(e[1].get("interestingness") or 0), e[0])
 
-        groups: dict[tuple, list[dict]] = {}
-        for f in stated:
-            subj = f.get("subject") or {}
-            key = (
-                f.get("category"),
-                f.get("type"),
-                (f.get("specification") or {}).get("form"),
-                subj.get("target"),
+            leakage = sorted(
+                (e for e in entries if e[1].get("type") == "leakage_signature"),
+                key=score,
             )
-            groups.setdefault(key, []).append(f)
-        rolled = []
-        for (cat, typ, form, target), fs in groups.items():
-            fs_sorted = sorted(fs, key=lambda x: -(x.get("interestingness") or 0))
-            head = f"[{cat}] {typ or ''}{'/' + form if form else ''}"
-            if target:
-                head += f" -> {target}"
-            if len(fs_sorted) > 1:
-                head += f" (x{len(fs_sorted)})"
-            line = head + ": " + fs_sorted[0]["claim"]
-            if len(fs_sorted) > 1:
-                exemplars = ", ".join(f["id"] for f in fs_sorted[:3])
-                line += f" [exemplars: {exemplars}]"
-            head_finding = fs_sorted[0]
-            member_ids = head_finding.get("grouped_members") or []
-            if member_ids:
-                shown = ", ".join(member_ids[:3])
-                if len(member_ids) > 3:
-                    shown += f", +{len(member_ids) - 3} more"
-                line += f" [grouped: {shown}]"
-            rolled.append(
+            directory = sorted(
+                (e for e in entries if e[1].get("type") == "predictive"),
+                key=score,
+            )
+            def bucket_key(rep):
+                # A level contrast states how one measure separates
+                # across a grouping's levels — the per-level
+                # statement of that measure's relationship with the
+                # grouping. Keyed as a single kind, the contrasts
+                # crowd onto a few measures (every measure against
+                # one grouping, at near-identical scores) and the
+                # remaining measures' contrasts never reach the
+                # early rounds. The kind therefore counts once per
+                # measure it states: the strongest contrast of
+                # every measure is offered before any measure's
+                # second contrast, as the strongest line of every
+                # kind is offered before any kind's second line.
+                if rep.get("type") == "level_contrast":
+                    for ev in rep.get("evidence") or []:
+                        measure = (ev.get("metrics") or {}).get(
+                            "measure_column"
+                        )
+                        if isinstance(measure, str) and measure:
+                            return (
+                                rep.get("category"),
+                                rep.get("type"),
+                                measure,
+                            )
+                return (rep.get("category"), rep.get("type"))
+
+            buckets: dict[tuple, list] = {}
+            for e in entries:
+                if e[1].get("type") in ("leakage_signature", "predictive"):
+                    continue
+                buckets.setdefault(bucket_key(e[1]), []).append(e)
+            for bucket in buckets.values():
+                bucket.sort(key=score)
+
+            def contrast_form(rep):
+                for ev in rep.get("evidence") or []:
+                    form = (ev.get("metrics") or {}).get("form")
+                    if form:
+                        return form
+                return None
+
+            lc_keys = {
+                k
+                for k, b in buckets.items()
+                if b and b[0][1].get("type") == "level_contrast"
+            }
+            # The measures' strongest level statements, in the
+            # order they are offered: the head of every measure's
+            # bucket (see the bucket key note — breadth across
+            # measures, as the section runs breadth across kinds),
+            # a statement that locates its measure before one
+            # that only spreads it, then by score. The location
+            # is the relationship; the spread refines it, and on
+            # sentinel-driven measures the spread statement is
+            # often a restatement of the sentinel's mass.
+            firsts = [buckets[k][0] for k in lc_keys]
+            firsts.sort(
+                key=lambda e: (
+                    1 if contrast_form(e[1]) == "scale" else 0,
+                    score(e),
+                )
+            )
+            first_ids = {id(e) for e in firsts}
+
+            def round_lead(e):
+                # The lead order inside a round. Break and regime
+                # statements along an ordered axis lead: they are
+                # the table's shape over its axis, the statements
+                # a reader acts on first after the directory. The
+                # measures' strongest level statements follow
+                # them. Everything else competes on score.
+                rep = e[1]
+                if rep.get("category") == "changes":
+                    return 0
+                if id(e) in first_ids:
+                    return 1
+                return 2
+
+            def rounds_over(keys, first_depth):
+                # Breadth rounds across the named buckets: the
+                # strongest remaining line of every bucket first,
+                # then the next line of every bucket, and so on.
+                # A bucket's lines are taken from first_depth on.
+                out = []
+                depth = 0
+                while True:
+                    round_entries = [
+                        buckets[k][first_depth[k] + depth]
+                        for k in keys
+                        if len(buckets[k]) > first_depth[k] + depth
+                    ]
+                    if not round_entries:
+                        return out
+                    round_entries.sort(
+                        key=lambda e: (round_lead(e), score(e))
+                    )
+                    out.extend(round_entries)
+                    depth += 1
+
+            dir_chars = sum(
+                len(t) + len(r.get("id") or "") + 4 for t, r in directory
+            )
+            if dir_chars <= allowance:
+                # The lead families are offered in step,
+                # alternating line for line: the break and regime
+                # statements in breadth rounds across their kinds,
+                # the measures' strongest level statements in
+                # their queue order, and the strongest hotspot
+                # statement — the cell where the table's rows
+                # concentrate, the categorical counterpart of a
+                # level statement — with the second exchange, so
+                # each family's first statement precedes it.
+                # Offered as blocks, each family can crowd the
+                # others out of the section: the level statements
+                # are long, and a block of them leaves no room
+                # for the table's shape over its axis; the breaks
+                # are numerous on an ordered table, and a block
+                # of them leaves no room for the per-measure
+                # statements that are the closest thing the
+                # section has to outcome facts; and the hotspot
+                # line, competing on score alone, is the first
+                # casualty of either block. In step, all three
+                # families are heard from the start.
+                changes_keys = [
+                    k
+                    for k, b in buckets.items()
+                    if b and b[0][1].get("category") == "changes"
+                ]
+                changes_queue = rounds_over(
+                    changes_keys, {k: 0 for k in changes_keys}
+                )
+                hotspot_keys = [
+                    k
+                    for k, b in buckets.items()
+                    if b and b[0][1].get("type") == "hotspot"
+                ]
+                hotspot_lead = buckets[hotspot_keys[0]][0] if hotspot_keys else None
+                lead = []
+                hotspot_placed = False
+                for i in range(max(len(changes_queue), len(firsts))):
+                    if i < len(changes_queue):
+                        lead.append(changes_queue[i])
+                    if i < len(firsts):
+                        lead.append(firsts[i])
+                    if i == 1 and hotspot_lead is not None:
+                        lead.append(hotspot_lead)
+                        hotspot_placed = True
+                if hotspot_lead is not None and not hotspot_placed:
+                    lead.append(hotspot_lead)
+                rest_keys = [k for k in buckets if k not in changes_keys]
+                rest = rounds_over(
+                    rest_keys,
+                    {
+                        k: (
+                            1
+                            if k in lc_keys or k in hotspot_keys
+                            else 0
+                        )
+                        for k in rest_keys
+                    },
+                )
+                return leakage + directory + lead + rest
+            # The directory does not fit, so it does not
+            # monopolise the section: one breadth round across
+            # kinds (the strongest line of every kind, the
+            # measures' strongest level statement among them),
+            # the directory's head alongside it, its remainder
+            # after, then breadth rounds again — with the level
+            # statements running as one queue among the kinds
+            # (every measure's strongest first, then the
+            # remaining contrasts by score), so a crowded
+            # directory cannot push them out of the rounds
+            # entirely, and they cannot fill the first round.
+            contrast_queue = firsts + sorted(
                 (
-                    _statement_class(head_finding),
-                    -(head_finding.get("interestingness") or 0),
-                    line,
-                    cat,
-                    len(fs_sorted),
+                    e
+                    for k in lc_keys
+                    for e in buckets[k]
+                    if id(e) not in first_ids
+                ),
+                key=score,
+            )
+            tail = {
+                k: b for k, b in buckets.items() if k not in lc_keys
+            }
+            if contrast_queue:
+                tail[("associations", "level_contrast")] = contrast_queue
+            saved = buckets
+            buckets = tail
+            try:
+                first_round = [b[0] for b in buckets.values() if b]
+                if directory:
+                    first_round.append(directory[0])
+                first_round.sort(key=lambda e: (round_lead(e), score(e)))
+                rest = rounds_over(
+                    list(buckets), {k: 1 for k in buckets}
                 )
+            finally:
+                buckets = saved
+            return leakage + first_round + directory[1:] + rest
+
+        for name, entries in sections.items():
+            entries.sort(
+                key=lambda e: (-(e[1].get("interestingness") or 0), e[0])
             )
         if weak:
             weak_sorted = sorted(
                 weak, key=lambda x: -(x.get("interestingness") or 0)
             )
-            examples = "; ".join(f["claim"] for f in weak_sorted[:3])
-            rolled.append(
-                (
-                    _statement_class(weak_sorted[0]),
-                    -(weak_sorted[0].get("interestingness") or 0),
-                    f"[associations] statistical/weak (x{len(weak)}): "
-                    f"{len(weak)} tested association(s) below the strong "
-                    f"effect bar — strongest: {examples} "
-                    "[full table: report.associations()]",
-                    "associations",
-                    len(weak),
-                )
+            examples = "; ".join(
+                _digest_numbers(f["claim"]) for f in weak_sorted[:3]
             )
-        rolled.sort(key=lambda kv: (kv[0], kv[1], kv[2]))
-        body_lines = [entry[2] for entry in rolled]
+            line = (
+                f"{len(weak)} tested association(s) below the strong "
+                f"effect bar \u2014 strongest: {examples} "
+                "[full table: report.associations()]"
+            )
+            sections.setdefault("relationships", []).append(
+                (line, weak_sorted[0])
+            )
+        quality = _quality_line(data)
+        if quality:
+            sections.setdefault("wrong", []).insert(
+                0, (quality.removeprefix("quality: "), {})
+            )
 
-        def omission(omitted: list[tuple]) -> str:
+        def omission(omitted: list[dict]) -> str:
             by_category: dict[str, int] = {}
-            for entry in omitted:
-                by_category[entry[3]] = by_category.get(entry[3], 0) + entry[4]
+            for rep in omitted:
+                cat = rep.get("category") or "?"
+                by_category[cat] = by_category.get(cat, 0) + 1
             ordered = sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0]))
             names = ", ".join(f"{c} {n}" for c, n in ordered[:4])
             retrieve = (
@@ -1284,75 +1688,111 @@ class ProfileReport:
                 else ""
             )
             return (
-                f"... [{len(omitted)} rolled-up finding groups omitted to fit "
+                f"... [{len(omitted)} fact(s) omitted to fit "
                 f"{budget_chars} chars; {len(findings)} findings total: "
                 f"{names}{retrieve}]"
             )
 
-        full = header + "\n" + "\n".join(body_lines) + "\n"
-        if len(full) <= budget_chars:
-            return full
-        # Take lines class by class (issue #271): account lines
-        # first, then round-robin across the two insight classes
-        # (structure, shape) so neither fills the budget alone,
-        # and hygiene lines only once every remaining insight line
-        # has been refused by the budget.
-        queues: dict[int, list[int]] = {}
-        for i, entry in enumerate(rolled):
-            queues.setdefault(entry[0], []).append(i)
-        kept_order: list[int] = []
-        used = len(header) + 1 + len(omission(rolled)) + 1
+        titles = dict(_DIGEST_SECTION_TITLES)
+        if designated:
+            titles["target"] = f"What relates to the target ({designated})"
+        blocks: dict[str, list[str]] = {}
+        if row_lines:
+            blocks["row"] = [titles["row"] + ":"] + row_lines
+        if not_examined:
+            blocks["not_examined"] = [titles["not_examined"] + ":", not_examined]
 
-        def take(queue: list[int]) -> bool:
-            nonlocal used
-            while queue:
-                i = queue.pop(0)
-                if used + len(rolled[i][2]) + 1 <= budget_chars:
-                    kept_order.append(i)
-                    used += len(rolled[i][2]) + 1
-                    return True
-            return False
+        fixed_text = "\n".join(fixed + [l for b in blocks.values() for l in b])
+        # Reserve room for the section titles and the omission line.
+        reserve = len(omission([f["rep"] for f in facts])) + 1 if facts else 0
+        room = budget_chars - len(fixed_text) - reserve
+        for name in ("wrong", "redundant", "target", "relationships", "anomalies"):
+            room -= len(titles[name]) + 2
+        shares = dict(_DIGEST_SECTION_SHARES)
+        if not designated:
+            shares["relationships"] += shares.pop("target")
+        kept: dict[str, list[str]] = {}
+        omitted_reps: list[dict] = []
+        waiting: dict[str, list[tuple[str, dict]]] = {}
+        used_total = 0
+        for name in ("wrong", "redundant", "target", "relationships", "anomalies"):
+            entries = sections.get(name) or []
+            if not entries:
+                continue
+            allowance = int(shares[name] * max(room, 0))
+            if name in ("target", "relationships"):
+                entries = relationship_sequence(entries, allowance)
+            used = 0
+            chosen = []
+            rest = []
+            for text, rep in entries:
+                line = text if not rep else f"{text} [{rep['id']}]"
+                if rep and used + len(line) + 1 > allowance:
+                    rest.append((line, rep))
+                    continue
+                chosen.append(line)
+                used += len(line) + 1
+            if chosen:
+                kept[name] = chosen
+            if rest:
+                waiting[name] = rest
+            used_total += used
+        # A section that cannot fill its share does not strand the
+        # budget: what is left passes to the sections still holding
+        # facts, in section order, so every section's guaranteed
+        # share is honoured first and the briefing still fills.
+        leftover = max(room, 0) - used_total
+        for name in ("wrong", "redundant", "target", "relationships", "anomalies"):
+            for line, rep in waiting.get(name, []):
+                if len(line) + 1 > leftover:
+                    omitted_reps.append(rep)
+                    continue
+                kept.setdefault(name, []).append(line)
+                leftover -= len(line) + 1
+        for name, lines in kept.items():
+            blocks[name] = [titles[name] + ":"] + lines
 
-        while take(queues.get(0, [])):
-            pass
-        progressed = True
-        while progressed:
-            progressed = False
-            for rank in (1, 2):
-                if take(queues.get(rank, [])):
-                    progressed = True
-        while take(queues.get(3, [])):
-            pass
-        # The omission line changes with what it lists, so it can come out
-        # longer than the reserve. Give back the latest lines until it fits.
-        while kept_order:
-            kept_ids = set(kept_order)
-            kept = [rolled[i][2] for i in sorted(kept_ids)]
-            omitted = [rolled[i] for i in range(len(rolled)) if i not in kept_ids]
-            result = header + "\n" + "\n".join(kept + [omission(omitted)]) + "\n"
-            if len(result) <= budget_chars:
-                return result
-            kept_order.pop()
-        # Degrade the header itself: drop the category-count and
-        # coverage lines, then the headline, keeping the profile
-        # line and the account block — the account is the summary
-        # of record, so it is the last header content to go. If the
-        # whole account still does not fit alongside the omission
-        # line, keep the grain statement (the account's first line)
-        # with the profile line; the omission line itself is part
-        # of the contract and is dropped only when the budget
-        # cannot hold even it next to the profile line.
-        core = 1 + len(account_lines)
-        ladder = [lines[: core + 1], lines[:core]]
-        if account_lines:
-            ladder.append([lines[0], account_lines[0]])
-        ladder.append([lines[0]])
-        for cand in ladder:
-            short_header = "\n".join(cand) + "\n"
-            result = short_header + omission(rolled) + "\n"
-            if len(result) <= budget_chars:
-                return result
-        return (lines[0] + "\n")[:budget_chars]
+        def assemble(block_map: dict[str, list[str]], omitted: list[dict]) -> str:
+            parts = list(fixed)
+            for name in _DIGEST_SECTION_ORDER:
+                block = block_map.get(name) or []
+                if name not in ("row", "not_examined") and len(block) <= 1:
+                    continue
+                parts.extend(block)
+            if omitted:
+                parts.append(omission(omitted))
+            return "\n".join(parts) + "\n"
+
+        result = assemble(blocks, omitted_reps)
+        # The fixed blocks and the omission line are estimates
+        # against the real total; give back kept lines, last
+        # section first, until the briefing fits.
+        while len(result) > budget_chars:
+            shrunk = False
+            for name in reversed(_DIGEST_SECTION_ORDER):
+                lines = blocks.get(name)
+                if lines and len(lines) > 1:
+                    dropped = lines.pop()
+                    if name in kept:
+                        for text, rep in sections.get(name, []):
+                            if rep and f"{text} [{rep['id']}]" == dropped:
+                                omitted_reps.append(rep)
+                    shrunk = True
+                    break
+            if not shrunk:
+                break
+            result = assemble(blocks, omitted_reps)
+        if len(result) > budget_chars:
+            # Degrade the fixed blocks: the not-examined block goes
+            # first, then the row block; the profile line and the
+            # omission line are the last content to go.
+            for drop in (("not_examined",), ("row", "not_examined")):
+                smaller = {k: v for k, v in blocks.items() if k not in drop}
+                result = assemble(smaller, omitted_reps)
+                if len(result) <= budget_chars:
+                    return result
+            return (profile_line + "\n")[:budget_chars]
+        return result
 
     def verify(self, df):
         """Recount this report's statements in `df` through Polars.

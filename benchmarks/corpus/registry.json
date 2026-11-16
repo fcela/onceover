@@ -27,8 +27,8 @@
      "columns_any": [
       "pregnant"
      ],
-     "expect": "missed",
-     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
+     "expect": "found",
+     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "finding",
@@ -530,8 +530,8 @@
      "kind": "finding",
      "category": "formats",
      "min": 1,
-     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "documented_case",
@@ -1149,8 +1149,8 @@
      "columns_any": [
       "revision_number"
      ],
-     "expect": "missed",
-     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.88) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
+     "expect": "found",
+     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.88) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "finding",
@@ -1236,8 +1236,8 @@
     {
      "kind": "finding",
      "category": "duplicates",
-     "expect": "known_miss",
-     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged \u2014 verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report."
+     "expect": "found",
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged \u2014 verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "documented_case",
@@ -2115,8 +2115,8 @@
      "kind": "finding",
      "category": "anomalies",
      "type": "row_inconsistency",
-     "expect": "missed",
-     "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the report's 100 slots are filled by account, structure, and shape statements before hygiene-class statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report."
+     "expect": "found",
+     "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the report's 100 slots are filled by account, structure, and shape statements before hygiene-class statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "finding",
@@ -2149,8 +2149,8 @@
      "columns_any": [
       "holiday"
      ],
-     "expect": "missed",
-     "note": "holiday is 0 on 97.12% of rows. Share verified independently in the case study. Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap it is a hygiene-class statement and the report's 100 slots are filled before hygiene statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report."
+     "expect": "found",
+     "note": "holiday is 0 on 97.12% of rows. Share verified independently in the case study. Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap it is a hygiene-class statement and the report's 100 slots are filled before hygiene statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "max_findings",
@@ -2234,7 +2234,8 @@
      "category": "dependencies",
      "type": "predictive",
      "target": "cnt",
-     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315)."
+     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315). Re-baselined 2026-11-16 (issue #317 phase 2): the hygiene floor admits the reserve's hygiene statements ahead of structure and shape; on this table the structure class is squeezed (85 of its candidates capped) and this statement is displaced from the 100-finding report body. It is still generated (present at max_findings=1000). This expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -2275,8 +2276,8 @@
      "kind": "finding",
      "category": "duplicates",
      "type": "near_duplicate_rows",
-     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2306,8 +2307,8 @@
      "kind": "finding",
      "category": "duplicates",
      "type": "duplicate_rows",
-     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2316,8 +2317,8 @@
      "columns_any": [
       "capital_loss"
      ],
-     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2326,8 +2327,8 @@
      "columns_any": [
       "capital_gain"
      ],
-     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2336,8 +2337,8 @@
      "columns_any": [
       "native_country"
      ],
-     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "coverage_status",
@@ -2363,8 +2364,8 @@
      "columns_any": [
       "capital_gain"
      ],
-     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2373,8 +2374,8 @@
      "columns_any": [
       "capital_loss"
      ],
-     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again.",
+     "expect": "found"
     },
     {
      "kind": "documented_case",

@@ -64,12 +64,18 @@ def test_select_include_grouped():
     assert not grouped_ids & {f["id"] for f in plain}
 
 
-def test_digest_discloses_grouping():
+def test_digest_states_the_family_lead_once():
+    # The briefing carries no "grouped:" header and no "[grouped:]"
+    # suffix (issue #317 phase 2): the family's fact is one line,
+    # carrying the lead finding's id, and the members stay
+    # retrievable through the report.
     report = _bijection_report()
     digest = report.to_digest(4000)
     assert len(digest) <= 4000
-    assert "grouped: 2 statement(s) grouped under 1 verified" in digest
-    assert "[grouped: " in digest
+    leads = {m["grouped_under"] for m in report.grouped_findings}
+    assert len(leads) == 1
+    lead = leads.pop()
+    assert any(ln.endswith(f"[{lead}]") for ln in digest.splitlines())
     for member in report.grouped_findings:
         assert report.finding(member["id"])["claim"]
 
