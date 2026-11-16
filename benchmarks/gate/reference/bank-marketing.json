@@ -1,0 +1,32 @@
+{
+ "dataset": "bank-marketing",
+ "note": "Provisional statements written from reading the table; the maintainer replaces them. The target is the last column, subscribed_term_deposit.",
+ "statements": [
+  {"id": "subscription-duration", "tier": "must", "provisional": true,
+   "text": "subscription depends on the duration of the last contact",
+   "kind": "relates", "columns": ["subscribed_term_deposit", "last_contact_duration_seconds"],
+   "patterns": ["subscribed", "duration"],
+   "check": "(pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('last_contact_duration_seconds') > 600).mean() > 2 * (pl.col('subscribed_term_deposit') == 'yes').mean()"},
+  {"id": "subscription-previous", "tier": "should", "provisional": true,
+   "text": "subscription depends on the outcome of the previous campaign or on prior contact",
+   "kind": "relates", "columns": ["subscribed_term_deposit"],
+   "columns_any": ["previous_campaign_outcome", "days_since_previous_campaign_contact", "contacts_before_this_campaign"],
+   "patterns": ["subscribed", "previous_campaign|days_since|contacts_before"],
+   "check": "(pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('previous_campaign_outcome') == 'success').mean() > 2 * (pl.col('subscribed_term_deposit') == 'yes').mean()"},
+  {"id": "days-since-sentinel", "tier": "must", "provisional": true,
+   "text": "days_since_previous_campaign_contact = -1 stands for no previous contact",
+   "kind": "sentinel", "columns": ["days_since_previous_campaign_contact"],
+   "patterns": ["days_since_previous", "-1\\b"],
+   "check": "(pl.col('days_since_previous_campaign_contact') == -1).mean() > 0.5"},
+  {"id": "subscription-month-contact", "tier": "should", "provisional": true,
+   "text": "subscription depends on month or contact",
+   "kind": "relates", "columns": ["subscribed_term_deposit"], "columns_any": ["month", "contact"],
+   "patterns": ["subscribed", "\\bmonth\\b|\\bcontact\\b"],
+   "check": "(pl.col('subscribed_term_deposit') == 'yes').mean().over('month').max() > 3 * (pl.col('subscribed_term_deposit') == 'yes').mean()"},
+  {"id": "subscription-housing-loan", "tier": "should", "provisional": true,
+   "text": "subscription depends on housing_loan",
+   "kind": "relates", "columns": ["subscribed_term_deposit", "housing_loan"],
+   "patterns": ["subscribed", "housing_loan"],
+   "check": "(pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'no').mean() > 1.5 * (pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'yes').mean()"}
+ ]
+}

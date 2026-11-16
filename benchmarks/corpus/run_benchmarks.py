@@ -54,6 +54,32 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def locate(entry: dict) -> tuple[str, "Path | str"]:
+    """Find a registry entry's data file and check its pinned hash.
+
+    Returns ("ok", path) when the file exists and matches the pinned
+    sha256 (an entry without a pin is not hash-checked), ("skipped",
+    reason) when the file is not present locally (test-only datasets),
+    and ("error", reason) on a hash mismatch."""
+    csv = BENCH / entry["dir"] / entry.get("file", "data.csv")
+    if not csv.exists():
+        return "skipped", entry.get(
+            "skip_reason",
+            "data file not present (test-only dataset; run its prepare.py)")
+    if "sha256" in entry:
+        digest = sha256(csv)
+        if digest != entry["sha256"]:
+            return "error", (f"sha256 mismatch: registry {entry['sha256'][:12]}.. "
+                             f"file {digest[:12]}..")
+    return "ok", csv
+
+
+def read_entry(entry: dict, csv: Path) -> pl.DataFrame:
+    """Read a registry entry's CSV the way the corpus run does."""
+    return pl.read_csv(csv, infer_schema_length=None,
+                       try_parse_dates=bool(entry.get("parse_dates")))
+
+
 def match_finding(f: dict, pred: dict) -> bool:
     if "category" in pred and f.get("category") != pred["category"]:
         return False
@@ -293,27 +319,22 @@ def main() -> int:
         if args.only and entry["id"] != args.only:
             continue
         rec = {"id": entry["id"], "pack": entry["pack"], "mode": entry["mode"]}
-        ddir = BENCH / entry["dir"]
-        csv = ddir / entry.get("file", "data.csv")
-        if not csv.exists():
-            rec["status"] = "skipped"
-            rec["reason"] = entry.get("skip_reason", "data file not present (test-only dataset; run its prepare.py)")
+        status, payload = locate(entry)
+        if status != "ok":
+            rec["status"] = status
+            rec["reason"] = payload
             run["datasets"].append(rec)
-            print(f"{entry['id']:<28} SKIPPED  {rec['reason'][:80]}")
-            continue
-        if "sha256" in entry:
-            digest = sha256(csv)
-            if digest != entry["sha256"]:
-                rec["status"] = "error"
-                rec["reason"] = f"sha256 mismatch: registry {entry['sha256'][:12]}.. file {digest[:12]}.."
-                run["datasets"].append(rec)
+            if status == "skipped":
+                print(f"{entry['id']:<28} SKIPPED  {rec['reason'][:80]}")
+            else:
                 failures += 1
                 print(f"{entry['id']:<28} ERROR    hash mismatch")
-                continue
+            continue
+        csv = payload
+        if "sha256" in entry:
             rec["sha256_verified"] = True
         try:
-            df = pl.read_csv(csv, infer_schema_length=None,
-                             try_parse_dates=bool(entry.get("parse_dates")))
+            df = read_entry(entry, csv)
             budget = args.budget or entry.get("budget", "standard")
             t = time.time()
             report = onceover.profile(df, budget=budget,
