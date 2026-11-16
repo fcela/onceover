@@ -295,6 +295,21 @@ def test_digest_location_contrast_precedes_scale_only():
             < digest.index("alpha scale statement"))
 
 
+def test_digest_numbers_use_compact_form_below_a_thousandth():
+    # Three significant figures in plain notation would print six
+    # or more decimal places for a value below a thousandth; the
+    # digest uses the compact scientific form there, so no
+    # six-decimal number reaches the reader (issue #317 phase 2 —
+    # a level contrast on orbital inclinations, median 0.000873,
+    # is the case that surfaced it).
+    assert onceover._digest_numbers(
+        "median 0.0008726646 against 1.51"
+    ) == "median 8.73e-04 against 1.51"
+    assert onceover._digest_numbers(
+        "median 0.00314159 against 2"
+    ) == "median 0.00314 against 2"
+
+
 def test_digest_keeps_hygiene_lines_under_pressure():
     # The #280 settlement (issue #317 phase 2): the "what is
     # wrong" section holds its own allowance, so hygiene lines

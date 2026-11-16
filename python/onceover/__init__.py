@@ -535,7 +535,10 @@ def _digest_columns(finding: dict) -> list:
 
 def _digest_numbers(text: str) -> str:
     """Round the decimal numbers in a claim to three significant
-    figures. Integers — counts, years — are exact and stay exact."""
+    figures. Integers — counts, years — are exact and stay exact.
+    Below a thousandth, three significant figures in plain
+    notation would print six or more decimal places, so the
+    compact scientific form carries the same precision."""
 
     def sub(m: "re.Match") -> str:
         try:
@@ -549,6 +552,8 @@ def _digest_numbers(text: str) -> str:
         if rounded == int(rounded):
             whole = int(rounded)
             return f"{whole:,}" if abs(whole) >= 10000 else str(whole)
+        if abs(rounded) < 0.001:
+            return f"{rounded:.2e}"
         return f"{rounded:,}"
 
     return _DIGEST_NUMBER.sub(sub, text)
