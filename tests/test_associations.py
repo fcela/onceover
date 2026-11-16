@@ -73,18 +73,27 @@ def test_associations_table_carries_every_screened_pair():
 def test_digest_collapses_weak_associations_into_one_line():
     report = onceover.profile(_correlated_pair())
     digest = report.to_digest(4000)
+    # The collapsed line is plain words now (issue #317 phase 2):
+    # no "[associations] statistical/weak (xN)" prefix. It carries
+    # the strongest weak finding's id, and that id appears on no
+    # other line — the weak pair is not also stated as its own fact.
     weak_lines = [
-        ln for ln in digest.splitlines() if "statistical/weak" in ln
+        ln for ln in digest.splitlines() if "below the strong effect bar" in ln
     ]
     assert len(weak_lines) == 1, digest
-    assert "(x1)" in weak_lines[0]
+    assert "1 tested association(s)" in weak_lines[0]
     assert "report.associations()" in weak_lines[0]
-    # The weak pair's claim is not also rolled up as its own group.
-    rolled = [
-        ln for ln in digest.splitlines()
-        if ln.startswith("[associations] statistical:")
+    weak = [
+        f for f in report.data["findings"]
+        if f.get("type") == "statistical"
+        and any((ev.get("metrics") or {}).get("tier") == "weak"
+                for ev in f.get("evidence") or [])
     ]
-    assert rolled == [], digest
+    assert len(weak) == 1
+    carriers = [
+        ln for ln in digest.splitlines() if ln.endswith(f"[{weak[0]['id']}]")
+    ]
+    assert carriers == weak_lines
 
 
 def test_nominal_weak_and_mixed_pairs_are_tested():

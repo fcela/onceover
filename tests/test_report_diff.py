@@ -52,7 +52,7 @@ def test_diff_reports_changed_claim():
     assert len(entry["interestingness"]) == 2
 
 
-def test_digest_rollup_lists_exemplars():
+def test_digest_merges_role_findings_into_their_column_facts():
     df = pl.DataFrame(
         {
             "a": [1.0, None, 3.0, None, 5.0] * 20,
@@ -60,13 +60,29 @@ def test_digest_rollup_lists_exemplars():
         }
     )
     report = onceover.profile(df)
-    # Both columns draw categorical-role findings, which the digest
-    # rolls into one multi-member group.
+    # Both columns draw categorical-role findings over the same
+    # column sets as their missingness findings. The briefing
+    # merges findings that share a column set into one fact with
+    # one line and one id (issue #317 phase 2); the old
+    # "[exemplars: ...]" rollup suffix is gone.
     roles = report.select(category="column_roles", type="categorical_role")
     assert len(roles) >= 2
     digest = report.to_digest(8000)
-    assert "[exemplars:" in digest
-    assert roles[0]["id"] in digest or roles[1]["id"] in digest
+    assert "[exemplars:" not in digest
+    lines = digest.splitlines()
+    for column in ("a", "b"):
+        members = [
+            f for f in report.data["findings"]
+            if (f.get("subject") or {}).get("columns") == [column]
+        ]
+        assert len(members) >= 2
+        carriers = [
+            ln for ln in lines
+            if any(ln.endswith(f"[{m['id']}]") for m in members)
+        ]
+        assert len(carriers) == 1, digest
+
+
 def _card_v1() -> pl.DataFrame:
     return pl.DataFrame(
         {

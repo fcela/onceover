@@ -27,10 +27,12 @@ def test_digest_within_budget_and_names_omissions():
 def test_digest_keeps_top_findings_first():
     report = thyroid_report()
     digest = report.to_digest(100_000)
-    # The full ledger fits: no omission line, findings rolled up by
-    # category/type/form/target, strongest group first.
+    # The full ledger fits: no omission line, and the briefing's
+    # sections carry the findings (issue #317 phase 2 replaced the
+    # category header and the [category] type/form lines).
     assert "omitted" not in digest
-    assert "findings by category:" in digest
+    assert "What is wrong:" in digest
+    assert "Other relationships:" in digest
 
 
 def test_digest_tiny_budget_truncates_header():
@@ -41,15 +43,38 @@ def test_digest_tiny_budget_truncates_header():
     assert digest.startswith("profile digest:")
 
 
-def test_digest_rollup_marker_for_repeated_group():
-    # Soybean's conditional rules repeat category/type/form/target;
-    # the digest rolls them into one (xN) line.
-    df = pl.read_csv(
-        "benchmarks/corpus/data/gritbot/soybean/data.csv",
-        infer_schema_length=None,
-    )
-    digest = onceover.profile(df).to_digest(100_000)
-    assert " (x" in digest
+def _digest_line_categories(report, digest):
+    """The categories of the findings a digest's lines speak for,
+    resolved through the trailing finding id of each line."""
+    by_id = {f["id"]: f for f in report.data["findings"]}
+    cats = []
+    for ln in digest.splitlines():
+        if ln.endswith("]") and " [" in ln:
+            fid = ln.rsplit(" [", 1)[1][:-1]
+            if fid in by_id:
+                cats.append(by_id[fid]["category"])
+    return cats
+
+
+def test_digest_merges_findings_that_state_the_same_fact():
+    # Two detectors state the same columns: the exact form speaks
+    # for the fact and the statistical form folds into it — one
+    # line, carrying the exact finding's id (issue #317 phase 2;
+    # the old (xN) rollup marker is gone).
+    findings = [
+        _finding("dependencies", "functional", 0.50, columns=["a", "b"]),
+        _finding("associations", "statistical", 0.90, columns=["a", "b"]),
+        _finding("associations", "statistical", 0.80, columns=["a", "c"]),
+    ]
+    digest = _report(findings).to_digest(100_000)
+    body = [
+        ln for ln in digest.splitlines()
+        if ln.endswith("]") and " [" in ln
+    ]
+    assert len(body) == 2
+    merged = [ln for ln in body if "functional statement" in ln]
+    assert len(merged) == 1
+    assert merged[0].endswith("[dependencies-functional-column-unconditional]")
 
 
 def _bike_report():
@@ -63,15 +88,15 @@ def _bike_report():
 
 def test_every_insight_class_with_findings_gets_a_line():
     # Relations alone used to fill the budget on this table, leaving the 77
-    # change statements with no line at all. Under the statement-class
-    # order (issue #271) the round-robin runs across the two insight
-    # classes, so structure and shape both get lines; hygiene lines
-    # are no longer guaranteed a line — they come last by design.
+    # change statements with no line at all. Under the briefing's
+    # section allowances (issue #317 phase 2) each reader question
+    # keeps its own share, so changes and dependencies both get lines.
     report = _bike_report()
     digest = report.to_digest(4000)
     assert len(digest) <= 4000
-    assert "[changes]" in digest
-    assert "[dependencies]" in digest
+    cats = _digest_line_categories(report, digest)
+    assert "changes" in cats
+    assert "dependencies" in cats
 
 
 def test_omission_line_names_what_is_missing_and_how_to_get_it():
@@ -81,25 +106,21 @@ def test_omission_line_names_what_is_missing_and_how_to_get_it():
     assert "report.select(category=" in omission
 
 
-def test_kept_lines_stay_in_class_order():
-    # Digest lines follow the statement-class order (issue #271):
-    # account, structure, shape, hygiene — deliberately not the
-    # findings array's report-band order. Class is a property of
-    # the line's head finding, not of its category alone (a
-    # segment-conditioned change statement is structure).
+def test_kept_lines_stay_in_section_order():
+    # Digest sections follow the reader-question order (issue #317
+    # phase 2): what a row is, what is wrong, what is redundant,
+    # what relates to the target, other relationships, anomalies,
+    # not examined — replacing the statement-class line order.
     report = _bike_report()
     digest = report.to_digest(4000)
-    by_claim = {f["claim"]: f for f in report.data["findings"]}
-    seen = []
-    for ln in digest.splitlines():
-        if not ln.startswith("["):
-            continue
-        text = ln.split(": ", 1)[1] if ": " in ln else ""
-        head = by_claim.get(text.split(" [")[0])
-        if head is not None:
-            seen.append(onceover._statement_class(head))
-    assert seen
-    assert seen == sorted(seen)
+    titles = [
+        ln[:-1] for ln in digest.splitlines() if ln.endswith(":")
+        and ln[:-1] in onceover._DIGEST_SECTION_TITLES.values()
+    ]
+    order = list(onceover._DIGEST_SECTION_TITLES.values())
+    positions = [order.index(t) for t in titles]
+    assert positions == sorted(positions)
+    assert _digest_line_categories(report, digest)
 
 
 def test_quality_line_states_exact_counts():
@@ -111,8 +132,10 @@ def test_quality_line_states_exact_counts():
         "b": [float(i % 7) for i in range(n)],
     })
     report = onceover.profile(frame)
+    # The exact-counts line opens the "What is wrong" section; it
+    # no longer carries a "quality:" prefix (issue #317 phase 2).
     line = [ln for ln in report.to_digest(4000).splitlines()
-            if ln.startswith("quality:")][0]
+            if ln.startswith("missing values in")][0]
     assert "missing values in 1 column(s), most in a (25.0%)" in line
     assert "1 empty column(s)" in line
     assert "1 constant column(s)" in line
@@ -121,7 +144,9 @@ def test_quality_line_states_exact_counts():
 def test_quality_line_absent_on_a_clean_frame():
     frame = pl.DataFrame({"a": [float(i) for i in range(200)],
                           "b": [float(i % 7) for i in range(200)]})
-    assert "quality:" not in onceover.profile(frame).to_digest(4000)
+    report = onceover.profile(frame)
+    assert onceover._quality_line(report.data) is None
+    assert "missing values in" not in report.to_digest(4000)
 
 
 def test_digest_keeps_body_lines_when_the_omission_line_grows():
@@ -132,20 +157,26 @@ def test_digest_keeps_body_lines_when_the_omission_line_grows():
     report = onceover.profile(pl.read_csv(path, infer_schema_length=None))
     digest = report.to_digest(4000)
     assert len(digest) <= 4000
-    assert "[dependencies]" in digest and "[changes]" in digest
+    cats = _digest_line_categories(report, digest)
+    assert "dependencies" in cats and "changes" in cats
 
 
 # --- statement-class ordering (issue #271) ---
 
 
 def _finding(category, typ, score, claim=None, scope="column",
-             conditionality="unconditional"):
+             conditionality="unconditional", columns=None, target=None):
+    subject = {}
+    if columns is not None:
+        subject["columns"] = columns
+    if target is not None:
+        subject["target"] = target
     return {
         "id": f"{category}-{typ}-{scope}-{conditionality}",
         "category": category,
         "type": typ,
         "specification": {},
-        "subject": {},
+        "subject": subject,
         "claim": claim or f"{category} {typ} statement",
         "interestingness": score,
         "facets": {"scope": scope, "conditionality": conditionality},
@@ -182,41 +213,40 @@ def test_statement_class_mirror_matches_the_ledger_rule():
     assert onceover._statement_class(f("missingness", "missing_values", 0.5)) == 3
 
 
-def test_digest_orders_structure_then_shape_then_hygiene():
-    # The hygiene statement has the highest interestingness and
-    # still comes last: class order, then score within the class.
+def test_digest_orders_sections_by_reader_question():
+    # The briefing's sections replace the statement-class line
+    # order (issue #317 phase 2): what is wrong comes before what
+    # is redundant and before other relationships, whatever the
+    # findings' scores.
     findings = [
         _finding("missingness", "missing_values", 0.99),
         _finding("changes", "level_shift", 0.60),
         _finding("dependencies", "functional", 0.50),
     ]
     digest = _report(findings).to_digest(100_000)
-    order = [
-        ln.split("]")[0]
-        for ln in digest.splitlines()
-        if ln.startswith("[")
+    titles = [ln for ln in digest.splitlines() if ln.endswith(":")]
+    assert titles == [
+        "What is wrong:",
+        "What is redundant:",
+        "Other relationships:",
     ]
-    assert order == ["[dependencies", "[changes", "[missingness"]
 
 
-def test_digest_takes_hygiene_only_after_insight_lines():
-    # Two short insight lines and one long hygiene line; the
-    # budget is one character below the full digest, so exactly
-    # one line must go — and the line that goes is the hygiene
-    # line, even though it carries the highest score, because
-    # hygiene is taken only after the insight classes.
+def test_digest_keeps_hygiene_lines_under_pressure():
+    # The #280 settlement (issue #317 phase 2): the "what is
+    # wrong" section holds its own allowance, so hygiene lines
+    # reach the digest even when relationship statements are
+    # plentiful enough to fill the budget on their own. Under the
+    # old taking order the hygiene lines came only after every
+    # insight line had been refused, and vanished here.
     findings = [
-        _finding("missingness", "missing_values", 0.99,
-                 claim="missing values everywhere in this column " * 12),
-        _finding("changes", "level_shift", 0.60),
-        _finding("dependencies", "functional", 0.50),
+        _finding("dependencies", "functional", 0.90 - i * 0.001,
+                 claim=f"functional statement {i} " + "x" * 90,
+                 columns=[f"c{i}", f"d{i}"])
+        for i in range(40)
     ]
-    report = _report(findings)
-    full = report.to_digest(100_000)
-    budget = len(full) - 1
-    digest = report.to_digest(budget)
-    assert len(digest) <= budget
-    assert "[dependencies]" in digest
-    assert "[changes]" in digest
-    assert "[missingness]" not in digest
-    assert "omitted to fit" in digest
+    findings.append(_finding("missingness", "missing_values", 0.10,
+                             columns=["m"]))
+    digest = _report(findings).to_digest(4000)
+    assert len(digest) <= 4000
+    assert "missingness missing_values statement" in digest

@@ -111,6 +111,9 @@ _LINE = re.compile(
     r"^\[(?P<cat>[^\]]+)\] (?P<type>[^\s/:]+)(?:/(?P<sub>\S+))?"
     r"(?: -> (?P<target>.+?))?(?: \(x(?P<n>\d+)\))?: (?P<rest>.*)$")
 _EXEMPLARS = re.compile(r" \[exemplars: (?P<ids>[^\]]*)\]$")
+# The briefing line format (issue #317 phase 2): the claim in plain
+# words, followed by the one finding id that speaks for the fact.
+_BRIEFING_LINE = re.compile(r"^(?P<claim>.*) \[(?P<fid>[^\[\]\s]+)\]$")
 _LONG_DECIMAL = re.compile(r"\d+\.\d{6,}")
 # Lines of the digest that are not statements about the data.
 NON_STATEMENT_PREFIXES = ("coverage:", "findings by category:", "profile digest:", "...")
@@ -138,13 +141,50 @@ class DigestLine:
 
 def parse_digest(text: str, data: dict) -> list[DigestLine]:
     """Split a digest into lines and resolve each finding line to the
-    report's findings: by claim text for the lead, by id for exemplars."""
+    report's findings: by claim text for the lead, by id for exemplars.
+
+    Two line formats are recognised. The rolled-up format names the
+    category and type in brackets and lists exemplar ids; the
+    briefing format (issue #317 phase 2) prints the claim in plain
+    words followed by the single finding id that speaks for the
+    fact. A briefing line resolves to that finding plus its fact
+    mates — every finding stating the same set of columns, and the
+    grouped members those findings lead — because the briefing
+    merges a fact's findings into the one line before rendering.
+    The gate compares a base build against a head build, and the
+    two can print different formats, so both stay readable here."""
     by_id, by_claim = {}, {}
     for f in list(data.get("findings") or []) + list(data.get("grouped_findings") or []):
         by_id[f["id"]] = f
         by_claim.setdefault(f.get("claim") or "", f)
+    grouped_by_id = {f["id"]: f for f in data.get("grouped_findings") or []}
+    by_fact: dict = {}
+    for f in data.get("findings") or []:
+        cols = finding_columns(f)
+        if cols:
+            by_fact.setdefault(frozenset(cols), []).append(f)
+    mates: dict = {}
+    for group in by_fact.values():
+        members = list(group)
+        for f in group:
+            for mid in f.get("grouped_members") or []:
+                if mid in grouped_by_id:
+                    members.append(grouped_by_id[mid])
+        for f in group:
+            mates[f["id"]] = members
     out = []
     for raw in text.splitlines():
+        m = _BRIEFING_LINE.match(raw)
+        if m and m.group("fid") in by_id:
+            lead = by_id[m.group("fid")]
+            members = list(mates.get(lead["id"]) or [lead])
+            if lead not in members:
+                members.insert(0, lead)
+            out.append(DigestLine(
+                text=raw, is_finding=True, category=lead.get("category"),
+                type=lead.get("type"), count=1, claim=m.group("claim"),
+                lead=lead, members=members))
+            continue
         if not raw.startswith("["):
             out.append(DigestLine(text=raw, is_finding=False))
             continue

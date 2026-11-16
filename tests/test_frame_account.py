@@ -54,19 +54,23 @@ def test_axis_span_and_step_are_stated():
     assert axis["step"] == "1 month"
 
 
-def test_digest_leads_with_the_account():
+def test_digest_opens_with_what_a_row_is():
+    # The briefing opens with what a row is — the grain statement
+    # and the time axis (issue #317 phase 2). The old "account:"
+    # prefix and headline line are gone, and the dominant-structure
+    # account lines no longer appear.
     report = onceover.profile(panel_df())
     digest = report.to_digest(100_000)
     lines = digest.splitlines()
     assert lines[0].startswith("profile digest:")
-    assert lines[1].startswith("account: the grain is 3 state")
+    assert lines[1] == "What a row is:"
+    assert lines[2].startswith("the grain is 3 state")
     assert any(
-        line.startswith("account: time axis") and "2024-01-01 to 2024-12-01" in line
+        line.startswith("time axis") and "2024-01-01 to 2024-12-01" in line
         for line in lines[:6]
     )
-    account_at = next(i for i, line in enumerate(lines) if line.startswith("account:"))
-    headline_at = next(i for i, line in enumerate(lines) if line.startswith("headline:"))
-    assert account_at < headline_at
+    assert not any(line.startswith("account:") for line in lines)
+    assert not any(line.startswith("headline:") for line in lines)
 
 
 def test_schema_version_is_0_5():
