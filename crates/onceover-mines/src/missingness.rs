@@ -940,8 +940,8 @@ fn level_rates(table: &TypedTable, target: usize, column: usize) -> Option<Value
     let coded = code_column(table, column, &SurpriseConfig::default())?;
     let k = coded.labels.len();
     let (mut rows, mut missing) = (vec![0usize; k], vec![0usize; k]);
-    for r in 0..table.n {
-        if let Some(level) = coded.codes[r] {
+    for (r, &code) in coded.codes.iter().enumerate().take(table.n) {
+        if let Some(level) = code {
             rows[level as usize] += 1;
             missing[level as usize] += usize::from(is_missing(&table.cols[target], r));
         }

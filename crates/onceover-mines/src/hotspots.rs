@@ -511,6 +511,8 @@ fn evaluate_combo(
     let mut counts = vec![0usize; n_cells];
     let mut margins: Vec<Vec<usize>> = dims.iter().map(|&d| vec![0usize; d]).collect();
     let mut n_complete = 0usize;
+    // `pos` indexes a different bin column on each inner iteration.
+    #[allow(clippy::needless_range_loop)]
     for pos in 0..enc.n {
         let mut idx = 0usize;
         let mut stride = 1usize;

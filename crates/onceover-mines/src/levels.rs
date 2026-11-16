@@ -405,8 +405,8 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             pairs_examined += 1;
             let col = &table.cols[mi];
             let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); g.labels.len()];
-            for row in 0..table.n {
-                if let (Some(code), Some(v)) = (g.codes[row], col.numeric_at(row)) {
+            for (row, &code) in g.codes.iter().enumerate().take(table.n) {
+                if let (Some(code), Some(v)) = (code, col.numeric_at(row)) {
                     if v.is_finite() {
                         buckets[code as usize].push(v);
                     }
