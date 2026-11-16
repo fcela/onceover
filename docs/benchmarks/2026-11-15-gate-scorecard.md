@@ -83,11 +83,11 @@ the statements are reviewed.
 
 ## Held-out datasets
 
-south-german-credit, soybean, lace-satellites, sec-edgar-company-facts
-and gse15258-expression are scored and written to the scorecard
-(`held_out_totals`) and are reported apart by `compare.py`. They are
-excluded from the pass/fail comparison unless `--include-held-out` is
-given.
+south-german-credit, soybean, lace-satellites, sec-edgar-company-facts,
+gse15258-expression, marginal_ranges and messy_intake are scored and
+written to the scorecard (`held_out_totals`) and are reported apart by
+`compare.py`. They are excluded from the pass/fail comparison unless
+`--include-held-out` is given.
 
 ## Not included
 
@@ -122,6 +122,64 @@ with the permuted component on real tables), and titanic and diamonds
 (not in the corpus, as noted above). The source set also marks
 bank-marketing held out, by a mechanical rule; the gate's registry
 does not, and that designation was left as the gate has it.
+
+## Gate challenge tables added (2026-11-16)
+
+Round 1 could not fold the generated expansion tables in: the gate
+loads only corpus datasets. The tables are now registered in the
+corpus first, under a new pack, `synthetic`
+(`benchmarks/corpus/data/synthetic/`): seven bundled datasets, each
+with its seeded generator as `prepare.py` (the corpus's prepare
+convention; the seed is pinned in the registry entry's source line),
+an `ATTRIBUTION.md`, and sha256 and row-count pins. Rerunning a
+generator reproduces its `data.csv` byte-for-byte, verified for all
+seven. Corpus expectations are pinned from measured runs on the
+current build: 45 machine-verified expectations over the seven
+entries, all passing, including known-miss tripwires for the facts
+the current build does not state (below).
+
+Five are gated (column_order_stress, planted_mix,
+daily_regime_break, dominant_driver, daily_level_collapse) and two
+held out (marginal_ranges, messy_intake). The gate reference files
+carry 46 provisional statements — the package's 39, transcribed as in
+round 1, plus 7 written for the collapse series — and every check
+was re-run against the data on the current tree: `check_failed` is
+0, gated and held out. No new dataset is reference-only; the most
+expensive took 33 s of gate wall time (planted_mix).
+
+daily_level_collapse is new in this change, for issue #332: a daily
+series whose level drops to 0.45 of its prior value on 2023-03-15
+(60-day means 510 after against 1,122 before), stays there for 150
+days (the window's last 30 days still measure 0.45 of the prior
+level), and recovers on 2023-08-12 (ratio 1.00). Its corpus
+anomaly-coverage expectation records both dates covered by typed
+events at the exact dates.
+
+Reference results for the new datasets on the current build (4k
+digest, default mode, then the full report): column_order_stress
+should 5/6 and 5/6; planted_mix must 0/3 at 4k and 3/3 at full,
+should 3/4; daily_regime_break should 6/6 at 4k; dominant_driver
+must 2/2, should 3/4; daily_level_collapse should 6/6 at 4k;
+marginal_ranges should 1/7; messy_intake must 1/2, should 2/4. The
+unmatched statements are the known gaps: the noise columns'
+independence (no independence vocabulary), the planted hotspot cell
+(measure-weighted, over a numeric age band), the suburb
+concentration, the range facts that follow from the marginals, the
+sentinel inside the money strings, the status-code flip behind an
+unparsed date column, and the two no-missing absence statements.
+The gated reference totals are now 19 must and 42 should over nine
+datasets; the held-out totals are 9 must and 15 should over five.
+
+`compare.py` against the committed baseline reads FAIL (16 worse,
+17 improved, 16 unchanged), because the totals now sum over 18
+gated datasets instead of 13 — planted structures applied rise
+46 → 65 and findings 1,089 → 1,293 by construction. Per dataset,
+the fifteen datasets this stack does not touch score identically
+to the baseline on every substantive metric (timings and
+few-character JSON size differences aside); the only per-dataset
+regressions are state-unemployment-long's target-mode lines from
+the round-1 designation. A fresh baseline record belongs with the
+stack's merge.
 
 ## History, report and accepted regressions (added 2026-11-15)
 

@@ -2447,6 +2447,612 @@
    ],
    "sha256": "eaf8404eee27ae20a76ace5244cbae63ba77dc546648ee9c495799e3a9352e6c",
    "rows": 48842
+  },
+  {
+   "id": "column_order_stress",
+   "pack": "synthetic",
+   "title": "Column-order stress (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261117)",
+   "dir": "data/synthetic/column_order_stress",
+   "budget": "standard",
+   "notes": [
+    "Generated gate challenge table (issue #317): fourteen numeric columns built from three latent factors (two near-collinear pairs, one negated factor, two factor sums, six pure noise columns), interleaved so no factor's columns sit together. Registered so the gate can load it; its gate role is column-order invariance (the committed gate baseline records 269 facts changed by reversing column order).",
+    "No target designated (issue #315): a numeric battery with no outcome column."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "identifier_role",
+     "columns_all": [
+      "row_id"
+     ],
+     "expect": "found",
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "a1",
+      "a2"
+     ],
+     "expect": "found",
+     "note": "The first near-collinear pair (corr 0.999) is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "b1",
+      "b2"
+     ],
+     "expect": "found",
+     "note": "The second near-collinear pair (corr 0.998) is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "a1",
+      "a3"
+     ],
+     "expect": "found",
+     "note": "The negated-factor pair (corr -0.90) is stated as a pair; the sign is in the evidence, not the claim."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "columns_all": [
+      "a1"
+     ],
+     "target": "a2",
+     "claim_contains": "a1",
+     "expect": "found",
+     "note": "The screen names a1 as a2's driver (93% of gain)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "n1",
+      "n2"
+     ],
+     "expect": "missed",
+     "note": "Known miss: no independence statement exists in the vocabulary, so the pure-noise columns' independence is never stated; the pair screen simply stays silent on them. The gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_axis",
+     "status": "capped",
+     "note": "Measured on the current build: the ordered-axis scan caps on this table (row_id is a strictly increasing integer axis over fourteen measures)."
+    }
+   ],
+   "sha256": "12bac825ae09688fd8f0f1c6887e2cb2d8317080d264e39fa8b2d57747c88692",
+   "rows": 4000
+  },
+  {
+   "id": "marginal_ranges",
+   "pack": "synthetic",
+   "title": "Marginal ranges (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261118)",
+   "dir": "data/synthetic/marginal_ranges",
+   "budget": "standard",
+   "notes": [
+    "Generated gate challenge table (issue #317): six independent columns whose ranges are disjoint (0-10, 20-30, 100-110) or nested (40-60 inside 0-200) by construction, plus a balanced five-level code. Every true cross-column fact is a range fact; any stated row-level relationship is measurable as a false positive. Held out in the gate.",
+    "No target designated (issue #315): no outcome column."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "identifier_role",
+     "columns_all": [
+      "row_id"
+     ],
+     "expect": "found",
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "categorical_role",
+     "columns_all": [
+      "level_code"
+     ],
+     "expect": "found",
+     "note": "The five-level code is read as a category."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "low_band",
+      "mid_band"
+     ],
+     "expect": "missed",
+     "note": "Correctly silent: the columns are independent by construction, and no row-level relationship is stated. The disjoint-range facts live in the gate's reference file."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "inner_band",
+      "wide_band"
+     ],
+     "expect": "missed",
+     "note": "Correctly silent: nested ranges, independent values."
+    },
+    {
+     "kind": "max_findings",
+     "value": 12,
+     "note": "Restraint pin: 6 findings measured. The table's only true cross-column facts are range facts; a flood of stated relationships here is measurable as false positives."
+    }
+   ],
+   "sha256": "6add208c5e08d293d02a8fba3e215a6dbdeee6db8789218cdcd4d96afdc66a72",
+   "rows": 3000
+  },
+  {
+   "id": "planted_mix",
+   "pack": "synthetic",
+   "title": "Planted mix: application records (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261119)",
+   "dir": "data/synthetic/planted_mix",
+   "budget": "standard",
+   "target": "approved",
+   "notes": [
+    "Generated gate challenge table (issue #317) carrying four plants of kinds the digest under-recovers, plus a hotspot plant: a -999 sentinel in income_reported on exactly the legacy-import rows (7.9%), which approve at 25.6% against 44.8% for current rows; an exact affine identity total_cost = 2*parts_cost + 3*labor_cost + 7 on all rows; a per-level approval contrast by channel (branch 58.7%, web 41.6%, kiosk 20.2%); followup_days missing on exactly the legacy rows; and payout mass concentrated in the channel = kiosk x age 18-24 cell (207 rows, 3.5% of the table, holding 24.3% of all payout)."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "arithmetic_identity",
+     "columns_all": [
+      "labor_cost",
+      "parts_cost",
+      "total_cost"
+     ],
+     "target": "total_cost",
+     "expect": "found",
+     "note": "The planted identity is stated exactly: total_cost = 2*parts_cost + 3*labor_cost + 7 on all rows."
+    },
+    {
+     "kind": "finding",
+     "category": "missingness",
+     "type": "missing_values",
+     "columns_all": [
+      "followup_days"
+     ],
+     "expect": "found",
+     "note": "The missingness is stated with its concentration: 100% of legacy rows, 0% elsewhere."
+    },
+    {
+     "kind": "finding",
+     "category": "missingness",
+     "type": "predictable_missingness",
+     "columns_all": [
+      "followup_days"
+     ],
+     "expect": "found",
+     "note": "The missingness pattern itself is modeled against the other columns."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "approved",
+      "channel"
+     ],
+     "expect": "found",
+     "note": "The channel contrast (branch 58.7%, web 41.6%, kiosk 20.2%) is stated as a pair association."
+    },
+    {
+     "kind": "finding",
+     "category": "formats",
+     "type": "boundary_mass",
+     "columns_all": [
+      "income_reported"
+     ],
+     "expect": "found",
+     "note": "The sentinel's mass at -999 is stated as boundary mass."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "income_reported",
+      "source_system"
+     ],
+     "target": "source_system",
+     "expect": "found",
+     "note": "The sentinel separates the legacy rows exactly: source_system is a function of income_reported's sentinel value."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "hotspot",
+     "columns_all": [
+      "applicant_age",
+      "channel"
+     ],
+     "expect": "missed",
+     "note": "Known miss: the planted hotspot cell (channel = kiosk, age 18-24; 3.5% of rows holding 24.3% of payout) is not stated. The hotspots pass counts rows over categorical cells; this concentration is measure-weighted over a numeric age band (issue #329). The gate's reference file carries the fact as a checked statement."
+    }
+   ],
+   "sha256": "89bc24428e65a7c958f9c4329b8f94aaa39bae024c2268db9acb1fd00a924928",
+   "rows": 6000
+  },
+  {
+   "id": "daily_regime_break",
+   "pack": "synthetic",
+   "title": "Daily series with planted breaks (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261120)",
+   "dir": "data/synthetic/daily_regime_break",
+   "budget": "standard",
+   "parse_dates": true,
+   "hints": {
+    "time": "date"
+   },
+   "notes": [
+    "Generated gate challenge table (issue #317): a complete daily series, 2021-01-01 to 2025-12-31, with a weekly cycle (weekday mean 1,098 vs weekend 791) and signups tracking visits (corr 0.97). Both breaks are planted at known dates: a variance change on 2022-07-01 (generating noise sd 55 -> 150) and a level shift on 2024-03-01 (level x1.38), plus one planted spike day (2023-06-15).",
+    "No target designated (issue #315): a daily series; signups is a companion measure, not an outcome."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "level_shift",
+     "columns_all": [
+      "date",
+      "visits"
+     ],
+     "expect": "found",
+     "note": "The planted 2024-03-01 level shift is found at the exact date (mean 866 before, 1,261 after)."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "transient_excursion",
+     "columns_all": [
+      "date",
+      "visits"
+     ],
+     "expect": "found",
+     "note": "The planted spike day 2023-06-15 is found at the exact date."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "series_structure",
+     "columns_all": [
+      "visits"
+     ],
+     "expect": "found",
+     "note": "The weekly cycle is stated (repeats every 7 days, autocorrelation 0.46)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "signups",
+      "visits"
+     ],
+     "expect": "found",
+     "note": "The companion measure's tracking (corr 0.97) is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "variance_change",
+     "columns_all": [
+      "date",
+      "visits"
+     ],
+     "expect": "missed",
+     "note": "Known miss: the planted variance change on 2022-07-01 (generating noise sd 55 -> 150) is not stated by any finding on the current build. Owner-priority family (temporal breaks): the gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "anomaly_coverage",
+     "windows": [
+      "2022-07-01",
+      "2023-06-15",
+      "2024-03-01"
+     ],
+     "tolerance_hours": 24,
+     "min_covered": 2,
+     "note": "Planted events: variance change 2022-07-01, spike 2023-06-15, level shift 2024-03-01. Measured: the spike and the level shift are covered at their exact dates; the variance change is not covered by any typed event."
+    }
+   ],
+   "sha256": "adec450623c04ff50683e8022d525073d1dc49c0e389106022cf3fd77f2053b4",
+   "rows": 1826
+  },
+  {
+   "id": "dominant_driver",
+   "pack": "synthetic",
+   "title": "Dominant driver listings (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261121)",
+   "dir": "data/synthetic/dominant_driver",
+   "budget": "standard",
+   "target": "price",
+   "notes": [
+    "Generated gate challenge table (issue #317): price is driven by size_sqft (corr 0.897) with park_distance a plausible-looking but weak alternative (corr 0.021), rooms near-collinear with size (0.934), a weak negative age effect (-0.098), hoa_fee missing on 12.5% of rows, and 30.2% of listings in one suburb. Its gate role is the target-mode question: name the dominant driver, not the plausible one."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "columns_all": [
+      "size_sqft"
+     ],
+     "target": "price",
+     "claim_contains": "size_sqft",
+     "expect": "found",
+     "note": "The target screen names the dominant driver: price is predictable from size_sqft (98% of gain)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "price",
+      "size_sqft"
+     ],
+     "expect": "found",
+     "note": "The dominant pair is stated (corr 0.897)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "rooms",
+      "size_sqft"
+     ],
+     "expect": "found",
+     "note": "The near-collinearity is stated (maximum measured effect 0.934)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "age_years",
+      "price"
+     ],
+     "expect": "found",
+     "note": "The weak negative age effect (-0.098) is stated as a pair."
+    },
+    {
+     "kind": "finding",
+     "category": "missingness",
+     "type": "missing_values",
+     "columns_all": [
+      "hoa_fee"
+     ],
+     "expect": "found",
+     "note": "The planted missingness is stated (625 of 5,000 rows, 12%)."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "identifier_role",
+     "columns_all": [
+      "listing_id"
+     ],
+     "expect": "found",
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "value_concentration",
+     "columns_all": [
+      "suburb"
+     ],
+     "expect": "missed",
+     "note": "Known miss: the suburb concentration (harbor holds 30.2% of listings) is not stated on the current build. The gate's reference file carries the fact as a checked statement."
+    }
+   ],
+   "sha256": "86ba8a7ade9addbeddc0b6e5ec99e70d4c3e0597fe5d9ed5adc86bd99769034c",
+   "rows": 5000
+  },
+  {
+   "id": "messy_intake",
+   "pack": "synthetic",
+   "title": "Messy intake records (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261122)",
+   "dir": "data/synthetic/messy_intake",
+   "budget": "standard",
+   "notes": [
+    "Generated gate challenge table (issue #317), labelled generated: intake_date_raw mixes three date formats (ISO, US, '05 Mar 2024'); amount_raw and fee_raw are space-padded money strings with thousands separators, holding a -999 sentinel (4.2%) and blanks (3%); notes is blank on 29.3%; status_code's distribution flips at 2024-01-01 (code 1: 71.2% before, 29.3% after) because its meaning changed there. Once cleaned, fee_raw is exactly 2% of amount_raw (corr 1.000). Held out in the gate.",
+    "No target designated (issue #315): no outcome column; status_code is a code whose meaning flips midway, not an outcome."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "formats",
+     "type": "format_variation",
+     "columns_all": [
+      "intake_date_raw"
+     ],
+     "expect": "found",
+     "note": "The mixed date formats in one column are stated."
+    },
+    {
+     "kind": "finding",
+     "category": "formats",
+     "type": "content_anomaly",
+     "columns_all": [
+      "amount_raw"
+     ],
+     "expect": "found",
+     "note": "The numbers stored as text are stated (all values parse)."
+    },
+    {
+     "kind": "finding",
+     "category": "missingness",
+     "type": "missing_values",
+     "columns_all": [
+      "notes"
+     ],
+     "expect": "found",
+     "note": "The blank notes are stated (732 of 2,500 rows, 29%)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "functional",
+     "columns_all": [
+      "amount_raw",
+      "fee_raw"
+     ],
+     "target": "fee_raw",
+     "expect": "found",
+     "note": "The fee's exact dependence on the amount is stated (a function of amount_raw, 0 violations); the 2% rate itself is in the gate's reference file."
+    },
+    {
+     "kind": "finding",
+     "category": "column_roles",
+     "type": "categorical_role",
+     "columns_all": [
+      "status_code"
+     ],
+     "expect": "found",
+     "note": "The two-level code is read as a category."
+    },
+    {
+     "kind": "finding",
+     "category": "impossible_values",
+     "columns_all": [
+      "amount_raw"
+     ],
+     "expect": "missed",
+     "note": "Known miss: the -999 sentinel inside the money strings is not flagged as an impossible value on the current build; the column is read as text, so the value screen never sees the number. The gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "level_shift",
+     "columns_all": [
+      "intake_date_raw",
+      "status_code"
+     ],
+     "expect": "missed",
+     "note": "Known miss: status_code's distribution flip at 2024-01-01 (code 1: 71.2% before, 29.3% after) is not stated; the date column stays an unparsed string, so no time-axis scan runs."
+    }
+   ],
+   "sha256": "7d07cbadc3aa0cc6f63b3da95562e29f25c031f32eb749561dac4611bc81de3c",
+   "rows": 2500
+  },
+  {
+   "id": "daily_level_collapse",
+   "pack": "synthetic",
+   "title": "Daily series with a planted sustained level collapse (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec for the gate (issue #317); prepare.py is the seeded generator (seed 20261123)",
+   "dir": "data/synthetic/daily_level_collapse",
+   "budget": "standard",
+   "parse_dates": true,
+   "hints": {
+    "time": "date"
+   },
+   "notes": [
+    "Generated gate challenge table (issues #317, #332): a complete daily series, 2022-01-01 to 2024-12-31, with a weekly cycle and a planted sustained level collapse -- on 2023-03-15 the level drops to 0.45 of its prior value (measured: 60-day mean 510 after vs 1,122 before, ratio 0.45) and stays there for 150 days (to 2023-08-11; the window's last 30 days still measure 0.45 of the prior level), then recovers from 2023-08-12 (60-day mean 1,121, ratio 1.00 of the pre-collapse level). Registered for issue #332: the gate's first frame with a verified sustained level collapse.",
+    "No target designated (issue #315): a daily series; conversions is a companion measure, not an outcome."
+   ],
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "windows": [
+      "2023-03-15",
+      "2023-08-12"
+     ],
+     "tolerance_hours": 24,
+     "min_covered": 2,
+     "note": "Issue #332: the planted collapse (2023-03-15) and recovery (2023-08-12) are both covered at their exact dates by typed events -- a trend_change breakpoint at the onset and a variance_change breakpoint at the recovery."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "trend_change",
+     "columns_all": [
+      "date",
+      "sessions"
+     ],
+     "expect": "found",
+     "note": "A change finding lands on the collapse's exact date (2023-03-15)."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "ordered_partition",
+     "columns_all": [
+      "date",
+      "sessions"
+     ],
+     "expect": "found",
+     "note": "The series partitions into 3 level+trend regimes with splits at the planted dates (first split 2023-08-12)."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "series_structure",
+     "columns_all": [
+      "sessions"
+     ],
+     "expect": "found",
+     "note": "The weekly cycle is stated (repeats every 7 days, autocorrelation 0.91)."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "statistical",
+     "columns_all": [
+      "conversions",
+      "sessions"
+     ],
+     "expect": "found",
+     "note": "The companion measure's tracking (corr 0.967) is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "level_shift",
+     "columns_all": [
+      "date",
+      "sessions"
+     ],
+     "expect": "missed",
+     "note": "Known miss: the collapse is not stated as a level_shift finding on the current build; it surfaces as a trend_change at the onset, a variance_change at the recovery, and the ordered partition. The gate's reference file carries the collapse, its duration, and the recovery as checked statements (issue #332)."
+    }
+   ],
+   "sha256": "28d47f9915f559a4cb840e2db2826f07296b9b4434b1da2feb881c3cd702c5cb",
+   "rows": 1096
   }
  ]
 }
