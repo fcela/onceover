@@ -11,6 +11,7 @@
    "source": "UCI Thyroid Disease (id 102), allhypo.data + allhypo.test",
    "dir": "data/gritbot/thyroid",
    "budget": "standard",
+   "target": "diagnosis",
    "expectations": [
     {
      "kind": "finding",
@@ -83,6 +84,47 @@
       "tt4"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'diagnosis' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'diagnosis' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'diagnosis' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 4 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "diagnosis",
+     "note": "The shapes pass does not apply: 'diagnosis' is categorical and shape decomposition needs a numeric target (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "diagnosis",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 30 predictors on complete cases; strongest 'tsh' at 0.676 is below the 0.80 bar (next 'fti' at 0.282), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "diagnosis",
+     "expect": "missed",
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'diagnosis' has 4 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -100,6 +142,7 @@
    "source": "UCI Abalone (id 1)",
    "dir": "data/gritbot/abalone",
    "budget": "standard",
+   "target": "rings",
    "expectations": [
     {
      "kind": "finding",
@@ -132,6 +175,46 @@
       "shucked_weight"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'rings' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 7 numeric predictors and reports 4 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'rings' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'rings' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 4,177 rows and confirms 1 slice failure."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "rings",
+     "note": "The shapes pass reports 4 decisive shapes on 'rings'; 2 reach the report body (both curved_shape), alongside the predictability pass's statement on 'rings'. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "rings",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 8 predictors on complete cases; strongest 'shell_weight' at 0.398 is below the 0.80 bar (next 'height' at 0.324), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "rings",
+     "note": "The model-failure pass confirms 1 slice failure on 'rings' and states it. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -149,6 +232,7 @@
    "source": "OpenML dataset 42 (Michalski & Chilausky); same data as UCI Soybean (Large) id 90",
    "dir": "data/gritbot/soybean",
    "budget": "standard",
+   "target": "class",
    "expectations": [
     {
      "kind": "finding",
@@ -201,6 +285,48 @@
      "ref": "GritBot case 614",
      "status": "found",
      "note": "Row 614 of the bundled file (index 613): stem = norm within stem_cankers = above-sec-nde, where stem is abnorm in 99.5% of 191 rows -- GritBot's published context exactly. Isolated by the categorical surprises pass (issue #68). (The earlier note's canker_lesion description was a garbled paraphrase and has been corrected against the published case list.)"
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 19 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "class",
+     "expect": "missed",
+     "note": "The shapes pass does not apply: 'class' is categorical (its coverage entry states the decline), and no other pass states a predictive relation on 'class'. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "class",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 35 predictors on complete cases; strongest 'fruit_spots' at 0.321 is below the 0.80 bar (next 'canker_lesion' at 0.320), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "class",
+     "expect": "missed",
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'class' has 19 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -218,6 +344,7 @@
    "source": "UCI Molecular Biology (Splice-junction) (id 69)",
    "dir": "data/gritbot/splice",
    "budget": "standard",
+   "target": "class",
    "expectations": [
     {
      "kind": "finding",
@@ -232,6 +359,47 @@
      "ref": "GritBot cases 550, 839",
      "status": "partial",
      "note": "RuleQuest flags single cases breaking ~99.8% positional patterns. The profiler reports the patterns as conditional rules but does not isolate the breaking cases. Position numbering: GritBot's A30/A34 vs this file's base_30/base_34 assumes the same window origin."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 3 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "class",
+     "note": "The shapes pass does not apply: 'class' is categorical (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "class",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 61 predictors on complete cases; strongest 'base_30' at 0.262 is below the 0.80 bar (next 'base_29' at 0.230), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "class",
+     "expect": "missed",
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'class' has 3 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -258,7 +426,8 @@
     }
    ],
    "notes": [
-    "No data bundled: redistribution terms of surviving copies unverified."
+    "No data bundled: redistribution terms of surviving copies unverified.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "no redistributable source verified (see ATTRIBUTION.md)"
   },
@@ -280,7 +449,8 @@
     }
    ],
    "notes": [
-    "No public canonical source located."
+    "No public canonical source located.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "no public canonical source located (see ATTRIBUTION.md)"
   },
@@ -328,7 +498,8 @@
     }
    ],
    "notes": [
-    "Ships as a reference, not a bundle (decided 2026-10-30: no Git LFS): the prepared CSV is ~93 MB and stays uncommitted, but this entry pins its sha256 and row count, prepare.py verifies the downloaded source zip against a pinned hash, and the runner hash-verifies the prepared CSV whenever it is present locally. Expectations are set from the first local run (see docs/benchmarks)."
+    "Ships as a reference, not a bundle (decided 2026-10-30: no Git LFS): the prepared CSV is ~93 MB and stays uncommitted, but this entry pins its sha256 and row count, prepare.py verifies the downloaded source zip against a pinned hash, and the runner hash-verifies the prepared CSV whenever it is present locally. Expectations are set from the first local run (see docs/benchmarks).",
+    "No target designated (issue #315): transaction lines; the table has no outcome column."
    ],
    "sha256": "f58108fb637bfae3e14a8adcd5535808478d0f03bfdd9927659044dd29718c19",
    "rows": 1067371
@@ -343,6 +514,7 @@
    "dir": "data/business/bank-marketing",
    "file": "bank-marketing_uci-222_bank-full.csv",
    "budget": "standard",
+   "target": "subscribed_term_deposit",
    "expectations": [
     {
      "kind": "finding",
@@ -358,7 +530,8 @@
      "kind": "finding",
      "category": "formats",
      "min": 1,
-     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass)."
+     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "documented_case",
@@ -375,6 +548,47 @@
       "contacts_before_this_campaign"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 45,211 rows and states 20 slice failures (its cap)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "subscribed_term_deposit",
+     "expect": "missed",
+     "note": "The shapes pass does not apply: 'subscribed_term_deposit' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "subscribed_term_deposit",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 16 predictors on complete cases; strongest 'last_contact_duration_seconds' at 0.207 is below the 0.80 bar (next 'previous_campaign_outcome' at 0.177), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "subscribed_term_deposit",
+     "note": "The model-failure pass confirms 212 slice failures on 'subscribed_term_deposit' and states 20 (its cap). Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -394,6 +608,7 @@
    "dir": "data/business/taiwanese-bankruptcy",
    "file": "taiwanese-bankruptcy_uci-572.csv",
    "budget": "standard",
+   "target": "bankrupt",
    "expectations": [
     {
      "kind": "finding",
@@ -443,6 +658,47 @@
       "Current Asset Turnover Rate"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 28 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'bankrupt' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass treats the 0/1 target as numeric, evaluates 94 predictors, and reports 10 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'bankrupt' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'bankrupt' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 6,819 rows and confirms 6 slice failures."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "bankrupt",
+     "expect": "missed",
+     "note": "The shapes pass treats the 0/1 target as numeric and reports 10 decisive shapes, but none reaches the report body at the 100-finding cap (neither selected nor grouped), and no other pass states a predictive relation on 'bankrupt'. Cap displacement, measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "bankrupt",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 95 predictors on complete cases; strongest 'Interest Expense Ratio' at 0.259 is below the 0.80 bar (next 'Borrowing dependency' at 0.224), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "bankrupt",
+     "note": "The model-failure pass confirms 6 slice failures on 'bankrupt' and states all 6. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -461,6 +717,7 @@
    "dir": "data/business/absenteeism-at-work",
    "file": "absenteeism-at-work_uci-445.csv",
    "budget": "standard",
+   "target": "absenteeism_time_hours",
    "expectations": [
     {
      "kind": "finding",
@@ -511,6 +768,48 @@
       "distance_from_residence_to_work_km"
      ],
      "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 31 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 12 numeric predictors and reports 0 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 740 rows; no slice failure confirms."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "absenteeism_time_hours",
+     "expect": "missed",
+     "note": "The shapes pass evaluates 12 numeric predictors and reports 0 decisive shapes on 'absenteeism_time_hours'; no other pass states a predictive relation on it. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "absenteeism_time_hours",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'reason_for_absence' at 0.265 is below the 0.80 bar (next 'disciplinary_failure' at 0.090), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "absenteeism_time_hours",
+     "expect": "missed",
+     "note": "The model-failure pass searches 434 slice x form candidates; 48 clear the search bars and 0 confirm on the held-out half at Benjamini-Hochberg q <= 0.05, so no failure is stated. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -529,6 +828,7 @@
    "dir": "data/business/south-german-credit",
    "file": "south-german-credit_uci-522.csv",
    "budget": "standard",
+   "target": "credit_risk",
    "expectations": [
     {
      "kind": "finding",
@@ -551,6 +851,47 @@
      "ref": "personal_status_sex conflates sex and marital status (codetable)",
      "status": "found",
      "note": "Code 2 covers both female non-single and male single debtors; sex cannot be recovered from this variable. The prepared file carries the codetable's own conflated label for that level."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'credit_risk' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'credit_risk' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'credit_risk' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 1,000 rows and states 11 slice failures."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "credit_risk",
+     "expect": "missed",
+     "note": "The shapes pass does not apply: 'credit_risk' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "credit_risk",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'status' at 0.105 is below the 0.80 bar (next 'credit_history' at 0.046), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "credit_risk",
+     "note": "The model-failure pass confirms 13 slice failures on 'credit_risk' and states 11. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -571,6 +912,7 @@
    "dir": "data/business/incident-event-log",
    "file": "servicenow-incident-event-log_uci-498.csv",
    "budget": "standard",
+   "target": "priority",
    "expectations": [
     {
      "kind": "finding",
@@ -599,6 +941,47 @@
      "ref": "Priority is calculated from impact and urgency (dataset page)",
      "status": "found",
      "note": "The page documents priority as calculated from impact and urgency. Measured: 8 observed (impact, urgency) combinations, exactly one priority each, 0 violations in 141,712 rows."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'priority' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'priority' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'priority' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 4 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "priority",
+     "note": "The shapes pass does not apply: 'priority' is categorical (its coverage entry states the decline). The matching statements are the decision-table and predictability passes' on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "priority",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 33 predictors on complete cases; strongest 'urgency' at 0.710 is below the 0.80 bar (next 'impact' at 0.706), so no signature is stated. 'priority' is determined exactly by the pair (impact, urgency), which the functional expectation above states; the screen is single-column by design."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "priority",
+     "expect": "missed",
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'priority' has 4 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -619,7 +1002,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "License gate: NC-SA conflicts with the package's MIT license -- test-only, never bundled."
+    "License gate: NC-SA conflicts with the package's MIT license -- test-only, never bundled.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "license gate (CC BY-NC-SA 4.0) and Kaggle credentials required"
   },
@@ -632,6 +1016,7 @@
    "source": "OpenML 43627 (credit-card-fraud-detection); original distribution Kaggle mlg-ulb/creditcardfraud (ULB / Worldline); also ADBench 'fraud'",
    "dir": "data/business/credit-card-fraud",
    "budget": "standard",
+   "target": "class",
    "expectations": [
     {
      "kind": "finding",
@@ -656,6 +1041,46 @@
      "category": "duplicates",
      "type": "duplicate_rows",
      "note": "1,081 rows repeat earlier rows across the compared columns (773 groups) in the first run - recorded as found, not predicted."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass treats the 0/1 target as numeric, evaluates 30 predictors, and reports 2 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'class' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 284,807 rows and states 16 slice failures."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "class",
+     "note": "The shapes pass reports 2 decisive shapes on the 0/1 target 'class' (both step_shape); both reach the report body. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "class",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 1 predictor on complete cases; strongest 'amount' at 0.124 is below the 0.80 bar, so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "class",
+     "note": "The model-failure pass confirms 19 slice failures on 'class' and states 16. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -701,7 +1126,8 @@
     }
    ],
    "notes": [
-    "Known-answer table for the pack: a small, fully documented sample schema. prepare.py pins the source database file's sha256."
+    "Known-answer table for the pack: a small, fully documented sample schema. prepare.py pins the source database file's sha256.",
+    "No target designated (issue #315): the table carries measures but no outcome a practitioner would designate."
    ],
    "sha256": "3c00c59f4c9e72c5a2990bf7c7775d5e67b763465a3e6127da1847d26f861994",
    "rows": 412
@@ -766,7 +1192,8 @@
     }
    ],
    "notes": [
-    "Known-answer table for the pack: a documented sample schema carrying an exact arithmetic identity, verified on the source file before preparation."
+    "Known-answer table for the pack: a documented sample schema carrying an exact arithmetic identity, verified on the source file before preparation.",
+    "No target designated (issue #315): the table carries measures but no outcome a practitioner would designate."
    ],
    "sha256": "d0a8e1882a78ea44889c3f316e97bab8ddf98588aa6eb76b8c0d5b3c0b7eab64",
    "rows": 31465
@@ -782,7 +1209,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "License check resolved 2026-10-30: MIT (the repository's license.txt), bundle-compatible. Not fetched: the canonical distribution is a T-SQL install script, with no flat table file to pin. The pack's known-answer role is carried by chinook and adventureworks."
+    "License check resolved 2026-10-30: MIT (the repository's license.txt), bundle-compatible. Not fetched: the canonical distribution is a T-SQL install script, with no flat table file to pin. The pack's known-answer role is carried by chinook and adventureworks.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "canonical distribution is a T-SQL install script - no flat table file (see ATTRIBUTION.md)"
   },
@@ -839,7 +1267,8 @@
     }
    ],
    "notes": [
-    "Panel-completeness candidate: pairs with user-declared hints (dimensions company x concept, time period_end)."
+    "Panel-completeness candidate: pairs with user-declared hints (dimensions company x concept, time period_end).",
+    "No target designated (issue #315): the table carries measures but no outcome a practitioner would designate."
    ],
    "sha256": "80b5af8c1daf76ef8e6a1d758c98cb7b96c4c0b836a4ec965fddf3fa5fdf351f",
    "rows": 11543
@@ -855,7 +1284,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "Access blocker, not license: files.stlouisfed.org returned HTTP 403 from the build environment on 2026-10-28 for current.csv and the pinned vintage. prepare.py produces the bundle from any environment that can reach the host."
+    "Access blocker, not license: files.stlouisfed.org returned HTTP 403 from the build environment on 2026-10-28 for current.csv and the pinned vintage. prepare.py produces the bundle from any environment that can reach the host.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "source host returned HTTP 403 from the build environment (see ATTRIBUTION.md)"
   },
@@ -868,6 +1298,7 @@
    "source": "UCI Congressional Voting Records (id 105)",
    "dir": "data/crosscat/congressional-voting",
    "budget": "standard",
+   "target": "party",
    "expectations": [
     {
      "kind": "finding",
@@ -886,6 +1317,46 @@
      "category": "changes",
      "type": "residual_shift",
      "note": "Views row clusters: the greedy partition splits members into clusters with different vote levels (party blocs)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'party' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'party' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'party' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 435 rows and states 20 slice failures (its cap)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "party",
+     "note": "The shapes pass does not apply: 'party' is categorical (its coverage entry states the decline). The matching statements are the decision-table and predictability passes' on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "party",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 16 predictors on complete cases; strongest 'physician_fee_freeze' at 0.765 is below the 0.80 bar (next 'adoption_of_the_budget_resolution' at 0.446), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "party",
+     "note": "The model-failure pass confirms 66 slice failures on 'party' and states 20 (its cap). Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -908,7 +1379,10 @@
     "numeric_dependence",
     "identities",
     "period_associations",
-    "row_clusters"
+    "row_clusters",
+    "target_shapes",
+    "leakage",
+    "model_failures"
    ],
    "sha256": "11e798b454651e10d203d014032d5af0854cf777bf5b570ffaaa3793728c43fa",
    "rows": 435
@@ -955,7 +1429,8 @@
     }
    ],
    "notes": [
-    "The hospital table from the CrossCat evaluation, as distributed by the project."
+    "The hospital table from the CrossCat evaluation, as distributed by the project.",
+    "No target designated (issue #315): the table carries measures but no outcome a practitioner would designate."
    ],
    "detectors": [
     "column_profile",
@@ -1017,7 +1492,8 @@
     }
    ],
    "notes": [
-    "CrossCat paper evaluation family (state unemployment). Wide panel: 609 months x 51 series."
+    "CrossCat paper evaluation family (state unemployment). Wide panel: 609 months x 51 series.",
+    "No target designated (issue #315): a wide panel of 51 state series; no single outcome column."
    ],
    "detectors": [
     "column_profile",
@@ -1069,7 +1545,8 @@
     }
    ],
    "notes": [
-    "Long form of the state unemployment panel: 31,059 rows (609 months x 51 series). Pooled tree behavior is pinned in tests/test_partitions_panel.py; the energy-state slope split is recorded there as a known miss."
+    "Long form of the state unemployment panel: 31,059 rows (609 months x 51 series). Pooled tree behavior is pinned in tests/test_partitions_panel.py; the energy-state slope split is recorded there as a known miss.",
+    "No target designated (issue #315): unemployment_rate is a panel response and a future candidate; the entry profiles with a two-detector list by design, so designation is deferred."
    ],
    "detectors": [
     "column_profile",
@@ -1109,7 +1586,8 @@
     }
    ],
    "notes": [
-    "CrossCat paper gene-expression table at the paper's 5,000-column subset scale (deterministic first-5,000 rule; the paper drew random subsets)."
+    "CrossCat paper gene-expression table at the paper's 5,000-column subset scale (deterministic first-5,000 rule; the paper drew random subsets).",
+    "No target designated (issue #315): disease_state is an outcome, but the table has 86 rows, below the leakage screen's 100-row minimum, and 5,006 columns; deferred."
    ],
    "detectors": [
     "column_profile",
@@ -1159,7 +1637,8 @@
     }
    ],
    "notes": [
-    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md. Issue #73 fix (pre-screen selection, 256 merge attempts) is measured in the follow-up section of the head-to-head note."
+    "Head-to-head baseline for the views pass (issue #22): bundled from the Lace project (MIT) exactly as distributed; byte-identical to the copy pylace's lace.examples loads. Comparison against Lace's own dependence structure: docs/benchmarks/2026-10-30-lace-head-to-head.md. Issue #73 fix (pre-screen selection, 256 merge attempts) is measured in the follow-up section of the head-to-head note.",
+    "No target designated (issue #315): feature table with no outcome column; 50 rows is also below the screens' minimums."
    ],
    "detectors": [
     "column_profile",
@@ -1192,6 +1671,7 @@
    "source": "Lace project (promised-ai/lace), cli/resources/datasets/satellites/data.csv",
    "dir": "data/crosscat/lace-satellites",
    "budget": "standard",
+   "target": "Class_of_Orbit",
    "expectations": [
     {
      "kind": "finding",
@@ -1254,6 +1734,47 @@
      "detector": "order_constraints",
      "status": "ran_exact",
      "note": "Added 2026-11-08 with the order-constraints recording: the entry's detector list includes order_constraints; the pass screens 23 of 23 eligible column pairs on this table, and the three orders it reports are pinned above."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 4 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "Class_of_Orbit",
+     "note": "The shapes pass does not apply: 'Class_of_Orbit' is categorical (its coverage entry states the decline). The matching statements are the decision-table and predictability passes' on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "Class_of_Orbit",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'Type_of_Orbit' at 0.894 clears the 0.80 bar but does not dwarf the field (next 'Inclination_radians' at 0.659; the dominance route requires 1.5x), so no signature is stated. Apogee_km determines 'Class_of_Orbit' exactly (the functional expectation above), but it takes a distinct value on nearly every row, so the determination is vacuous under the screen's average-group-size guard (docs/benchmarks/2026-11-13-leakage-signatures.md)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "Class_of_Orbit",
+     "expect": "missed",
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'Class_of_Orbit' has 4 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -1278,7 +1799,10 @@
     "identities",
     "period_associations",
     "row_clusters",
-    "discontinuities"
+    "discontinuities",
+    "target_shapes",
+    "leakage",
+    "model_failures"
    ],
    "sha256": "239eb10a605df2e83101b2732ebee1459c56d96d498b0327be95b5ccc73c6d17",
    "rows": 1164
@@ -1314,7 +1838,8 @@
     }
    ],
    "notes": [
-    "Anomaly pack seed (issue #24). Labels are points; coverage tolerance +/-24h, findings searched in changes/gaps/intervals evidence."
+    "Anomaly pack seed (issue #24). Labels are points; coverage tolerance +/-24h, findings searched in changes/gaps/intervals evidence.",
+    "No target designated (issue #315): a univariate series (timestamp, value); the anomaly labels are external points, not a column."
    ],
    "parse_dates": true,
    "hints": {
@@ -1352,7 +1877,8 @@
     }
    ],
    "notes": [
-    "Anomaly pack seed (issue #24)."
+    "Anomaly pack seed (issue #24).",
+    "No target designated (issue #315): a univariate series (timestamp, value); the anomaly labels are external points, not a column."
    ],
    "parse_dates": true,
    "hints": {
@@ -1372,7 +1898,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
   },
@@ -1387,7 +1914,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
   },
@@ -1402,7 +1930,8 @@
    "budget": "standard",
    "expectations": [],
    "notes": [
-    "Suite-level tracking entry; members are admitted per-dataset under the license gate."
+    "Suite-level tracking entry; members are admitted per-dataset under the license gate.",
+    "No target designated (issue #315): no prepared table exists locally, so no outcome column can be verified."
    ],
    "skip_reason": "suite not wired; see ATTRIBUTION.md for status"
   },
@@ -1415,6 +1944,7 @@
    "source": "UCI Metro Interstate Traffic Volume (id 492), DOI 10.24432/C5X60B",
    "dir": "data/anomaly/metro-interstate-traffic",
    "budget": "standard",
+   "target": "traffic_volume",
    "expectations": [
     {
      "kind": "finding",
@@ -1519,6 +2049,48 @@
      "detector": "ordered_partitions",
      "status": "ran_exact",
      "note": "Completion pin (issue #115): see the breaks pin. Measured ran_exact 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'traffic_volume' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 4 numeric predictors and reports 0 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'traffic_volume' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'traffic_volume' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 48,204 rows; no slice clears its search bars."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "traffic_volume",
+     "expect": "missed",
+     "note": "The shapes pass evaluates 4 numeric predictors and reports 0 decisive shapes on 'traffic_volume'; no other pass states a predictive relation on it. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "traffic_volume",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 5 predictors on complete cases; strongest 'temp' at 0.071 is below the 0.80 bar (next 'clouds_all' at 0.021), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "traffic_volume",
+     "expect": "missed",
+     "note": "The model-failure pass searches 52 slice x form candidates; 0 clear the search bars, so no failure is stated. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -1537,6 +2109,7 @@
    "source": "UCI Bike Sharing Dataset (id 275), DOI 10.24432/C5W894",
    "dir": "data/anomaly/bike-sharing-hourly",
    "budget": "standard",
+   "target": "cnt",
    "expectations": [
     {
      "kind": "finding",
@@ -1637,6 +2210,46 @@
      "detector": "ordered_partitions",
      "status": "ran_exact",
      "note": "Completion pin (issue #115): see the breaks pin. Measured ran_exact 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'cnt' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 15 numeric predictors and reports 3 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'cnt' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'cnt' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 17,379 rows and states 19 slice failures."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "cnt",
+     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "cnt",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 15 predictors on complete cases; strongest 'registered' at 0.878 clears the 0.80 bar but does not dwarf the field (next 'instant' at 0.706; the dominance route requires 1.5x), so no signature is stated. No single column determines 'cnt' exactly: 'casual' and 'registered' determine it jointly, which the identity expectation above states; the screen is single-column by design, so the pair does not fire it."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "cnt",
+     "note": "The model-failure pass confirms 277 slice failures on 'cnt' and states 19; 10 reach the report body at the 100-finding cap. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -1656,12 +2269,14 @@
    "dir": "data/business/adult-census-income",
    "file": "adult-census-income_uci-2.csv",
    "budget": "standard",
+   "target": "income",
    "expectations": [
     {
      "kind": "finding",
      "category": "duplicates",
      "type": "near_duplicate_rows",
-     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132)."
+     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -1691,7 +2306,8 @@
      "kind": "finding",
      "category": "duplicates",
      "type": "duplicate_rows",
-     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting)."
+     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -1700,7 +2316,8 @@
      "columns_any": [
       "capital_loss"
      ],
-     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified)."
+     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -1709,7 +2326,8 @@
      "columns_any": [
       "capital_gain"
      ],
-     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified)."
+     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -1718,7 +2336,8 @@
      "columns_any": [
       "native_country"
      ],
-     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified)."
+     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "coverage_status",
@@ -1744,7 +2363,8 @@
      "columns_any": [
       "capital_gain"
      ],
-     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md."
+     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "finding",
@@ -1753,7 +2373,8 @@
      "columns_any": [
       "capital_loss"
      ],
-     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file."
+     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state.",
+     "expect": "missed"
     },
     {
      "kind": "documented_case",
@@ -1778,6 +2399,46 @@
      "ref": "Categorical-outlier enumeration undercounts (education = Some-college, relationship = Husband, 3,658 rows): the claim names 2 breaker rows; the slice has 3 (rows 3787, 39624, 48118, all marital_status = Married-AF-spouse)",
      "status": "found",
      "note": "Fixed 2026-11-05 (#111): the finding lists all 3 breaking rows (3787, 39624, 48118), matching its dominant share of 3655/3658."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "status": "ran_exact",
+     "note": "Designated target 'income' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "status": "ran_exact",
+     "note": "Designated target 'income' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "status": "ran_exact",
+     "note": "Designated target 'income' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 48,842 rows and states 18 slice failures."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "predictive",
+     "target": "income",
+     "note": "The shapes pass does not apply: 'income' is categorical (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "leakage_signature",
+     "target": "income",
+     "expect": "missed",
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 14 predictors on complete cases; strongest 'relationship' at 0.208 is below the 0.80 bar (next 'marital_status' at 0.198), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "category": "dependencies",
+     "type": "model_failure",
+     "target": "income",
+     "note": "The model-failure pass confirms 168 slice failures on 'income' and states 18. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [

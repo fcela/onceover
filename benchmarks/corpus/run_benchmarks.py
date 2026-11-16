@@ -339,7 +339,8 @@ def main() -> int:
             t = time.time()
             report = onceover.profile(df, budget=budget,
                                       detectors=entry.get("detectors"),
-                                      hints=entry.get("hints"))
+                                      hints=entry.get("hints"),
+                                      target=entry.get("target"))
             rec["seconds"] = round(time.time() - t, 2)
             rec["rows"], rec["cols"] = df.height, df.width
             findings = report.data["findings"]
