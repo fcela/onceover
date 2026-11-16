@@ -9,7 +9,7 @@ import polars as pl
 import onceover
 
 
-def _panel_report():
+def _panel_report(extra_detectors=()):
     regions = ["North", "South", "East", "West"]
     entity, region, year, life = [], [], [], []
     i = 0
@@ -24,11 +24,27 @@ def _panel_report():
     df = pl.DataFrame(
         {"entity": entity, "region": region, "year": year, "life_exp": life}
     )
-    return onceover.profile(df, hints={"time": "year"})
+    if not extra_detectors:
+        return onceover.profile(df, hints={"time": "year"})
+    default_ids = [
+        d["id"]
+        for d in onceover.available_detectors()
+        if d["membership"] == "default_set"
+    ]
+    return onceover.profile(
+        df,
+        hints={"time": "year"},
+        detectors=default_ids + list(extra_detectors),
+    )
 
 
 def test_select_filters():
-    report = _panel_report()
+    # The fixture's dependencies finding is the region x year
+    # interaction statement (the planted South shift is a joint
+    # effect). `interactions` is on request since the 2026-11-16
+    # per-detector audit, so this test's selection names it
+    # alongside the default set.
+    report = _panel_report(extra_detectors=["interactions"])
     assert report.select() == report.findings
     deps = report.select(category="dependencies")
     assert deps and all(f["category"] == "dependencies" for f in deps)

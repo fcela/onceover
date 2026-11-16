@@ -159,10 +159,19 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // scale/shape blindness it covers.
         make("level_contrasts", vec![Associations], &[], DefaultSet, Always, "Each level of a categorical column against the pooled rest on each numeric measure: location, scale, and constant-multiple contrasts, plus the date axis's calendar parts"),
         make("predictability", vec![Dependencies], &[], DefaultSet, Always, "Predictability of eligible columns from the other columns"),
-        make("decision_tables", vec![Dependencies], &["predictability"], DefaultSet, Always, "Compact predictive tables selected by cross-validation"),
+        // Opt-in since the 2026-11-16 per-detector audit (issue
+        // #317 phase 3): across the gate tables none of its
+        // findings matched a reference statement, and it is not an
+        // integrity check. The record is
+        // docs/benchmarks/2026-11-16-detector-audit.md.
+        make("decision_tables", vec![Dependencies], &["predictability"], OnRequest, Always, "Compact predictive tables selected by cross-validation"),
         make("covering_rules", vec![ConditionalRules], &["predictability"], DefaultSet, Always, "Multi-condition rules for categorical targets"),
         make("regimes", vec![Dependencies, Changes], &["predictability"], DefaultSet, Always, "Local linear equations and dated reference-model residual shifts"),
-        make("interactions", vec![Dependencies], &["predictability"], DefaultSet, Always, "Non-additive predictor pairs under a fitted target model"),
+        // Opt-in since the 2026-11-16 per-detector audit (issue
+        // #317 phase 3): one finding across the gate tables and no
+        // matched reference statement. The record is
+        // docs/benchmarks/2026-11-16-detector-audit.md.
+        make("interactions", vec![Dependencies], &["predictability"], OnRequest, Always, "Non-additive predictor pairs under a fitted target model"),
         make("target_shapes", vec![Dependencies], &[], OnRequest, Target, "Line, curve, and step comparisons for a designated numeric target"),
         make("leakage", vec![Dependencies], &[], OnRequest, Target, "A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it"),
         make("model_failures", vec![Dependencies], &[], OnRequest, Target, "Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error"),
@@ -205,7 +214,12 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             &[],
             DefaultSet, Always,
         "Pairwise nominal rules with train and diagnostic evidence"),
-        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies"),
+        // Opt-in since the 2026-11-16 per-detector audit (issue
+        // #317 phase 3): across the gate tables none of its
+        // findings matched a reference statement, and it is not an
+        // integrity check. The record is
+        // docs/benchmarks/2026-11-16-detector-audit.md.
+        make("hotspots", vec![Concentration], &[], OnRequest, Always, "Combinations concentrated beyond their marginal frequencies"),
         make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
         make(
             "identities",
@@ -239,7 +253,8 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // (expectations, group_contrast), which engage only when
         // hints declare their structure. On-request detectors
         // (row_clusters, date_gaps, pivot, period_associations,
-        // drift, granularity, distribution_change, slice_shifts)
+        // drift, granularity, distribution_change, slice_shifts,
+        // decision_tables, interactions, hotspots)
         // run only when explicitly requested via detectors=[...];
         // the target-triggered detectors (target_shapes, leakage,
         // model_failures) run only when a target is designated
@@ -282,13 +297,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_32_measured_detectors() {
+    fn default_set_is_the_29_measured_detectors() {
         let active = active_detectors(None);
-        // 43 registered: 32 in the default set (30 always-triggered
+        // 43 registered: 29 in the default set (27 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 11 on request (8 always-triggered, 3 target-triggered).
+        // 14 on request (11 always-triggered, 3 target-triggered).
         assert_eq!(builtin_detectors().len(), 43);
-        assert_eq!(active.len(), 32);
+        assert_eq!(active.len(), 29);
         for id in [
             "row_clusters",
             "date_gaps",
@@ -298,6 +313,9 @@ mod tests {
             "granularity",
             "distribution_change",
             "slice_shifts",
+            "decision_tables",
+            "interactions",
+            "hotspots",
             "target_shapes",
             "leakage",
             "model_failures",
@@ -326,8 +344,8 @@ mod tests {
             *membership.entry(format!("{:?}", d.membership)).or_insert(0) += 1;
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
-        assert_eq!(membership.get("DefaultSet"), Some(&32));
-        assert_eq!(membership.get("OnRequest"), Some(&11));
+        assert_eq!(membership.get("DefaultSet"), Some(&29));
+        assert_eq!(membership.get("OnRequest"), Some(&14));
         assert_eq!(trigger.get("Always"), Some(&38));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&3));

@@ -14,8 +14,10 @@ These tests pin the two halves of the repair:
 
 - every ``onceover.profile(...)`` call in the notebook passes the
   shared selection, ``ex.notebook_detectors()`` (default set plus
-  the opt-in ``dates`` pass), rather than relying on the default
-  set alone;
+  the opt-in passes whose findings the notebook reads:
+  ``date_gaps`` since the 2026-11-02 battery, ``decision_tables``
+  since the 2026-11-16 per-detector audit), rather than relying on
+  the default set alone;
 - that selection produces every finding the notebook dereferences,
   including the date gap with the fixture's two missing business
   dates.
@@ -77,6 +79,7 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
     ex = _load_example()
     detectors = ex.notebook_detectors()
     assert "date_gaps" in detectors
+    assert "decision_tables" in detectors
 
     orders = ex.orders_fixture(seed=2024)
     # The worked example reads individual statements, so it

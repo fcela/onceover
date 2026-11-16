@@ -240,7 +240,7 @@
    "requires": [
     "predictability"
    ],
-   "membership": "default_set",
+   "membership": "on_request",
    "trigger": "always",
    "purpose": "Compact predictive tables selected by cross-validation"
   },
@@ -277,7 +277,7 @@
    "requires": [
     "predictability"
    ],
-   "membership": "default_set",
+   "membership": "on_request",
    "trigger": "always",
    "purpose": "Non-additive predictor pairs under a fitted target model"
   },
@@ -412,7 +412,7 @@
     "concentration"
    ],
    "requires": [],
-   "membership": "default_set",
+   "membership": "on_request",
    "trigger": "always",
    "purpose": "Combinations concentrated beyond their marginal frequencies"
   },
