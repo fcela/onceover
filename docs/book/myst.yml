@@ -12,6 +12,7 @@ project:
       children:
         - file: usage/install.ipynb
         - file: usage/quickstart.ipynb
+        - file: usage/talking_to_the_profiler.ipynb
         - file: usage/capabilities.ipynb
         - file: usage/findings.ipynb
         - file: usage/taxonomy.ipynb

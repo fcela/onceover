@@ -17,11 +17,33 @@ use std::collections::{BTreeMap, BTreeSet};
 /// A declared cadence for gap checks: a fixed step in days (for date
 /// columns, the spacing of expected periods; for integer columns, the
 /// sequence step), or a named calendar cadence.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum Cadence {
     Days(i64),
     Named(String),
+}
+
+impl<'de> Deserialize<'de> for Cadence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Days(i64),
+            Named(String),
+        }
+        match Repr::deserialize(deserializer) {
+            Ok(Repr::Days(d)) => Ok(Cadence::Days(d)),
+            Ok(Repr::Named(s)) => Ok(Cadence::Named(s)),
+            Err(_) => Err(serde::de::Error::custom(
+                "cadence must be a day/step count (an integer), or one of \
+                 \"daily\", \"business_day\", \"weekly\", \"monthly\"",
+            )),
+        }
+    }
 }
 
 impl Cadence {
@@ -53,6 +75,7 @@ impl Cadence {
 /// reported in the pass's coverage entry rather than raising an
 /// error.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupContrast {
     /// The column whose values define the group.
     pub column: String,
@@ -68,6 +91,7 @@ pub struct GroupContrast {
 /// list, which is applied before any pass runs) rather than raising
 /// an error.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProfileHints {
     /// The time / ordering axis column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,6 +183,28 @@ pub struct ProfileHints {
     #[serde(skip)]
     pub deprecated_keys: Vec<String>,
 }
+
+/// The keys accepted in a hints mapping, in `ProfileHints` field
+/// order. The Python binding serves this list to callers (the
+/// capability manifest and the unknown-key error both draw on the
+/// vocabulary declared here), and the tests in this module pin it
+/// to the struct: a fully populated hints value serializes to
+/// exactly these keys, and each key deserializes on its own.
+pub const HINT_KEYS: &[&str] = &[
+    "time",
+    "ordered_axis",
+    "level_order",
+    "order_by",
+    "no_gaps",
+    "cadence",
+    "dimensions",
+    "measures",
+    "roles",
+    "hierarchies",
+    "exclude_columns",
+    "labels",
+    "contrast",
+];
 
 impl ProfileHints {
     pub fn is_empty(&self) -> bool {
@@ -384,6 +430,99 @@ mod tests {
 
     fn columns(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn hint_keys_match_the_struct_fields() {
+        // A fully populated hints value serializes to exactly the
+        // declared vocabulary: no field missing from HINT_KEYS, no
+        // key in HINT_KEYS that is not a field.
+        let full = ProfileHints {
+            time: Some("d".into()),
+            ordered_axis: Some("dose".into()),
+            level_order: BTreeMap::from([("g".into(), vec!["a".into()])]),
+            order_by: vec!["d".into()],
+            no_gaps: vec!["d".into()],
+            cadence: BTreeMap::from([("d".into(), Cadence::Days(1))]),
+            dimensions: vec!["r".into()],
+            measures: vec!["v".into()],
+            roles: BTreeMap::from([("v".into(), "measure".into())]),
+            hierarchies: vec![vec!["a".into(), "b".into()]],
+            exclude_columns: vec!["x".into()],
+            labels: BTreeMap::from([("v".into(), "value".into())]),
+            contrast: Some(GroupContrast {
+                column: "r".into(),
+                value: None,
+            }),
+            deprecated_keys: Vec::new(),
+        };
+        let value = serde_json::to_value(&full).unwrap();
+        let keys: BTreeSet<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let declared: BTreeSet<&str> = HINT_KEYS.iter().copied().collect();
+        assert_eq!(keys, declared);
+    }
+
+    #[test]
+    fn each_hint_key_deserializes_on_its_own() {
+        let samples: Vec<(&str, serde_json::Value)> = vec![
+            ("time", json!("d")),
+            ("ordered_axis", json!("dose")),
+            ("level_order", json!({"g": ["a", "b"]})),
+            ("order_by", json!(["d"])),
+            ("no_gaps", json!(["d"])),
+            ("cadence", json!({"d": 1})),
+            ("dimensions", json!(["r"])),
+            ("measures", json!(["v"])),
+            ("roles", json!({"v": "measure"})),
+            ("hierarchies", json!([["a", "b"]])),
+            ("exclude_columns", json!(["x"])),
+            ("labels", json!({"v": "value"})),
+            ("contrast", json!({"column": "r"})),
+        ];
+        assert_eq!(samples.len(), HINT_KEYS.len());
+        for (key, value) in samples {
+            assert!(HINT_KEYS.contains(&key), "{key} not in HINT_KEYS");
+            let parsed: Result<ProfileHints, _> = serde_json::from_value(json!({ key: value }));
+            assert!(parsed.is_ok(), "{key}: {:?}", parsed.err());
+        }
+    }
+
+    #[test]
+    fn unknown_hint_key_is_rejected_and_names_the_vocabulary() {
+        let err = serde_json::from_value::<ProfileHints>(json!({"bogus": 1}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("bogus"), "{err}");
+        for key in HINT_KEYS {
+            assert!(err.contains(key), "error does not name {key}: {err}");
+        }
+    }
+
+    #[test]
+    fn unknown_contrast_field_is_rejected() {
+        let err =
+            serde_json::from_value::<ProfileHints>(json!({"contrast": {"column": "r", "valu": 1}}))
+                .unwrap_err()
+                .to_string();
+        assert!(err.contains("valu"), "{err}");
+    }
+
+    #[test]
+    fn cadence_rejects_other_shapes_with_the_accepted_ones() {
+        let err = serde_json::from_value::<ProfileHints>(json!({"cadence": {"d": [1]}}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("cadence must be"), "{err}");
+        assert!(err.contains("business_day"), "{err}");
+        let ok: ProfileHints =
+            serde_json::from_value(json!({"cadence": {"d": "weekly", "e": 7}})).unwrap();
+        assert_eq!(ok.cadence["d"], Cadence::Named("weekly".into()));
+        assert_eq!(ok.cadence["e"], Cadence::Days(7));
     }
 
     #[test]

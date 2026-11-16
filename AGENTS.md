@@ -17,6 +17,12 @@ report = onceover.profile(df)          # budget="standard" by default
 print(report.to_digest(4_000))         # sized for a context window
 ```
 
+The same brief ships inside the package: `onceover.agent_guide()`
+returns the packaged quickstart (the handover, the budgets,
+reading the report, detector selection), and
+`onceover.capabilities()` returns the compact capability manifest
+derived from the registry.
+
 ## Budgets
 
 `budget` is `"quick"`, `"standard"` (default), or `"deep"`.
