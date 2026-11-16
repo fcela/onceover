@@ -4,8 +4,11 @@ Every column of a real table is shuffled independently with a seeded
 generator. Each column keeps its values, so the marginal distributions
 are unchanged, and every relationship between columns is destroyed. A
 statement about two or more columns in the profile of the shuffled
-table is therefore false by construction. The metrics count those
-statements in the full report and in the 4,000-character digest.
+table therefore describes no relationship in the data: its counts can
+be correct (a column that is 99% one value makes "x determines y on
+99% of rows" true for any x), and the relationship it suggests does
+not exist. The metrics count those statements in the full report and
+in the 4,000-character digest.
 
 A statement counts as a relationship when the finding names two or more
 columns and its category is one of gatelib.RELATION_CATEGORIES (or its
@@ -13,10 +16,9 @@ type is in gatelib.RELATION_TYPES). The count is of findings in the
 report, and in the digest of the statements the digest lines stand for
 (a line marked "(x5)" stands for five).
 
-Some of these statements follow from the marginals alone, for example
-"a <= b" on two columns whose value ranges do not overlap. They are
-counted: they are still statements about a relationship that does not
-exist.
+Statements that follow from one column's distribution alone, such as
+"a <= b" on two columns whose value ranges do not overlap, are counted
+with the rest.
 """
 from __future__ import annotations
 

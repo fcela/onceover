@@ -37,7 +37,7 @@ def test_every_detector_declares_a_purpose():
 
 
 def test_capability_manifest_is_fresh():
-    committed = json.loads((ROOT / "docs" / "capability-manifest.json").read_text())
+    committed = json.loads((ROOT / "docs" / "capability-manifest.json").read_text(encoding="utf-8"))
     expected = {
         "library": "onceover",
         "version": onceover.__version__,
@@ -53,12 +53,12 @@ def test_capability_manifest_is_fresh():
 def test_detector_counts_in_prose_match_the_registry():
     default, registered = _counts()
     notebook = json.loads(
-        (ROOT / "docs" / "book" / "usage" / "capabilities.ipynb").read_text()
+        (ROOT / "docs" / "book" / "usage" / "capabilities.ipynb").read_text(encoding="utf-8")
     )
     texts = {
         "profile() docstring": onceover.profile.__doc__,
-        "AGENTS.md": (ROOT / "AGENTS.md").read_text(),
-        "docs/findings.md": (ROOT / "docs" / "findings.md").read_text(),
+        "AGENTS.md": (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+        "docs/findings.md": (ROOT / "docs" / "findings.md").read_text(encoding="utf-8"),
         "capabilities.ipynb": "\n".join(
             "".join(cell["source"]) for cell in notebook["cells"]
         ),

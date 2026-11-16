@@ -1,0 +1,4 @@
+{
+ "doc": "Regressions accepted on purpose. compare.py does not fail on a worse metric listed here while the head value stays within the limit. Fields: metric (component.metric), scope (\"total\" or a dataset id; default total), limit (the worst head value accepted), reason. An accepted total also accepts that metric's per-dataset rows. Remove an entry once the change is on main: the base then contains it and the entry accepts nothing.",
+ "accepted": []
+}

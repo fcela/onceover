@@ -105,7 +105,7 @@ def load_statements(dataset_id: str):
     path = g.GATE / "reference" / f"{dataset_id}.json"
     if not path.exists():
         return None
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     return doc["statements"]
 
 

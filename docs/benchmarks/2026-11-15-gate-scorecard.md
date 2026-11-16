@@ -96,6 +96,19 @@ written to the scorecard (`held_out_totals`) and are reported apart by
 - Seeds: the default run uses seed 0. More seeds are available with
   `--seeds`; the committed baseline uses one.
 
+## History, report and accepted regressions (added 2026-11-15)
+
+- `benchmarks/gate/report.py` stores one history entry per change and
+  renders the history as a markdown report: headline metrics per change
+  with their movement against the change before, the latest change in
+  detail, every total metric over recent changes, the latest scorecard
+  per dataset, and the held-out datasets.
+- The CI job `Gate history` runs on each push to main and keeps the
+  history and the rendered report on the `gate-history` branch.
+- `benchmarks/gate/accepted.json` lists regressions accepted on
+  purpose, each with a metric, a limit and a reason. `compare.py` passes
+  a worse metric that an entry covers and prints the reason.
+
 ## Reproducing
 
     python benchmarks/gate/run.py --out scorecard.json --commit <sha>
