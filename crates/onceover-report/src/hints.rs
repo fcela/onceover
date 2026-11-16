@@ -487,8 +487,7 @@ mod tests {
         assert_eq!(samples.len(), HINT_KEYS.len());
         for (key, value) in samples {
             assert!(HINT_KEYS.contains(&key), "{key} not in HINT_KEYS");
-            let parsed: Result<ProfileHints, _> =
-                serde_json::from_value(json!({ key: value }));
+            let parsed: Result<ProfileHints, _> = serde_json::from_value(json!({ key: value }));
             assert!(parsed.is_ok(), "{key}: {:?}", parsed.err());
         }
     }
@@ -506,11 +505,10 @@ mod tests {
 
     #[test]
     fn unknown_contrast_field_is_rejected() {
-        let err = serde_json::from_value::<ProfileHints>(
-            json!({"contrast": {"column": "r", "valu": 1}}),
-        )
-        .unwrap_err()
-        .to_string();
+        let err =
+            serde_json::from_value::<ProfileHints>(json!({"contrast": {"column": "r", "valu": 1}}))
+                .unwrap_err()
+                .to_string();
         assert!(err.contains("valu"), "{err}");
     }
 
