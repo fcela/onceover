@@ -1692,7 +1692,10 @@ fn profile_inner(
                     },
                 );
                 findings.extend(f);
-            } else {
+            } else if enabled("decision_tables") {
+                // When the pass is not enabled, no entry is stamped
+                // here; the closing coverage loop records the
+                // on-request skip for it instead.
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,

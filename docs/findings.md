@@ -1186,16 +1186,22 @@ report = onceover.profile(df, detectors=["covering_rules", "association_rules"],
 
 Each registry entry lists its ID, produced categories, resource dependencies,
 and two activation fields: `membership` — `default_set` or `on_request` —
-and `trigger` — `always`, `hints`, or `target`. The default set has 32
-of the 43 registered detectors. Eleven are on request and run only when
+and `trigger` — `always`, `hints`, or `target`. The default set has 29
+of the 43 registered detectors. Fourteen are on request and run only when
 named in `detectors`: `row_clusters` (experimental),
 `distribution_change`, `slice_shifts`, `date_gaps`, `pivot`,
-`period_associations`, `drift`, `granularity`, `target_shapes`,
+`period_associations`, `drift`, `granularity`, `decision_tables`,
+`interactions`, `hotspots`, `target_shapes`,
 `leakage`, and `model_failures` — the 2026-11-02 detector battery
 measured five of them producing no findings in 40 runs over 20
 datasets, so a default run no longer spends time or report space on
 them; it records each as skipped in coverage, naming it on-request
 (the benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
+`decision_tables`, `interactions`, and `hotspots` joined the
+on-request set in the 2026-11-16 per-detector audit: across the gate
+tables none of their findings matched a reference statement, and
+none of the three is an integrity check (the record is
+`docs/benchmarks/2026-11-16-detector-audit.md`).
 `expectations` and `group_contrast` are in the default set with the
 `hints` trigger: they engage only on declared hints. `target_shapes`,
 `leakage` and `model_failures` carry the `target` trigger: they run

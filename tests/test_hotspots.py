@@ -1,7 +1,9 @@
 """Hotspots (issue #58): a cell of a column combination holding
 far more rows than the marginals predict is reported with its
 independence baseline; an independent frame with the same
-marginals stays quiet. Triples are a deep-budget scan."""
+marginals stays quiet. Triples are a deep-budget scan. The
+detector is on request since the 2026-11-16 per-detector audit,
+so these tests name it."""
 
 import random
 
@@ -34,7 +36,7 @@ def _independent_same_marginals(seed: int = 12) -> pl.DataFrame:
 
 
 def test_planted_cell_is_named_with_its_baseline():
-    report = onceover.profile(_planted_pair())
+    report = onceover.profile(_planted_pair(), detectors=["hotspots"])
     hits = _hits(report)
     assert hits, "expected a hotspot finding for the planted cell"
     top = hits[0]
@@ -47,7 +49,7 @@ def test_planted_cell_is_named_with_its_baseline():
 
 
 def test_independent_frame_with_same_marginals_is_quiet():
-    report = onceover.profile(_independent_same_marginals())
+    report = onceover.profile(_independent_same_marginals(), detectors=["hotspots"])
     assert _hits(report) == []
 
 
@@ -64,12 +66,12 @@ def _planted_triple(seed: int = 13, n: int = 9000, plant: int = 1800) -> pl.Data
 
 def test_triples_run_at_deep_budget_only():
     frame = _planted_triple()
-    deep = onceover.profile(frame, budget="deep")
+    deep = onceover.profile(frame, budget="deep", detectors=["hotspots"])
     triple_hits = [
         f for f in _hits(deep) if len(f["evidence"][0]["metrics"]["columns"]) == 3
     ]
     assert triple_hits, "expected a 3-column hotspot at deep budget"
-    standard = onceover.profile(frame)
+    standard = onceover.profile(frame, detectors=["hotspots"])
     assert all(
         len(f["evidence"][0]["metrics"]["columns"]) == 2 for f in _hits(standard)
     )
