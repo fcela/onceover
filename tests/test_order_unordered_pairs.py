@@ -13,6 +13,13 @@ fails at least twice as often, so columns with no order in
 either direction earn no order finding at all.
 """
 
+import pytest
+
+pytest.importorskip(
+    "numpy",
+    reason="planted frames need numpy (not a library dependency)",
+)
+
 import numpy as np
 import polars as pl
 
