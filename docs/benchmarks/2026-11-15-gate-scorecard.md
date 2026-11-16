@@ -111,10 +111,9 @@ expression (`verify`); its `check` states the same fact as a single
 Polars expression, and every check was re-run against the data on the
 current tree — `check_failed` is 0 for the three datasets.
 gse15258-expression is registered for the reference component only:
-one profile of the 5,006-column frame costs more than any other
-dataset's whole component set by an order of magnitude (the reference
-component's two profiles took 326 s on the sandbox; the next slowest
-of the three added datasets took 4 s).
+its two profiles are the most expensive in the gate — the reference
+component took 326 s for this dataset on the sandbox, against 4 s for
+the next slowest of the three added datasets.
 
 Not carried over from the source set: the daily aggregation of
 metro-interstate-traffic (a derived table with no corpus entry), the
