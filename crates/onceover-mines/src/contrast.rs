@@ -262,8 +262,8 @@ fn numeric_contrast(ctx: &Ctx, ci: usize) -> Option<(f64, Finding)> {
     let name = &ctx.table.names[ci];
     let mut g: Vec<f64> = Vec::new();
     let mut r: Vec<f64> = Vec::new();
-    for row in 0..ctx.table.n {
-        if let (Some(m), Some(v)) = (ctx.member[row], col.numeric_at(row)) {
+    for (row, &member) in ctx.member.iter().enumerate().take(ctx.table.n) {
+        if let (Some(m), Some(v)) = (member, col.numeric_at(row)) {
             if m {
                 g.push(v);
             } else {
@@ -384,8 +384,8 @@ fn categorical_contrast(ctx: &Ctx, ci: usize) -> Option<(f64, Finding)> {
     let name = &ctx.table.names[ci];
     let mut counts: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     let (mut n_g, mut n_r) = (0usize, 0usize);
-    for row in 0..ctx.table.n {
-        if let (Some(m), Some(v)) = (ctx.member[row], col.str_at(row)) {
+    for (row, &member) in ctx.member.iter().enumerate().take(ctx.table.n) {
+        if let (Some(m), Some(v)) = (member, col.str_at(row)) {
             let e = counts.entry(v).or_default();
             if m {
                 n_g += 1;
@@ -514,11 +514,11 @@ pub fn group_contrast(table: &TypedTable, spec: &GroupContrast) -> ContrastOutco
     };
     let mut scored: Vec<(f64, Finding)> = Vec::new();
     let (mut evaluated, mut not_evaluated) = (0usize, 0usize);
-    for ci in 0..table.cols.len() {
+    for (ci, tcol) in table.cols.iter().enumerate() {
         if ci == gi {
             continue;
         }
-        let hit = match &table.cols[ci] {
+        let hit = match tcol {
             TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
                 evaluated += 1;
                 numeric_contrast(&ctx, ci)
@@ -527,9 +527,7 @@ pub fn group_contrast(table: &TypedTable, spec: &GroupContrast) -> ContrastOutco
                 evaluated += 1;
                 boolean_contrast(&ctx, ci)
             }
-            TypedCol::Str { .. } | TypedCol::StrOwned { .. }
-                if distinct_within_cap(&table.cols[ci]) =>
-            {
+            TypedCol::Str { .. } | TypedCol::StrOwned { .. } if distinct_within_cap(tcol) => {
                 evaluated += 1;
                 categorical_contrast(&ctx, ci)
             }

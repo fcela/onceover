@@ -396,8 +396,8 @@ fn prepare_target(
 
 fn cat_target(col: &TypedCol, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Option<TargetKind> {
     let mut counts: FxHashMap<String, u32> = FxHashMap::default();
-    for j in 0..enc.n {
-        if let Some(v) = class_str(col, enc.rows[j] as usize) {
+    for &row in enc.rows.iter().take(enc.n) {
+        if let Some(v) = class_str(col, row as usize) {
             *counts.entry(v).or_insert(0) += 1;
         }
     }

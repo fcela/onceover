@@ -620,12 +620,9 @@ fn minimal_hits(hits: Vec<MultitermHit>) -> Vec<MultitermHit> {
             // Rule B: a verified hit for the same target whose predictor set is a
             // proper subset of this hit's predictor set.
             let set = &orig_sets[i].1;
-            if orig_sets.iter().any(|(target, other)| {
+            !orig_sets.iter().any(|(target, other)| {
                 *target == h.target.as_str() && other.len() < set.len() && other.is_subset(set)
-            }) {
-                return false;
-            }
-            true
+            })
         })
         .collect();
 

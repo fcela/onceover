@@ -472,12 +472,12 @@ fn search_failure_slices(
     let thr_cols_capped;
     {
         let mut numeric_cols: Vec<usize> = Vec::new();
-        for col in 0..table.names.len() {
+        for (col, tcol) in table.cols.iter().enumerate().take(table.names.len()) {
             if excluded_set.contains(&col) {
                 continue;
             }
             if matches!(
-                table.cols[col],
+                tcol,
                 TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
             ) {
                 numeric_cols.push(col);
