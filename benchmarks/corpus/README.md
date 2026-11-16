@@ -58,3 +58,14 @@ and in the exit status rather than counting as a success.
 A `finding` expectation with `"expect": "missed"` is a known-miss
 tripwire: it passes while nothing matches, and fails loudly when a
 future detector starts matching — the signal to promote the case.
+
+An entry may also carry a top-level `"target"` key naming one of
+the table's columns. The runner passes it to `profile()` as the
+designated target, which activates the target-gated passes
+(`target_shapes`, `leakage`, `model_failures`); an entry with an
+explicit `detectors` list must name those three in the list for
+the designation to take effect. This key is distinct from the
+`target` field inside a `finding` expectation: the entry key
+names the column the profile is aimed at, while the expectation
+field names the subject of one expected finding. Entries without
+a `target` key record the reason in their notes (issue #315).
