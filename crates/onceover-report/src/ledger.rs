@@ -532,10 +532,12 @@ fn exact_kind(f: &Finding) -> Option<ExactKind> {
         Some("functional") => {
             zero_violations("functional_dependencies", None).then_some(ExactKind::Fd)
         }
-        Some("arithmetic_identity") => zero_violations("identities", Some("multiterm_scan"))
-            .then_some(ExactKind::Identity),
-        Some("affine") => zero_violations("identities", Some("ols_residual_scan"))
-            .then_some(ExactKind::Affine),
+        Some("arithmetic_identity") => {
+            zero_violations("identities", Some("multiterm_scan")).then_some(ExactKind::Identity)
+        }
+        Some("affine") => {
+            zero_violations("identities", Some("ols_residual_scan")).then_some(ExactKind::Affine)
+        }
         _ => None,
     }
 }

@@ -269,10 +269,10 @@ fn selected_detector_does_not_emit_its_resource_findings() {
         .findings
         .iter()
         .all(|f| f.category == Category::ConditionalRules));
-    assert!(report
-        .findings
+    assert!(report.findings.iter().all(|f| f
+        .evidence
         .iter()
-        .all(|f| f.evidence.iter().any(|e| e.method.detector == "covering_rules")));
+        .any(|e| e.method.detector == "covering_rules")));
     assert!(report.coverage["predictability_screen"]
         .detail
         .contains("required as a resource"));

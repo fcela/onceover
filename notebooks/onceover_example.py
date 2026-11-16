@@ -144,7 +144,7 @@ def summary(report):
 
 
 def columns(report):
-    rows = [{"Field": name, "Type": c["dtype"], "Inferred role": c["role"],
+    rows = [{"Field": name, "Type": c["dtype"], "Inferred role": c["card_role"],
              "Missing": f"{c['null_count']:,}", "Distinct": f"{c['distinct']:,}"}
             for name,c in report.columns.items()]
     return table(rows, "Table 9. Column summaries",

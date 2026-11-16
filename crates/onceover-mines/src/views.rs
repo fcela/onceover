@@ -2216,7 +2216,9 @@ mod tests {
         let (findings, outcome) = views_pass(&table, &cfg);
         assert_eq!(outcome.cap_dropped_columns.len(), 6);
         assert!(
-            findings.iter().all(|f| !f.claim.contains("did not examine")),
+            findings
+                .iter()
+                .all(|f| !f.claim.contains("did not examine")),
             "findings = {findings:?}"
         );
         for name in &outcome.cap_dropped_columns {
@@ -2226,7 +2228,9 @@ mod tests {
             );
         }
         assert!(
-            outcome.coverage.contains("70 eligible columns over the 64-column cap"),
+            outcome
+                .coverage
+                .contains("70 eligible columns over the 64-column cap"),
             "coverage: {}",
             outcome.coverage
         );

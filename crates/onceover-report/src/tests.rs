@@ -1981,11 +1981,15 @@ fn form_literals_assigned_in_the_sources_are_registered() {
     // the runtime guard; this scan is the compile-time one, so a
     // new form cannot be emitted without registering it.
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-    let registered: std::collections::BTreeSet<&str> =
-        FORMS.iter().map(|f| f.form).collect();
+    let registered: std::collections::BTreeSet<&str> = FORMS.iter().map(|f| f.form).collect();
     let mut scanned = 0usize;
     let mut unregistered = Vec::new();
-    for crate_dir in ["onceover-report", "onceover-mines", "onceover-deps", "onceover"] {
+    for crate_dir in [
+        "onceover-report",
+        "onceover-mines",
+        "onceover-deps",
+        "onceover",
+    ] {
         let src_dir = format!("{root}/{crate_dir}/src");
         let Ok(entries) = std::fs::read_dir(&src_dir) else {
             continue; // packaged crate without sibling sources
@@ -2043,9 +2047,8 @@ fn form_literals_in(path: &std::path::Path, src: &str) -> std::collections::BTre
             rest = &rest[i + needle.len()..];
         }
     }
-    let snake = |lit: &str| {
-        !lit.is_empty() && lit.chars().all(|c| c.is_ascii_lowercase() || c == '_')
-    };
+    let snake =
+        |lit: &str| !lit.is_empty() && lit.chars().all(|c| c.is_ascii_lowercase() || c == '_');
     let lines: Vec<&str> = src.lines().collect();
     for (idx, line) in lines.iter().enumerate() {
         if line.contains("\"form\".into(), json!(if") {

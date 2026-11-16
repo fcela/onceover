@@ -774,10 +774,10 @@ impl Facets {
     /// specification's outcome).
     pub fn derive_category(&self, directed: bool) -> Category {
         use Conditionality as C;
-        use SupportKind as E;
         use Object as O;
         use QualityDimension as Q;
         use Status as S;
+        use SupportKind as E;
         use Temporality as T;
         match self.quality_dimension {
             Some(Q::Completeness) => {
@@ -847,11 +847,11 @@ impl Facets {
         subject: &Subject,
     ) -> Self {
         use Conditionality as C;
-        use SupportKind as E;
         use Object as O;
         use QualityDimension as Q;
         use Scope as Sc;
         use Status as S;
+        use SupportKind as E;
         use Temporality as T;
         let violations = metrics
             .get("violations")
@@ -862,8 +862,7 @@ impl Facets {
         } else {
             E::Approximate
         };
-        let (scope, object, support, conditionality, temporality, quality, status) = match pattern
-        {
+        let (scope, object, support, conditionality, temporality, quality, status) = match pattern {
             Pattern::MissingValues | Pattern::SentinelValues => (
                 Sc::Column,
                 O::Distribution,
@@ -1360,9 +1359,7 @@ impl Facets {
                 }
             }
             (Category::Dependencies, Some("affine")) => Pattern::AffineDependency,
-            (Category::Dependencies, Some("arithmetic_identity")) => {
-                Pattern::ArithmeticIdentity
-            }
+            (Category::Dependencies, Some("arithmetic_identity")) => Pattern::ArithmeticIdentity,
             (Category::Dependencies, _) => Pattern::FunctionalDependency,
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
@@ -1390,9 +1387,7 @@ impl Facets {
             (Category::Changes, Some("transient_excursion")) => Pattern::TransientExcursion,
             (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
             (Category::Changes, Some("predictor_drift")) => Pattern::DistributionShift,
-            (Category::Changes, Some("joint_distribution_change")) => {
-                Pattern::DistributionChange
-            }
+            (Category::Changes, Some("joint_distribution_change")) => Pattern::DistributionChange,
             (Category::Changes, Some("slope_break")) => Pattern::SlopeBreak,
             (Category::Changes, Some("regime_contrast")) => Pattern::RegimeContrast,
             (Category::Changes, Some("spike_contrast")) => Pattern::SpikeContrast,

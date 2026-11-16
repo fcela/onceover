@@ -110,13 +110,11 @@ fn profile_inner(
     }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
-    let activations: BTreeMap<
-        String,
-        (crate::detectors::Membership, crate::detectors::Trigger),
-    > = crate::detectors::builtin_detectors()
-        .into_iter()
-        .map(|d| (d.id, (d.membership, d.trigger)))
-        .collect();
+    let activations: BTreeMap<String, (crate::detectors::Membership, crate::detectors::Trigger)> =
+        crate::detectors::builtin_detectors()
+            .into_iter()
+            .map(|d| (d.id, (d.membership, d.trigger)))
+            .collect();
     let mut shared_encoding = None;
     let start = Instant::now();
     let mut tier = TierConfig::for_budget(cfg.budget);
@@ -474,7 +472,9 @@ fn profile_inner(
                 format!(
                     "{} ({})",
                     table.names[i],
-                    frame.roles[i].as_deref().unwrap_or(info[i].card_role.as_str())
+                    frame.roles[i]
+                        .as_deref()
+                        .unwrap_or(info[i].card_role.as_str())
                 )
             })
             .collect();
