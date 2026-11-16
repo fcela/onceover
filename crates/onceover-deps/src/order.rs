@@ -109,6 +109,29 @@
 //! statement stays silent for the pair: the same failure is not
 //! stated twice.
 //!
+//! Every stated order also needs a stated basis (issue #293):
+//! a reason the pairing means something, beyond two columns of
+//! one kind whose ranges overlap. The bases are: the pair is
+//! functionally related in this run's exact functional
+//! dependencies (one column is a function of the other); the
+//! pair is temporal — two timestamps of one unit are two
+//! recordings on the one time scale; one column is a component
+//! of the other (the part/whole test below, read on the stated
+//! direction — a decomposition the identity scans state also
+//! certifies the pair, whose bound is a different statement
+//! from the decomposition); or the columns are linked by a
+//! predictive dependency, their Spearman rank correlation on
+//! the screening sample reaching [`MIN_BASIS_SPEARMAN`] in
+//! magnitude. A direction that passes a reporting bar with no
+//! basis is counted in the outcome and named in coverage, but
+//! not stated: near-coincidental orderings between unrelated
+//! small-range columns (a count of children against a travel
+//! agent's id code) otherwise score like structure and crowd
+//! the top of a report. The systematic form's basis gate does
+//! not fall through to the part/whole variant: the variant
+//! exists for pairs the scale gate excludes, and a pair that
+//! passed the scale gate is not its shape.
+//!
 //! Every eligible pair is screened on the row sample, up to 64 times
 //! the shared pair budget, nearest columns first. Pairs that stay
 //! near-universal on the sample are verified on all rows, up to
@@ -224,6 +247,19 @@ const MIN_OVERLAP_SHARE: f64 = 0.25;
 /// values rarely cross satisfy a near-universal order by their marginals alone.
 const MIN_CHANCE_VIOLATIONS: f64 = 20.0;
 const CHANCE_MARGIN: f64 = 4.0;
+/// The predictive-dependency basis (issue #293): a stated order
+/// between two numeric columns needs their Spearman rank
+/// correlation on the screening sample to reach this magnitude,
+/// unless another basis certifies the pair. The bar sits
+/// between the weakest linked pair of the issue #132 protocol
+/// (0.70, measured on its planted pair) and the strongest
+/// unrelated pair of issue #293's reproduction (0.08, measured
+/// on the hotel-bookings frame); the corpus's pinned order
+/// pairs measure 0.81–0.97.
+const MIN_BASIS_SPEARMAN: f64 = 0.5;
+/// Fewer complete sampled rows than this cannot carry a rank
+/// correlation (the dependence screen's own minimum).
+const MIN_BASIS_ROWS: usize = 30;
 /// Integer magnitudes up to 2^53 are exactly representable in
 /// f64; an integer column beyond that cannot be compared exactly
 /// against a float column and pairs only with integer columns.
@@ -267,6 +303,13 @@ pub struct OrderOutcome {
     /// findings cap (at most one per pair): the certification bar
     /// or the systematic-violation rule.
     pub pairs_passing: usize,
+    /// Directions that passed a reporting bar but were not
+    /// stated for lack of a stated basis (issue #293): not
+    /// functionally related, not a temporal pair, no component
+    /// relation on the stated direction, and rank correlation
+    /// below the predictive bar. Coverage names the count; the
+    /// pairs remain in the screened and verified counts.
+    pub directions_unstated: usize,
     /// At least one pair was screened on the row sample.
     pub screened: bool,
     /// Numeric and temporal columns seen (the pass's universe).
@@ -677,6 +720,96 @@ fn pair_closeness<T: ScanVal>(a: &[Option<T>], b: &[Option<T>]) -> (f64, bool) {
     (d, comparable)
 }
 
+/// Spearman rank correlation of two columns over the screening
+/// sample rows (every row when the table was not sampled): the
+/// predictive-dependency measurement of the basis gate (issue
+/// #293). Midranks for ties, Pearson on the ranks; None when the
+/// sample holds fewer than [`MIN_BASIS_ROWS`] complete rows or
+/// either column is constant on them.
+fn spearman_on_sample<T: ScanVal>(a: &[Option<T>], b: &[Option<T>], rows: &[u32]) -> Option<f64> {
+    let mut xs: Vec<f64> = Vec::new();
+    let mut ys: Vec<f64> = Vec::new();
+    for &r in rows {
+        if let (Some(x), Some(y)) = (a[r as usize], b[r as usize]) {
+            xs.push(x.as_f64());
+            ys.push(y.as_f64());
+        }
+    }
+    if xs.len() < MIN_BASIS_ROWS {
+        return None;
+    }
+    let rx = midranks(&xs);
+    let ry = midranks(&ys);
+    pearson_xy(&rx, &ry)
+}
+
+/// Average ranks (1-based) of a value vector, ties sharing the
+/// mean of the ranks they span.
+fn midranks(v: &[f64]) -> Vec<f64> {
+    let mut idx: Vec<usize> = (0..v.len()).collect();
+    idx.sort_by(|&p, &q| v[p].partial_cmp(&v[q]).unwrap_or(std::cmp::Ordering::Equal));
+    let mut ranks = vec![0.0; v.len()];
+    let mut i = 0;
+    while i < idx.len() {
+        let mut j = i + 1;
+        while j < idx.len() && v[idx[j]] == v[idx[i]] {
+            j += 1;
+        }
+        let mid = (i + j - 1) as f64 / 2.0 + 1.0;
+        for k in i..j {
+            ranks[idx[k]] = mid;
+        }
+        i = j;
+    }
+    ranks
+}
+
+/// Pearson correlation of two equal-length vectors; None when
+/// either has zero variance.
+fn pearson_xy(xs: &[f64], ys: &[f64]) -> Option<f64> {
+    let n = xs.len() as f64;
+    let (mx, my) = (xs.iter().sum::<f64>() / n, ys.iter().sum::<f64>() / n);
+    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
+    for (x, y) in xs.iter().zip(ys) {
+        let (dx, dy) = (x - mx, y - my);
+        sxy += dx * dy;
+        sxx += dx * dx;
+        syy += dy * dy;
+    }
+    if sxx <= 0.0 || syy <= 0.0 {
+        return None;
+    }
+    Some(sxy / (sxx * syy).sqrt())
+}
+
+/// The bases a certified or systematic direction can carry
+/// without a component test (issue #293): a functional relation
+/// in this run's exact functional dependencies, a temporal pair
+/// (two timestamps of one unit — two recordings on the one time
+/// scale), or a predictive dependency at the bar. Returns the
+/// basis name and, for the predictive basis, the rank
+/// correlation that certifies it.
+fn stated_basis<T: ScanVal>(
+    av: &[Option<T>],
+    bv: &[Option<T>],
+    derived: bool,
+    temporal: bool,
+    sample_rows: &[u32],
+) -> Option<(&'static str, Option<f64>)> {
+    if derived {
+        return Some(("functional", None));
+    }
+    if temporal {
+        return Some(("temporal", None));
+    }
+    let rho = spearman_on_sample(av, bv, sample_rows)?;
+    if rho.abs() >= MIN_BASIS_SPEARMAN {
+        Some(("predictive", Some(rho)))
+    } else {
+        None
+    }
+}
+
 /// Violations of `lower <= upper` that random pairing would give on the
 /// rows where both are present: the share of (lower, upper) value pairs out
 /// of order, times the rows.
@@ -857,6 +990,15 @@ struct Candidate {
     n: usize,
     equal: usize,
     derived: bool,
+    /// The stated basis certifying the pair (issue #293):
+    /// "functional", "temporal", "part_whole", or "predictive";
+    /// empty until the basis gate has run on the candidate.
+    basis: &'static str,
+    /// The component route of a part/whole basis read on a
+    /// certified direction: "identity" or "containment".
+    basis_part_whole: Option<&'static str>,
+    /// The rank correlation certifying a predictive basis.
+    basis_spearman: Option<f64>,
     temporal: bool,
     unit_ns: u64,
     example_rows: Vec<usize>,
@@ -986,11 +1128,13 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
         .into_par_iter()
         .filter_map(|c| prep_column(&table.cols[c]).map(|p| (c, p)))
         .collect();
-    let mut candidates: Vec<Candidate> = verified
+    let evaluated: Vec<(Option<Candidate>, bool)> = verified
         .par_iter()
-        .filter_map(|&(i, j, as_float, want_fs, want_sf)| {
+        .map(|&(i, j, as_float, want_fs, want_sf)| {
             let derived = cfg.derived_pairs.contains(&(i.min(j), i.max(j)));
-            let (a, b) = (whole.get(&i)?, whole.get(&j)?);
+            let (Some(a), Some(b)) = (whole.get(&i), whole.get(&j)) else {
+                return (None, false);
+            };
             let want = (want_fs, want_sf);
             evaluate_pair(
                 a,
@@ -1003,9 +1147,12 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
                 sampled,
                 table,
                 &cfg.excluded,
+                &rows,
             )
         })
         .collect();
+    out.directions_unstated = evaluated.iter().filter(|(_, u)| *u).count();
+    let mut candidates: Vec<Candidate> = evaluated.into_iter().filter_map(|(c, _)| c).collect();
 
     out.pairs_passing = candidates.len();
     candidates.sort_by(|p, q| p.rank_key().partial_cmp(&q.rank_key()).unwrap());
@@ -1111,7 +1258,8 @@ fn as_floats(vals: &[Option<i128>]) -> Vec<Option<f64>> {
 }
 
 /// Verify one screened pair on all rows; return the reportable direction,
-/// if any.
+/// if any, and whether a direction passed a reporting bar but was
+/// not stated for lack of a stated basis (issue #293).
 #[allow(clippy::too_many_arguments)]
 fn evaluate_pair(
     a: &ColPrep,
@@ -1124,11 +1272,23 @@ fn evaluate_pair(
     screened: bool,
     table: &TypedTable,
     excluded: &BTreeSet<usize>,
-) -> Option<Candidate> {
+    sample_rows: &[u32],
+) -> (Option<Candidate>, bool) {
     let exact_f64 = a.f64_exact() && b.f64_exact();
     match (a, b, as_float) {
         (ColPrep::Floats { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => dispatch(
-            av, bv, i, j, a, derived, want, screened, table, excluded, exact_f64,
+            av,
+            bv,
+            i,
+            j,
+            a,
+            derived,
+            want,
+            screened,
+            table,
+            excluded,
+            exact_f64,
+            sample_rows,
         ),
         (ColPrep::Ints { vals: av, .. }, ColPrep::Floats { vals: bv, .. }, true) => dispatch(
             &as_floats(av),
@@ -1142,6 +1302,7 @@ fn evaluate_pair(
             table,
             excluded,
             exact_f64,
+            sample_rows,
         ),
         (ColPrep::Floats { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, true) => dispatch(
             av,
@@ -1155,12 +1316,24 @@ fn evaluate_pair(
             table,
             excluded,
             exact_f64,
+            sample_rows,
         ),
         (ColPrep::Ints { vals: av, .. }, ColPrep::Ints { vals: bv, .. }, false)
         | (ColPrep::Ticks { vals: av, .. }, ColPrep::Ticks { vals: bv, .. }, false) => dispatch(
-            av, bv, i, j, a, derived, want, screened, table, excluded, exact_f64,
+            av,
+            bv,
+            i,
+            j,
+            a,
+            derived,
+            want,
+            screened,
+            table,
+            excluded,
+            exact_f64,
+            sample_rows,
         ),
-        _ => None,
+        _ => (None, false),
     }
 }
 
@@ -1177,10 +1350,11 @@ fn dispatch<T: ScanVal>(
     table: &TypedTable,
     excluded: &BTreeSet<usize>,
     exact_f64: bool,
-) -> Option<Candidate> {
+    sample_rows: &[u32],
+) -> (Option<Candidate>, bool) {
     let d = verify_pair(av, bv, want_fs, want_sf);
     if d.n < MIN_EVALUATED {
-        return None;
+        return (None, false);
     }
     let bar = |viol: usize| viol == 0 || viol as f64 <= MAX_VIOLATION_SHARE * d.n as f64;
     let chance_fs = if want_fs && bar(d.fs.violations) {
@@ -1215,6 +1389,9 @@ fn dispatch<T: ScanVal>(
             systematic,
             part_whole: false,
             part_whole_basis: None,
+            basis: "",
+            basis_part_whole: None,
+            basis_spearman: None,
             pair_distance: 0.0,
             lower,
             upper,
@@ -1247,7 +1424,7 @@ fn dispatch<T: ScanVal>(
             screened,
         }
     };
-    match (pass_fs, pass_sf) {
+    let certified = match (pass_fs, pass_sf) {
         (true, true) => {
             if d.fs.violations == d.sf.violations {
                 // Equal in both directions: the columns are equal
@@ -1271,30 +1448,143 @@ fn dispatch<T: ScanVal>(
         (false, true) => Some(make(
             j, i, &d.sf, d.hi_min, d.hi_max, d.lo_min, d.lo_max, chance_sf, false,
         )),
-        (false, false) => {
-            // Neither direction certifies. The complementary
-            // statement: a wanted direction whose violations are
-            // numerous and substantial while the reverse direction's
-            // are at least twice as many, on a pair whose columns
-            // share a scale and track their diagonal — the shape of
-            // a bound that held by construction (a subset count
-            // against its total) and is broken in bulk. The reverse
-            // count is exact even for an unwanted direction — every
-            // evaluated row violates one direction, violates the
-            // other, or ties. The scale gate keeps the statement
-            // off pairs that merely overlap numerically: an age in
-            // years against a duration in seconds also crosses
-            // asymmetrically, but from far off the diagonal.
-            let (pair_distance, comparable) = pair_closeness(av, bv);
-            let systematic = |viol: usize| {
-                let other = d.n - d.equal - viol;
-                viol >= MIN_SYSTEMATIC_VIOLATIONS
-                    && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
-                    && (other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64
-                    && comparable
-                    && pair_distance <= MAX_PAIR_DISTANCE
+        (false, false) => None,
+    };
+    if let Some(mut c) = certified {
+        // The basis gate (issue #293): a certified order is
+        // stated only with a stated basis.
+        if let Some((basis, rho)) = stated_basis(av, bv, derived, temporal, sample_rows) {
+            c.basis = basis;
+            c.basis_spearman = rho;
+            return (Some(c), false);
+        }
+        if exact_f64 {
+            // A component relation on the stated direction: the
+            // lower column as a part of the upper. A decomposition
+            // the identity scans state also certifies the pair —
+            // the bound and the decomposition are different
+            // statements, and both may fire.
+            let (part, whole) = if c.lower == i { (av, bv) } else { (bv, av) };
+            let route = match part_whole_relation(part, whole, table, c.lower, c.upper, excluded) {
+                PartWhole::Component(b) => Some(b),
+                PartWhole::IdentityCovered => Some("identity"),
+                PartWhole::None => None,
             };
-            if want_fs && systematic(d.fs.violations) {
+            if let Some(route) = route {
+                c.basis = "part_whole";
+                c.basis_part_whole = Some(route);
+                return (Some(c), false);
+            }
+        }
+        return (None, true);
+    }
+    // Neither direction certifies. The complementary
+    // statement: a wanted direction whose violations are
+    // numerous and substantial while the reverse direction's
+    // are at least twice as many, on a pair whose columns
+    // share a scale and track their diagonal — the shape of
+    // a bound that held by construction (a subset count
+    // against its total) and is broken in bulk. The reverse
+    // count is exact even for an unwanted direction — every
+    // evaluated row violates one direction, violates the
+    // other, or ties. The scale gate keeps the statement
+    // off pairs that merely overlap numerically: an age in
+    // years against a duration in seconds also crosses
+    // asymmetrically, but from far off the diagonal.
+    let (pair_distance, comparable) = pair_closeness(av, bv);
+    let systematic = |viol: usize| {
+        let other = d.n - d.equal - viol;
+        viol >= MIN_SYSTEMATIC_VIOLATIONS
+            && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
+            && (other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64
+            && comparable
+            && pair_distance <= MAX_PAIR_DISTANCE
+    };
+    let sys = if want_fs && systematic(d.fs.violations) {
+        let mut c = make(
+            i,
+            j,
+            &d.fs,
+            d.lo_min,
+            d.lo_max,
+            d.hi_min,
+            d.hi_max,
+            chance_violations(av, bv),
+            true,
+        );
+        c.pair_distance = pair_distance;
+        Some(c)
+    } else if want_sf && systematic(d.sf.violations) {
+        let mut c = make(
+            j,
+            i,
+            &d.sf,
+            d.hi_min,
+            d.hi_max,
+            d.lo_min,
+            d.lo_max,
+            chance_violations(bv, av),
+            true,
+        );
+        c.pair_distance = pair_distance;
+        Some(c)
+    } else {
+        None
+    };
+    if let Some(mut c) = sys {
+        // The basis gate (issue #293), as on the certified
+        // form. A systematic direction whose pair carries no
+        // basis is not restated by the part/whole variant
+        // below: the variant exists for pairs the scale gate
+        // excludes, and this pair passed it.
+        if let Some((basis, rho)) = stated_basis(av, bv, derived, temporal, sample_rows) {
+            c.basis = basis;
+            c.basis_spearman = rho;
+            return (Some(c), false);
+        }
+        return (None, true);
+    }
+    if exact_f64 && !temporal {
+        // The part/whole variant: the same count and
+        // share bars as the systematic rule, with the
+        // share also capped at the screening admission
+        // bound (past it the part is above the whole as
+        // often as below it), and the scale gate
+        // replaced by the component test. The asymmetry
+        // term is kept for a component established by
+        // containment — two unrelated columns that
+        // share a zero floor cross at comparable rates
+        // in both directions, which is not a broken
+        // bound — while a component established by
+        // identity needs no such term: the decomposition
+        // itself certifies the pair. Temporal pairs are
+        // not components of anything, and the test works
+        // in f64, so both columns must be exactly
+        // representable there.
+        let variant = |viol: usize| {
+            viol >= MIN_SYSTEMATIC_VIOLATIONS
+                && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
+                && (viol as f64) <= SCREEN_SYSTEMATIC_MAX_SHARE * d.n as f64
+        };
+        // A component verdict admits the statement,
+        // except a containment verdict on a pair whose
+        // reverse direction fails comparably often.
+        // The reverse count is exact, as in the
+        // systematic rule: every evaluated row violates
+        // one direction, violates the other, or ties.
+        let component = |viol: usize, verdict: PartWhole| match verdict {
+            PartWhole::Component(basis) if basis != "containment" => Some(basis),
+            PartWhole::Component(basis) => {
+                let other = d.n - d.equal - viol;
+                ((other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64).then_some(basis)
+            }
+            _ => None,
+        };
+        if want_fs && variant(d.fs.violations) {
+            if let Some(basis) = component(
+                d.fs.violations,
+                part_whole_relation(av, bv, table, i, j, excluded),
+            ) {
                 let mut c = make(
                     i,
                     j,
@@ -1307,8 +1597,17 @@ fn dispatch<T: ScanVal>(
                     true,
                 );
                 c.pair_distance = pair_distance;
-                Some(c)
-            } else if want_sf && systematic(d.sf.violations) {
+                c.part_whole = true;
+                c.part_whole_basis = Some(basis);
+                c.basis = "part_whole";
+                return (Some(c), false);
+            }
+        }
+        if want_sf && variant(d.sf.violations) {
+            if let Some(basis) = component(
+                d.sf.violations,
+                part_whole_relation(bv, av, table, j, i, excluded),
+            ) {
                 let mut c = make(
                     j,
                     i,
@@ -1321,93 +1620,14 @@ fn dispatch<T: ScanVal>(
                     true,
                 );
                 c.pair_distance = pair_distance;
-                Some(c)
-            } else if exact_f64 && !temporal {
-                // The part/whole variant: the same count and
-                // share bars as the systematic rule, with the
-                // share also capped at the screening admission
-                // bound (past it the part is above the whole as
-                // often as below it), and the scale gate
-                // replaced by the component test. The asymmetry
-                // term is kept for a component established by
-                // containment — two unrelated columns that
-                // share a zero floor cross at comparable rates
-                // in both directions, which is not a broken
-                // bound — while a component established by
-                // identity needs no such term: the decomposition
-                // itself certifies the pair. Temporal pairs are
-                // not components of anything, and the test works
-                // in f64, so both columns must be exactly
-                // representable there.
-                let variant = |viol: usize| {
-                    viol >= MIN_SYSTEMATIC_VIOLATIONS
-                        && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
-                        && (viol as f64) <= SCREEN_SYSTEMATIC_MAX_SHARE * d.n as f64
-                };
-                // A component verdict admits the statement,
-                // except a containment verdict on a pair whose
-                // reverse direction fails comparably often.
-                // The reverse count is exact, as in the
-                // systematic rule: every evaluated row violates
-                // one direction, violates the other, or ties.
-                let component = |viol: usize, verdict: PartWhole| match verdict {
-                    PartWhole::Component(basis) if basis != "containment" => Some(basis),
-                    PartWhole::Component(basis) => {
-                        let other = d.n - d.equal - viol;
-                        ((other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64).then_some(basis)
-                    }
-                    _ => None,
-                };
-                if want_fs && variant(d.fs.violations) {
-                    if let Some(basis) = component(
-                        d.fs.violations,
-                        part_whole_relation(av, bv, table, i, j, excluded),
-                    ) {
-                        let mut c = make(
-                            i,
-                            j,
-                            &d.fs,
-                            d.lo_min,
-                            d.lo_max,
-                            d.hi_min,
-                            d.hi_max,
-                            chance_violations(av, bv),
-                            true,
-                        );
-                        c.pair_distance = pair_distance;
-                        c.part_whole = true;
-                        c.part_whole_basis = Some(basis);
-                        return Some(c);
-                    }
-                }
-                if want_sf && variant(d.sf.violations) {
-                    if let Some(basis) = component(
-                        d.sf.violations,
-                        part_whole_relation(bv, av, table, j, i, excluded),
-                    ) {
-                        let mut c = make(
-                            j,
-                            i,
-                            &d.sf,
-                            d.hi_min,
-                            d.hi_max,
-                            d.lo_min,
-                            d.lo_max,
-                            chance_violations(bv, av),
-                            true,
-                        );
-                        c.pair_distance = pair_distance;
-                        c.part_whole = true;
-                        c.part_whole_basis = Some(basis);
-                        return Some(c);
-                    }
-                }
-                None
-            } else {
-                None
+                c.part_whole = true;
+                c.part_whole_basis = Some(basis);
+                c.basis = "part_whole";
+                return (Some(c), false);
             }
         }
     }
+    (None, false)
 }
 
 /// How an ordered pair stands as part and whole, judged on the
@@ -1796,9 +2016,19 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
         ),
         (
             "method".into(),
-            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, and random pairing of the two columns would give at least 20 violations and at least 4 times those observed, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+            json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction is reported when its violations are zero or at most 1% of the rows where both columns are present, and random pairing of the two columns would give at least 20 violations and at least 4 times those observed, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair, the one with fewer violations; a direction is stated only with a stated basis (recorded as order_basis): the pair functionally related in this run's exact functional dependencies, both columns timestamps of one unit, one column a component of the other (its slack decomposing into other columns, or the shared zero floor with the slack reaching it), or a predictive dependency between the columns (Spearman rank correlation on the screening sample at least 0.5 in magnitude, recorded as basis_spearman); a direction passing without a basis is counted in coverage, not stated; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
         ),
     ]);
+    metrics.insert("order_basis".into(), json!(c.basis));
+    if let Some(rho) = c.basis_spearman {
+        metrics.insert(
+            "basis_spearman".into(),
+            json!((rho * 1000.0).round() / 1000.0),
+        );
+    }
+    if let Some(route) = c.basis_part_whole {
+        metrics.insert("part_whole_basis".into(), json!(route));
+    }
     if c.systematic {
         metrics.insert(
             "violation_kind".into(),
@@ -1820,12 +2050,12 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             );
             metrics.insert(
                 "method".into(),
-                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a part-against-whole violation when its violations number at least 20 and between 5% and 25% of the evaluated rows and one column is a component of the other — by identity, when the whole minus the part equals a sum of one to three other columns within the identity tolerance (1e-9 absolute + 1e-9 relative) on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows, or by containment, when both columns respect the shared zero floor on at least 99% of the evaluated rows and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it but on fewer than half of them (columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole), and the reverse direction's violations are at least twice the stated direction's — and no exact sum identity states the decomposition (one matching on at least 99.9% of all evaluated rows is the identity pass's statement, and this one stays silent for the pair); the comparable-scale gate of the systematic form does not apply, because a part's distance from its whole is set by the other components, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a part-against-whole violation when its violations number at least 20 and between 5% and 25% of the evaluated rows and one column is a component of the other — the component relation is the statement's stated basis (recorded as order_basis) — by identity, when the whole minus the part equals a sum of one to three other columns within the identity tolerance (1e-9 absolute + 1e-9 relative) on at least 99.9% of the rows where the order holds, with the rest non-negative on at least 99% of the evaluated rows, or by containment, when both columns respect the shared zero floor on at least 99% of the evaluated rows and the slack reaches the floor (within 0.1% of the whole's range) on at least 5% of the held rows where the whole is above it but on fewer than half of them (columns equal on half or more of the held rows are two recordings of one quantity, not a part and its whole), and the reverse direction's violations are at least twice the stated direction's — and no exact sum identity states the decomposition (one matching on at least 99.9% of all evaluated rows is the identity pass's statement, and this one stays silent for the pair); the comparable-scale gate of the systematic form does not apply, because a part's distance from its whole is set by the other components, after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
             );
         } else {
             metrics.insert(
                 "method".into(),
-                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a systematic violation when its violations number at least 20 and at least 5% of the evaluated rows and the reverse direction's violations are at least twice as many, and the two columns track each other on a comparable scale (median |a - b| / max(|a|, |b|) over sampled complete rows at most 0.2, and the columns' medians within a factor of 2.5 of each other when both are non-zero), after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
+                json!("exact pairwise order scan: candidate pairs share a value kind (numeric with numeric, dates with dates, datetimes with datetimes of one unit), carry at least 5 distinct values each, and have compatible ranges (overlap at least 25% of the narrower range, widths within 100x); a direction that fails the certification bar (violations zero or at most 1% of the rows where both columns are present, beating random pairing) is reported as a systematic violation when its violations number at least 20 and at least 5% of the evaluated rows and the reverse direction's violations are at least twice as many, and the two columns track each other on a comparable scale (median |a - b| / max(|a|, |b|) over sampled complete rows at most 0.2, and the columns' medians within a factor of 2.5 of each other when both are non-zero), and the pair carries a stated basis (recorded as order_basis): functionally related in this run's exact functional dependencies, both timestamps of one unit, or a predictive dependency between the columns (Spearman rank correlation on the screening sample at least 0.5 in magnitude, recorded as basis_spearman); a direction passing without a basis is counted in coverage, not stated; after screening on a deterministic row sample when the table is large and verification on all rows; at most one direction per pair; pairs are screened nearest columns first, up to 64 times the shared max_pairs budget, and at most max_pairs survivors are verified"),
             );
         }
     }
@@ -2485,5 +2715,207 @@ mod tests {
             "{:?}",
             out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn systematic_crossings_between_unrelated_counts_are_not_stated() {
+        // The shape of issue #293's hotel-bookings pairs: two
+        // unrelated zero-inflated counts. One direction is
+        // violated on 6% of rows, the reverse on 30%, and both
+        // columns are zero on most rows, so the systematic rule's
+        // count, share, asymmetry, and scale terms all pass —
+        // but the pair carries no basis: no functional relation,
+        // no component relation, and a rank correlation near
+        // zero. The direction is counted as unstated, not
+        // reported.
+        let n = 5000;
+        let mut lower = vec![0.0; n];
+        let mut upper = vec![0.0; n];
+        for k in 0..n {
+            match k % 100 {
+                64..=93 => upper[k] = 1.0 + ((k * 7) % 5) as f64,
+                94..=99 => lower[k] = 1.0 + ((k * 11) % 5) as f64,
+                _ => {}
+            }
+        }
+        let df = df! { "lower" => lower, "upper" => upper }.unwrap();
+        let out = scan(&df);
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert_eq!(out.directions_unstated, 1);
+    }
+
+    #[test]
+    fn certified_order_without_a_basis_is_not_stated() {
+        // upper = max(lower + 1, z) for an unrelated z: the order
+        // holds on every row and beats random pairing by a wide
+        // margin, but the pairing is a construction artifact —
+        // no functional relation, no component relation (the
+        // slack never reaches zero), and a rank correlation of
+        // 0.16. Counted as unstated, not reported.
+        let n = 5000;
+        let lower: Vec<f64> = (0..n).map(|k| ((k * 37) % 500) as f64 / 10.0).collect();
+        let z: Vec<f64> = (0..n).map(|k| ((k * 91) % 1000) as f64 / 10.0).collect();
+        let upper: Vec<f64> = lower
+            .iter()
+            .zip(&z)
+            .map(|(l, z)| (l + 1.0).max(*z))
+            .collect();
+        let df = df! { "lower" => lower, "upper" => upper }.unwrap();
+        let out = scan(&df);
+        assert!(
+            out.findings.is_empty(),
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert_eq!(out.directions_unstated, 1);
+    }
+
+    #[test]
+    fn certified_order_with_a_component_basis_is_stated() {
+        // total = part + rest exactly, the part a small share of
+        // the whole: the rank correlation is 0.06, far below the
+        // predictive bar, but the slack decomposes exactly into
+        // the rest column, so the pair carries the part/whole
+        // basis and the order is stated with it.
+        let n = 5000;
+        let part: Vec<f64> = (0..n).map(|k| ((k * 29) % 41) as f64).collect();
+        let rest: Vec<f64> = (0..n)
+            .map(|k| {
+                if k % 5 == 0 {
+                    0.0
+                } else {
+                    100.0 + ((k * 37) % 3400) as f64
+                }
+            })
+            .collect();
+        let total: Vec<f64> = part.iter().zip(&rest).map(|(p, r)| p + r).collect();
+        let df = df! { "part" => part, "rest" => rest, "total" => total }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "part", "total");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let m = &hits[0].evidence[0].metrics;
+        assert_eq!(m["violations"], json!(0));
+        assert_eq!(m["order_basis"], json!("part_whole"));
+        assert_eq!(m["part_whole_basis"], json!("identity"));
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn certified_order_with_a_predictive_basis_states_it() {
+        // The issue #132 plant shape (hi = lo + a non-negative
+        // increment): no functional relation and no component
+        // relation, but the columns move together — rank
+        // correlation 0.77 — so the order is stated with the
+        // predictive basis and its measurement.
+        let lo: Vec<f64> = (0..2000).map(|k| (k % 500) as f64 * 0.1).collect();
+        let hi: Vec<f64> = lo
+            .iter()
+            .enumerate()
+            .map(|(k, x)| x + (k % 41) as f64)
+            .collect();
+        let df = df! { "lo" => lo, "hi" => hi }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "lo", "hi");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let m = &hits[0].evidence[0].metrics;
+        assert_eq!(m["order_basis"], json!("predictive"));
+        let rho = m["basis_spearman"].as_f64().unwrap();
+        assert!(rho >= MIN_BASIS_SPEARMAN, "{rho}");
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn systematic_violation_with_a_predictive_basis_states_it() {
+        // accepted is generated perturbed by a few units, as in
+        // the systematic test above: the pair is strongly
+        // rank-correlated, so the violation is stated with the
+        // predictive basis.
+        let gen: Vec<f64> = (0..2000).map(|k| 50.0 + ((k * 37) % 200) as f64).collect();
+        let mut acc = gen.clone();
+        for (k, a) in acc.iter_mut().enumerate() {
+            if k < 480 {
+                *a += 5.0;
+            } else if k < 1780 {
+                *a -= 3.0;
+            }
+        }
+        let df = df! { "generated" => gen, "accepted" => acc }.unwrap();
+        let out = scan(&df);
+        let hits = pair_findings(&out, "accepted", "generated");
+        assert_eq!(
+            hits.len(),
+            1,
+            "{:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let m = &hits[0].evidence[0].metrics;
+        assert_eq!(m["violation_kind"], json!("systematic"));
+        assert_eq!(m["order_basis"], json!("predictive"));
+        hits[0].validate().unwrap();
+    }
+
+    #[test]
+    fn temporal_and_functional_pairs_carry_their_bases() {
+        // A derived pair (an exact functional dependency, passed
+        // in as the pipeline passes it) states the functional
+        // basis; a start/end datetime pair states the temporal
+        // basis — two recordings on the one time scale.
+        let base: Vec<f64> = (0..2000).map(|k| 1.0 + (k % 400) as f64 * 0.1).collect();
+        let derived: Vec<f64> = base.iter().map(|x| 2.0 * x + 3.0).collect();
+        let start: Vec<i64> = (0..2000)
+            .map(|k| 1_704_067_200_000_000i64 + (k as i64) * 3_600_000_000)
+            .collect();
+        let end: Vec<i64> = start
+            .iter()
+            .enumerate()
+            .map(|(k, s)| s + ((k % 48) as i64 + 1) * 3_600_000_000)
+            .collect();
+        let s = Series::new("start".into(), start)
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap();
+        let e = Series::new("end".into(), end)
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap();
+        let df = df! { "base" => base, "derived" => derived, "start" => s, "end" => e }.unwrap();
+        let table = extract(&df);
+        let names: Vec<&str> = table.names.iter().map(|s| s.as_str()).collect();
+        let idx = |n: &str| names.iter().position(|&x| x == n).unwrap();
+        let out = order_constraints(
+            &table,
+            &OrderConfig {
+                max_pairs: 10_000,
+                derived_pairs: BTreeSet::from([(
+                    idx("base").min(idx("derived")),
+                    idx("base").max(idx("derived")),
+                )]),
+                excluded: BTreeSet::new(),
+            },
+        );
+        let fd = pair_findings(&out, "base", "derived");
+        assert_eq!(fd.len(), 1);
+        assert_eq!(
+            fd[0].evidence[0].metrics["order_basis"],
+            json!("functional")
+        );
+        let tp = pair_findings(&out, "start", "end");
+        assert_eq!(tp.len(), 1);
+        assert_eq!(tp[0].evidence[0].metrics["order_basis"], json!("temporal"));
+        for f in &out.findings {
+            f.validate().unwrap();
+        }
     }
 }

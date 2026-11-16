@@ -1442,6 +1442,17 @@ fn profile_inner(
                 out.pairs_passing,
                 out.findings.len(),
             );
+            if out.directions_unstated > 0 {
+                detail.push_str(&format!(
+                    "; {} reportable order {} not stated: no stated basis (not functionally related, not a temporal pair, no component relation, rank correlation below 0.5 on the screening sample)",
+                    out.directions_unstated,
+                    if out.directions_unstated == 1 {
+                        "direction"
+                    } else {
+                        "directions"
+                    },
+                ));
+            }
             if !oc_axis.is_empty() {
                 detail.push_str(&format!(
                     "; pairs involving the time axis column {} excluded \
