@@ -1429,11 +1429,15 @@ class ProfileReport:
             # lines first. Then the predictability directory — a
             # column's driver statement names its whole driver set
             # at once — when the whole directory fits the section's
-            # allowance. A directory that cannot fit does not
-            # monopolise the section: the order then runs breadth
-            # across kinds, the strongest line of every kind
-            # present first, the directory's remainder after it,
-            # then the second line of every kind, and so on.
+            # allowance; after it, the section's lead families
+            # (break and regime statements; the measures'
+            # strongest level statements; the strongest hotspot)
+            # are offered in step,
+            # and the remaining kinds follow in breadth rounds. A
+            # directory that cannot fit does not monopolise the
+            # section: one breadth round across kinds comes first,
+            # the directory's remainder after it, then breadth
+            # rounds again.
             def score(e):
                 return (-(e[1].get("interestingness") or 0), e[0])
 
@@ -1479,37 +1483,62 @@ class ProfileReport:
             for bucket in buckets.values():
                 bucket.sort(key=score)
 
+            def contrast_form(rep):
+                for ev in rep.get("evidence") or []:
+                    form = (ev.get("metrics") or {}).get("form")
+                    if form:
+                        return form
+                return None
+
+            lc_keys = {
+                k
+                for k, b in buckets.items()
+                if b and b[0][1].get("type") == "level_contrast"
+            }
+            # The measures' strongest level statements, in the
+            # order they are offered: the head of every measure's
+            # bucket (see the bucket key note — breadth across
+            # measures, as the section runs breadth across kinds),
+            # a statement that locates its measure before one
+            # that only spreads it, then by score. The location
+            # is the relationship; the spread refines it, and on
+            # sentinel-driven measures the spread statement is
+            # often a restatement of the sentinel's mass.
+            firsts = [buckets[k][0] for k in lc_keys]
+            firsts.sort(
+                key=lambda e: (
+                    1 if contrast_form(e[1]) == "scale" else 0,
+                    score(e),
+                )
+            )
+            first_ids = {id(e) for e in firsts}
+
             def round_lead(e):
                 # The lead order inside a round. Break and regime
                 # statements along an ordered axis lead: they are
                 # the table's shape over its axis, the statements
                 # a reader acts on first after the directory. The
-                # level statements follow: where a measure sits
-                # across a grouping's levels is the closest
-                # statement the section has to an outcome fact for
-                # that measure. Within the level statements, one
-                # that locates the measure precedes one that only
-                # spreads it — the location is the relationship;
-                # the spread refines it, and on sentinel-driven
-                # measures the spread statement is often a
-                # restatement of the sentinel's mass.
+                # measures' strongest level statements follow
+                # them. Everything else competes on score.
                 rep = e[1]
                 if rep.get("category") == "changes":
-                    return (0, 0)
-                if rep.get("type") == "level_contrast":
-                    form = None
-                    for ev in rep.get("evidence") or []:
-                        form = (ev.get("metrics") or {}).get("form")
-                        if form:
-                            break
-                    return (1, 1 if form == "scale" else 0)
-                return (2, 0)
+                    return 0
+                if id(e) in first_ids:
+                    return 1
+                return 2
 
-            def rounds_from(depth):
+            def rounds_over(keys, first_depth):
+                # Breadth rounds across the named buckets: the
+                # strongest remaining line of every bucket first,
+                # then the next line of every bucket, and so on.
+                # A bucket's lines are taken from first_depth on.
                 out = []
+                depth = 0
                 while True:
                     round_entries = [
-                        b[depth] for b in buckets.values() if len(b) > depth
+                        buckets[k][first_depth[k] + depth]
+                        for k in keys
+                        if len(buckets[k]) > first_depth[k] + depth
                     ]
                     if not round_entries:
                         return out
@@ -1523,12 +1552,103 @@ class ProfileReport:
                 len(t) + len(r.get("id") or "") + 4 for t, r in directory
             )
             if dir_chars <= allowance:
-                return leakage + directory + rounds_from(0)
-            first_round = [b[0] for b in buckets.values() if b]
-            if directory:
-                first_round.append(directory[0])
-            first_round.sort(key=lambda e: (round_lead(e), score(e)))
-            return leakage + first_round + directory[1:] + rounds_from(1)
+                # The lead families are offered in step,
+                # alternating line for line: the break and regime
+                # statements in breadth rounds across their kinds,
+                # the measures' strongest level statements in
+                # their queue order, and the strongest hotspot
+                # statement — the cell where the table's rows
+                # concentrate, the categorical counterpart of a
+                # level statement — with the second exchange, so
+                # each family's first statement precedes it.
+                # Offered as blocks, each family can crowd the
+                # others out of the section: the level statements
+                # are long, and a block of them leaves no room
+                # for the table's shape over its axis; the breaks
+                # are numerous on an ordered table, and a block
+                # of them leaves no room for the per-measure
+                # statements that are the closest thing the
+                # section has to outcome facts; and the hotspot
+                # line, competing on score alone, is the first
+                # casualty of either block. In step, all three
+                # families are heard from the start.
+                changes_keys = [
+                    k
+                    for k, b in buckets.items()
+                    if b and b[0][1].get("category") == "changes"
+                ]
+                changes_queue = rounds_over(
+                    changes_keys, {k: 0 for k in changes_keys}
+                )
+                hotspot_keys = [
+                    k
+                    for k, b in buckets.items()
+                    if b and b[0][1].get("type") == "hotspot"
+                ]
+                hotspot_lead = buckets[hotspot_keys[0]][0] if hotspot_keys else None
+                lead = []
+                hotspot_placed = False
+                for i in range(max(len(changes_queue), len(firsts))):
+                    if i < len(changes_queue):
+                        lead.append(changes_queue[i])
+                    if i < len(firsts):
+                        lead.append(firsts[i])
+                    if i == 1 and hotspot_lead is not None:
+                        lead.append(hotspot_lead)
+                        hotspot_placed = True
+                if hotspot_lead is not None and not hotspot_placed:
+                    lead.append(hotspot_lead)
+                rest_keys = [k for k in buckets if k not in changes_keys]
+                rest = rounds_over(
+                    rest_keys,
+                    {
+                        k: (
+                            1
+                            if k in lc_keys or k in hotspot_keys
+                            else 0
+                        )
+                        for k in rest_keys
+                    },
+                )
+                return leakage + directory + lead + rest
+            # The directory does not fit, so it does not
+            # monopolise the section: one breadth round across
+            # kinds (the strongest line of every kind, the
+            # measures' strongest level statement among them),
+            # the directory's head alongside it, its remainder
+            # after, then breadth rounds again — with the level
+            # statements running as one queue among the kinds
+            # (every measure's strongest first, then the
+            # remaining contrasts by score), so a crowded
+            # directory cannot push them out of the rounds
+            # entirely, and they cannot fill the first round.
+            contrast_queue = firsts + sorted(
+                (
+                    e
+                    for k in lc_keys
+                    for e in buckets[k]
+                    if id(e) not in first_ids
+                ),
+                key=score,
+            )
+            tail = {
+                k: b for k, b in buckets.items() if k not in lc_keys
+            }
+            if contrast_queue:
+                tail[("associations", "level_contrast")] = contrast_queue
+            saved = buckets
+            buckets = tail
+            try:
+                first_round = [b[0] for b in buckets.values() if b]
+                if directory:
+                    first_round.append(directory[0])
+                first_round.sort(key=lambda e: (round_lead(e), score(e)))
+                rest = rounds_over(
+                    list(buckets), {k: 1 for k in buckets}
+                )
+            finally:
+                buckets = saved
+            return leakage + first_round + directory[1:] + rest
 
         for name, entries in sections.items():
             entries.sort(
