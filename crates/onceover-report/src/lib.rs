@@ -14,7 +14,7 @@ mod ledger;
 pub use finding::*;
 pub use hints::{
     labels_for_finding, resolve_labels, substitute_labels, Cadence, GroupContrast, ProfileHints,
-    ResolvedLabels,
+    ResolvedLabels, HINT_KEYS,
 };
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,

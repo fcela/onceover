@@ -3,6 +3,10 @@
 A native Rust profiler for Polars DataFrames, plus a Python-side
 multi-table pass (`profile_many`) that reports candidate foreign
 keys across a set of related tables.
+
+New callers: `agent_guide()` returns the packaged quickstart for
+this surface; `capabilities()` returns its compact machine-readable
+companion.
 """
 
 import json as _json
@@ -20,9 +24,16 @@ __all__ = [
     "profile_many",
     "MultiTableReport",
     "available_detectors",
+    "agent_guide",
+    "capabilities",
 ]
 
 _SCHEMA_VERSION = "0.8"
+
+#: The budget names `profile` accepts. The native parser is the
+#: authority — its unknown-budget error lists the same names — and
+#: the tests pin this list to that error.
+_BUDGETS = ("quick", "standard", "deep")
 
 
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
@@ -34,6 +45,10 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             source_row_cap: int | None = None, exact: bool = False,
             sample_seed: int = 0):
     """Give a Polars DataFrame a once-over.
+
+    New callers: `agent_guide()` returns the packaged quickstart
+    for this surface (the handover, the budgets, reading the
+    report); `capabilities()` returns its compact companion.
 
     Parameters
     ----------
@@ -185,6 +200,60 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Ranked findings ledger + per-column cards + coverage block.
     """
     import polars as _pl
+
+    # Argument shapes are checked here, before the native call, so a
+    # wrong type names what the argument accepts instead of surfacing
+    # as a binding extraction error.
+    if not isinstance(budget, str):
+        raise TypeError(
+            "budget must be a string, one of "
+            + " | ".join(_BUDGETS)
+            + f"; got {type(budget).__name__}"
+        )
+    if budget not in _BUDGETS:
+        raise ValueError(
+            f"unknown budget {budget!r} (expected {' | '.join(_BUDGETS)})"
+        )
+    if detectors is not None:
+        if isinstance(detectors, str) or not isinstance(detectors, (list, tuple)):
+            raise TypeError(
+                "detectors must be a list of detector IDs (strings); "
+                "capabilities() lists the registered IDs"
+            )
+        for _detector in detectors:
+            if not isinstance(_detector, str):
+                raise TypeError(
+                    "detectors entries must be detector ID strings; "
+                    f"got {type(_detector).__name__}"
+                )
+    if hints is not None and not isinstance(hints, dict):
+        raise TypeError(
+            "hints must be a dict keyed by hint name; "
+            "agent_guide() lists the hint keys"
+        )
+    if target is not None and not isinstance(target, str):
+        raise TypeError(
+            "target must be a column name (a string); "
+            f"got {type(target).__name__}"
+        )
+    if deadline_seconds is not None and (
+        isinstance(deadline_seconds, bool)
+        or not isinstance(deadline_seconds, (int, float))
+    ):
+        raise TypeError("deadline_seconds must be a number of seconds")
+    for _cap_name, _cap_value in (
+        ("sample_rows", sample_rows),
+        ("max_predictors", max_predictors),
+        ("max_pairs", max_pairs),
+        ("max_findings", max_findings),
+        ("max_rules", max_rules),
+    ):
+        if _cap_value is None:
+            continue
+        if _as_int(_cap_value) is None:
+            raise TypeError(f"{_cap_name} must be an integer")
+        if _cap_value <= 0:
+            raise ValueError(f"{_cap_name} must be positive")
 
     source = None
     if isinstance(df, _pl.DataFrame):
@@ -432,6 +501,69 @@ def available_detectors():
     a target is designated)."""
     from onceover._native import available_detectors as _available
     return _json.loads(_available())
+
+
+def capabilities() -> dict:
+    """The compact capability manifest: what a caller needs to aim
+    a `profile` call, derived from the detector registry on every
+    call and never hand-maintained.
+
+    Returns a dict with the package `version`, the report
+    `schema_version`, the `budgets` `profile` accepts, the
+    `hint_keys` the hints parser accepts (in declaration order),
+    and one entry per registered detector with its `id`,
+    `membership`, `trigger`, and one-line `purpose`, plus a
+    `requires` list only when the detector needs specific columns
+    or inputs.
+    """
+    from onceover._native import available_detectors as _available
+    from onceover._native import hint_keys as _hint_keys
+
+    detectors = []
+    for record in _json.loads(_available()):
+        entry = {
+            "id": record["id"],
+            "membership": record["membership"],
+            "trigger": record["trigger"],
+            "purpose": record["purpose"],
+        }
+        if record["requires"]:
+            entry["requires"] = list(record["requires"])
+        detectors.append(entry)
+    return {
+        "version": __version__,
+        "schema_version": _SCHEMA_VERSION,
+        "budgets": list(_BUDGETS),
+        "hint_keys": list(_hint_keys()),
+        "detectors": detectors,
+    }
+
+
+def agent_guide() -> str:
+    """The packaged agent guide: the quickstart for this surface,
+    shipped inside the package so it is version-matched to the
+    build it describes.
+
+    The guide teaches, in order, the handover (declaring the
+    outcome, column meanings, and structure through `target` and
+    `hints`), the call and the budgets, reading the report (digest
+    first), and detector selection. `capabilities()` is its
+    machine-readable companion.
+    """
+    try:
+        import importlib.resources as _resources
+
+        return (
+            _resources.files("onceover")
+            .joinpath("agent_guide.md")
+            .read_text(encoding="utf-8")
+        )
+    except Exception:
+        from pathlib import Path
+
+        return (Path(__file__).parent / "agent_guide.md").read_text(
+            encoding="utf-8"
+        )
 
 
 # Card quantities the report diff compares, in report order. Every

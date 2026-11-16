@@ -51,6 +51,11 @@ impl ProfileReportPy {
 fn parse_hints(text: &str) -> PyResult<onceover_report::ProfileHints> {
     let mut value: serde_json::Value = serde_json::from_str(text)
         .map_err(|e| PyValueError::new_err(format!("invalid hints: {e}")))?;
+    if !value.is_object() {
+        return Err(PyValueError::new_err(
+            "invalid hints: expected an object keyed by hint name",
+        ));
+    }
     let mut deprecated_keys: Vec<String> = Vec::new();
     if let Some(obj) = value.as_object_mut() {
         for (old, new) in [("axis", "ordered_axis"), ("ordinal", "level_order")] {
@@ -106,7 +111,11 @@ fn profile_py(
     if let Some(ids) = &detectors {
         for id in ids {
             if !known.contains(id) {
-                return Err(PyValueError::new_err(format!("unknown detector: {id}")));
+                let registered: Vec<&str> = known.iter().map(String::as_str).collect();
+                return Err(PyValueError::new_err(format!(
+                    "unknown detector: {id} (registered detectors: {})",
+                    registered.join(", ")
+                )));
             }
         }
     }
@@ -161,10 +170,20 @@ fn available_detectors() -> String {
     serde_json::to_string(&onceover::builtin_detectors()).expect("serializable detector registry")
 }
 
+/// The hint keys the hints parser accepts, in declaration order.
+#[pyfunction]
+fn hint_keys() -> Vec<String> {
+    onceover_report::HINT_KEYS
+        .iter()
+        .map(|k| k.to_string())
+        .collect()
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(profile_py, m)?)?;
     m.add_function(wrap_pyfunction!(available_detectors, m)?)?;
+    m.add_function(wrap_pyfunction!(hint_keys, m)?)?;
     m.add_class::<ProfileReportPy>()?;
     Ok(())
 }
