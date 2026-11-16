@@ -475,9 +475,10 @@ def _quality_line(data: dict) -> str | None:
 # a column set state the same fact, however many detectors state
 # it and in whichever direction, so they merge into one digest
 # line before rendering. The stated columns of a finding are its
-# subject columns with the target appended; for model-based
-# findings, whose evidence names drivers rather than subject
-# inputs, the first evidence block's drivers plus the target.
+# subject columns with the target appended; when the first
+# evidence block names drivers — a model-based finding lists
+# every screened input in its subject, but the columns it credits
+# are its drivers — the drivers replace the subject columns.
 # This is the same accounting the gate harness uses, so a fact
 # here is a fact there.
 
@@ -518,13 +519,15 @@ _DIGEST_NUMBER = re.compile(r"\d+\.\d+(?:[eE][+-]?\d+)?")
 def _digest_columns(finding: dict) -> list:
     subj = finding.get("subject") or {}
     cols = list(subj.get("columns") or [])
+    for ev in (finding.get("evidence") or [])[:1]:
+        drivers = (ev.get("metrics") or {}).get("drivers")
+        if (
+            isinstance(drivers, list)
+            and drivers
+            and all(isinstance(d, str) for d in drivers)
+        ):
+            cols = list(drivers)
     target = subj.get("target")
-    if not cols:
-        for ev in finding.get("evidence") or []:
-            drivers = (ev.get("metrics") or {}).get("drivers")
-            if drivers:
-                cols = list(drivers)
-                break
     if target and target not in cols:
         cols.append(target)
     return cols
@@ -1454,7 +1457,16 @@ class ProfileReport:
                     ]
                     if not round_entries:
                         return out
-                    round_entries.sort(key=score)
+                    # Break and regime statements along an ordered
+                    # axis lead each round: they are the table's
+                    # shape over its axis, the statements a reader
+                    # acts on first after the directory.
+                    round_entries.sort(
+                        key=lambda e: (
+                            0 if e[1].get("category") == "changes" else 1,
+                            score(e),
+                        )
+                    )
                     out.extend(round_entries)
                     depth += 1
 
@@ -1466,7 +1478,12 @@ class ProfileReport:
             first_round = [b[0] for b in buckets.values() if b]
             if directory:
                 first_round.append(directory[0])
-            first_round.sort(key=score)
+            first_round.sort(
+                key=lambda e: (
+                    0 if e[1].get("category") == "changes" else 1,
+                    score(e),
+                )
+            )
             return leakage + first_round + directory[1:] + rounds_from(1)
 
         for name, entries in sections.items():
