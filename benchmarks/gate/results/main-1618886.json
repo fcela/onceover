@@ -1,0 +1,6195 @@
+{
+ "schema": 1,
+ "provenance": {
+  "onceover_version": "0.1.5",
+  "commit": "1618886",
+  "python": "3.13.7",
+  "polars": "2.1.0",
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "numpy": "2.5.5",
+  "seeds": [
+   0
+  ],
+  "components": [
+   "planted",
+   "permuted",
+   "invariance",
+   "reference",
+   "redundancy",
+   "truth",
+   "cost"
+  ],
+  "fast": false,
+  "only": null
+ },
+ "metric_specs": {
+  "planted.planted": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "planted.found_full": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "planted.found_4k": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "planted.line_sum_4k": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "permuted.false_full": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "permuted.false_4k": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "permuted.false_full_target": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "permuted.false_4k_target": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "permuted.findings_full": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "invariance.reverse": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "invariance.row_shuffle": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "invariance.rename": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "invariance.noise": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "invariance.scale": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "invariance.total": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "reference.check_failed": {
+   "direction": "lower",
+   "kind": "count",
+   "zero": true
+  },
+  "reference.must_total": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "reference.must_4k_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.must_8k_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.must_full_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.must_4k_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.must_8k_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.must_full_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_total": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "reference.should_4k_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_8k_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_full_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_4k_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_8k_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "reference.should_full_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "redundancy.repeated_default": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "redundancy.finding_lines_default": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "redundancy.finding_permille_default": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "redundancy.long_decimals_default": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "redundancy.repeated_target": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "redundancy.finding_lines_target": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "redundancy.finding_permille_target": {
+   "direction": "higher",
+   "kind": "count"
+  },
+  "redundancy.long_decimals_target": {
+   "direction": "lower",
+   "kind": "count"
+  },
+  "truth.mismatch": {
+   "direction": "lower",
+   "kind": "count",
+   "zero": true
+  },
+  "truth.error": {
+   "direction": "lower",
+   "kind": "count",
+   "zero": true
+  },
+  "truth.ok": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "truth.not_checkable": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "cost.profile_seconds": {
+   "direction": "lower",
+   "kind": "time"
+  },
+  "cost.json_chars": {
+   "direction": "info",
+   "kind": "count"
+  },
+  "cost.findings": {
+   "direction": "info",
+   "kind": "count"
+  }
+ },
+ "datasets": {
+  "adult-census-income": {
+   "held_out": false,
+   "kind": "tabular, mixed types",
+   "target": "income",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 6,
+      "found_full": 4,
+      "found_4k": 2,
+      "line_sum_4k": 22
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "race",
+        "race_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 9,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "age"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "age",
+        "age_plus_hours_per_week",
+        "hours_per_week"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "hours_per_week",
+        "planted_y"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "final_weight"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 13,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "age",
+        "relationship"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 7.3
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 3,
+      "false_4k": 2,
+      "false_full_target": 3,
+      "false_4k_target": 2,
+      "findings_full": 30
+     },
+     "detail": {
+      "seed0": {
+       "columns": 15,
+       "columns_moved": 15,
+       "false_full": 3,
+       "false_4k": 2,
+       "findings": 30,
+       "false_full_target": 3,
+       "false_4k_target": 2
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.86
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 13,
+      "row_shuffle": 9,
+      "rename": 0,
+      "noise": 7,
+      "scale": 1,
+      "total": 30
+     },
+     "detail": {
+      "reverse": {
+       "lost": 6,
+       "gained": 7,
+       "examples_lost": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education",
+          "marital_status",
+          "occupation",
+          "race"
+         ]
+        ],
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education",
+          "marital_status",
+          "relationship"
+         ]
+        ],
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education",
+          "race",
+          "relationship",
+          "work_class"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "capital_loss",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "capital_gain",
+          "education_num",
+          "income",
+          "marital_status"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education_num",
+          "marital_status",
+          "occupation",
+          "race"
+         ]
+        ],
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education_num",
+          "marital_status",
+          "relationship"
+         ]
+        ],
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "education_num",
+          "race",
+          "relationship",
+          "work_class"
+         ]
+        ],
+        [
+         "changes",
+         "slope_break",
+         [
+          "capital_loss",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "capital_gain",
+          "education_num",
+          "hours_per_week",
+          "income",
+          "marital_status",
+          "occupation"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 4,
+       "gained": 5,
+       "examples_lost": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "age",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "capital_gain",
+          "income"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "capital_loss",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "capital_gain",
+          "education_num",
+          "income",
+          "marital_status"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "statistical",
+         [
+          "age",
+          "income"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "education_num",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "capital_loss"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "capital_gain",
+          "education_num",
+          "income",
+          "marital_status",
+          "occupation"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "education",
+          "education_num",
+          "occupation"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 5,
+       "gained": 2,
+       "examples_lost": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "capital_loss",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "duplicates",
+         "duplicate_rows",
+         [
+          "age",
+          "capital_gain",
+          "capital_loss",
+          "education",
+          "education_num",
+          "final_weight",
+          "hours_per_week",
+          "income",
+          "marital_status",
+          "native_country",
+          "occupation",
+          "race",
+          "relationship",
+          "sex",
+          "work_class"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "age"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "final_weight"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "occupation"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "capital_loss",
+          "hours_per_week"
+         ]
+        ],
+        [
+         "formats",
+         "boundary_mass",
+         [
+          "age"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 1,
+       "gained": 0,
+       "examples_lost": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "education_num"
+         ]
+        ]
+       ],
+       "examples_gained": [],
+       "column": "age"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 6.44
+    },
+    "reference": {
+     "metrics": {
+      "check_failed": 0,
+      "must_total": 4,
+      "must_4k_default": 2,
+      "must_8k_default": 4,
+      "must_full_default": 4,
+      "must_4k_target": 3,
+      "must_8k_target": 4,
+      "must_full_target": 4,
+      "should_total": 3,
+      "should_4k_default": 1,
+      "should_8k_default": 2,
+      "should_full_default": 3,
+      "should_4k_target": 1,
+      "should_8k_target": 1,
+      "should_full_target": 1
+     },
+     "detail": {
+      "education-encoding": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "text",
+        "default/full": "finding",
+        "target/4k": "text",
+        "target/8k": "text",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "income-marital": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "income-education": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "income-capital-gain": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": null,
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "income-age-hours": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "text",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "capital-gain-99999": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": null,
+        "target/8k": null,
+        "target/full": null
+       },
+       "check": true
+      },
+      "occupation-workclass-missing": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": null,
+        "default/full": "finding",
+        "target/4k": null,
+        "target/8k": null,
+        "target/full": null
+       },
+       "check": true
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.45
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 7,
+      "finding_permille_default": 428,
+      "long_decimals_default": 7,
+      "repeated_target": 0,
+      "finding_lines_target": 7,
+      "finding_permille_target": 455,
+      "long_decimals_target": 10
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 7,
+       "finding_permille": 428,
+       "long_decimals": 7
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 7,
+       "finding_permille": 455,
+       "long_decimals": 10
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 85,
+      "not_checkable": 161
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 51,
+       "not_checkable": 74
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 34,
+       "not_checkable": 87
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.04
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 1.064,
+      "json_chars": 256896,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       1.073,
+       1.058,
+       1.064
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 2.12
+    }
+   },
+   "status": "ok",
+   "rows": 48842,
+   "cols": 15
+  },
+  "bank-marketing": {
+   "held_out": false,
+   "kind": "tabular, mixed types",
+   "target": "subscribed_term_deposit",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 5,
+      "found_full": 4,
+      "found_4k": 2,
+      "line_sum_4k": 22
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "month",
+        "month_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 9,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "age",
+        "age_plus_last_contact_duration_seconds",
+        "last_contact_duration_seconds"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "last_contact_duration_seconds",
+        "planted_y"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "contacts_during_this_campaign"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 13,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "age",
+        "month"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 5.89
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 8,
+      "false_4k": 8,
+      "false_full_target": 8,
+      "false_4k_target": 8,
+      "findings_full": 25
+     },
+     "detail": {
+      "seed0": {
+       "columns": 17,
+       "columns_moved": 17,
+       "false_full": 8,
+       "false_4k": 8,
+       "findings": 25,
+       "false_full_target": 8,
+       "false_4k_target": 8
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.83
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 20,
+      "row_shuffle": 19,
+      "rename": 0,
+      "noise": 3,
+      "scale": 2,
+      "total": 44
+     },
+     "detail": {
+      "reverse": {
+       "lost": 9,
+       "gained": 11,
+       "examples_lost": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "contacts_during_this_campaign",
+          "days_since_previous_campaign_contact"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "last_contact_duration_seconds",
+          "month",
+          "subscribed_term_deposit"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "contact",
+          "education",
+          "job",
+          "marital_status",
+          "month"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "housing_loan",
+          "month"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "contacts_during_this_campaign",
+          "day_of_week",
+          "month"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "average_yearly_balance_euros",
+          "days_since_previous_campaign_contact"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "contact",
+          "education",
+          "housing_loan",
+          "job",
+          "marital_status"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "day_of_week",
+          "housing_loan",
+          "month"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "education",
+          "job"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "contacts_before_this_campaign",
+          "days_since_previous_campaign_contact",
+          "last_contact_duration_seconds"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 9,
+       "gained": 10,
+       "examples_lost": [
+        [
+         "associations",
+         "statistical",
+         [
+          "contacts_before_this_campaign",
+          "month"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "contacts_during_this_campaign",
+          "days_since_previous_campaign_contact"
+         ]
+        ],
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "days_since_previous_campaign_contact"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "contacts_before_this_campaign",
+          "contacts_during_this_campaign"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "last_contact_duration_seconds",
+          "month",
+          "subscribed_term_deposit"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "statistical",
+         [
+          "job",
+          "previous_campaign_outcome"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "contacts_during_this_campaign",
+          "last_contact_duration_seconds"
+         ]
+        ],
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "last_contact_duration_seconds"
+         ]
+        ],
+        [
+         "changes",
+         "spike_contrast",
+         [
+          "day_of_week",
+          "last_contact_duration_seconds"
+         ]
+        ],
+        [
+         "changes",
+         "spike_contrast",
+         [
+          "days_since_previous_campaign_contact",
+          "last_contact_duration_seconds"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 2,
+       "gained": 1,
+       "examples_lost": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "contacts_during_this_campaign",
+          "days_since_previous_campaign_contact"
+         ]
+        ],
+        [
+         "missingness",
+         "predictable_missingness",
+         [
+          "age",
+          "average_yearly_balance_euros",
+          "contacts_during_this_campaign",
+          "day_of_week",
+          "housing_loan",
+          "job",
+          "marital_status",
+          "month"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "age",
+          "days_since_previous_campaign_contact"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 1,
+       "gained": 1,
+       "examples_lost": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "days_since_previous_campaign_contact"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "formats",
+         "digit_preference",
+         [
+          "average_yearly_balance_euros"
+         ]
+        ]
+       ],
+       "column": "age"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 6.27
+    },
+    "reference": {
+     "metrics": {
+      "check_failed": 0,
+      "must_total": 2,
+      "must_4k_default": 1,
+      "must_8k_default": 2,
+      "must_full_default": 2,
+      "must_4k_target": 1,
+      "must_8k_target": 2,
+      "must_full_target": 2,
+      "should_total": 3,
+      "should_4k_default": 1,
+      "should_8k_default": 2,
+      "should_full_default": 3,
+      "should_4k_target": 2,
+      "should_8k_target": 2,
+      "should_full_target": 3
+     },
+     "detail": {
+      "subscription-duration": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "subscription-previous": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "days-since-sentinel": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "text",
+        "default/full": "text",
+        "target/4k": null,
+        "target/8k": "text",
+        "target/full": "text"
+       },
+       "check": true
+      },
+      "subscription-month-contact": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "subscription-housing-loan": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": null,
+        "default/full": "text",
+        "target/4k": null,
+        "target/8k": null,
+        "target/full": "finding"
+       },
+       "check": true
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.38
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 8,
+      "finding_permille_default": 591,
+      "long_decimals_default": 7,
+      "repeated_target": 0,
+      "finding_lines_target": 7,
+      "finding_permille_target": 614,
+      "long_decimals_target": 7
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 8,
+       "finding_permille": 591,
+       "long_decimals": 7
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 7,
+       "finding_permille": 614,
+       "long_decimals": 7
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 74,
+      "not_checkable": 164
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 42,
+       "not_checkable": 80
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 32,
+       "not_checkable": 84
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.02
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 1.052,
+      "json_chars": 267265,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       1.052,
+       1.047,
+       1.053
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 2.1
+    }
+   },
+   "status": "ok",
+   "rows": 45211,
+   "cols": 17
+  },
+  "abalone": {
+   "held_out": false,
+   "kind": "tabular, correlated measures",
+   "target": "rings",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 6,
+      "found_full": 5,
+      "found_4k": 3,
+      "line_sum_4k": 36
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "sex",
+        "sex_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 12,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "height"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "height",
+        "height_plus_whole_weight",
+        "whole_weight"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 12,
+       "via": "finding"
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "viscera_weight"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "shell_weight"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 12,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "sex",
+        "shucked_weight"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.65
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 1,
+      "false_4k": 1,
+      "false_full_target": 1,
+      "false_4k_target": 1,
+      "findings_full": 7
+     },
+     "detail": {
+      "seed0": {
+       "columns": 9,
+       "columns_moved": 9,
+       "false_full": 1,
+       "false_4k": 1,
+       "findings": 7,
+       "false_full_target": 1,
+       "false_4k_target": 1
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.08
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 10,
+      "row_shuffle": 3,
+      "rename": 0,
+      "noise": 0,
+      "scale": 0,
+      "total": 13
+     },
+     "detail": {
+      "reverse": {
+       "lost": 3,
+       "gained": 7,
+       "examples_lost": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "diameter",
+          "length"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "height",
+          "shell_weight",
+          "whole_weight"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "rings",
+          "shell_weight",
+          "shucked_weight"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "diameter",
+          "shell_weight"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "diameter",
+          "shucked_weight"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "length",
+          "shell_weight"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "length",
+          "viscera_weight"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "shucked_weight",
+          "viscera_weight"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 1,
+       "gained": 2,
+       "examples_lost": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "height",
+          "shell_weight",
+          "whole_weight"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "diameter",
+          "length",
+          "shell_weight",
+          "whole_weight"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "shell_weight",
+          "whole_weight"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "diameter"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.6
+    },
+    "reference": {
+     "metrics": {
+      "check_failed": 0,
+      "must_total": 3,
+      "must_4k_default": 2,
+      "must_8k_default": 3,
+      "must_full_default": 3,
+      "must_4k_target": 2,
+      "must_8k_target": 3,
+      "must_full_target": 3,
+      "should_total": 2,
+      "should_4k_default": 2,
+      "should_8k_default": 2,
+      "should_full_default": 2,
+      "should_4k_target": 2,
+      "should_8k_target": 2,
+      "should_full_target": 2
+     },
+     "detail": {
+      "rings-size": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "size-collinear": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "height-extreme": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "components-exceed-whole": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "rings-sex": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": "text",
+        "default/full": "finding",
+        "target/4k": null,
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.12
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 9,
+      "finding_permille_default": 627,
+      "long_decimals_default": 3,
+      "repeated_target": 1,
+      "finding_lines_target": 10,
+      "finding_permille_target": 655,
+      "long_decimals_target": 3
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 627,
+       "long_decimals": 3
+      },
+      "target": {
+       "repeated": 1,
+       "finding_lines": 10,
+       "finding_permille": 655,
+       "long_decimals": 3
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 40,
+      "not_checkable": 151
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 20,
+       "not_checkable": 74
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 20,
+       "not_checkable": 77
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.01
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.091,
+      "json_chars": 203582,
+      "findings": 90
+     },
+     "detail": {
+      "runs_seconds": [
+       0.091,
+       0.09,
+       0.091
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.18
+    }
+   },
+   "status": "ok",
+   "rows": 4177,
+   "cols": 9
+  },
+  "bike-sharing-hourly": {
+   "held_out": false,
+   "kind": "hourly series with calendar columns",
+   "target": "cnt",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 4,
+      "found_full": 2,
+      "found_4k": 2,
+      "line_sum_4k": 32
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "casual"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": 16,
+       "via": "text"
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "casual",
+        "casual_plus_windspeed",
+        "windspeed"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "temp"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "hum"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 16,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 3.67
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 10,
+      "false_4k": 10,
+      "false_full_target": 10,
+      "false_4k_target": 10,
+      "findings_full": 33
+     },
+     "detail": {
+      "seed0": {
+       "columns": 17,
+       "columns_moved": 17,
+       "false_full": 10,
+       "false_4k": 10,
+       "findings": 33,
+       "false_full_target": 10,
+       "false_4k_target": 10
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.5
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 27,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 4,
+      "scale": 1,
+      "total": 32
+     },
+     "detail": {
+      "reverse": {
+       "lost": 15,
+       "gained": 12,
+       "examples_lost": [
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "casual",
+          "hr"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "atemp",
+          "temp"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "cnt",
+          "registered"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "atemp",
+          "cnt"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "atemp",
+          "hr"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "level_shift",
+         [
+          "casual",
+          "yr"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "cnt",
+          "workingday"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "registered",
+          "season"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "registered",
+          "weekday"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "registered",
+          "yr"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 2,
+       "gained": 2,
+       "examples_lost": [
+        [
+         "associations",
+         "statistical",
+         [
+          "cnt",
+          "registered"
+         ]
+        ],
+        [
+         "changes",
+         "slope_break",
+         [
+          "casual",
+          "cnt"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "atemp",
+          "hr"
+         ]
+        ],
+        [
+         "changes",
+         "spike_contrast",
+         [
+          "casual",
+          "holiday"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 1,
+       "gained": 0,
+       "examples_lost": [
+        [
+         "changes",
+         "level_shift",
+         [
+          "casual",
+          "weekday"
+         ]
+        ]
+       ],
+       "examples_gained": [],
+       "column": "atemp"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 4.43
+    },
+    "reference": {
+     "metrics": {
+      "check_failed": 0,
+      "must_total": 2,
+      "must_4k_default": 2,
+      "must_8k_default": 2,
+      "must_full_default": 2,
+      "must_4k_target": 1,
+      "must_8k_target": 2,
+      "must_full_target": 2,
+      "should_total": 4,
+      "should_4k_default": 3,
+      "should_8k_default": 3,
+      "should_full_default": 3,
+      "should_4k_target": 3,
+      "should_8k_target": 3,
+      "should_full_target": 4
+     },
+     "detail": {
+      "cnt-identity": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "text",
+        "default/8k": "text",
+        "default/full": "finding",
+        "target/4k": "text",
+        "target/8k": "text",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "cnt-hour": {
+       "tier": "must",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": null,
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "temp-atemp": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "cnt-temperature": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "instant-index": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": "finding",
+        "default/8k": "finding",
+        "default/full": "finding",
+        "target/4k": "finding",
+        "target/8k": "finding",
+        "target/full": "finding"
+       },
+       "check": true
+      },
+      "cnt-year": {
+       "tier": "should",
+       "provisional": true,
+       "matched": {
+        "default/4k": null,
+        "default/8k": null,
+        "default/full": null,
+        "target/4k": null,
+        "target/8k": null,
+        "target/full": "finding"
+       },
+       "check": true
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.09
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 8,
+      "finding_permille_default": 544,
+      "long_decimals_default": 3,
+      "repeated_target": 0,
+      "finding_lines_target": 9,
+      "finding_permille_target": 578,
+      "long_decimals_target": 5
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 8,
+       "finding_permille": 544,
+       "long_decimals": 3
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 578,
+       "long_decimals": 5
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 19,
+      "not_checkable": 191
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 12,
+       "not_checkable": 94
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 7,
+       "not_checkable": 97
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.02
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.865,
+      "json_chars": 286500,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       0.865,
+       0.872,
+       0.862
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 1.73
+    }
+   },
+   "status": "ok",
+   "rows": 17379,
+   "cols": 17
+  },
+  "metro-interstate-traffic": {
+   "held_out": false,
+   "kind": "hourly time series",
+   "target": "traffic_volume",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 6,
+      "found_full": 5,
+      "found_4k": 3,
+      "line_sum_4k": 37
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "weather_main",
+        "weather_main_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 11,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "clouds_all"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "clouds_all",
+        "clouds_all_plus_traffic_volume",
+        "traffic_volume"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 11,
+       "via": "finding"
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "traffic_volume"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "temp"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 15,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "clouds_all",
+        "weather_main"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 6.08
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 9,
+      "false_4k": 9,
+      "false_full_target": 9,
+      "false_4k_target": 9,
+      "findings_full": 25
+     },
+     "detail": {
+      "seed0": {
+       "columns": 9,
+       "columns_moved": 9,
+       "false_full": 9,
+       "false_4k": 9,
+       "findings": 25,
+       "false_full_target": 9,
+       "false_4k_target": 9
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.51
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 4,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 3,
+      "scale": 0,
+      "total": 7
+     },
+     "detail": {
+      "reverse": {
+       "lost": 0,
+       "gained": 4,
+       "examples_lost": [],
+       "examples_gained": [
+        [
+         "concentration",
+         "outlier_entity",
+         [
+          "clouds_all",
+          "date_time",
+          "weather_description"
+         ]
+        ],
+        [
+         "concentration",
+         "outlier_entity",
+         [
+          "date_time",
+          "rain_1h",
+          "weather_description"
+         ]
+        ],
+        [
+         "concentration",
+         "outlier_entity",
+         [
+          "date_time",
+          "temp",
+          "weather_description"
+         ]
+        ],
+        [
+         "concentration",
+         "outlier_entity",
+         [
+          "date_time",
+          "traffic_volume",
+          "weather_description"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 2,
+       "gained": 1,
+       "examples_lost": [
+        [
+         "duplicates",
+         "duplicate_rows",
+         [
+          "clouds_all",
+          "date_time",
+          "holiday",
+          "rain_1h",
+          "snow_1h",
+          "temp",
+          "traffic_volume",
+          "weather_description",
+          "weather_main"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "weather_description"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "clouds_all",
+          "rain_1h"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "clouds_all"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 4.77
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 9,
+      "finding_permille_default": 590,
+      "long_decimals_default": 5,
+      "repeated_target": 0,
+      "finding_lines_target": 10,
+      "finding_permille_target": 612,
+      "long_decimals_target": 5
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 590,
+       "long_decimals": 5
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 10,
+       "finding_permille": 612,
+       "long_decimals": 5
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.01
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 90,
+      "not_checkable": 128
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 45,
+       "not_checkable": 64
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 45,
+       "not_checkable": 64
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.09
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.897,
+      "json_chars": 227407,
+      "findings": 90
+     },
+     "detail": {
+      "runs_seconds": [
+       0.897,
+       0.89,
+       0.897
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 1.79
+    }
+   },
+   "status": "ok",
+   "rows": 48204,
+   "cols": 9
+  },
+  "thyroid": {
+   "held_out": false,
+   "kind": "clinical, many flags and missing values",
+   "target": "diagnosis",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 1,
+      "found_full": 1,
+      "found_4k": 1,
+      "line_sum_4k": 11
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "referral_source",
+        "referral_source_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 11,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.45
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 33,
+      "false_4k": 32,
+      "false_full_target": 33,
+      "false_4k_target": 32,
+      "findings_full": 63
+     },
+     "detail": {
+      "seed0": {
+       "columns": 32,
+       "columns_moved": 30,
+       "false_full": 33,
+       "false_4k": 32,
+       "findings": 63,
+       "false_full_target": 33,
+       "false_4k_target": 32
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.52
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 15,
+      "row_shuffle": 23,
+      "rename": 0,
+      "noise": 2,
+      "scale": 0,
+      "total": 40
+     },
+     "detail": {
+      "reverse": {
+       "lost": 9,
+       "gained": 6,
+       "examples_lost": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "t3_measured",
+          "t4u_measured",
+          "tt4_measured"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "age",
+          "pregnant"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "t3",
+          "t4u"
+         ]
+        ],
+        [
+         "changes",
+         "regime_contrast",
+         [
+          "t4u",
+          "tsh"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "diagnosis",
+          "t4u",
+          "tsh",
+          "tt4"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "psych",
+          "sex",
+          "t3_measured"
+         ]
+        ],
+        [
+         "changes",
+         "spike_contrast",
+         [
+          "t4u",
+          "tsh"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "referral_source",
+          "t3_measured",
+          "tsh_measured",
+          "tt4_measured"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "diagnosis",
+          "fti",
+          "t3",
+          "t4u",
+          "tsh",
+          "tt4"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "fti",
+          "fti_measured",
+          "t4u",
+          "tt4"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 12,
+       "gained": 11,
+       "examples_lost": [
+        [
+         "associations",
+         "statistical",
+         [
+          "fti_measured",
+          "tsh_measured"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "t3",
+          "t4u"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "t4u_measured",
+          "tsh_measured"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "diagnosis",
+          "fti",
+          "tsh"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "fti",
+          "goitre",
+          "query_on_thyroxine"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "diagnosis",
+          "tsh_measured"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "diagnosis",
+          "tsh_measured",
+          "tt4_measured"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "psych",
+          "referral_source"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "age",
+          "diagnosis",
+          "tsh"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "goitre",
+          "pregnant",
+          "query_on_thyroxine",
+          "t4u"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 1,
+       "gained": 1,
+       "examples_lost": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "t3",
+          "tt4"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "statistical",
+         [
+          "t4u",
+          "tt4"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "record_id"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 2.68
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 1,
+      "finding_lines_default": 11,
+      "finding_permille_default": 589,
+      "long_decimals_default": 7,
+      "repeated_target": 1,
+      "finding_lines_target": 11,
+      "finding_permille_target": 599,
+      "long_decimals_target": 7
+     },
+     "detail": {
+      "default": {
+       "repeated": 1,
+       "finding_lines": 11,
+       "finding_permille": 589,
+       "long_decimals": 7
+      },
+      "target": {
+       "repeated": 1,
+       "finding_lines": 11,
+       "finding_permille": 599,
+       "long_decimals": 7
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.46
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 92,
+      "not_checkable": 140
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 46,
+       "not_checkable": 70
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 46,
+       "not_checkable": 70
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.04
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.437,
+      "json_chars": 326326,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       0.433,
+       0.437,
+       0.44
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.88
+    }
+   },
+   "status": "ok",
+   "rows": 3772,
+   "cols": 32
+  },
+  "absenteeism-at-work": {
+   "held_out": false,
+   "kind": "small business table",
+   "target": "absenteeism_time_hours",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 6,
+      "found_full": 4,
+      "found_4k": 1,
+      "line_sum_4k": 13
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "education",
+        "education_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "employee_id"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "age",
+        "age_plus_work_load_average_per_day",
+        "work_load_average_per_day"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "work_load_average_per_day"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "work_load_average_per_day"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 13,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "age",
+        "season"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.78
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 9,
+      "false_4k": 4,
+      "false_full_target": 9,
+      "false_4k_target": 4,
+      "findings_full": 23
+     },
+     "detail": {
+      "seed0": {
+       "columns": 21,
+       "columns_moved": 21,
+       "false_full": 9,
+       "false_4k": 4,
+       "findings": 23,
+       "false_full_target": 9,
+       "false_4k_target": 4
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.15
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 39,
+      "row_shuffle": 27,
+      "rename": 0,
+      "noise": 2,
+      "scale": 0,
+      "total": 68
+     },
+     "detail": {
+      "reverse": {
+       "lost": 20,
+       "gained": 19,
+       "examples_lost": [
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "absenteeism_time_hours",
+          "reason_for_absence"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "age",
+          "body_mass_index"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "age",
+          "distance_from_residence_to_work_km"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "age",
+          "service_time"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "age",
+          "weight"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "absenteeism_time_hours",
+          "number_of_children"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "body_mass_index",
+          "height"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "body_mass_index",
+          "transportation_expense"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "distance_from_residence_to_work_km",
+          "height"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "height",
+          "service_time"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 14,
+       "gained": 13,
+       "examples_lost": [
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "age",
+          "weight"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "body_mass_index",
+          "service_time"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "distance_from_residence_to_work_km",
+          "weight"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "number_of_children",
+          "weight"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "absenteeism_time_hours",
+          "disciplinary_failure"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "statistical",
+         [
+          "body_mass_index",
+          "education"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "social_drinker",
+          "weight"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "body_mass_index",
+          "distance_from_residence_to_work_km"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "height",
+          "service_time"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "hit_target",
+          "work_load_average_per_day"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 2,
+       "gained": 0,
+       "examples_lost": [
+        [
+         "associations",
+         "statistical",
+         [
+          "distance_from_residence_to_work_km",
+          "social_drinker"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "distance_from_residence_to_work_km",
+          "education",
+          "height",
+          "number_of_pets",
+          "service_time",
+          "social_drinker",
+          "social_smoker",
+          "transportation_expense",
+          "weight"
+         ]
+        ]
+       ],
+       "examples_gained": []
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "employee_id"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.78
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 6,
+      "finding_permille_default": 388,
+      "long_decimals_default": 1,
+      "repeated_target": 0,
+      "finding_lines_target": 7,
+      "finding_permille_target": 418,
+      "long_decimals_target": 1
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 6,
+       "finding_permille": 388,
+       "long_decimals": 1
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 7,
+       "finding_permille": 418,
+       "long_decimals": 1
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.15
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 164,
+      "not_checkable": 118
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 82,
+       "not_checkable": 59
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 82,
+       "not_checkable": 59
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.04
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.137,
+      "json_chars": 296928,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       0.136,
+       0.138,
+       0.137
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.28
+    }
+   },
+   "status": "ok",
+   "rows": 740,
+   "cols": 21
+  },
+  "hospital-dha": {
+   "held_out": false,
+   "kind": "wide numeric, 64 columns",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 4,
+      "found_full": 4,
+      "found_4k": 1,
+      "line_sum_4k": 14
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "MDCR_SPND_AMBLNC"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "HOSP_BEDS",
+        "HOSP_DAYS_P_DCD2",
+        "HOSP_DAYS_P_DCD2_plus_HOSP_BEDS"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "RNS_REQ",
+        "planted_y"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "MS_PC_RATIO_P_DCD"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 14,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 1.09
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 9,
+      "false_4k": 9,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 18
+     },
+     "detail": {
+      "seed0": {
+       "columns": 64,
+       "columns_moved": 64,
+       "false_full": 9,
+       "false_4k": 9,
+       "findings": 18
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.14
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 30,
+      "row_shuffle": 9,
+      "rename": 0,
+      "noise": 0,
+      "scale": 1,
+      "total": 40
+     },
+     "detail": {
+      "reverse": {
+       "lost": 15,
+       "gained": 15,
+       "examples_lost": [
+        [
+         "anomalies",
+         "row_inconsistency",
+         [
+          "HHA_VISIT_P_DCD",
+          "MDCR_SPND_HOME"
+         ]
+        ],
+        [
+         "anomalies",
+         "row_inconsistency",
+         [
+          "HOSP_REIMB_P_DCD",
+          "MDCR_SPND_INP"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "HOSP_BEDS",
+          "HOSP_DAYS_P_DCD"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "HOSP_BEDS",
+          "HOSP_DAY_RATIO"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "HOSP_DAYS_P_DCD",
+          "HOSP_DAY_RATIO"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "row_inconsistency",
+         [
+          "EQP_COPAY_P_DCD",
+          "MDCR_SPND_EQP"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "HOSP_BEDS",
+          "HOSP_DAYS_P_DCD2"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "HOSP_DAYS_P_DCD",
+          "HOSP_DAYS_P_DCD2"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "INT_IC_BEDS",
+          "INT_IC_DAYS_P_DCD"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "MD_COPAY_P_DCD",
+          "TTL_PARTB"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 4,
+       "gained": 5,
+       "examples_lost": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "HOSP_BEDS",
+          "HOSP_DAYS_P_DCD",
+          "HOSP_DAYS_P_DCD2",
+          "HOSP_DAY_RATIO",
+          "RNS_REQ"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "HOSP_REIMB_P_DCD",
+          "HOSP_REIMB_RATIO",
+          "MDCR_SPND_INP"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "HOSP_REIMB_P_DCD",
+          "HOSP_REIMB_RATIO",
+          "MDCR_SPND_INP",
+          "TTL_MDCR_SPND"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "N_MD_P_DCD",
+          "PCT_PTNT_10_MD"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "EQP_COPAY_P_DCD",
+          "MDCR_SPND_EQP"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "HI_IC_BEDS",
+          "HI_IC_DAYS_P_DCD"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "HOSP_REIMB_P_DCD",
+          "MDCR_SPND_INP",
+          "TTL_MDCR_SPND"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "MD_COPAY_P_DCD",
+          "TTL_COPAY_P_DCD"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "TTL_IC_BEDS",
+          "TTL_IC_DAYS_P_DCD"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 1,
+       "examples_lost": [],
+       "examples_gained": [
+        [
+         "dependencies",
+         "order_constraint",
+         [
+          "PARTB_IMAG",
+          "PARTB_TESTS"
+         ]
+        ]
+       ],
+       "column": "AMI_SCORE"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 1.57
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 10,
+      "finding_permille_default": 555,
+      "long_decimals_default": 4,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 10,
+       "finding_permille": 555,
+       "long_decimals": 4
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 41,
+      "not_checkable": 61
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 41,
+       "not_checkable": 61
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.01
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.263,
+      "json_chars": 391685,
+      "findings": 89
+     },
+     "detail": {
+      "runs_seconds": [
+       0.253,
+       0.263,
+       0.265
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.53
+    }
+   },
+   "status": "ok",
+   "rows": 307,
+   "cols": 64
+  },
+  "congressional-voting": {
+   "held_out": false,
+   "kind": "categorical votes",
+   "target": "party",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 1,
+      "found_full": 1,
+      "found_4k": 1,
+      "line_sum_4k": 10
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "handicapped_infants",
+        "handicapped_infants_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 10,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.03
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 2,
+      "false_4k": 1,
+      "false_full_target": 2,
+      "false_4k_target": 1,
+      "findings_full": 18
+     },
+     "detail": {
+      "seed0": {
+       "columns": 17,
+       "columns_moved": 17,
+       "false_full": 2,
+       "false_4k": 1,
+       "findings": 18,
+       "false_full_target": 2,
+       "false_4k_target": 1
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.05
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 17,
+      "row_shuffle": 14,
+      "rename": 0,
+      "noise": 7,
+      "scale": 0,
+      "total": 38
+     },
+     "detail": {
+      "reverse": {
+       "lost": 7,
+       "gained": 10,
+       "examples_lost": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "adoption_of_the_budget_resolution",
+          "party",
+          "physician_fee_freeze"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "aid_to_nicaraguan_contras",
+          "el_salvador_aid",
+          "mx_missile"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "education_spending",
+          "physician_fee_freeze"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "el_salvador_aid",
+          "mx_missile"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "adoption_of_the_budget_resolution",
+          "crime",
+          "education_spending",
+          "party",
+          "physician_fee_freeze",
+          "religious_groups_in_schools",
+          "superfund_right_to_sue",
+          "synfuels_corporation_cutback"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "adoption_of_the_budget_resolution",
+          "aid_to_nicaraguan_contras",
+          "party"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban",
+          "el_salvador_aid"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "anti_satellite_test_ban",
+          "crime",
+          "party"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "anti_satellite_test_ban",
+          "crime",
+          "physician_fee_freeze",
+          "superfund_right_to_sue"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "anti_satellite_test_ban",
+          "el_salvador_aid"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 6,
+       "gained": 8,
+       "examples_lost": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "crime",
+          "party"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "crime",
+          "physician_fee_freeze"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "adoption_of_the_budget_resolution",
+          "crime",
+          "education_spending",
+          "party",
+          "physician_fee_freeze",
+          "religious_groups_in_schools",
+          "superfund_right_to_sue",
+          "synfuels_corporation_cutback"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban",
+          "el_salvador_aid"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban",
+          "el_salvador_aid",
+          "mx_missile"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "adoption_of_the_budget_resolution",
+          "aid_to_nicaraguan_contras"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "aid_to_nicaraguan_contras",
+          "mx_missile"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "el_salvador_aid",
+          "religious_groups_in_schools"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "adoption_of_the_budget_resolution",
+          "party"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban",
+          "duty_free_exports"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 4,
+       "gained": 3,
+       "examples_lost": [
+        [
+         "duplicates",
+         "duplicate_rows",
+         [
+          "adoption_of_the_budget_resolution",
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban",
+          "crime",
+          "duty_free_exports",
+          "education_spending",
+          "el_salvador_aid",
+          "export_administration_act_south_africa",
+          "handicapped_infants",
+          "immigration",
+          "mx_missile",
+          "party",
+          "physician_fee_freeze",
+          "religious_groups_in_schools",
+          "superfund_right_to_sue",
+          "synfuels_corporation_cutback",
+          "water_project_cost_sharing"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "export_administration_act_south_africa"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "synfuels_corporation_cutback"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "water_project_cost_sharing"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "concentration",
+         "hotspot",
+         [
+          "adoption_of_the_budget_resolution",
+          "party"
+         ]
+        ],
+        [
+         "concentration",
+         "hotspot",
+         [
+          "adoption_of_the_budget_resolution",
+          "physician_fee_freeze"
+         ]
+        ],
+        [
+         "concentration",
+         "hotspot",
+         [
+          "aid_to_nicaraguan_contras",
+          "anti_satellite_test_ban"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "status": "skipped",
+       "reason": "no suitable numeric column"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.14
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 1,
+      "finding_lines_default": 8,
+      "finding_permille_default": 581,
+      "long_decimals_default": 0,
+      "repeated_target": 1,
+      "finding_lines_target": 8,
+      "finding_permille_target": 600,
+      "long_decimals_target": 3
+     },
+     "detail": {
+      "default": {
+       "repeated": 1,
+       "finding_lines": 8,
+       "finding_permille": 581,
+       "long_decimals": 0
+      },
+      "target": {
+       "repeated": 1,
+       "finding_lines": 8,
+       "finding_permille": 600,
+       "long_decimals": 3
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.03
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 106,
+      "not_checkable": 96
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 53,
+       "not_checkable": 38
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 53,
+       "not_checkable": 58
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.01
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.026,
+      "json_chars": 160877,
+      "findings": 66
+     },
+     "detail": {
+      "runs_seconds": [
+       0.027,
+       0.026,
+       0.026
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.05
+    }
+   },
+   "status": "ok",
+   "rows": 435,
+   "cols": 17
+  },
+  "adventureworks": {
+   "held_out": false,
+   "kind": "sales orders",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 4,
+      "found_full": 1,
+      "found_4k": 1,
+      "line_sum_4k": 17
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "customer_id"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "bill_to_address_id",
+        "customer_id",
+        "customer_id_plus_bill_to_address_id"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "tax_amt"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "ship_to_address_id"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 17,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 6.19
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 40,
+      "false_4k": 40,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 66
+     },
+     "detail": {
+      "seed0": {
+       "columns": 26,
+       "columns_moved": 24,
+       "false_full": 40,
+       "false_4k": 40,
+       "findings": 66
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.85
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 28,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 2,
+      "scale": 0,
+      "total": 30
+     },
+     "detail": {
+      "reverse": {
+       "lost": 14,
+       "gained": 14,
+       "examples_lost": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "bill_to_address_id",
+          "online_order_flag"
+         ]
+        ],
+        [
+         "associations",
+         "axis_shape",
+         [
+          "online_order_flag",
+          "ship_to_address_id"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "freight",
+          "order_date"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "order_date",
+          "subtotal"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "order_date",
+          "tax_amt"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "subtotal",
+          "total_due"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "freight",
+          "modified_date"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "modified_date",
+          "subtotal"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "modified_date",
+          "tax_amt"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "modified_date",
+          "total_due"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 1,
+       "gained": 1,
+       "examples_lost": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "tax_amt",
+          "total_due"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "subtotal",
+          "total_due"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "bill_to_address_id"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 7.12
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 9,
+      "finding_permille_default": 463,
+      "long_decimals_default": 3,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 463,
+       "long_decimals": 3
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 135,
+      "not_checkable": 71
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 135,
+       "not_checkable": 71
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.08
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 1.421,
+      "json_chars": 284664,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       1.422,
+       1.419,
+       1.421
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 2.84
+    }
+   },
+   "status": "ok",
+   "rows": 31465,
+   "cols": 26
+  },
+  "nab-nyc-taxi": {
+   "held_out": false,
+   "kind": "single time series",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 3,
+      "found_full": 3,
+      "found_4k": 3,
+      "line_sum_4k": 39
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "value"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 14,
+       "via": "finding"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "planted_y",
+        "value"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 13,
+       "via": "finding"
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "value"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 12,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.16
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 0,
+      "false_4k": 0,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 2
+     },
+     "detail": {
+      "seed0": {
+       "columns": 2,
+       "columns_moved": 2,
+       "false_full": 0,
+       "false_4k": 0,
+       "findings": 2
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.04
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 0,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 0,
+      "scale": 0,
+      "total": 0
+     },
+     "detail": {
+      "reverse": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": [],
+       "column": "value"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 0.2
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 2,
+      "finding_lines_default": 9,
+      "finding_permille_default": 658,
+      "long_decimals_default": 4,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 2,
+       "finding_lines": 9,
+       "finding_permille": 658,
+       "long_decimals": 4
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 3,
+      "not_checkable": 32
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 3,
+       "not_checkable": 32
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.035,
+      "json_chars": 105886,
+      "findings": 35
+     },
+     "detail": {
+      "runs_seconds": [
+       0.035,
+       0.035,
+       0.035
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.07
+    }
+   },
+   "status": "ok",
+   "rows": 10320,
+   "cols": 2
+  },
+  "state-unemployment": {
+   "held_out": false,
+   "kind": "wide time series, one column per state",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 0,
+      "found_full": 0,
+      "found_4k": 0,
+      "line_sum_4k": 0
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 16,
+      "false_4k": 16,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 18
+     },
+     "detail": {
+      "seed0": {
+       "columns": 52,
+       "columns_moved": 52,
+       "false_full": 16,
+       "false_4k": 16,
+       "findings": 18
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.28
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 66,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 0,
+      "scale": 0,
+      "total": 66
+     },
+     "detail": {
+      "reverse": {
+       "lost": 32,
+       "gained": 34,
+       "examples_lost": [
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "al_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "ar_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "co_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "ia_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "id_unemployment_rate"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "va_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ak_unemployment_rate",
+          "wy_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "al_unemployment_rate",
+          "wa_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ar_unemployment_rate",
+          "va_unemployment_rate"
+         ]
+        ],
+        [
+         "changes",
+         "level_shift",
+         [
+          "ar_unemployment_rate",
+          "wy_unemployment_rate"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "status": "skipped",
+       "reason": "no suitable numeric column"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 2.11
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 9,
+      "finding_permille_default": 551,
+      "long_decimals_default": 5,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 551,
+       "long_decimals": 5
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 7,
+      "not_checkable": 93
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 7,
+       "not_checkable": 93
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.524,
+      "json_chars": 455528,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       0.523,
+       0.524,
+       0.527
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 1.05
+    }
+   },
+   "status": "ok",
+   "rows": 609,
+   "cols": 52
+  },
+  "state-unemployment-long": {
+   "held_out": false,
+   "kind": "panel, long form",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 0,
+      "found_full": 0,
+      "found_4k": 0,
+      "line_sum_4k": 0
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 4,
+      "false_4k": 4,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 5
+     },
+     "detail": {
+      "seed0": {
+       "columns": 3,
+       "columns_moved": 3,
+       "false_full": 4,
+       "false_4k": 4,
+       "findings": 5
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.05
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 0,
+      "row_shuffle": 0,
+      "rename": 0,
+      "noise": 0,
+      "scale": 0,
+      "total": 0
+     },
+     "detail": {
+      "reverse": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "row_shuffle": {
+       "status": "skipped",
+       "reason": "the table has a time axis"
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "status": "skipped",
+       "reason": "no suitable numeric column"
+      },
+      "time_axis": true
+     },
+     "status": "ok",
+     "wall_seconds": 0.22
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 8,
+      "finding_permille_default": 553,
+      "long_decimals_default": 4,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 8,
+       "finding_permille": 553,
+       "long_decimals": 4
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 2,
+      "not_checkable": 17
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 2,
+       "not_checkable": 17
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.047,
+      "json_chars": 72329,
+      "findings": 19
+     },
+     "detail": {
+      "runs_seconds": [
+       0.047,
+       0.047,
+       0.047
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.09
+    }
+   },
+   "status": "ok",
+   "rows": 31059,
+   "cols": 3
+  },
+  "south-german-credit": {
+   "held_out": true,
+   "kind": "credit table",
+   "target": "credit_risk",
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 6,
+      "found_full": 4,
+      "found_4k": 2,
+      "line_sum_4k": 22
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "other_installment_plans",
+        "other_installment_plans_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 8,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "columns": [
+        "age"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      },
+      "sum_identity/seed0": {
+       "columns": [
+        "age",
+        "age_plus_duration",
+        "duration"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "target_driver/seed0": {
+       "columns": [
+        "duration",
+        "planted_y"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": null,
+       "via": null
+      },
+      "row_anomaly/seed0": {
+       "columns": [
+        "amount"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 14,
+       "via": "finding"
+      },
+      "tied_missingness/seed0": {
+       "columns": [
+        "age",
+        "present_residence"
+       ],
+       "verified": true,
+       "in_full_report": false,
+       "digest_line": null,
+       "via": null
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.57
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 7,
+      "false_4k": 7,
+      "false_full_target": 7,
+      "false_4k_target": 7,
+      "findings_full": 21
+     },
+     "detail": {
+      "seed0": {
+       "columns": 21,
+       "columns_moved": 21,
+       "false_full": 7,
+       "false_4k": 7,
+       "findings": 21,
+       "false_full_target": 7,
+       "false_4k_target": 7
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.13
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 7,
+      "row_shuffle": 5,
+      "rename": 0,
+      "noise": 0,
+      "scale": 1,
+      "total": 13
+     },
+     "detail": {
+      "reverse": {
+       "lost": 3,
+       "gained": 4,
+       "examples_lost": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "duration",
+          "job",
+          "telephone"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "housing",
+          "present_residence",
+          "property"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "amount",
+          "credit_history",
+          "number_credits",
+          "other_installment_plans"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "amount",
+          "duration",
+          "employment_duration",
+          "job",
+          "other_installment_plans",
+          "property",
+          "purpose",
+          "telephone"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "amount",
+          "duration",
+          "installment_rate",
+          "job"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "credit_history",
+          "credit_risk",
+          "duration",
+          "status"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "credit_history",
+          "number_credits",
+          "other_installment_plans"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 3,
+       "gained": 2,
+       "examples_lost": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "job",
+          "telephone"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "duration",
+          "job",
+          "telephone"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "amount",
+          "credit_history",
+          "number_credits",
+          "other_installment_plans"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "age",
+          "amount",
+          "credit_history",
+          "number_credits",
+          "other_installment_plans"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "amount",
+          "duration",
+          "installment_rate",
+          "job"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "lost": 1,
+       "gained": 0,
+       "examples_lost": [
+        [
+         "changes",
+         "slope_break",
+         [
+          "age",
+          "duration"
+         ]
+        ]
+       ],
+       "examples_gained": [],
+       "column": "age"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.6
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 1,
+      "finding_lines_default": 11,
+      "finding_permille_default": 647,
+      "long_decimals_default": 4,
+      "repeated_target": 0,
+      "finding_lines_target": 9,
+      "finding_permille_target": 655,
+      "long_decimals_target": 6
+     },
+     "detail": {
+      "default": {
+       "repeated": 1,
+       "finding_lines": 11,
+       "finding_permille": 647,
+       "long_decimals": 4
+      },
+      "target": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 655,
+       "long_decimals": 6
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.11
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 42,
+      "not_checkable": 129
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 21,
+       "not_checkable": 59
+      },
+      "target": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 21,
+       "not_checkable": 70
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.01
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.097,
+      "json_chars": 225664,
+      "findings": 77
+     },
+     "detail": {
+      "runs_seconds": [
+       0.098,
+       0.095,
+       0.097
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.19
+    }
+   },
+   "status": "ok",
+   "rows": 1000,
+   "cols": 21
+  },
+  "soybean": {
+   "held_out": true,
+   "kind": "categorical agronomy table",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 0,
+      "found_full": 0,
+      "found_4k": 0,
+      "line_sum_4k": 0
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "status": "not_applicable"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 7,
+      "false_4k": 7,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 48
+     },
+     "detail": {
+      "seed0": {
+       "columns": 36,
+       "columns_moved": 36,
+       "false_full": 7,
+       "false_4k": 7,
+       "findings": 48
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.1
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 20,
+      "row_shuffle": 26,
+      "rename": 0,
+      "noise": 8,
+      "scale": 0,
+      "total": 54
+     },
+     "detail": {
+      "reverse": {
+       "lost": 10,
+       "gained": 10,
+       "examples_lost": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "canker_lesion",
+          "fruit_pods",
+          "leafspot_size",
+          "stem"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "canker_lesion",
+          "mold_growth",
+          "seed"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "mold_growth",
+          "seed",
+          "seed_discolor"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "canker_lesion",
+          "class",
+          "int_discolor",
+          "precip",
+          "sclerotia",
+          "stem"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "canker_lesion",
+          "class",
+          "leaf_mild",
+          "mold_growth"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "canker_lesion",
+          "fruit_spots",
+          "leafspot_size",
+          "stem"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "leafspot_size",
+          "leafspots_halo",
+          "leafspots_marg"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "leafspots_marg",
+          "leaves"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "canker_lesion",
+          "class",
+          "leaf_mild",
+          "leafspot_size",
+          "mold_growth"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "canker_lesion",
+          "class",
+          "mold_growth",
+          "seed"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 13,
+       "gained": 13,
+       "examples_lost": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "canker_lesion",
+          "mold_growth",
+          "seed"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "fruiting_bodies",
+          "stem"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "fruiting_bodies",
+          "stem_cankers"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "mold_growth",
+          "seed",
+          "seed_discolor"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "class",
+          "germination",
+          "roots",
+          "seed_size"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "canker_lesion",
+          "fruit_spots",
+          "leafspots_marg",
+          "stem"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "fruit_spots",
+          "plant_growth"
+         ]
+        ],
+        [
+         "conditional_rules",
+         "if_then",
+         [
+          "leafspots_marg",
+          "leaves"
+         ]
+        ],
+        [
+         "dependencies",
+         "functional",
+         [
+          "germination",
+          "leafspots_marg",
+          "roots",
+          "seed_size"
+         ]
+        ],
+        [
+         "dependencies",
+         "predictive",
+         [
+          "canker_lesion",
+          "class",
+          "mold_growth",
+          "seed"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 5,
+       "gained": 3,
+       "examples_lost": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "fruit_spots",
+          "seed_size",
+          "shriveling"
+         ]
+        ],
+        [
+         "duplicates",
+         "duplicate_rows",
+         [
+          "area_damaged",
+          "canker_lesion",
+          "class",
+          "crop_hist",
+          "date",
+          "external_decay",
+          "fruit_pods",
+          "fruit_spots",
+          "fruiting_bodies",
+          "germination",
+          "hail",
+          "int_discolor",
+          "leaf_malf",
+          "leaf_mild",
+          "leaf_shread",
+          "leafspot_size",
+          "leafspots_halo",
+          "leafspots_marg",
+          "leaves",
+          "lodging",
+          "mold_growth",
+          "mycelium",
+          "plant_growth",
+          "plant_stand",
+          "precip",
+          "roots",
+          "sclerotia",
+          "seed",
+          "seed_discolor",
+          "seed_size",
+          "seed_tmt",
+          "severity",
+          "shriveling",
+          "stem",
+          "stem_cankers",
+          "temp"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "area_damaged"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "crop_hist"
+         ]
+        ],
+        [
+         "duplicates",
+         "near_duplicate_rows",
+         [
+          "date"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "dependencies",
+         "predictive",
+         [
+          "class",
+          "fruit_pods",
+          "fruit_spots",
+          "fruiting_bodies",
+          "leafspots_halo",
+          "plant_growth",
+          "shriveling",
+          "stem"
+         ]
+        ],
+        [
+         "missingness",
+         "predictable_missingness",
+         [
+          "leaves",
+          "roots"
+         ]
+        ],
+        [
+         "missingness",
+         "predictable_missingness",
+         [
+          "roots"
+         ]
+        ]
+       ]
+      },
+      "scale": {
+       "status": "skipped",
+       "reason": "no suitable numeric column"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.56
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 9,
+      "finding_permille_default": 439,
+      "long_decimals_default": 0,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 9,
+       "finding_permille": 439,
+       "long_decimals": 0
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 76,
+      "not_checkable": 44
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 76,
+       "not_checkable": 44
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.02
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.108,
+      "json_chars": 277642,
+      "findings": 80
+     },
+     "detail": {
+      "runs_seconds": [
+       0.108,
+       0.108,
+       0.106
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.21
+    }
+   },
+   "status": "ok",
+   "rows": 683,
+   "cols": 36
+  },
+  "lace-satellites": {
+   "held_out": true,
+   "kind": "satellite catalogue",
+   "target": null,
+   "components": {
+    "planted": {
+     "metrics": {
+      "planted": 1,
+      "found_full": 1,
+      "found_4k": 1,
+      "line_sum_4k": 12
+     },
+     "detail": {
+      "duplicate_encoding/seed0": {
+       "columns": [
+        "Class_of_Orbit",
+        "Class_of_Orbit_code"
+       ],
+       "verified": true,
+       "in_full_report": true,
+       "digest_line": 12,
+       "via": "text"
+      },
+      "sentinel_value/seed0": {
+       "status": "not_applicable"
+      },
+      "sum_identity/seed0": {
+       "status": "not_applicable"
+      },
+      "target_driver/seed0": {
+       "status": "not_applicable"
+      },
+      "row_anomaly/seed0": {
+       "status": "not_applicable"
+      },
+      "tied_missingness/seed0": {
+       "status": "not_applicable"
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.13
+    },
+    "permuted": {
+     "metrics": {
+      "false_full": 9,
+      "false_4k": 9,
+      "false_full_target": 0,
+      "false_4k_target": 0,
+      "findings_full": 39
+     },
+     "detail": {
+      "seed0": {
+       "columns": 21,
+       "columns_moved": 21,
+       "false_full": 9,
+       "false_4k": 9,
+       "findings": 39
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.08
+    },
+    "invariance": {
+     "metrics": {
+      "reverse": 34,
+      "row_shuffle": 37,
+      "rename": 0,
+      "noise": 0,
+      "scale": 0,
+      "total": 71
+     },
+     "detail": {
+      "reverse": {
+       "lost": 17,
+       "gained": 17,
+       "examples_lost": [
+        [
+         "anomalies",
+         "categorical_outlier",
+         [
+          "Class_of_Orbit",
+          "Type_of_Orbit"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Apogee_km",
+          "Users"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Expected_Lifetime",
+          "Type_of_Orbit"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Inclination_radians",
+          "Users"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Launch_Mass_kg",
+          "Users"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Apogee_km",
+          "Launch_Site"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Apogee_km",
+          "Type_of_Orbit"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Launch_Site",
+          "Perigee_km"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Launch_Site",
+          "Period_minutes"
+         ]
+        ],
+        [
+         "anomalies",
+         "extreme_value",
+         [
+          "Perigee_km",
+          "Type_of_Orbit"
+         ]
+        ]
+       ]
+      },
+      "row_shuffle": {
+       "lost": 19,
+       "gained": 18,
+       "examples_lost": [
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Apogee_km",
+          "Launch_Mass_kg"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Date_of_Launch",
+          "Launch_Mass_kg"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Expected_Lifetime",
+          "Inclination_radians"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Expected_Lifetime",
+          "Launch_Mass_kg"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Inclination_radians",
+          "Period_minutes"
+         ]
+        ]
+       ],
+       "examples_gained": [
+        [
+         "associations",
+         "axis_shape",
+         [
+          "Inclination_radians",
+          "Period_minutes"
+         ]
+        ],
+        [
+         "associations",
+         "statistical",
+         [
+          "Apogee_km",
+          "Type_of_Orbit"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Apogee_km",
+          "Expected_Lifetime"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Apogee_km",
+          "Inclination_radians"
+         ]
+        ],
+        [
+         "changes",
+         "step_discontinuity",
+         [
+          "Apogee_km",
+          "Perigee_km"
+         ]
+        ]
+       ]
+      },
+      "rename": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "noise": {
+       "lost": 0,
+       "gained": 0,
+       "examples_lost": [],
+       "examples_gained": []
+      },
+      "scale": {
+       "status": "skipped",
+       "reason": "no suitable numeric column"
+      },
+      "time_axis": false
+     },
+     "status": "ok",
+     "wall_seconds": 0.67
+    },
+    "reference": {
+     "status": "not_applicable",
+     "reason": "no reference statements for this dataset",
+     "wall_seconds": 0.0
+    },
+    "redundancy": {
+     "metrics": {
+      "repeated_default": 0,
+      "finding_lines_default": 8,
+      "finding_permille_default": 536,
+      "long_decimals_default": 0,
+      "repeated_target": 0,
+      "finding_lines_target": 0,
+      "finding_permille_target": 0,
+      "long_decimals_target": 0
+     },
+     "detail": {
+      "default": {
+       "repeated": 0,
+       "finding_lines": 8,
+       "finding_permille": 536,
+       "long_decimals": 0
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.0
+    },
+    "truth": {
+     "metrics": {
+      "mismatch": 0,
+      "error": 0,
+      "ok": 71,
+      "not_checkable": 61
+     },
+     "detail": {
+      "default": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 71,
+       "not_checkable": 61
+      }
+     },
+     "status": "ok",
+     "wall_seconds": 0.02
+    },
+    "cost": {
+     "metrics": {
+      "profile_seconds": 0.122,
+      "json_chars": 274098,
+      "findings": 100
+     },
+     "detail": {
+      "runs_seconds": [
+       0.121,
+       0.122,
+       0.122
+      ]
+     },
+     "status": "ok",
+     "wall_seconds": 0.24
+    }
+   },
+   "status": "ok",
+   "rows": 1164,
+   "cols": 21
+  }
+ },
+ "totals": {
+  "planted": {
+   "planted": 46,
+   "found_full": 34,
+   "found_4k": 20,
+   "line_sum_4k": 253
+  },
+  "permuted": {
+   "false_full": 144,
+   "false_4k": 136,
+   "false_full_target": 75,
+   "false_4k_target": 67,
+   "findings_full": 333
+  },
+  "invariance": {
+   "reverse": 269,
+   "row_shuffle": 104,
+   "rename": 0,
+   "noise": 30,
+   "scale": 5,
+   "total": 408
+  },
+  "reference": {
+   "check_failed": 0,
+   "must_total": 11,
+   "must_4k_default": 7,
+   "must_8k_default": 11,
+   "must_full_default": 11,
+   "must_4k_target": 7,
+   "must_8k_target": 11,
+   "must_full_target": 11,
+   "should_total": 12,
+   "should_4k_default": 7,
+   "should_8k_default": 9,
+   "should_full_default": 11,
+   "should_4k_target": 8,
+   "should_8k_target": 8,
+   "should_full_target": 10
+  },
+  "redundancy": {
+   "repeated_default": 4,
+   "finding_lines_default": 111,
+   "finding_permille_default": 7118,
+   "long_decimals_default": 53,
+   "repeated_target": 3,
+   "finding_lines_target": 69,
+   "finding_permille_target": 4531,
+   "long_decimals_target": 41
+  },
+  "truth": {
+   "mismatch": 0,
+   "error": 0,
+   "ok": 858,
+   "not_checkable": 1423
+  },
+  "cost": {
+   "profile_seconds": 6.859,
+   "json_chars": 3335873,
+   "findings": 1089
+  }
+ },
+ "held_out_totals": {
+  "planted": {
+   "planted": 7,
+   "found_full": 5,
+   "found_4k": 3,
+   "line_sum_4k": 34
+  },
+  "permuted": {
+   "false_full": 23,
+   "false_4k": 23,
+   "false_full_target": 7,
+   "false_4k_target": 7,
+   "findings_full": 108
+  },
+  "invariance": {
+   "reverse": 61,
+   "row_shuffle": 68,
+   "rename": 0,
+   "noise": 8,
+   "scale": 1,
+   "total": 138
+  },
+  "redundancy": {
+   "repeated_default": 1,
+   "finding_lines_default": 28,
+   "finding_permille_default": 1622,
+   "long_decimals_default": 4,
+   "repeated_target": 0,
+   "finding_lines_target": 9,
+   "finding_permille_target": 655,
+   "long_decimals_target": 6
+  },
+  "truth": {
+   "mismatch": 0,
+   "error": 0,
+   "ok": 189,
+   "not_checkable": 234
+  },
+  "cost": {
+   "profile_seconds": 0.327,
+   "json_chars": 777404,
+   "findings": 257
+  }
+ },
+ "seconds": 103.0
+}

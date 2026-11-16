@@ -1,0 +1,32 @@
+{
+ "dataset": "abalone",
+ "note": "Provisional statements written from reading the table; the maintainer replaces them.",
+ "statements": [
+  {"id": "rings-size", "tier": "must", "provisional": true,
+   "text": "rings (age) rises with shell_weight or another size measure",
+   "kind": "relates", "columns": ["rings"],
+   "columns_any": ["shell_weight", "diameter", "length", "height", "whole_weight"],
+   "patterns": ["\\brings\\b", "shell_weight|diameter|length|height|whole_weight"],
+   "check": "pl.corr('rings', 'shell_weight', method='spearman') > 0.5"},
+  {"id": "size-collinear", "tier": "must", "provisional": true,
+   "text": "length and diameter are nearly collinear",
+   "kind": "relates", "columns": ["length", "diameter"],
+   "patterns": ["length|diameter", "diameter|whole_weight|shell_weight|viscera|shucked"],
+   "check": "pl.corr('length', 'diameter') > 0.9"},
+  {"id": "height-extreme", "tier": "should", "provisional": true,
+   "text": "height has zeros or an isolated extreme (1.13)",
+   "kind": "outlier", "columns": ["height"],
+   "patterns": ["\\bheight\\b", "\\b0\\b|zero|1\\.13|0\\.515|extreme|outl|isolated"],
+   "check": "(pl.col('height') > 0.5).sum() == 2"},
+  {"id": "components-exceed-whole", "tier": "should", "provisional": true,
+   "text": "a component weight exceeds whole_weight on some rows",
+   "kind": "order", "columns": ["whole_weight"], "columns_any": ["shucked_weight", "viscera_weight", "shell_weight"],
+   "patterns": ["whole_weight", "shucked|viscera|shell", "exceed|violat|>|<=|break"],
+   "check": "((pl.col('shucked_weight') > pl.col('whole_weight')) | (pl.col('shell_weight') > pl.col('whole_weight'))).sum() > 0"},
+  {"id": "rings-sex", "tier": "must", "provisional": true,
+   "text": "rings differs by sex; infants have fewer rings",
+   "kind": "relates", "columns": ["rings", "sex"],
+   "patterns": ["\\brings\\b", "\\bsex\\b|infant"],
+   "check": "pl.col('rings').filter(pl.col('sex') == 'infant').mean() < pl.col('rings').filter(pl.col('sex') != 'infant').mean()"}
+ ]
+}

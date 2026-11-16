@@ -1,0 +1,23 @@
+{
+ "version": 1,
+ "doc": "Gate datasets. Fields: id (also the name of the reference file), corpus (an id in benchmarks/corpus/registry.json), target (a column name, \"@last\" for the last column, or omitted), components (names; omitted means all registered components), held_out (scored and written to the scorecard, reported apart, excluded from the pass/fail comparison by default), fast (member of the --fast subset), read (overrides of the corpus read options, for example parse_dates), hints and detectors (passed to profile; hints default to the corpus entry's), options ({component: {option: value}}, for example {\"planted\": {\"plants\": [\"sum_identity\"]}}). See benchmarks/gate/README.md.",
+ "datasets": [
+  {"id": "adult-census-income", "corpus": "adult-census-income", "target": "income", "kind": "tabular, mixed types"},
+  {"id": "bank-marketing", "corpus": "bank-marketing", "target": "@last", "kind": "tabular, mixed types"},
+  {"id": "abalone", "corpus": "abalone", "target": "rings", "fast": true, "kind": "tabular, correlated measures"},
+  {"id": "bike-sharing-hourly", "corpus": "bike-sharing-hourly", "target": "cnt", "kind": "hourly series with calendar columns"},
+  {"id": "metro-interstate-traffic", "corpus": "metro-interstate-traffic", "target": "traffic_volume",
+   "read": {"parse_dates": true}, "hints": {"time": "date_time"}, "kind": "hourly time series"},
+  {"id": "thyroid", "corpus": "thyroid", "target": "diagnosis", "kind": "clinical, many flags and missing values"},
+  {"id": "absenteeism-at-work", "corpus": "absenteeism-at-work", "target": "absenteeism_time_hours", "kind": "small business table"},
+  {"id": "hospital-dha", "corpus": "hospital-dha", "kind": "wide numeric, 64 columns"},
+  {"id": "congressional-voting", "corpus": "congressional-voting", "target": "party", "fast": true, "kind": "categorical votes"},
+  {"id": "adventureworks", "corpus": "adventureworks", "kind": "sales orders"},
+  {"id": "nab-nyc-taxi", "corpus": "nab-nyc-taxi", "fast": true, "kind": "single time series"},
+  {"id": "state-unemployment", "corpus": "state-unemployment", "kind": "wide time series, one column per state"},
+  {"id": "state-unemployment-long", "corpus": "state-unemployment-long", "kind": "panel, long form"},
+  {"id": "south-german-credit", "corpus": "south-german-credit", "target": "credit_risk", "held_out": true, "kind": "credit table"},
+  {"id": "soybean", "corpus": "soybean", "held_out": true, "kind": "categorical agronomy table"},
+  {"id": "lace-satellites", "corpus": "lace-satellites", "held_out": true, "kind": "satellite catalogue"}
+ ]
+}
