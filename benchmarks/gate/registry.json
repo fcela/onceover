@@ -25,9 +25,13 @@
   {"id": "adventureworks", "corpus": "adventureworks", "kind": "sales orders"},
   {"id": "nab-nyc-taxi", "corpus": "nab-nyc-taxi", "fast": true, "kind": "single time series"},
   {"id": "state-unemployment", "corpus": "state-unemployment", "kind": "wide time series, one column per state"},
-  {"id": "state-unemployment-long", "corpus": "state-unemployment-long", "kind": "panel, long form"},
+  {"id": "state-unemployment-long", "corpus": "state-unemployment-long", "target": "unemployment_rate", "kind": "panel, long form"},
   {"id": "south-german-credit", "corpus": "south-german-credit", "target": "credit_risk", "held_out": true, "kind": "credit table"},
   {"id": "soybean", "corpus": "soybean", "held_out": true, "kind": "categorical agronomy table"},
-  {"id": "lace-satellites", "corpus": "lace-satellites", "held_out": true, "kind": "satellite catalogue"}
+  {"id": "lace-satellites", "corpus": "lace-satellites", "held_out": true, "kind": "satellite catalogue"},
+  {"id": "sec-edgar-company-facts", "corpus": "sec-edgar-company-facts", "target": "value",
+   "read": {"parse_dates": true}, "held_out": true, "kind": "event log, filing events"},
+  {"id": "gse15258-expression", "corpus": "gse15258-expression", "target": "response_to_therapy",
+   "components": ["reference"], "held_out": true, "kind": "wide table, 86 samples x 5,006 columns"}
  ]
 }

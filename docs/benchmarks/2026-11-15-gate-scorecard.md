@@ -13,7 +13,7 @@ scores a build on seven components and compares two scorecards.
 
 ## Method
 
-`benchmarks/gate/run.py` profiles 16 corpus tables (13 gated, 3 held
+`benchmarks/gate/run.py` profiles 18 corpus tables (13 gated, 5 held
 out) with the installed build and writes a JSON scorecard with
 per-dataset metrics, totals over the gated datasets, and provenance
 (library version, commit, package versions, seeds).
@@ -61,8 +61,9 @@ of the digest) is summed over datasets in the totals; per-dataset
 values are in the scorecard.
 
 The reference statements are provisional: they were written from
-reading four tables (adult-census-income, bank-marketing, abalone,
-bike-sharing-hourly) and are marked `"provisional": true` in
+reading seven tables (adult-census-income, bank-marketing, abalone,
+bike-sharing-hourly, state-unemployment-long, sec-edgar-company-facts,
+gse15258-expression) and are marked `"provisional": true` in
 `benchmarks/gate/reference/`. Their scores are a starting point until
 the statements are reviewed.
 
@@ -82,10 +83,11 @@ the statements are reviewed.
 
 ## Held-out datasets
 
-south-german-credit, soybean and lace-satellites are scored and
-written to the scorecard (`held_out_totals`) and are reported apart by
-`compare.py`. They are excluded from the pass/fail comparison unless
-`--include-held-out` is given.
+south-german-credit, soybean, lace-satellites, sec-edgar-company-facts
+and gse15258-expression are scored and written to the scorecard
+(`held_out_totals`) and are reported apart by `compare.py`. They are
+excluded from the pass/fail comparison unless `--include-held-out` is
+given.
 
 ## Not included
 
@@ -95,6 +97,31 @@ written to the scorecard (`held_out_totals`) and are reported apart by
   corpus and are not added.
 - Seeds: the default run uses seed 0. More seeds are available with
   `--seeds`; the committed baseline uses one.
+
+## Reference coverage extended (2026-11-16)
+
+The reference component now also scores state-unemployment-long (the
+panel; `unemployment_rate` is designated as its target in the
+registry), sec-edgar-company-facts (an event log, held out) and
+gse15258-expression (a wide table, held out): 16 more provisional
+statements, 39 in total over seven datasets. The statements were
+transcribed from the briefing statement set prepared for this issue.
+Each carries its measured note and its original verification
+expression (`verify`); its `check` states the same fact as a single
+Polars expression, and every check was re-run against the data on the
+current tree — `check_failed` is 0 for the three datasets.
+gse15258-expression is registered for the reference component only:
+its two profiles are the most expensive in the gate — the reference
+component took 326 s for this dataset on the sandbox, against 4 s for
+the next slowest of the three added datasets.
+
+Not carried over from the source set: the daily aggregation of
+metro-interstate-traffic (a derived table with no corpus entry), the
+two generated no-structure controls (the gate measures that property
+with the permuted component on real tables), and titanic and diamonds
+(not in the corpus, as noted above). The source set also marks
+bank-marketing held out, by a mechanical rule; the gate's registry
+does not, and that designation was left as the gate has it.
 
 ## History, report and accepted regressions (added 2026-11-15)
 
