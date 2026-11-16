@@ -22,6 +22,13 @@ Rules:
     present only in the head are listed and not compared.
   - Held-out datasets are listed in their own section and excluded
     from the verdict unless --include-held-out is given.
+  - A worse metric listed in the accepted file (default:
+    accepted.json next to this script) does not fail the comparison
+    while the head value stays within the entry's limit. An entry
+    names a metric, a scope ("total" or a dataset id), a limit and a
+    reason. An accepted total also accepts that metric's per-dataset
+    rows. Entries that accepted nothing are listed, so they can be
+    removed once the base contains the change.
 """
 from __future__ import annotations
 
@@ -31,10 +38,13 @@ import sys
 from pathlib import Path
 
 EPS = 1e-6
+ACCEPTED = Path(__file__).parent / "accepted.json"
+DEFAULT_TIME_REL = 0.20
+DEFAULT_TIME_FLOOR = 1.0
 
 
 def load(path: str) -> dict:
-    return json.loads(Path(path).read_text())
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def fmt(v) -> str:
@@ -122,6 +132,65 @@ def rows_for(base: dict, head: dict, specs: dict, args, include_held_out: bool, 
     return rows, problems
 
 
+def load_accepted(path) -> list[dict]:
+    """Entries of the accepted file; an absent file means none."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    entries = doc.get("accepted", [])
+    for e in entries:
+        missing = {"metric", "limit", "reason"} - set(e)
+        if missing:
+            raise ValueError(f"accepted entry {e} lacks {sorted(missing)}")
+        e.setdefault("scope", "total")
+    return entries
+
+
+def within(spec: dict, head: float, limit: float) -> bool:
+    if spec.get("direction") == "higher":
+        return head >= limit - EPS
+    return head <= limit + EPS
+
+
+def apply_accepted(rows: list, entries: list[dict]) -> tuple[list, list, list]:
+    """Mark worse rows covered by an accepted entry.
+
+    Returns the rows with verdict "accepted" where an entry applies,
+    the (row, entry) pairs that were accepted, and the entries that
+    accepted nothing."""
+    used = set()
+    accepted_totals = set()
+    out, pairs = [], []
+    # totals first, so an accepted total can cover its per-dataset rows
+    order = sorted(range(len(rows)), key=lambda i: rows[i][1] != "total")
+    marked = {}
+    for i in order:
+        verdict, scope, key, b, h, spec = rows[i]
+        if verdict != "worse":
+            continue
+        for j, e in enumerate(entries):
+            if e["metric"] != key:
+                continue
+            if e["scope"] == scope and within(spec, h, e["limit"]):
+                marked[i] = e
+                used.add(j)
+                if scope == "total":
+                    accepted_totals.add(key)
+                break
+            if e["scope"] == "total" and scope != "total" and key in accepted_totals:
+                marked[i] = e
+                break
+    for i, row in enumerate(rows):
+        if i in marked:
+            out.append(("accepted",) + tuple(row[1:]))
+            pairs.append((row, marked[i]))
+        else:
+            out.append(row)
+    unused = [e for j, e in enumerate(entries) if j not in used]
+    return out, pairs, unused
+
+
 def _merge(card: dict) -> dict:
     out = {c: dict(m) for c, m in card["totals"].items()}
     for c, m in card.get("held_out_totals", {}).items():
@@ -159,22 +228,29 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("base")
     ap.add_argument("head")
-    ap.add_argument("--time-rel", type=float, default=0.20,
+    ap.add_argument("--time-rel", type=float, default=DEFAULT_TIME_REL,
                     help="relative tolerance on total time (default 0.20)")
-    ap.add_argument("--time-floor", type=float, default=1.0,
+    ap.add_argument("--time-floor", type=float, default=DEFAULT_TIME_FLOOR,
                     help="absolute tolerance in seconds on total time (default 1.0)")
+    ap.add_argument("--accepted", default=str(ACCEPTED),
+                    help="file of accepted regressions (default: accepted.json next to this script)")
     ap.add_argument("--include-held-out", action="store_true")
     ap.add_argument("--out", help="also write the markdown here")
     args = ap.parse_args()
     try:
         base, head = load(args.base), load(args.head)
         specs = {**base.get("metric_specs", {}), **head.get("metric_specs", {})}
+        entries = load_accepted(args.accepted)
     except (OSError, ValueError, KeyError) as exc:
-        print(f"cannot read scorecards: {exc}", file=sys.stderr)
+        print(f"cannot read scorecards or the accepted file: {exc}", file=sys.stderr)
         return 2
 
     notes: list[str] = []
     rows, problems = rows_for(base, head, specs, args, args.include_held_out, notes)
+    rows, accepted, unused = apply_accepted(rows, entries)
+    for e in unused:
+        notes.append(f"accepted entry for {e['metric']} ({e['scope']}) accepted nothing; "
+                     "remove it if the base already contains the change")
     worse = [r for r in rows if r[0] == "worse"]
     improved = [r for r in rows if r[0] == "improved"]
     totals = [r for r in rows if r[1] == "total"]
@@ -183,6 +259,7 @@ def main() -> int:
     bp, hp = base.get("provenance", {}), head.get("provenance", {})
     md = ["# Gate comparison", "",
           f"**{'FAIL' if failed else 'PASS'}**: {len(worse) + len(problems)} worse, "
+          f"{len(accepted)} worse and accepted, "
           f"{len(improved)} improved, {sum(1 for r in totals if r[0] == 'same')} unchanged totals.", "",
           f"- base: onceover {bp.get('onceover_version')} at {bp.get('commit')}",
           f"- head: onceover {hp.get('onceover_version')} at {hp.get('commit')}",
@@ -194,10 +271,16 @@ def main() -> int:
         md += ["", "## Failed or missing", ""] + [f"- {p}" for p in problems]
     if worse:
         md += ["", "## Worse", ""] + table(worse)
+    if accepted:
+        md += ["", "## Worse and accepted", "",
+               "| metric | scope | base | head | limit | reason |", "|---|---|---:|---:|---:|---|"]
+        for (_, scope, key, b, h, _spec), e in accepted:
+            md.append(f"| {key} | {scope} | {fmt(b)} | {fmt(h)} | "
+                      f"{fmt(e['limit']) if e['scope'] == scope else 'by total'} | {e['reason']} |")
     md += ["", "## Improved", ""]
     md += table(improved) if improved else ["None."]
     md += ["", "## Totals over gated datasets", ""] + table(totals)
-    others = [r for r in rows if r[1] != "total" and r[0] in ("worse", "improved")]
+    others = [r for r in rows if r[1] != "total" and r[0] in ("worse", "improved", "accepted")]
     if others:
         md += ["", "## Per-dataset changes", ""] + table(others)
     md += held_out_section(base, head)
@@ -206,7 +289,7 @@ def main() -> int:
     text = "\n".join(md) + "\n"
     print(text)
     if args.out:
-        Path(args.out).write_text(text)
+        Path(args.out).write_text(text, encoding="utf-8")
     return 1 if failed else 0
 
 

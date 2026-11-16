@@ -15,7 +15,8 @@ is worse and 1 when any metric is worse beyond its tolerance.
 Run options: `--only` (comma-separated dataset ids), `--components`,
 `--seeds` (comma-separated integers, default `0`), `--fast`, `--commit`.
 Compare options: `--time-rel` (default 0.20), `--time-floor` in seconds
-(default 1.0), `--include-held-out`, `--out`.
+(default 1.0), `--include-held-out`, `--accepted` (default
+`accepted.json`), `--out`.
 
 The full run takes about 100 seconds on a laptop. It needs `polars` and
 `numpy` (the plant generators and shuffles use numpy).
@@ -48,7 +49,7 @@ base and failed or was skipped in the head counts as worse.
 
 ## Files
 
-- `registry.json`: the datasets.
+- `registry.json`: the datasets, and the headline metrics of the report.
 - `components/`: one module per component, registered in
   `components/__init__.py`.
 - `gate_plants.py`: the plant catalogue.
@@ -56,9 +57,11 @@ base and failed or was skipped in the head counts as worse.
 - `gatelib.py`: loading (through `benchmarks/corpus/run_benchmarks.py`,
   including its sha256 check), profiling with a cache, digest parsing.
 - `results/`: committed baseline scorecards.
+- `accepted.json`: regressions accepted on purpose.
+- `report.py`: the history of scorecards and the report rendered from it.
 
-Nothing in `run.py`, `compare.py` or `gatelib.py` names a dataset, a
-plant or a component.
+Nothing in `run.py`, `compare.py`, `report.py` or `gatelib.py` names a
+dataset, a plant or a component.
 
 ## Add a dataset
 
@@ -178,6 +181,69 @@ counted in `check_failed`. To add statements for a dataset, create
 component. Digest lines identify findings by exemplar id when they are
 rolled up and otherwise by claim text, and the gate looks the finding up
 in the report to compare its columns.
+
+## Accepted regressions
+
+A change sometimes makes one metric worse on purpose: removing a kind
+of statement lowers the count of statements on shuffled tables and can
+also change which facts survive a column reorder. `accepted.json`
+records such a trade so the comparison passes:
+
+```json
+{"accepted": [
+  {"metric": "invariance.reverse", "scope": "total", "limit": 280,
+   "reason": "order violations between unrelated columns removed (#293); 9 facts no longer stated after reversal"}
+]}
+```
+
+- `metric` is `component.metric` as printed by `compare.py`.
+- `scope` is `total` (the default) or one dataset id. An accepted
+  total also accepts that metric's per-dataset rows.
+- `limit` is the worst head value accepted. A head value beyond it
+  fails as before.
+- `reason` is required and is printed in the comparison and in the
+  report.
+
+The entry is part of the pull request that needs it, so it is reviewed
+with the change. Once the change is on main the base contains it, the
+entry accepts nothing, and `compare.py` says so in its notes; remove it
+then.
+
+## History and report
+
+`report.py` keeps one history entry per change and renders the history
+as one markdown report:
+
+    python benchmarks/gate/report.py add scorecard.json --history DIR \
+        --commit <sha> --date <commit date, ISO 8601> --subject "<subject line>"
+    python benchmarks/gate/report.py render --history DIR --out REPORT.md
+
+An entry is the scorecard without its per-component detail, plus the
+commit, its date, its subject line and the accepted regressions in
+force. The report has five parts:
+
+1. Headline metrics, one row per change, newest first. Each value is
+   followed by its movement against the change before it, with
+   `better` or `worse`.
+2. The latest change: what got better, what got worse, what was
+   accepted and why, in totals and per dataset.
+3. Every total metric over the most recent changes (`--last`, default 8).
+4. The latest scorecard per dataset.
+5. The held-out datasets.
+
+The headline metrics are the `headline` list in `registry.json`: each
+entry names a metric, a column label and a one-line meaning. Add or
+remove an entry there to change what the report shows first.
+
+Seconds are compared only between entries produced on the same
+platform.
+
+On every push to main, the CI job `Gate history` scores the build, adds
+the entry to the `history/` directory of the `gate-history` branch, and
+regenerates that branch's `README.md`, which is the report. Open the
+`gate-history` branch on GitHub to read it. The same report is written
+to the job summary. The first run starts the history from the baselines
+committed under `results/`.
 
 ## CI
 

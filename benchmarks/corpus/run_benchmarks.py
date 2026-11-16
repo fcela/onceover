@@ -308,7 +308,7 @@ def main() -> int:
         sys.path.insert(0, str(ROOT / "python"))
         import onceover
 
-    registry = json.loads((BENCH / "registry.json").read_text())
+    registry = json.loads((BENCH / "registry.json").read_text(encoding="utf-8"))
     run = {"started": datetime.now(timezone.utc).isoformat(),
            "onceover_version": onceover.__version__, "datasets": []}
     failures = 0

@@ -44,11 +44,11 @@ import onceover  # noqa: E402  (after the path setup above)
 # ---------------------------------------------------------------- registry
 
 def load_registry() -> dict:
-    return json.loads((GATE / "registry.json").read_text())
+    return json.loads((GATE / "registry.json").read_text(encoding="utf-8"))
 
 
 def corpus_entries() -> dict:
-    reg = json.loads((CORPUS / "registry.json").read_text())
+    reg = json.loads((CORPUS / "registry.json").read_text(encoding="utf-8"))
     return {e["id"]: e for e in reg["datasets"]}
 
 
@@ -289,4 +289,4 @@ def provenance(commit: str) -> dict:
 
 def dump(obj, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, indent=1, sort_keys=False) + "\n")
+    path.write_text(json.dumps(obj, indent=1, sort_keys=False) + "\n", encoding="utf-8")

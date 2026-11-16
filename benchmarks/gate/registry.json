@@ -1,6 +1,16 @@
 {
  "version": 1,
- "doc": "Gate datasets. Fields: id (also the name of the reference file), corpus (an id in benchmarks/corpus/registry.json), target (a column name, \"@last\" for the last column, or omitted), components (names; omitted means all registered components), held_out (scored and written to the scorecard, reported apart, excluded from the pass/fail comparison by default), fast (member of the --fast subset), read (overrides of the corpus read options, for example parse_dates), hints and detectors (passed to profile; hints default to the corpus entry's), options ({component: {option: value}}, for example {\"planted\": {\"plants\": [\"sum_identity\"]}}). See benchmarks/gate/README.md.",
+ "doc": "Gate datasets. Fields: id (also the name of the reference file), corpus (an id in benchmarks/corpus/registry.json), target (a column name, \"@last\" for the last column, or omitted), components (names; omitted means all registered components), held_out (scored and written to the scorecard, reported apart, excluded from the pass/fail comparison by default), fast (member of the --fast subset), read (overrides of the corpus read options, for example parse_dates), hints and detectors (passed to profile; hints default to the corpus entry's), options ({component: {option: value}}, for example {\"planted\": {\"plants\": [\"sum_identity\"]}}). The headline list names the metrics report.py shows first, each with a column label and a one-line meaning. See benchmarks/gate/README.md.",
+ "headline": [
+  {"metric": "planted.found_4k", "label": "planted found in 4k digest", "meaning": "known structures injected into real tables that the 4,000-character digest states"},
+  {"metric": "reference.must_4k_default", "label": "must statements in 4k digest", "meaning": "hand-written reference statements of tier must that the digest states, default mode"},
+  {"metric": "reference.must_4k_target", "label": "must statements in 4k digest, target mode", "meaning": "the same count with the dataset's target designated"},
+  {"metric": "permuted.false_4k", "label": "statements on shuffled tables (4k digest)", "meaning": "relationship statements in the digest of a table whose columns were shuffled independently, where no relationship exists"},
+  {"metric": "invariance.total", "label": "facts changed by layout", "meaning": "stated facts lost or gained when columns are reordered, rows shuffled, columns renamed, a noise column added, or a column rescaled"},
+  {"metric": "redundancy.repeated_default", "label": "repeated facts in 4k digest", "meaning": "digest lines that restate the columns and relation of an earlier line"},
+  {"metric": "truth.mismatch", "label": "statement mismatches", "meaning": "statements whose recount against the data disagrees with the report"},
+  {"metric": "cost.profile_seconds", "label": "profile seconds", "meaning": "summed median profile time"}
+ ],
  "datasets": [
   {"id": "adult-census-income", "corpus": "adult-census-income", "target": "income", "kind": "tabular, mixed types"},
   {"id": "bank-marketing", "corpus": "bank-marketing", "target": "@last", "kind": "tabular, mixed types"},

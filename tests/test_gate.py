@@ -93,7 +93,7 @@ def test_fast_run_writes_valid_scorecard(tmp_path):
     r = subprocess.run([sys.executable, str(GATE / "run.py"), "--fast", "--out", str(out),
                         "--commit", "test"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
-    sc = json.loads(out.read_text())
+    sc = json.loads(out.read_text(encoding="utf-8"))
     assert sc["schema"] == 1
     assert sc["provenance"]["commit"] == "test"
     assert {"onceover_version", "polars", "python", "seeds"} <= set(sc["provenance"])
@@ -107,3 +107,74 @@ def test_fast_run_writes_valid_scorecard(tmp_path):
     same = subprocess.run([sys.executable, str(GATE / "compare.py"), str(out), str(out)],
                           capture_output=True, text=True)
     assert same.returncode == 0, same.stdout
+
+
+def _accepted(tmp_path, entries):
+    path = tmp_path / "accepted.json"
+    path.write_text(json.dumps({"accepted": entries}))
+    return path
+
+
+def test_accepted_regression_passes_within_its_limit(tmp_path):
+    acc = _accepted(tmp_path, [{"metric": "planted.found_4k", "limit": 4, "reason": "traded for X"}])
+    r = compare(card(count=5), card(count=4), tmp_path, "--accepted", str(acc))
+    assert r.returncode == 0, r.stdout
+    assert "## Worse and accepted" in r.stdout and "traded for X" in r.stdout
+
+
+def test_accepted_regression_fails_beyond_its_limit(tmp_path):
+    acc = _accepted(tmp_path, [{"metric": "planted.found_4k", "limit": 4, "reason": "traded for X"}])
+    r = compare(card(count=5), card(count=3), tmp_path, "--accepted", str(acc))
+    assert r.returncode == 1
+    assert "accepted nothing" in r.stdout
+
+
+def test_accepted_entry_does_not_cover_other_metrics(tmp_path):
+    acc = _accepted(tmp_path, [{"metric": "planted.found_4k", "limit": 0, "reason": "r"}])
+    r = compare(card(), card(mismatch=1), tmp_path, "--accepted", str(acc))
+    assert r.returncode == 1
+
+
+def test_accepted_entry_without_a_reason_is_rejected(tmp_path):
+    acc = _accepted(tmp_path, [{"metric": "planted.found_4k", "limit": 4}])
+    r = compare(card(count=5), card(count=4), tmp_path, "--accepted", str(acc))
+    assert r.returncode == 2
+
+
+def _report(*args):
+    return subprocess.run([sys.executable, str(GATE / "report.py"), *args],
+                          capture_output=True, text=True)
+
+
+def test_report_history_and_render(tmp_path):
+    hist = tmp_path / "history"
+    acc = _accepted(tmp_path, [{"metric": "planted.found_4k", "limit": 4, "reason": "traded for X"}])
+    steps = [("aaaaaaa1", "2026-01-01T00:00:00Z", "first change", card(count=5), "none"),
+             ("bbbbbbb2", "2026-01-02T00:00:00Z", "second | change", card(count=7, seconds=30.0), "none"),
+             ("ccccccc3", "2026-01-03T00:00:00Z", "third change", card(count=4, seconds=30.0), str(acc))]
+    for sha, date, subject, sc, accepted in steps:
+        path = tmp_path / f"{sha}.json"
+        path.write_text(json.dumps(sc))
+        r = _report("add", str(path), "--history", str(hist), "--commit", sha, "--date", date,
+                    "--subject", subject, "--accepted", accepted)
+        assert r.returncode == 0, r.stderr
+    assert [p.name[-12:-5] for p in sorted(hist.glob("*.json"))] == ["aaaaaaa", "bbbbbbb", "ccccccc"]
+    out = tmp_path / "REPORT.md"
+    r = _report("render", "--history", str(hist), "--out", str(out))
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8")
+    # newest change first in the headline table
+    assert text.index("`ccccccc`") < text.index("`bbbbbbb`") < text.index("`aaaaaaa`")
+    # the latest change is judged against the one before it, with the accepted reason
+    latest = text.split("## Latest change")[1].split("## Every total metric")[0]
+    assert "traded for X" in latest and "planted.found_4k" in latest
+    # movement is stated against the previous change
+    assert "7 (+2, better)" in text
+    # a pipe in a commit subject must not break the table
+    assert "second | change" not in text
+
+
+def test_report_render_without_history_fails(tmp_path):
+    (tmp_path / "empty").mkdir()
+    r = _report("render", "--history", str(tmp_path / "empty"), "--out", str(tmp_path / "r.md"))
+    assert r.returncode == 2
