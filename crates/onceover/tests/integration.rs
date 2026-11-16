@@ -115,19 +115,15 @@ fn planted_table(n: usize) -> DataFrame {
 #[test]
 fn recovers_planted_structure_with_semantic_categories() {
     let df = planted_table(4000);
-    // The planted calendar gap is the opt-in dates detector's subject;
-    // the rest of the planted structure belongs to the default set.
+    // The planted calendar gap is the on-request date_gaps
+    // detector's subject; the rest of the planted structure
+    // belongs to the default set.
     let mut detectors: std::collections::BTreeSet<String> = onceover::builtin_detectors()
         .into_iter()
-        .filter(|d| {
-            matches!(
-                d.activation,
-                onceover::Activation::Default | onceover::Activation::HintGated
-            )
-        })
+        .filter(|d| d.membership == onceover::Membership::DefaultSet)
         .map(|d| d.id)
         .collect();
-    detectors.insert("dates".into());
+    detectors.insert("date_gaps".into());
     let report = profile(
         &df,
         &ProfileConfig {
@@ -135,7 +131,7 @@ fn recovers_planted_structure_with_semantic_categories() {
             ..Default::default()
         },
     );
-    assert_eq!(report.schema_version, "0.7");
+    assert_eq!(report.schema_version, "0.8");
     assert!(report
         .findings
         .iter()
@@ -265,7 +261,7 @@ fn selected_detector_does_not_emit_its_resource_findings() {
     let report = profile(
         &planted_table(1500),
         &ProfileConfig {
-            detectors: Some(["prism".into()].into_iter().collect()),
+            detectors: Some(["covering_rules".into()].into_iter().collect()),
             ..Default::default()
         },
     );
@@ -273,10 +269,10 @@ fn selected_detector_does_not_emit_its_resource_findings() {
         .findings
         .iter()
         .all(|f| f.category == Category::ConditionalRules));
-    assert!(report
-        .findings
+    assert!(report.findings.iter().all(|f| f
+        .evidence
         .iter()
-        .all(|f| f.evidence.iter().any(|e| e.method.detector == "prism")));
+        .any(|e| e.method.detector == "covering_rules")));
     assert!(report.coverage["predictability_screen"]
         .detail
         .contains("required as a resource"));

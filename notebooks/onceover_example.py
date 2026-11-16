@@ -80,13 +80,13 @@ def notebook_detectors():
     (docs/benchmarks/2026-11-02-detector-opt-in.md), so a bare
     ``profile()`` call no longer yields the finding. The selection is
     derived from the registry, so it tracks the default set as that
-    set evolves; only ``dates`` is named explicitly.
+    set evolves; only ``date_gaps`` is named explicitly.
     """
     import onceover
 
     ids = [d["id"] for d in onceover.available_detectors()
-           if d["activation"] in ("default", "hint_gated")]
-    return ids + ["dates"]
+           if d["membership"] == "default_set"]
+    return ids + ["date_gaps"]
 
 
 def find(report, category, *, subtype=None, form=None, column=None, inputs=None, target=None):
@@ -108,7 +108,7 @@ def summary(report):
     n = report.overview["n_rows"]
     dirty = find(report, "uniqueness", column="source_order_ref")
     fd = find(report,"dependencies",subtype="functional",form="value_mapping",inputs=["region_id"],target="manager")
-    affine = find(report,"dependencies",subtype="functional",form="affine",inputs=["quantity"],target="double_quantity")
+    affine = find(report,"dependencies",subtype="affine",form="affine",inputs=["quantity"],target="double_quantity")
     gap = find(report,"gaps",subtype="gap",column="order_date")
     rule = measured(find(report,"dependencies",subtype="predictive",target="churn",inputs=["tenure_months"]))
     local = measured(find(report,"dependencies",subtype="predictive",form="piecewise_linear",target="line_total"))
@@ -144,7 +144,7 @@ def summary(report):
 
 
 def columns(report):
-    rows = [{"Field": name, "Type": c["dtype"], "Inferred role": c["role"],
+    rows = [{"Field": name, "Type": c["dtype"], "Inferred role": c["card_role"],
              "Missing": f"{c['null_count']:,}", "Distinct": f"{c['distinct']:,}"}
             for name,c in report.columns.items()]
     return table(rows, "Table 9. Column summaries",
@@ -202,7 +202,7 @@ def references(orders, report):
 
 def formula_check(orders, report):
     import numpy as np
-    affine=measured(find(report,"dependencies",subtype="functional",form="affine",inputs=["quantity"],target="double_quantity"))
+    affine=measured(find(report,"dependencies",subtype="affine",form="affine",inputs=["quantity"],target="double_quantity"))
     assert (orders["double_quantity"] == 2*orders["quantity"]).all()
     total=orders["line_total"].to_numpy()
     expected=np.round(orders["quantity"].to_numpy()*orders["unit_price"].to_numpy(),2)

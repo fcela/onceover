@@ -157,7 +157,7 @@ def _report(findings):
     report = onceover.ProfileReport.__new__(onceover.ProfileReport)
     report._native = None
     report._data = {
-        "schema_version": "0.7",
+        "schema_version": "0.8",
         "overview": {"n_rows": 100, "n_columns": 4},
         "findings": findings,
         "coverage": {},
@@ -171,14 +171,14 @@ def test_statement_class_mirror_matches_the_ledger_rule():
     f = _finding
     assert onceover._statement_class(f("missingness", "missing_values", 0.5, scope="frame")) == 0
     assert onceover._statement_class(f("uniqueness", "unique_key", 0.5)) == 0
-    assert onceover._statement_class(f("intervals", "duplicate_encoding", 0.5)) == 1
+    assert onceover._statement_class(f("anomalies", "duplicate_encoding", 0.5)) == 1
     assert onceover._statement_class(f("dependencies", "functional", 0.5)) == 1
     assert onceover._statement_class(
         f("missingness", "missing_values", 0.5, conditionality="value_conditioned")
     ) == 1
     assert onceover._statement_class(f("changes", "level_shift", 0.5)) == 2
-    assert onceover._statement_class(f("intervals", "extreme_value", 0.5)) == 2
-    assert onceover._statement_class(f("intervals", "value_range", 0.5)) == 3
+    assert onceover._statement_class(f("anomalies", "extreme_value", 0.5)) == 2
+    assert onceover._statement_class(f("anomalies", "value_range", 0.5)) == 3
     assert onceover._statement_class(f("missingness", "missing_values", 0.5)) == 3
 
 

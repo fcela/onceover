@@ -129,7 +129,7 @@ pub fn analyze_pivot(table: &TypedTable, info: &[ColInfo], cfg: &PivotConfig) ->
     // columns are read as an already-wide frame: each is a would-be
     // attribute level that has already been pivoted out.
     let measures: Vec<usize> = (0..info.len())
-        .filter(|&i| info[i].role == "continuous")
+        .filter(|&i| info[i].card_role == "continuous")
         .collect();
     if measures.len() != 1 {
         return out;
@@ -138,7 +138,7 @@ pub fn analyze_pivot(table: &TypedTable, info: &[ColInfo], cfg: &PivotConfig) ->
     let attrs: Vec<usize> = (0..info.len())
         .filter(|&i| {
             i != measure
-                && info[i].role == "categorical"
+                && info[i].card_role == "categorical"
                 && info[i].distinct >= 2
                 && info[i].distinct <= cfg.max_levels
                 && info[i].null_count == 0
@@ -291,7 +291,7 @@ mod tests {
                 ColInfo {
                     name: table.names[i].clone(),
                     dtype: table.dtypes[i].clone(),
-                    role: roles[i].to_string(),
+                    card_role: roles[i].to_string(),
                     n: table.n,
                     null_count: col.null_count(),
                     distinct: counts.distinct,

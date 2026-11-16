@@ -565,7 +565,7 @@ pub fn screen(
                 r.name
             )),
             Method::new(
-                "gbm",
+                "predictability",
                 "histogram_gradient_boosting",
                 "in-house histogram GBM screener (depth-3, early-stopped; onceover v0.1)",
             ),

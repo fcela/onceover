@@ -11,7 +11,7 @@ import onceover
 
 def interaction_findings(df, **kwargs):
     r = onceover.profile(
-        df, budget="standard", detectors=["gbm", "interactions"], **kwargs
+        df, budget="standard", detectors=["predictability", "interactions"], **kwargs
     )
     return [
         f
@@ -79,7 +79,7 @@ def test_quick_budget_skips_the_pass():
     x2 = [rng.uniform(-1, 1) for _ in range(n)]
     y = [2.0 * a * b + 0.1 * rng.gauss(0, 1) for a, b in zip(x1, x2)]
     df = pl.DataFrame({"x1": x1, "x2": x2, "y": y})
-    r = onceover.profile(df, budget="quick", detectors=["gbm", "interactions"])
+    r = onceover.profile(df, budget="quick", detectors=["predictability", "interactions"])
     assert [
         f
         for f in r.findings

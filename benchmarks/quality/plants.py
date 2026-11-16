@@ -41,7 +41,7 @@ def affine_identity(seed: int):
     x = rng.normal(size=n)
     cols = {"x": x, "y": 3.0 * x + 2.0, **_noise(rng, n)}
     spec = {"family": "dependencies", "detectors": ["functional_dependencies", "identities"],
-            "types": {"functional", "arithmetic_identity"},
+            "types": {"affine", "arithmetic_identity"},
             "columns": {"x", "y"}, "response": "y",
             "verify": lambda d: bool(np.allclose(d["y"], 3.0 * d["x"] + 2.0))}
     return _frame(cols), spec
@@ -140,7 +140,7 @@ def conditional_extremes(seed: int):
     idx = np.where(g == "Q")[0][:6]
     v[idx] = 24.0 + rng.random(6) * 5.0
     cols = {"g": g, "v": v, **_noise(rng, n)}
-    spec = {"family": "surprises", "detectors": ["surprises"],
+    spec = {"family": "outliers", "detectors": ["outliers"],
             "types": {"extreme_value"},
             "columns": {"g", "v"}, "response": "v",
             "verify": lambda d: int(np.sum(d["v"] > 20)) == 6}
@@ -157,7 +157,7 @@ def rare_slice_outlier(seed: int):
     idx = np.where(g == "B")[0][:3]
     c[idx] = "rare"
     cols = {"g": g, "c": c, **_noise(rng, n)}
-    spec = {"family": "surprises", "detectors": ["surprises"],
+    spec = {"family": "outliers", "detectors": ["outliers"],
             "types": {"categorical_outlier"},
             "columns": {"g", "c"}, "response": "c",
             "verify": lambda d: int(np.sum(d["c"] == "rare")) == 3}

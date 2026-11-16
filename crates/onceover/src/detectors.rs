@@ -5,27 +5,39 @@ use onceover_mines::EncodedMatrix;
 use onceover_report::{Category, ColumnCard, Finding};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// How a detector joins a run. The default set is the detectors an
-/// agent gets from one unadorned `profile()` call; the 2026-11-02
-/// detector-effectiveness battery (docs/benchmarks/2026-11-02-detector-
-/// opt-in.md) is the evidence base for which detectors hold which
-/// activation.
+/// Whether a detector is in the set an unadorned `profile()` call
+/// runs. Membership answers one question: is the detector in the
+/// default set, or does it run only when requested?
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Activation {
-    /// Runs in the default set.
-    Default,
-    /// Registered and runnable, but only when explicitly selected via
-    /// `detectors=[...]`. Opt-in detectors record a skipped coverage
-    /// entry in default runs, so their absence is never silent.
-    OptIn,
-    /// In the default set, but engages only when the caller declares
-    /// the structure it checks (profile hints); without hints it
-    /// records a skipped coverage entry.
-    HintGated,
-    /// Runs only when a target is designated (or when explicitly
+pub enum Membership {
+    /// In the default set: runs in an unadorned `profile()` call
+    /// (subject to its trigger).
+    DefaultSet,
+    /// Registered and runnable, but only when explicitly selected
+    /// via `detectors=[...]` (or, for target-triggered detectors,
+    /// when a target is designated). On-request detectors record a
+    /// skipped coverage entry in default runs, so their absence is
+    /// never silent.
+    OnRequest,
+}
+
+/// What engages a detector within a run. Trigger answers a second
+/// question, independent of membership: does the detector run on
+/// every call, only when the caller declares the structure it
+/// checks, or only when a target is designated?
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trigger {
+    /// Engages on every run that includes the detector.
+    Always,
+    /// Engages only when the caller declares the structure it
+    /// checks (profile hints); without hints it records a skipped
+    /// coverage entry.
+    Hints,
+    /// Engages only when a target is designated (or when explicitly
     /// selected together with a target).
-    TargetGated,
+    Target,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -33,27 +45,35 @@ pub struct DetectorDescriptor {
     pub id: String,
     pub categories: Vec<Category>,
     pub requires: Vec<String>,
-    pub activation: Activation,
+    pub membership: Membership,
+    pub trigger: Trigger,
     /// What the detector looks for, in one line. The registry is
     /// the single source for this text: the capability manifest
     /// and the book's registry table render it from here.
     pub purpose: String,
 }
 impl DetectorDescriptor {
-    /// Extension detectors default to `Activation::Default`; the
-    /// built-in registry overrides the activation per detector.
+    /// Extension detectors default to the default set with an
+    /// always trigger; the built-in registry overrides membership
+    /// and trigger per detector.
     pub fn new(id: &str, categories: Vec<Category>, requires: Vec<String>) -> Self {
         Self {
             id: id.into(),
             categories,
             requires,
-            activation: Activation::Default,
+            membership: Membership::DefaultSet,
+            trigger: Trigger::Always,
             purpose: String::new(),
         }
     }
 
-    pub fn with_activation(mut self, activation: Activation) -> Self {
-        self.activation = activation;
+    pub fn with_membership(mut self, membership: Membership) -> Self {
+        self.membership = membership;
+        self
+    }
+
+    pub fn with_trigger(mut self, trigger: Trigger) -> Self {
+        self.trigger = trigger;
         self
     }
 
@@ -64,19 +84,22 @@ impl DetectorDescriptor {
 }
 
 pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
-    use Activation::*;
     use Category::*;
+    use Membership::*;
+    use Trigger::*;
     let make = |id: &str,
                 categories: Vec<Category>,
                 requires: &[&str],
-                activation: Activation,
+                membership: Membership,
+                trigger: Trigger,
                 purpose: &str| {
         DetectorDescriptor::new(
             id,
             categories,
             requires.iter().map(|s| s.to_string()).collect(),
         )
-        .with_activation(activation)
+        .with_membership(membership)
+        .with_trigger(trigger)
         .with_purpose(purpose)
     };
     vec![
@@ -84,47 +107,47 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             "column_profile",
             vec![Missingness, Concentration, ColumnRoles, Formats],
             &[],
-            Default,
+            DefaultSet, Always,
         "Column summaries, role suggestions, missingness, concentration, string formats"),
-        make("row_duplicates", vec![Duplicates], &[], Default, "Repeated rows under the stated comparison and missing-value policy"),
-        make("keys", vec![Uniqueness], &[], Default, "Single-column, composite, and nearly unique keys"),
+        make("row_duplicates", vec![Duplicates], &[], DefaultSet, Always, "Repeated rows under the stated comparison and missing-value policy"),
+        make("keys", vec![Uniqueness], &[], DefaultSet, Always, "Single-column, composite, and nearly unique keys"),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs (20 datasets x harness and default configs).
         // The detector is unchanged and runs when explicitly selected.
-        make("pivot", vec![ColumnRoles], &[], OptIn, "Verified long layout and relationships in its wide form"),
-        make("functional_dependencies", vec![Dependencies], &[], Default, "Exact or approximate value mappings, including multi-column determinants"),
-        make("order_constraints", vec![Dependencies], &[], Default, "Pairwise order between two columns (a <= b), exact or with counted violations"),
-        make("duplicate_encodings", vec![ColumnRoles], &[], Default, "Alternative labels for a grouping and finer-to-coarser rollups"),
-        make("sortedness", vec![Ordering], &[], Default, "Order in the row sequence and late appended backfills"),
+        make("pivot", vec![ColumnRoles], &[], OnRequest, Always, "Verified long layout and relationships in its wide form"),
+        make("functional_dependencies", vec![Dependencies], &[], DefaultSet, Always, "Exact or approximate value mappings, including multi-column determinants"),
+        make("order_constraints", vec![Dependencies], &[], DefaultSet, Always, "Pairwise order between two columns (a <= b), exact or with counted violations"),
+        make("duplicate_encodings", vec![ColumnRoles], &[], DefaultSet, Always, "Alternative labels for a grouping and finer-to-coarser rollups"),
+        make("sortedness", vec![Ordering], &[], DefaultSet, Always, "Order in the row sequence and late appended backfills"),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs at first measurement.
-        make("granularity", vec![Formats], &[], OptIn, "Changes between fractional and integer-valued recording"),
-        make("sentinels", vec![Missingness], &[], Default, "Repeated, windowed candidate missing-value codes"),
-        make("boundaries", vec![Formats], &[], Default, "Mass piled at a numeric column's minimum or maximum, and interior mass points in zero-inflated columns"),
-        make("missingness", vec![Missingness], &[], Default, "Each column's missing rate, the grouping level, threshold, or time point it follows, and columns missing on the same rows"),
-        make("content", vec![Formats], &[], Default, "What text columns hold (numbers, dates, recognized formats), label variants and likely misspellings, repeated extremes, stray signs, zero inflation, separated modes, and far-out dates"),
-        make("series", vec![Gaps, Changes], &[], Default, "Absent steps on the time axis; trend, cycle and persistence of each measure; grouping levels that appear, end or shift share over time"),
+        make("granularity", vec![Formats], &[], OnRequest, Always, "Changes between fractional and integer-valued recording"),
+        make("sentinels", vec![Missingness], &[], DefaultSet, Always, "Repeated, windowed candidate missing-value codes"),
+        make("boundary_mass", vec![Formats], &[], DefaultSet, Always, "Mass piled at a numeric column's minimum or maximum, and interior mass points in zero-inflated columns"),
+        make("missingness", vec![Missingness], &[], DefaultSet, Always, "Each column's missing rate, the grouping level, threshold, or time point it follows, and columns missing on the same rows"),
+        make("content_anomalies", vec![Formats], &[], DefaultSet, Always, "What text columns hold (numbers, dates, recognized formats), label variants and likely misspellings, repeated extremes, stray signs, zero inflation, separated modes, and far-out dates"),
+        make("series", vec![Gaps, Changes], &[], DefaultSet, Always, "Absent steps on the time axis; trend, cycle and persistence of each measure; grouping levels that appear, end or shift share over time"),
         make(
             "row_consistency",
-            vec![Duplicates, Intervals],
+            vec![Duplicates, Anomalies],
             &["numeric_dependence"],
-            Default,
+            DefaultSet, Always,
         "Rows repeating another on every column but one, rows far from the line two tight columns follow, and rows with two columns' values swapped"),
-        make("digits", vec![Formats], &[], Default, "Heaping, terminal-digit preferences, and eligible Benford deviations"),
+        make("digit_fingerprints", vec![Formats], &[], DefaultSet, Always, "Heaping, terminal-digit preferences, and eligible Benford deviations"),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs across two batteries (2026-10-29, 2026-11-02).
-        make("dates", vec![Gaps, Intervals], &[], OptIn, "Inferred calendar gaps and interval irregularity"),
+        make("date_gaps", vec![Gaps, Anomalies], &[], OnRequest, Always, "Inferred calendar gaps and interval irregularity"),
         // Hint-gated: a default-set member that engages only on
         // declared hints and otherwise records itself skipped.
-        make("expectations", vec![Gaps, Ordering], &[], HintGated, "Declared sequences, calendars, ordering, and panel completeness"),
+        make("expectations", vec![Gaps, Ordering], &[], DefaultSet, Hints, "Declared sequences, calendars, ordering, and panel completeness"),
         // Per-period coverage on the frame's time axis: observed
         // periods whose row, entity, or principal-measure volume
         // falls far below the typical period's, stated with their
         // position.
-        make("panel_coverage", vec![Gaps], &[], Default, "Per-period row and entity volume on the time axis, against the typical period"),
+        make("panel_coverage", vec![Gaps], &[], DefaultSet, Always, "Per-period row and entity volume on the time axis, against the typical period"),
         // Hint-gated like expectations: engages only when the
         // caller declares a group contrast in the hints.
-        make("group_contrast", vec![Associations], &[], HintGated, "How one declared subset of the rows differs from the rest of the table"),
+        make("group_contrast", vec![Associations], &[], DefaultSet, Hints, "How one declared subset of the rows differs from the rest of the table"),
         // The automatic per-level scan (issue #275): every level
         // of every low-cardinality categorical against the pooled
         // rest on every numeric measure — location, scale, and
@@ -134,28 +157,28 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // quantile work in the breaks cost class, so it runs in
         // the default set like the mixed-pair screen whose
         // scale/shape blindness it covers.
-        make("level_contrasts", vec![Associations], &[], Default, "Each level of a categorical column against the pooled rest on each numeric measure: location, scale, and constant-multiple contrasts, plus the date axis's calendar parts"),
-        make("gbm", vec![Dependencies], &[], Default, "Predictability of eligible columns from the other columns"),
-        make("decision_tables", vec![Dependencies], &["gbm"], Default, "Compact predictive tables selected by cross-validation"),
-        make("prism", vec![ConditionalRules], &["gbm"], Default, "Multi-condition rules for categorical targets"),
-        make("regimes", vec![Dependencies, Changes], &["gbm"], Default, "Local linear equations and dated reference-model residual shifts"),
-        make("interactions", vec![Dependencies], &["gbm"], Default, "Non-additive predictor pairs under a fitted target model"),
-        make("target_shapes", vec![Dependencies], &[], TargetGated, "Line, curve, and step comparisons for a designated numeric target"),
-        make("leakage", vec![Dependencies], &[], TargetGated, "A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it"),
-        make("model_failures", vec![Dependencies], &[], TargetGated, "Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error"),
-        make("breaks", vec![Changes, Gaps], &[], Default, "Sustained level, trend, variance changes, and transient excursions"),
-        make("ordered_partitions", vec![Changes], &[], Default, "Model-based recursive partitions of a numeric response along a time axis or a categorical dimension"),
-        make("surprises", vec![Intervals], &[], Default, "Isolated numeric values and context-breaking categorical values"),
-        make("discontinuities", vec![Changes], &[], Default, "Axis-aligned and diagonal threshold jumps"),
+        make("level_contrasts", vec![Associations], &[], DefaultSet, Always, "Each level of a categorical column against the pooled rest on each numeric measure: location, scale, and constant-multiple contrasts, plus the date axis's calendar parts"),
+        make("predictability", vec![Dependencies], &[], DefaultSet, Always, "Predictability of eligible columns from the other columns"),
+        make("decision_tables", vec![Dependencies], &["predictability"], DefaultSet, Always, "Compact predictive tables selected by cross-validation"),
+        make("covering_rules", vec![ConditionalRules], &["predictability"], DefaultSet, Always, "Multi-condition rules for categorical targets"),
+        make("regimes", vec![Dependencies, Changes], &["predictability"], DefaultSet, Always, "Local linear equations and dated reference-model residual shifts"),
+        make("interactions", vec![Dependencies], &["predictability"], DefaultSet, Always, "Non-additive predictor pairs under a fitted target model"),
+        make("target_shapes", vec![Dependencies], &[], OnRequest, Target, "Line, curve, and step comparisons for a designated numeric target"),
+        make("leakage", vec![Dependencies], &[], OnRequest, Target, "A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it"),
+        make("model_failures", vec![Dependencies], &[], OnRequest, Target, "Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error"),
+        make("breaks", vec![Changes, Gaps], &[], DefaultSet, Always, "Sustained level, trend, variance changes, and transient excursions"),
+        make("ordered_partitions", vec![Changes], &[], DefaultSet, Always, "Model-based recursive partitions of a numeric response along a time axis or a categorical dimension"),
+        make("outliers", vec![Anomalies], &[], DefaultSet, Always, "Isolated numeric values and context-breaking categorical values"),
+        make("discontinuities", vec![Changes], &[], DefaultSet, Always, "Axis-aligned and diagonal threshold jumps"),
         // Opt-in since the 2026-11-02 battery: zero findings in 40
         // measured runs; it engages on a time hint agent callers
         // rarely pass, and issue #95 tracks a panic on long-form
         // data with a time hint.
-        make("drift", vec![Changes], &["gbm"], OptIn, "Reference-period model-routing changes along a declared time axis"),
+        make("drift", vec![Changes], &["predictability"], OnRequest, Always, "Reference-period model-routing changes along a declared time axis"),
         // Opt-in: a model-based segmentation over the joint
         // measure distribution; stated splits carry permutation
         // p-values, and the pass is heavier than the breaks scan.
-        make("changeforest", vec![Changes], &[], OptIn, "Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection"),
+        make("distribution_change", vec![Changes], &[], OnRequest, Always, "Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection"),
         // Opt-in: a searched conjunction-conditional distribution
         // statement (issue #272). The search evaluates every
         // supported conjunction of conditions against every
@@ -165,9 +188,9 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // evidence has to answer for, so the control stack
         // (split-sample confirmation, BH over the confirmation
         // family, candidate count in coverage) is part of the
-        // pass. Same cost and inference class as views and
-        // changeforest: explicit selection.
-        make("slice_shifts", vec![Associations], &[], OptIn, "Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows"),
+        // pass. Same cost and inference class as row_clusters and
+        // distribution_change: explicit selection.
+        make("slice_shifts", vec![Associations], &[], OnRequest, Always, "Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows"),
         // The ordered-axis battery (#273, #277): shape statements
         // along any ordered axis and located breaks in a
         // relationship or inside a slice, deduped against the
@@ -175,20 +198,20 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // the breaks scans' cost class (prefix-sum scans plus
         // shuffle calibration on aggregated series), so it runs
         // in the default set like breaks and ordered_partitions.
-        make("ordered_axis", vec![Changes, Associations], &[], Default, "Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level"),
+        make("ordered_axis", vec![Changes, Associations], &[], DefaultSet, Always, "Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level"),
         make(
             "association_rules",
             vec![ConditionalRules, Associations],
             &[],
-            Default,
+            DefaultSet, Always,
         "Pairwise nominal rules with train and diagnostic evidence"),
-        make("hotspots", vec![Concentration], &[], Default, "Combinations concentrated beyond their marginal frequencies"),
-        make("numeric_dependence", vec![Associations], &[], Default, "Pearson, Spearman, and both directions of Chatterjee's xi"),
+        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies"),
+        make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
         make(
             "identities",
             vec![Dependencies],
             &["numeric_dependence"],
-            Default,
+            DefaultSet, Always,
         "Affine and small multi-term arithmetic relationships"),
         make(
             "period_associations",
@@ -196,14 +219,14 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             &["numeric_dependence"],
             // Opt-in since the 2026-11-02 battery: zero findings in
             // 40 measured runs across two batteries.
-            OptIn,
+            OnRequest, Always,
         "Changes in pairwise correlation across calendar or year periods"),
         // Opt-in: experimental until its criterion review closes.
         make(
-            "views",
+            "row_clusters",
             vec![Associations, Changes, Concentration, Gaps],
             &[],
-            OptIn,
+            OnRequest, Always,
         "Experimental shared row partitions, cluster differences, and density findings"),
     ]
 }
@@ -211,17 +234,20 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
 pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String> {
     let specs = builtin_detectors();
     let mut active = selected.cloned().unwrap_or_else(|| {
-        // The default set: detectors whose activation is Default or
-        // HintGated. Opt-in detectors (views, dates, pivot,
-        // period_associations, drift, granularity, changeforest,
-        // slice_shifts) run only when
-        // explicitly requested via detectors=[...]; the target-gated
-        // detectors (target_shapes, model_failures) run only when a
-        // target is designated (the pipeline adds them then) or
-        // when explicitly requested together with a target.
+        // The default set: detectors whose membership is
+        // DefaultSet, including the two hint-triggered members
+        // (expectations, group_contrast), which engage only when
+        // hints declare their structure. On-request detectors
+        // (row_clusters, date_gaps, pivot, period_associations,
+        // drift, granularity, distribution_change, slice_shifts)
+        // run only when explicitly requested via detectors=[...];
+        // the target-triggered detectors (target_shapes, leakage,
+        // model_failures) run only when a target is designated
+        // (the pipeline adds them then) or when explicitly
+        // requested together with a target.
         specs
             .iter()
-            .filter(|d| matches!(d.activation, Activation::Default | Activation::HintGated))
+            .filter(|d| d.membership == Membership::DefaultSet)
             .map(|d| d.id.clone())
             .collect()
     });
@@ -256,22 +282,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_30_measured_detectors() {
+    fn default_set_is_the_32_measured_detectors() {
         let active = active_detectors(None);
-        // 43 registered: 32 default (30 Default + hint-gated
-        // expectations and group_contrast), 8 opt-in, 3 target-gated.
+        // 43 registered: 32 in the default set (30 always-triggered
+        // plus the hint-triggered expectations and group_contrast),
+        // 11 on request (8 always-triggered, 3 target-triggered).
         assert_eq!(builtin_detectors().len(), 43);
         assert_eq!(active.len(), 32);
         for id in [
-            "views",
-            "dates",
+            "row_clusters",
+            "date_gaps",
             "pivot",
             "period_associations",
             "drift",
             "granularity",
-            "changeforest",
+            "distribution_change",
             "slice_shifts",
             "target_shapes",
+            "leakage",
             "model_failures",
         ] {
             assert!(!active.contains(id), "{id} must not be in the default set");
@@ -285,21 +313,24 @@ mod tests {
     fn explicit_selection_still_reaches_opt_in_detectors() {
         let selected: BTreeSet<String> = ["drift".to_string()].into_iter().collect();
         let active = active_detectors(Some(&selected));
-        // drift plus its gbm resource.
+        // drift plus its predictability resource.
         assert!(active.contains("drift"));
-        assert!(active.contains("gbm"));
+        assert!(active.contains("predictability"));
     }
 
     #[test]
-    fn activations_partition_the_registry() {
-        let mut counts = BTreeMap::new();
+    fn membership_and_trigger_partition_the_registry() {
+        let mut membership = BTreeMap::new();
+        let mut trigger = BTreeMap::new();
         for d in builtin_detectors() {
-            *counts.entry(format!("{:?}", d.activation)).or_insert(0) += 1;
+            *membership.entry(format!("{:?}", d.membership)).or_insert(0) += 1;
+            *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
-        assert_eq!(counts.get("Default"), Some(&30));
-        assert_eq!(counts.get("OptIn"), Some(&8));
-        assert_eq!(counts.get("HintGated"), Some(&2));
-        assert_eq!(counts.get("TargetGated"), Some(&3));
+        assert_eq!(membership.get("DefaultSet"), Some(&32));
+        assert_eq!(membership.get("OnRequest"), Some(&11));
+        assert_eq!(trigger.get("Always"), Some(&38));
+        assert_eq!(trigger.get("Hints"), Some(&2));
+        assert_eq!(trigger.get("Target"), Some(&3));
     }
 
     #[test]

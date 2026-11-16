@@ -70,7 +70,7 @@ BTreeMap::from([
                     ("cv".into(), json!(cv)),
                 ]),
 Some("do not assume a regular time index".into()),
-Method::new("dates", "interval_variation", "exact interval scan (onceover v0.1)")
+Method::new("date_gaps", "interval_variation", "exact interval scan (onceover v0.1)")
 ));
         }
     }
@@ -156,7 +156,7 @@ Method::new("dates", "interval_variation", "exact interval scan (onceover v0.1)"
             ]),
             Some("check for missing periods (ETL gaps, holidays not modeled, outages)".into()),
             Method::new(
-                "dates",
+                "date_gaps",
                 "calendar_intervals",
                 "exact calendar scan, weekday-aware (onceover v0.1)",
             ),

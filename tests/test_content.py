@@ -24,7 +24,7 @@ def _profile(**columns):
     n = len(next(iter(columns.values())))
     rng = np.random.default_rng(0)
     frame = pl.DataFrame({"filler": rng.normal(size=n), **columns})
-    return onceover.profile(frame, detectors=["content"])
+    return onceover.profile(frame, detectors=["content_anomalies"])
 
 
 def test_numbers_stored_as_text_with_exceptions():
@@ -163,7 +163,7 @@ def test_noise_is_quiet():
             "level": [f"L{v}" for v in rng.integers(0, 12, size=n)],
             "when": [date(2015, 1, 1) + timedelta(days=int(v)) for v in rng.integers(0, 2000, size=n)],
         })
-        report = onceover.profile(frame, detectors=["content"])
+        report = onceover.profile(frame, detectors=["content_anomalies"])
         bad += [f["claim"] for f in report.findings]
     assert not bad, bad
 

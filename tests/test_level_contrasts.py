@@ -152,7 +152,8 @@ def test_calendar_day_of_week_contrast_fires():
 
 def test_detector_registered_and_in_default_set():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert registry["level_contrasts"]["activation"] == "default"
+    assert registry["level_contrasts"]["membership"] == "default_set"
+    assert registry["level_contrasts"]["trigger"] == "always"
     df = _frame(["A", "B"], lambda s, i: 3.5 + _noise(i), n_per_site=100)
     report = onceover.profile(df, detectors=["level_contrasts"])
     assert report.coverage["level_contrasts"]["status"] == "ran_exact"

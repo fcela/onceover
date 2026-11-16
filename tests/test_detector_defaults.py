@@ -2,12 +2,12 @@
 
 The 2026-11-02 detector battery (docs/benchmarks/2026-11-02-detector-
 opt-in.md) measured five detectors producing zero findings in 40 runs
-over 20 datasets; they are opt-in, like the experimental views pass.
-A default run must say so in coverage, per detector, and an explicit
-selection must still run them. The per-detector report caps on
-functional_dependencies, gbm, and discontinuities (the last added by
-the 2026-11-04 battery) must likewise be disclosed with
-counts, never applied silently.
+over 20 datasets; they run on request, like the experimental
+row-clusters pass. A default run must say so in coverage, per
+detector, and an explicit selection must still run them. The
+per-detector report caps on functional_dependencies, predictability,
+and discontinuities (the last added by the 2026-11-04 battery) must
+likewise be disclosed with counts, never applied silently.
 """
 
 import datetime as dt
@@ -16,14 +16,14 @@ import polars as pl
 
 import onceover
 
-OPT_IN = [
-    "views",
-    "dates",
+ON_REQUEST = [
+    "row_clusters",
+    "date_gaps",
     "pivot",
     "period_associations",
     "drift",
     "granularity",
-    "changeforest",
+    "distribution_change",
     "slice_shifts",
 ]
 
@@ -39,28 +39,40 @@ def _frame() -> pl.DataFrame:
     )
 
 
-def test_registry_activation_partition():
+def test_registry_membership_trigger_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
     assert len(registry) == 43
-    by_activation = {}
-    for d in registry.values():
-        by_activation.setdefault(d["activation"], []).append(d["id"])
-    assert sorted(by_activation["opt_in"]) == sorted(OPT_IN)
-    assert by_activation["hint_gated"] == ["expectations", "group_contrast"]
-    assert sorted(by_activation["target_gated"]) == [
-        "leakage",
-        "model_failures",
-        "target_shapes",
+    on_request = sorted(
+        d["id"] for d in registry.values() if d["membership"] == "on_request"
+    )
+    assert on_request == sorted(
+        ON_REQUEST + ["leakage", "model_failures", "target_shapes"]
+    )
+    hint_triggered = sorted(
+        d["id"] for d in registry.values() if d["trigger"] == "hints"
+    )
+    assert hint_triggered == ["expectations", "group_contrast"]
+    assert all(
+        registry[d]["membership"] == "default_set" for d in hint_triggered
+    )
+    target_triggered = sorted(
+        d["id"] for d in registry.values() if d["trigger"] == "target"
+    )
+    assert target_triggered == ["leakage", "model_failures", "target_shapes"]
+    default_always = [
+        d["id"]
+        for d in registry.values()
+        if d["membership"] == "default_set" and d["trigger"] == "always"
     ]
-    assert len(by_activation["default"]) == 30
+    assert len(default_always) == 30
 
 
-def test_default_run_discloses_opt_in_passes_as_skipped():
+def test_default_run_discloses_on_request_passes_as_skipped():
     report = onceover.profile(_frame())
-    for detector in OPT_IN:
+    for detector in ON_REQUEST:
         entry = report.coverage[detector]
         assert entry["status"] == "skipped", (detector, entry)
-        assert "opt-in" in entry["detail"], (detector, entry)
+        assert "on-request" in entry["detail"], (detector, entry)
         assert detector in entry["detail"], (detector, entry)
     entry = report.coverage["target_shapes"]
     assert entry["status"] == "skipped"
@@ -73,8 +85,8 @@ def test_default_run_discloses_opt_in_passes_as_skipped():
 def test_opt_in_detector_runs_when_selected():
     days = [dt.date(2024, 1, 1) + dt.timedelta(days=i) for i in range(100)]
     days = [d for d in days if d.weekday() < 5 and d != dt.date(2024, 2, 7)]
-    report = onceover.profile(pl.DataFrame({"date": days}), detectors=["dates"])
-    assert report.coverage["dates"]["status"] == "ran_exact"
+    report = onceover.profile(pl.DataFrame({"date": days}), detectors=["date_gaps"])
+    assert report.coverage["date_gaps"]["status"] == "ran_exact"
     assert report.select(category="gaps")
 
 
@@ -101,7 +113,7 @@ def test_functional_dependency_cap_is_disclosed_with_counts():
 def test_discontinuities_cap_is_disclosed_with_counts():
     # State unemployment (wide panel): the discontinuities detector
     # produced 81 selected statements in the 2026-11-04 battery's
-    # default run, crowding out every gbm and numeric-dependence
+    # default run, crowding out every predictability and numeric-dependence
     # statement; the per-detector report cap of 25 now bounds it and
     # must be disclosed the same way.
     path = "benchmarks/corpus/data/crosscat/state-unemployment/data.csv"

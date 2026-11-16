@@ -1,5 +1,5 @@
 """Registration is single-point: the Rust detector registry is the
-one declaration of each detector's name, activation, and purpose,
+one declaration of each detector's name, membership, trigger, and purpose,
 and the finding taxonomy's type strings live in one list in the
 report crate. These tests pin the surfaces that used to be
 hand-maintained copies — the capability manifest, the detector
@@ -27,9 +27,7 @@ def _registry():
 
 def _counts():
     registry = _registry()
-    default = sum(
-        1 for d in registry if d["activation"] in ("default", "hint_gated")
-    )
+    default = sum(1 for d in registry if d["membership"] == "default_set")
     return default, len(registry)
 
 

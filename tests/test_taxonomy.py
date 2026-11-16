@@ -19,7 +19,7 @@ def test_equivalent_rules_have_multiple_sources_and_one_statement():
            and f['specification']['conditions']==[{'column':'segment','operator':'eq','value':'premium'}]]
     assert len(rules)==1
     methods={e['method']['detector'] for e in rules[0]['evidence']}
-    assert {'prism','association_rules','rule_evaluator'} <= methods
+    assert {'covering_rules','association_rules','rule_evaluator'} <= methods
     assert sum(e['method']['detector']=='rule_evaluator' for e in rules[0]['evidence'])==1
     assert report.data['selection']['distinct_statements'] < report.data['selection']['verified_candidates']
 
@@ -28,7 +28,7 @@ def test_predictive_statements_merge_methods_without_losing_direction():
     report=onceover.profile(related_pair())
     statements=select(report,'dependencies',subtype='predictive',inputs=['segment'],target='shipping')
     assert len(statements)==1
-    assert {'gbm','decision_tables'} <= {e['method']['detector'] for e in statements[0]['evidence']}
+    assert {'predictability','decision_tables'} <= {e['method']['detector'] for e in statements[0]['evidence']}
     assert select(report,'dependencies',subtype='predictive',inputs=['shipping'],target='segment')
     assert not any(f['category']=='related_columns' for f in report.findings)
     assert report.groups
@@ -57,7 +57,7 @@ def test_gap_statement_records_the_reference():
     import datetime as dt
     days=[dt.date(2024,1,1)+dt.timedelta(days=i) for i in range(100)]
     days=[d for d in days if d.weekday()<5 and d!=dt.date(2024,2,7)]
-    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['dates'])
+    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['date_gaps'])
     gap=select(report,'gaps')[0]
     definition=gap['specification']['definition']
     assert definition['domain']=='temporal'
@@ -67,8 +67,8 @@ def test_gap_statement_records_the_reference():
 
 def test_detector_selection_and_global_selection_limits():
     registry={d['id']:d for d in onceover.available_detectors()}
-    assert registry['prism']['categories']==['conditional_rules']
-    assert registry['prism']['requires']==['gbm']
+    assert registry['covering_rules']['categories']==['conditional_rules']
+    assert registry['covering_rules']['requires']==['predictability']
     df=related_pair()
     all_rules=onceover.profile(df)
     limited=onceover.profile(df,max_rules=1)
@@ -84,7 +84,7 @@ def test_predictive_inputs_are_not_truncated_to_top_three():
     rng=random.Random(845)
     data={f'x{i}':[rng.uniform(-1,1) for _ in range(1800)] for i in range(4)}
     data['y']=[sum((i+1)*data[f'x{i}'][r] for i in range(4)) for r in range(1800)]
-    report=onceover.profile(pl.DataFrame(data),detectors=['gbm'])
+    report=onceover.profile(pl.DataFrame(data),detectors=['predictability'])
     f=select(report,'dependencies',subtype='predictive',target='y')[0]
     assert set(f['subject']['inputs'])=={'x0','x1','x2','x3'}
     m=metrics(f,contains='top_features')
@@ -104,7 +104,7 @@ def test_gap_counts_exclude_observed_endpoints(cadence, removed, expected):
     import datetime as dt
     start=dt.date(2024,1,1)
     days=[start+dt.timedelta(days=cadence*i) for i in range(40) if i not in removed]
-    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['dates'])
+    report=onceover.profile(pl.DataFrame({'date':days}),budget='quick',detectors=['date_gaps'])
     gap=select(report,'gaps')[0]
     assert metrics(gap,contains='missing')['missing']==expected
     assert gap['specification']['definition']['reference']['cadence_days']==cadence

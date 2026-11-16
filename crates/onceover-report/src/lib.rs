@@ -22,6 +22,20 @@ pub use ledger::{
 };
 
 /// Breaking report-schema revision: statements are independent of detectors.
+/// 0.8 renames vocabulary across the report: the card field `role`
+/// becomes `card_role` and its `identifier` value becomes `unique`;
+/// the semantic role `index` becomes `row_number`; the `intervals`
+/// category becomes `anomalies`; the shared dependency type splits
+/// into `functional`, `affine`, and `arithmetic_identity`; the
+/// change types `residual_shift`, `predictor_drift`, and
+/// `joint_distribution_change` replace `residual_level`,
+/// `distribution_shift`, and `distribution_change`; the facet
+/// field `evidence` becomes `support`; the examination findings
+/// `unexamined_columns` and `unscanned_series` are removed (the
+/// passes state those sets in coverage); detector activation is
+/// reported as `membership` and `trigger`, and nine detectors are
+/// renamed (the capability manifest carries the mapping). Breaking
+/// over 0.7.
 /// 0.7 adds the associations table: the report gains a top-level
 /// `associations` list carrying every pair the association screens
 /// tested, with effect sizes, raw p-values, Benjamini–Hochberg
@@ -39,7 +53,7 @@ pub use ledger::{
 /// additive over 0.4. 0.4 adds the `frame` section (semantic column
 /// roles and the assembled time axis) and the per-card
 /// `semantic_role` fields; additive over 0.3.
-pub const SCHEMA_VERSION: &str = "0.7";
+pub const SCHEMA_VERSION: &str = "0.8";
 
 /// Round to four decimal places — the report's display precision
 /// for shares and means carried in evidence payloads.
@@ -128,14 +142,15 @@ pub struct PatternCount {
 pub struct ColumnCard {
     pub name: String,
     pub dtype: String,
-    /// all_null | constant | boolean | categorical | continuous | identifier |
+    /// all_null | constant | boolean | categorical | continuous | unique |
     /// free_text | date | datetime | other
-    pub role: String,
-    /// The frame model's semantic role: identifier | index | timestamp |
+    pub card_role: String,
+    /// The frame model's semantic role: identifier | row_number | timestamp |
     /// timestamp_part | dimension | flag | measure | text. Assigned before the
     /// detectors run, with the evidence in `semantic_role_evidence`;
     /// absent when no assignment was made (opaque, empty, or constant
-    /// columns). The dtype/cardinality `role` above is unchanged.
+    /// columns). The dtype/cardinality `card_role` above is a separate
+    /// classification from a separate test (a distinct-ratio test).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -770,7 +785,7 @@ impl ProfileReport {
             md.push_str(&format!(
                 "| {} | {} | {} ({:.1}%) | {} | {} |\n",
                 name,
-                c.role,
+                c.card_role,
                 c.null_count,
                 100.0 * c.null_fraction,
                 c.distinct,

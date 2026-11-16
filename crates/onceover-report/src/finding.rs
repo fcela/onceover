@@ -19,7 +19,7 @@ pub enum Category {
     ConditionalRules,
     Associations,
     Gaps,
-    Intervals,
+    Anomalies,
     Ordering,
     Changes,
 }
@@ -36,7 +36,7 @@ impl Category {
             Self::ConditionalRules => "conditional_rules",
             Self::Associations => "associations",
             Self::Gaps => "gaps",
-            Self::Intervals => "intervals",
+            Self::Anomalies => "anomalies",
             Self::Ordering => "ordering",
             Self::Changes => "changes",
         }
@@ -106,16 +106,6 @@ pub enum Pattern {
     /// An observed period on the time axis carrying a fraction of
     /// the typical period's volume (rows, entities).
     PartialPeriod,
-    /// Columns a pass did not examine because a cap bound the set it
-    /// could take (the views column cap, or columns left outside the
-    /// search when its work budget ran out).
-    UnexaminedColumns,
-    /// Series a pass prescored but did not scan in depth because
-    /// its series cap bound the set it could take (the breaks
-    /// series cap). The named series were partially examined — the
-    /// prescore read each one over its full span — and each series'
-    /// prescore rides in the evidence.
-    UnscannedSeries,
     IntervalVariation,
     ColumnOrdering,
     ResidualShift,
@@ -209,68 +199,25 @@ pub enum Pattern {
     OutlierEntity,
 }
 impl Pattern {
-    pub fn category(self) -> Category {
-        match self {
-            Self::MissingValues | Self::SentinelValues | Self::PredictableMissingness => {
-                Category::Missingness
-            }
-            Self::ValueConcentration | Self::ModalShare | Self::SpikeCells | Self::Hotspot => {
-                Category::Concentration
-            }
-            Self::CategoricalRole | Self::IdentifierRole => Category::ColumnRoles,
-            Self::Uniqueness => Category::Uniqueness,
-            Self::Duplicates | Self::NearDuplicateRows => Category::Duplicates,
-            Self::RowInconsistency => Category::Intervals,
-            Self::FormatVariation
-            | Self::Heaping
-            | Self::DigitPreference
-            | Self::BenfordDeviation
-            | Self::BoundaryMass
-            | Self::ContentAnomaly => Category::Formats,
+    /// Whether a statement of this pattern names a target or an
+    /// outcome column: the `directed` input of facet category
+    /// derivation. A finding's category is derived from its facets
+    /// (Facets::derive_category) with this flag; there is no second,
+    /// pattern-level assignment.
+    pub fn names_target(self) -> bool {
+        matches!(
+            self,
             Self::FunctionalDependency
-            | Self::AffineDependency
-            | Self::ArithmeticIdentity
-            | Self::PredictiveDependency
-            | Self::PiecewiseDependency
-            | Self::OrderConstraint
-            | Self::OrderViolation
-            | Self::ModelFailure
-            | Self::LeakageSignature => Category::Dependencies,
-            Self::ConditionalRule => Category::ConditionalRules,
-            Self::StatisticalAssociation
-            | Self::PeriodAssociation
-            | Self::GroupContrast
-            | Self::ConditionedAssociation
-            | Self::LevelContrast => Category::Associations,
-            Self::SliceShift => Category::Associations,
-            Self::Gap => Category::Gaps,
-            Self::SequenceGap
-            | Self::MissingCombinations
-            | Self::UnexaminedColumns
-            | Self::UnscannedSeries
-            | Self::PartialPeriod => Category::Gaps,
-            Self::IntervalVariation => Category::Intervals,
-            Self::ColumnOrdering => Category::Ordering,
-            Self::ResidualShift | Self::LevelShift | Self::TrendChange | Self::VarianceChange => {
-                Category::Changes
-            }
-            Self::LongFormat => Category::ColumnRoles,
-            Self::ExtremeValue | Self::CategoricalOutlier => Category::Intervals,
-            Self::TransientExcursion => Category::Changes,
-            Self::StepDiscontinuity => Category::Changes,
-            Self::DuplicateEncoding => Category::ColumnRoles,
-            Self::DistributionShift => Category::Changes,
-            Self::DistributionChange => Category::Changes,
-            Self::SlopeBreak => Category::Changes,
-            Self::RegimeContrast => Category::Changes,
-            Self::SpikeContrast => Category::Changes,
-            Self::AxisShape => Category::Associations,
-            Self::OrderedPartition => Category::Changes,
-            Self::SeriesStructure => Category::Changes,
-            Self::OneWayFlag => Category::Changes,
-            Self::EntryBlock | Self::ExitBlock | Self::FirstActivity => Category::Changes,
-            Self::ConcentrationOverTime | Self::OutlierEntity => Category::Concentration,
-        }
+                | Self::AffineDependency
+                | Self::ArithmeticIdentity
+                | Self::PredictiveDependency
+                | Self::PiecewiseDependency
+                | Self::OrderConstraint
+                | Self::OrderViolation
+                | Self::ModelFailure
+                | Self::LeakageSignature
+                | Self::ConditionalRule
+        )
     }
     /// The finding `type`: every pattern carries one, so consumers
     /// can key on (category, type) without special-casing absent
@@ -298,9 +245,9 @@ impl Pattern {
             Self::SeriesStructure => "series_structure",
             Self::NearDuplicateRows => "near_duplicate_rows",
             Self::RowInconsistency => "row_inconsistency",
-            Self::FunctionalDependency | Self::AffineDependency | Self::ArithmeticIdentity => {
-                "functional"
-            }
+            Self::FunctionalDependency => "functional",
+            Self::AffineDependency => "affine",
+            Self::ArithmeticIdentity => "arithmetic_identity",
             Self::PredictiveDependency | Self::PiecewiseDependency => "predictive",
             Self::LeakageSignature => "leakage_signature",
             Self::OrderConstraint => "order_constraint",
@@ -317,11 +264,9 @@ impl Pattern {
             Self::SequenceGap => "sequence_gap",
             Self::MissingCombinations => "missing_combinations",
             Self::PartialPeriod => "partial_period",
-            Self::UnexaminedColumns => "unexamined_columns",
-            Self::UnscannedSeries => "unscanned_series",
             Self::IntervalVariation => "interval_variation",
             Self::ColumnOrdering => "column_ordering",
-            Self::ResidualShift => "residual_level",
+            Self::ResidualShift => "residual_shift",
             Self::LevelShift => "level_shift",
             Self::TrendChange => "trend_change",
             Self::VarianceChange => "variance_change",
@@ -330,8 +275,8 @@ impl Pattern {
             Self::CategoricalOutlier => "categorical_outlier",
             Self::TransientExcursion => "transient_excursion",
             Self::StepDiscontinuity => "step_discontinuity",
-            Self::DistributionShift => "distribution_shift",
-            Self::DistributionChange => "distribution_change",
+            Self::DistributionShift => "predictor_drift",
+            Self::DistributionChange => "joint_distribution_change",
             Self::SlopeBreak => "slope_break",
             Self::RegimeContrast => "regime_contrast",
             Self::SpikeContrast => "spike_contrast",
@@ -387,8 +332,6 @@ impl Pattern {
         Pattern::SequenceGap,
         Pattern::MissingCombinations,
         Pattern::PartialPeriod,
-        Pattern::UnexaminedColumns,
-        Pattern::UnscannedSeries,
         Pattern::IntervalVariation,
         Pattern::ColumnOrdering,
         Pattern::ResidualShift,
@@ -421,17 +364,92 @@ impl Pattern {
     ];
 
     /// The distinct type strings accepted for `category`, in
-    /// declaration order, derived from `ALL`.
+    /// declaration order, derived from `ALL`. Each pattern's category
+    /// comes from the same facet derivation that assigns a finding's
+    /// category, evaluated on the pattern's canonical facets (empty
+    /// metrics, empty specification, two-column subject).
     pub fn types_for(category: Category) -> Vec<&'static str> {
         let mut types: Vec<&'static str> = Vec::new();
         for pattern in Self::ALL {
-            if pattern.category() == category && !types.contains(&pattern.subtype()) {
+            let facets = Facets::for_pattern(
+                *pattern,
+                &Specification::default(),
+                &Details::new(),
+                &Subject::columns(vec!["a".to_string(), "b".to_string()]),
+            );
+            if facets.derive_category(pattern.names_target()) == category
+                && !types.contains(&pattern.subtype())
+            {
                 types.push(pattern.subtype());
             }
         }
         types
     }
 }
+
+/// One registered specification form: the form string, the finding
+/// type it refines, and what the form states. The `form` field of a
+/// specification was a free string; this registry is its vocabulary.
+/// A finding whose form is not registered for its type fails
+/// validation, and a test pins the set against the form strings the
+/// detectors assign.
+pub struct FormSpec {
+    pub form: &'static str,
+    pub finding_type: &'static str,
+    pub definition: &'static str,
+}
+
+pub const FORMS: &[FormSpec] = &[
+    FormSpec { form: "value_mapping", finding_type: "functional", definition: "Each combination of the inputs' values carries one target value, up to the recorded violations." },
+    FormSpec { form: "affine", finding_type: "affine", definition: "target = a * input + b, fitted by least squares and holding within tolerance." },
+    FormSpec { form: "sum", finding_type: "arithmetic_identity", definition: "The target equals the sum of the inputs." },
+    FormSpec { form: "difference", finding_type: "arithmetic_identity", definition: "The target equals the inputs combined with unit coefficients and signs (a difference of terms)." },
+    FormSpec { form: "product", finding_type: "arithmetic_identity", definition: "The target equals the product of the inputs." },
+    FormSpec { form: "ratio", finding_type: "arithmetic_identity", definition: "The target equals the ratio of the inputs." },
+    FormSpec { form: "linear_combination", finding_type: "arithmetic_identity", definition: "The target equals a linear combination of the inputs with the recorded coefficients, holding within tolerance." },
+    FormSpec { form: "piecewise_linear", finding_type: "predictive", definition: "The dependence of the target on the input is fitted in segments by a piecewise-linear surrogate." },
+    FormSpec { form: "interaction_h", finding_type: "predictive", definition: "The dependence is stated through the Friedman-Popescu interaction statistic H for the named pair of inputs." },
+    FormSpec { form: "step_shape", finding_type: "predictive", definition: "The fitted dependence of the target on the input is a step function." },
+    FormSpec { form: "curved_shape", finding_type: "predictive", definition: "The fitted dependence of the target on the input is a smooth curve." },
+    FormSpec { form: "pairwise_order", finding_type: "order_constraint", definition: "One column is at most the other on every row, compared row by row." },
+    FormSpec { form: "pairwise_order", finding_type: "order_violation", definition: "The rows where one column exceeds the other, compared row by row." },
+    FormSpec { form: "period_split", finding_type: "period_association", definition: "The association is stated separately in two periods of the time axis." },
+    FormSpec { form: "recursive_partition", finding_type: "ordered_partition", definition: "The ordered axis is split recursively where the target's level changes." },
+    FormSpec { form: "regime_contrast", finding_type: "regime_contrast", definition: "The target's level in one regime of the ordered axis against another regime." },
+    FormSpec { form: "spike_contrast", finding_type: "spike_contrast", definition: "The target's level in spike periods against the surrounding periods." },
+    FormSpec { form: "monotone", finding_type: "axis_shape", definition: "The binned target rises (or falls) monotonically along the ordered axis." },
+    FormSpec { form: "monotone_with_reversal_blocks", finding_type: "axis_shape", definition: "The binned target is monotone along the ordered axis apart from recorded reversal blocks." },
+    FormSpec { form: "non_monotone_reversal", finding_type: "axis_shape", definition: "The binned target reverses direction along the ordered axis." },
+    FormSpec { form: "saturating", finding_type: "axis_shape", definition: "The binned target rises along the ordered axis and then flattens, the shape confirmed on bootstrap resamples." },
+    FormSpec { form: "rises_then_flattens", finding_type: "axis_shape", definition: "The binned target rises along the ordered axis and then flattens (the point-estimate shape, without bootstrap confirmation)." },
+    FormSpec { form: "pivot", finding_type: "long_format", definition: "The frame is a pivot of a wider table: an attribute column's levels and a measure column's values." },
+    FormSpec { form: "excursion", finding_type: "transient_excursion", definition: "A stretch of periods where the series leaves its typical band and returns." },
+    FormSpec { form: "step", finding_type: "step_discontinuity", definition: "The series' level jumps at one point of the ordered axis and stays at the new level." },
+    FormSpec { form: "drift", finding_type: "predictor_drift", definition: "A predictor's distribution in a recent window against its distribution in an earlier window." },
+    FormSpec { form: "duplicate_encoding", finding_type: "duplicate_encoding", definition: "Two columns encode the same values under a value mapping." },
+    FormSpec { form: "rollup", finding_type: "duplicate_encoding", definition: "One column is the rollup of another under a mapping (continents of countries, categories of items)." },
+    FormSpec { form: "hierarchy", finding_type: "duplicate_encoding", definition: "The mapping is the declared hierarchy; the statement leads its verified family of mappings." },
+    FormSpec { form: "isolation_gap", finding_type: "extreme_value", definition: "The value is separated from the rest of the column by a wide empty gap." },
+    FormSpec { form: "tail_shift", finding_type: "slice_shift", definition: "The slice's rows sit in the target's upper tail at a higher rate than the table's rows." },
+    FormSpec { form: "median_shift", finding_type: "slice_shift", definition: "The slice's median of the target against the table-wide median." },
+    FormSpec { form: "level_share", finding_type: "slice_shift", definition: "The slice's share of one level of a categorical target against its share of rows." },
+    FormSpec { form: "location", finding_type: "level_contrast", definition: "The level's median of the measure differs from the rest's median." },
+    FormSpec { form: "scale", finding_type: "level_contrast", definition: "The level's interquartile range of the measure differs from the rest's." },
+    FormSpec { form: "location_scale", finding_type: "level_contrast", definition: "The level's median and interquartile range of the measure both differ from the rest's." },
+    FormSpec { form: "constant_multiple", finding_type: "level_contrast", definition: "The level's values sit at a near-constant multiple of the rest's distribution." },
+    FormSpec { form: "bias", finding_type: "model_failure", definition: "The model's residuals in the slice are biased: their mean differs from zero beyond the stated bar." },
+    FormSpec { form: "accuracy", finding_type: "model_failure", definition: "The model's error in the slice exceeds its table-wide error beyond the stated bar." },
+    FormSpec { form: "absorbing_state", finding_type: "one_way_flag", definition: "The flag switches on within entities and never switches off." },
+    FormSpec { form: "entry_block", finding_type: "entry_block", definition: "A block of entities first appears in one period of the panel." },
+    FormSpec { form: "exit_block", finding_type: "exit_block", definition: "A block of entities last appears in one period of the panel." },
+    FormSpec { form: "first_activity", finding_type: "first_activity", definition: "Entities first become active on the measure after their first observed period." },
+    FormSpec { form: "per_period_top_share", finding_type: "concentration_over_time", definition: "The share of the measure held by the top entities in each period." },
+    FormSpec { form: "entity_total_tail", finding_type: "outlier_entity", definition: "The entity's total of the measure sits in the tail of the entity totals." },
+    FormSpec { form: "nominal_pair", finding_type: "statistical", definition: "The association of two categorical columns." },
+    FormSpec { form: "mixed_pair", finding_type: "statistical", definition: "The association of a categorical column and a numeric column." },
+    FormSpec { form: "reversal", finding_type: "conditioned_association", definition: "The pooled association reverses direction within every usable level of the stratifier." },
+    FormSpec { form: "vanishing", finding_type: "conditioned_association", definition: "The pooled association is absent within the stratifier's levels." },
+];
 
 fn category_noun(category: Category) -> &'static str {
     match category {
@@ -445,7 +463,7 @@ fn category_noun(category: Category) -> &'static str {
         Category::ConditionalRules => "conditional rule",
         Category::Associations => "association",
         Category::Gaps => "gap",
-        Category::Intervals => "interval",
+        Category::Anomalies => "anomaly",
         Category::Ordering => "ordering",
         Category::Changes => "change",
     }
@@ -680,7 +698,7 @@ pub enum Object {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EvidenceKind {
+pub enum SupportKind {
     Exact,
     Approximate,
     ModelBased,
@@ -726,7 +744,7 @@ pub enum Status {
 pub struct Facets {
     pub scope: Scope,
     pub object: Object,
-    pub evidence: EvidenceKind,
+    pub support: SupportKind,
     pub conditionality: Conditionality,
     pub temporality: Temporality,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -742,7 +760,7 @@ impl Facets {
         Self {
             scope: Scope::Column,
             object: Object::Distribution,
-            evidence: EvidenceKind::Exact,
+            support: SupportKind::Exact,
             conditionality: Conditionality::Unconditional,
             temporality: Temporality::Atemporal,
             quality_dimension: None,
@@ -756,10 +774,10 @@ impl Facets {
     /// specification's outcome).
     pub fn derive_category(&self, directed: bool) -> Category {
         use Conditionality as C;
-        use EvidenceKind as E;
         use Object as O;
         use QualityDimension as Q;
         use Status as S;
+        use SupportKind as E;
         use Temporality as T;
         match self.quality_dimension {
             Some(Q::Completeness) => {
@@ -795,7 +813,7 @@ impl Facets {
             if directed {
                 return Category::Dependencies;
             }
-            return if self.evidence == E::Exact {
+            return if self.support == E::Exact {
                 Category::ColumnRoles
             } else {
                 Category::Associations
@@ -806,7 +824,7 @@ impl Facets {
         }
         if self.object == O::Distribution {
             if self.temporality == T::Ordered || self.status == S::Deviation {
-                return Category::Intervals;
+                return Category::Anomalies;
             }
             return Category::Concentration;
         }
@@ -829,11 +847,11 @@ impl Facets {
         subject: &Subject,
     ) -> Self {
         use Conditionality as C;
-        use EvidenceKind as E;
         use Object as O;
         use QualityDimension as Q;
         use Scope as Sc;
         use Status as S;
+        use SupportKind as E;
         use Temporality as T;
         let violations = metrics
             .get("violations")
@@ -844,8 +862,7 @@ impl Facets {
         } else {
             E::Approximate
         };
-        let (scope, object, evidence, conditionality, temporality, quality, status) = match pattern
-        {
+        let (scope, object, support, conditionality, temporality, quality, status) = match pattern {
             Pattern::MissingValues | Pattern::SentinelValues => (
                 Sc::Column,
                 O::Distribution,
@@ -1129,15 +1146,6 @@ impl Facets {
                 Some(Q::Completeness),
                 S::Deviation,
             ),
-            Pattern::UnexaminedColumns | Pattern::UnscannedSeries => (
-                Sc::Frame,
-                O::Structure,
-                E::Exact,
-                C::Unconditional,
-                T::Atemporal,
-                Some(Q::Completeness),
-                S::Deviation,
-            ),
             Pattern::IntervalVariation => (
                 Sc::Sequence,
                 O::Distribution,
@@ -1293,7 +1301,7 @@ impl Facets {
         Self {
             scope,
             object,
-            evidence,
+            support,
             conditionality,
             temporality,
             quality_dimension: quality,
@@ -1350,11 +1358,9 @@ impl Facets {
                     Pattern::PredictiveDependency
                 }
             }
-            (Category::Dependencies, _) => match spec.form.as_deref() {
-                Some("affine") => Pattern::AffineDependency,
-                Some(_) => Pattern::ArithmeticIdentity,
-                None => Pattern::FunctionalDependency,
-            },
+            (Category::Dependencies, Some("affine")) => Pattern::AffineDependency,
+            (Category::Dependencies, Some("arithmetic_identity")) => Pattern::ArithmeticIdentity,
+            (Category::Dependencies, _) => Pattern::FunctionalDependency,
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
             (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
@@ -1368,13 +1374,11 @@ impl Facets {
             (Category::Gaps, Some("sequence_gap")) => Pattern::SequenceGap,
             (Category::Gaps, Some("missing_combinations")) => Pattern::MissingCombinations,
             (Category::Gaps, Some("partial_period")) => Pattern::PartialPeriod,
-            (Category::Gaps, Some("unexamined_columns")) => Pattern::UnexaminedColumns,
-            (Category::Gaps, Some("unscanned_series")) => Pattern::UnscannedSeries,
             (Category::Gaps, _) => Pattern::Gap,
-            (Category::Intervals, Some("row_inconsistency")) => Pattern::RowInconsistency,
-            (Category::Intervals, Some("extreme_value")) => Pattern::ExtremeValue,
-            (Category::Intervals, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
-            (Category::Intervals, _) => Pattern::IntervalVariation,
+            (Category::Anomalies, Some("row_inconsistency")) => Pattern::RowInconsistency,
+            (Category::Anomalies, Some("extreme_value")) => Pattern::ExtremeValue,
+            (Category::Anomalies, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
+            (Category::Anomalies, _) => Pattern::IntervalVariation,
             (Category::Ordering, _) => Pattern::ColumnOrdering,
             (Category::Changes, Some("series_structure")) => Pattern::SeriesStructure,
             (Category::Changes, Some("level_shift")) => Pattern::LevelShift,
@@ -1382,8 +1386,8 @@ impl Facets {
             (Category::Changes, Some("variance_change")) => Pattern::VarianceChange,
             (Category::Changes, Some("transient_excursion")) => Pattern::TransientExcursion,
             (Category::Changes, Some("step_discontinuity")) => Pattern::StepDiscontinuity,
-            (Category::Changes, Some("distribution_shift")) => Pattern::DistributionShift,
-            (Category::Changes, Some("distribution_change")) => Pattern::DistributionChange,
+            (Category::Changes, Some("predictor_drift")) => Pattern::DistributionShift,
+            (Category::Changes, Some("joint_distribution_change")) => Pattern::DistributionChange,
             (Category::Changes, Some("slope_break")) => Pattern::SlopeBreak,
             (Category::Changes, Some("regime_contrast")) => Pattern::RegimeContrast,
             (Category::Changes, Some("spike_contrast")) => Pattern::SpikeContrast,
@@ -1467,7 +1471,7 @@ impl Finding {
         if inputs.is_empty() {
             inputs = strings("predictors");
         }
-        let dependency = pattern.category() == Category::Dependencies;
+        let dependency = pattern.names_target();
         if dependency && inputs.is_empty() {
             inputs = metrics
                 .get("inputs")
@@ -1726,28 +1730,6 @@ impl Finding {
                     "aggregation".into(),
                     json!("the measure summed over all periods, per entity"),
                 );
-            }
-            Pattern::UnexaminedColumns => {
-                subject.unit = Some("columns".into());
-                spec.definition.insert("domain".into(), json!("columns"));
-                spec.definition.insert(
-                    "reference".into(),
-                    json!({"source": "pass limit", "reason": metrics.get("reason"), "pass": metrics.get("pass"), "cap": metrics.get("cap"), "eligible": metrics.get("n_eligible"), "examined": metrics.get("n_examined")}),
-                );
-                if let Some(v) = raw.get("columns") {
-                    spec.definition.insert("absent_values".into(), v.clone());
-                }
-            }
-            Pattern::UnscannedSeries => {
-                subject.unit = Some("series".into());
-                spec.definition.insert("domain".into(), json!("series"));
-                spec.definition.insert(
-                    "reference".into(),
-                    json!({"source": "pass limit", "reason": metrics.get("reason"), "pass": metrics.get("pass"), "cap": metrics.get("cap"), "eligible": metrics.get("n_eligible"), "examined": metrics.get("n_examined")}),
-                );
-                if let Some(v) = raw.get("columns") {
-                    spec.definition.insert("absent_values".into(), v.clone());
-                }
             }
             Pattern::ColumnOrdering => {
                 spec.definition
@@ -2085,8 +2067,9 @@ impl Finding {
         };
         let evidence = Evidence::new(method, basis, metrics);
         let facets = Facets::for_pattern(pattern, &spec, &evidence.metrics, &subject);
+        let directed = subject.target.is_some() || spec.outcome.is_some();
         Self::from_statement(
-            pattern.category(),
+            facets.derive_category(directed),
             Some(pattern.subtype().to_owned()),
             subject,
             spec,
@@ -2182,6 +2165,17 @@ impl Finding {
                 category_noun(self.category),
                 join_types(&allowed)
             ));
+        }
+        if let Some(form) = self.specification.form.as_deref() {
+            let finding_type = self.finding_type.as_deref().unwrap();
+            if !FORMS
+                .iter()
+                .any(|f| f.form == form && f.finding_type == finding_type)
+            {
+                return Err(format!(
+                    "form {form} is not registered for type {finding_type}"
+                ));
+            }
         }
         match self.category {
             Category::Dependencies => {

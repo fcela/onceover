@@ -667,7 +667,7 @@ pub fn discover(
         .filter(|&i| {
             info[i].distinct >= 2
                 && info[i].n_nonnull() >= 30
-                && info[i].role != "other"
+                && info[i].card_role != "other"
                 && info[i].dtype != "null"
         })
         .collect();
@@ -682,8 +682,8 @@ pub fn discover(
         .filter(|&i| info[i].distinct_ratio() < 0.98 && info[i].distinct <= 100_000)
         .collect();
     lhs_pool.sort_by(|&a, &b| {
-        let ca = (info[a].role == "categorical") as u8;
-        let cb = (info[b].role == "categorical") as u8;
+        let ca = (info[a].card_role == "categorical") as u8;
+        let cb = (info[b].card_role == "categorical") as u8;
         cb.cmp(&ca)
             .then(info[a].distinct.cmp(&info[b].distinct))
             .then(a.cmp(&b))
@@ -1132,7 +1132,7 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             info[i].null_count == 0
                 && info[i].distinct >= 2
                 && info[i].distinct < n
-                && info[i].role != "other"
+                && info[i].card_role != "other"
                 && !matches!(info[i].dtype.as_str(), "float32" | "float64")
         })
         .collect();
@@ -1308,7 +1308,7 @@ mod tests {
                 ColInfo {
                     name: table.names[i].clone(),
                     dtype: table.dtypes[i].clone(),
-                    role: String::new(),
+                    card_role: String::new(),
                     n: table.n,
                     null_count: col.null_count(),
                     distinct: counts.distinct,

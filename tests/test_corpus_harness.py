@@ -89,7 +89,7 @@ def _excursion(start, end, extra_metrics=None):
                "peak_time": start, "peak_value": 10.0}
     metrics.update(extra_metrics or {})
     return {
-        "type": "transient_excursion", "category": "intervals",
+        "type": "transient_excursion", "category": "anomalies",
         "specification": {"definition": {
             "event_start": start, "event_end": end, "peak_time": start}},
         "evidence": [{"metrics": metrics}],

@@ -85,7 +85,7 @@ fn statement(
         metrics,
         Some(interpretation.to_string()),
         Method::new(
-            "content",
+            "content_anomalies",
             "column_content_scan",
             "exact counts over every value of the column (onceover v0.1)",
         ),

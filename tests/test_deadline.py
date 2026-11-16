@@ -122,14 +122,13 @@ def test_generous_deadline_changes_nothing():
     timed = onceover.profile(df, deadline_seconds=3600.0)
     assert timed.data == plain.data
     for name in ("dependence_screen", "hotspots", "discontinuities",
-                 "surprises", "duplicate_encodings"):
+                 "outliers", "duplicate_encodings"):
         assert "deadline" not in plain.data["coverage"][name]["detail"]
 
 
 _PASS_OF = {
     "column_profile": "column_cards",
-    "gbm": "predictability_screen",
-    "prism": "prism_rules",
+    "predictability": "predictability_screen",
     "numeric_dependence": "dependence_screen",
     "identities": "arithmetic_identities",
 }
@@ -142,7 +141,7 @@ _PASS_OF = {
     {"deadline_seconds": 0.0},
     {"budget": "quick", "deadline_seconds": 0.0},
     {"detectors": ["keys"]},
-    {"detectors": ["surprises"]},
+    {"detectors": ["outliers"]},
 ])
 def test_every_registered_detector_has_a_coverage_entry(kwargs):
     # A pass that did not run says why; none is silently absent.

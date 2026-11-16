@@ -84,5 +84,5 @@ def test_unknown_target_is_coverage_not_error():
 def test_explicit_detector_list_without_target_shapes_stays_off():
     rng = random.Random(11)
     df = _step_frame(rng)
-    _, out = shape_findings(df, target="y", detectors=["gbm"])
+    _, out = shape_findings(df, target="y", detectors=["predictability"])
     assert out == []

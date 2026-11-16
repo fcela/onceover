@@ -201,7 +201,7 @@ pub fn statement_class(f: &Finding) -> StatementClass {
         return StatementClass::Structure;
     }
     if f.category == Category::Changes
-        || (f.category == Category::Intervals && f.finding_type.as_deref() == Some("extreme_value"))
+        || (f.category == Category::Anomalies && f.finding_type.as_deref() == Some("extreme_value"))
     {
         return StatementClass::Shape;
     }
@@ -472,7 +472,7 @@ pub fn report_band(f: &Finding) -> u8 {
         | Category::Formats
         | Category::Ordering
         | Category::Concentration => 3,
-        Category::Changes | Category::Intervals => 4,
+        Category::Changes | Category::Anomalies => 4,
     }
 }
 
@@ -530,15 +530,13 @@ fn exact_kind(f: &Finding) -> Option<ExactKind> {
             _ => None,
         },
         Some("functional") => {
-            if zero_violations("functional_dependencies", None) {
-                Some(ExactKind::Fd)
-            } else if zero_violations("identities", Some("multiterm_scan")) {
-                Some(ExactKind::Identity)
-            } else if zero_violations("identities", Some("ols_residual_scan")) {
-                Some(ExactKind::Affine)
-            } else {
-                None
-            }
+            zero_violations("functional_dependencies", None).then_some(ExactKind::Fd)
+        }
+        Some("arithmetic_identity") => {
+            zero_violations("identities", Some("multiterm_scan")).then_some(ExactKind::Identity)
+        }
+        Some("affine") => {
+            zero_violations("identities", Some("ols_residual_scan")).then_some(ExactKind::Affine)
         }
         _ => None,
     }
@@ -1700,7 +1698,10 @@ pub fn select_findings_counted(
         f.detector_interestingness = Some(detector);
         let mut combined = 0.5 * detector + 0.5 * score(f);
         let key_implied = f.category == Category::Dependencies
-            && f.finding_type.as_deref() == Some("functional")
+            && matches!(
+                f.finding_type.as_deref(),
+                Some("functional" | "affine" | "arithmetic_identity")
+            )
             && !f.subject.inputs.is_empty()
             && f.subject.target.as_deref().is_some_and(|t| {
                 key_sets

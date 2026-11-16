@@ -204,7 +204,7 @@ fn heaping(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
                     .into(),
             ),
             Method::new(
-                "digits",
+                "digit_fingerprints",
                 "heaping_scan",
                 "exact divisibility shares vs the smooth-recording baseline (onceover v0.1)",
             ),
@@ -353,7 +353,7 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
                 .into(),
         ),
         Method::new(
-            "digits",
+            "digit_fingerprints",
             "terminal_digit_scan",
             "exact last-digit counts vs the value grid's digits (onceover v0.1)",
         ),
@@ -438,7 +438,7 @@ fn benford(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
                 .into(),
         ),
         Method::new(
-            "digits",
+            "digit_fingerprints",
             "benford_scan",
             "exact first-digit counts vs Benford's law (onceover v0.1)",
         ),

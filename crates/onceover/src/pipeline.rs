@@ -110,10 +110,10 @@ fn profile_inner(
     }
     let enabled = |id: &str| active.contains(id);
     let selected = |id: &str| cfg.detectors.as_ref().is_none_or(|ids| ids.contains(id));
-    let activations: BTreeMap<String, crate::detectors::Activation> =
+    let activations: BTreeMap<String, (crate::detectors::Membership, crate::detectors::Trigger)> =
         crate::detectors::builtin_detectors()
             .into_iter()
-            .map(|d| (d.id, d.activation))
+            .map(|d| (d.id, (d.membership, d.trigger)))
             .collect();
     let mut shared_encoding = None;
     let start = Instant::now();
@@ -274,6 +274,30 @@ fn profile_inner(
         );
     }
 
+    if let Some(hints) = &cfg.hints {
+        if !hints.deprecated_keys.is_empty() {
+            let renamed: Vec<String> = hints
+                .deprecated_keys
+                .iter()
+                .map(|k| match k.as_str() {
+                    "axis" => "`axis` is now `ordered_axis`".to_string(),
+                    "ordinal" => "`ordinal` is now `level_order`".to_string(),
+                    other => format!("`{other}` was renamed"),
+                })
+                .collect();
+            stamp_insert(
+                &mut coverage,
+                &mut last_mark,
+                timing_on,
+                "hints".into(),
+                PassInfo::ran(format!(
+                    "deprecated hint keys accepted and renamed: {}; the old names are accepted for one release",
+                    renamed.join("; ")
+                )),
+            );
+        }
+    }
+
     if let Some(source) = &cfg.source {
         let detail = if source.basis == "sampled" {
             format!(
@@ -327,7 +351,7 @@ fn profile_inner(
         .map(|(i, c)| ColInfo {
             name: c.card.name.clone(),
             dtype: table.dtypes[i].clone(),
-            role: c.card.role.clone(),
+            card_role: c.card.card_role.clone(),
             n: c.card.n,
             null_count: c.card.null_count,
             distinct: c.card.distinct,
@@ -354,7 +378,7 @@ fn profile_inner(
     let card_facts: Vec<CardFacts> = cards
         .iter()
         .map(|c| CardFacts {
-            card_role: c.card.role.clone(),
+            card_role: c.card.card_role.clone(),
             distinct: c.card.distinct,
             null_count: c.card.null_count,
             numeric_min: c.card.numeric_stats.as_ref().and_then(|s| s.min),
@@ -394,10 +418,10 @@ fn profile_inner(
     let frame_time_hint: Option<&str> = frame.axis_name.as_deref();
     let role_excluded: Vec<usize> = (0..table.cols.len())
         .filter(|&i| {
-            matches!(info[i].role.as_str(), "constant" | "all_null")
+            matches!(info[i].card_role.as_str(), "constant" | "all_null")
                 || matches!(
                     frame.roles[i].as_deref(),
-                    Some("index") | Some("identifier") | Some("timestamp")
+                    Some("row_number") | Some("identifier") | Some("timestamp")
                 )
                 || (frame.axis_source.as_deref() == Some("timestamp_parts")
                     && frame.axis_parts.contains(&table.names[i]))
@@ -448,7 +472,9 @@ fn profile_inner(
                 format!(
                     "{} ({})",
                     table.names[i],
-                    frame.roles[i].as_deref().unwrap_or(info[i].role.as_str())
+                    frame.roles[i]
+                        .as_deref()
+                        .unwrap_or(info[i].card_role.as_str())
                 )
             })
             .collect();
@@ -1130,7 +1156,7 @@ fn profile_inner(
                 }
                 // The dates detector states the same axis's gaps with its
                 // own calendar when selected.
-                if enabled("dates") {
+                if enabled("date_gaps") {
                     f.retain(|finding| finding.category != Category::Gaps);
                 }
                 stamp_insert(
@@ -1304,16 +1330,16 @@ fn profile_inner(
     }
 
     // ---------- content ----------
-    if check_deadline(&mut coverage, "content") {
+    if check_deadline(&mut coverage, "content_anomalies") {
         deadline_hit = true;
     }
-    if !deadline_hit && enabled("content") {
+    if !deadline_hit && enabled("content_anomalies") {
         let mut f = onceover_deps::column_content(&table);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
             timing_on,
-            "content".into(),
+            "content_anomalies".into(),
             PassInfo::ran(format!(
                 "{} columns scanned for content; {} statements",
                 table.cols.len(),
@@ -1324,16 +1350,16 @@ fn profile_inner(
     }
 
     // ---------- boundaries ----------
-    if check_deadline(&mut coverage, "boundaries") {
+    if check_deadline(&mut coverage, "boundary_mass") {
         deadline_hit = true;
     }
-    if !deadline_hit && enabled("boundaries") {
+    if !deadline_hit && enabled("boundary_mass") {
         let bnd = onceover_deps::boundary_mass(&table);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
             timing_on,
-            "boundaries".into(),
+            "boundary_mass".into(),
             PassInfo::ran(format!(
                 "{} numeric columns scanned for boundary mass",
                 table
@@ -1388,7 +1414,7 @@ fn profile_inner(
                 .filter(|(_, r)| {
                     matches!(
                         r.as_deref(),
-                        Some("index" | "identifier" | "timestamp_part")
+                        Some("row_number" | "identifier" | "timestamp_part")
                     )
                 })
                 .map(|(i, _)| i)
@@ -1446,26 +1472,26 @@ fn profile_inner(
     }
 
     // ---------- digits ----------
-    if check_deadline(&mut coverage, "digits") {
+    if check_deadline(&mut coverage, "digit_fingerprints") {
         deadline_hit = true;
     }
-    if !deadline_hit && enabled("digits") {
+    if !deadline_hit && enabled("digit_fingerprints") {
         let (dig, cov) = onceover_deps::digit_fingerprints(&table);
         stamp_insert(
             &mut coverage,
             &mut last_mark,
             timing_on,
-            "digits".into(),
+            "digit_fingerprints".into(),
             PassInfo::ran(cov),
         );
         findings.extend(dig);
     }
 
     // ---------- dates ----------
-    if check_deadline(&mut coverage, "dates") {
+    if check_deadline(&mut coverage, "date_gaps") {
         deadline_hit = true;
     }
-    if !deadline_hit && enabled("dates") {
+    if !deadline_hit && enabled("date_gaps") {
         // Columns with a declared gap check are skipped here: the
         // expectations pass reports their gaps against the declared
         // reference instead of the inferred one.
@@ -1479,7 +1505,7 @@ fn profile_inner(
             &mut coverage,
             &mut last_mark,
             timing_on,
-            "dates".into(),
+            "date_gaps".into(),
             PassInfo::ran(d.coverage.clone()),
         );
         // Backfill modal intervals into cards.
@@ -1613,7 +1639,7 @@ fn profile_inner(
                 PassInfo::sampled(enc_cov),
             );
 
-            let mut screen = if enabled("gbm") {
+            let mut screen = if enabled("predictability") {
                 screen_predictability(&table, &enc, &tier.screen, &scaffold_excluded)
             } else {
                 onceover_mines::ScreenOutcome {
@@ -1691,7 +1717,7 @@ fn profile_inner(
                 .collect();
             prism_targets.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
             let prism_eligible = prism_targets.len();
-            prism_targets.truncate(if enabled("prism") {
+            prism_targets.truncate(if enabled("covering_rules") {
                 tier.prism_top_targets
             } else {
                 0
@@ -1804,10 +1830,10 @@ fn profile_inner(
                 );
                 findings.extend(out.findings);
             }
-            if check_deadline(&mut coverage, "changeforest") {
+            if check_deadline(&mut coverage, "distribution_change") {
                 deadline_hit = true;
             }
-            if !deadline_hit && enabled("changeforest") {
+            if !deadline_hit && enabled("distribution_change") {
                 // The frame model's axis and measure roles, as for
                 // the series pass: the segmentation runs over the
                 // measures jointly, and the axis column itself is
@@ -1845,7 +1871,7 @@ fn profile_inner(
                             &mut coverage,
                             &mut last_mark,
                             timing_on,
-                            "changeforest".into(),
+                            "distribution_change".into(),
                             info,
                         );
                         findings.extend(out.findings);
@@ -1854,7 +1880,7 @@ fn profile_inner(
                         &mut coverage,
                         &mut last_mark,
                         timing_on,
-                        "changeforest".into(),
+                        "distribution_change".into(),
                         PassInfo::na("no date or datetime axis to segment along"),
                     ),
                 }
@@ -1872,8 +1898,8 @@ fn profile_inner(
                 // excluded from its slice family (the panel passes
                 // own entity statements).
                 let hints = cfg.hints.as_ref();
-                let axis_hint = hints.and_then(|h| h.axis.as_deref());
-                let ordinals = hints.map(|h| h.ordinal.clone()).unwrap_or_default();
+                let axis_hint = hints.and_then(|h| h.ordered_axis.as_deref());
+                let ordinals = hints.map(|h| h.level_order.clone()).unwrap_or_default();
                 let entity_names: Vec<String> = {
                     let axis_name = frame
                         .info
@@ -1914,10 +1940,10 @@ fn profile_inner(
                 );
                 findings.extend(out.findings);
             }
-            if check_deadline(&mut coverage, "surprises") {
+            if check_deadline(&mut coverage, "outliers") {
                 deadline_hit = true;
             }
-            if !deadline_hit && enabled("surprises") {
+            if !deadline_hit && enabled("outliers") {
                 let excluded: &[usize] = &scaffold_excluded;
                 let (f, cov, stopped) = profile_surprises(&table, excluded, &tier.surprises);
                 if stopped {
@@ -1927,7 +1953,7 @@ fn profile_inner(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
-                    "surprises".into(),
+                    "outliers".into(),
                     if stopped {
                         PassInfo::capped(format!("{cov}{exclusion_note}"))
                     } else {
@@ -2247,10 +2273,10 @@ fn profile_inner(
             }
 
             // Greedy view/cluster pass (standard / deep only).
-            if check_deadline(&mut coverage, "views") {
+            if check_deadline(&mut coverage, "row_clusters") {
                 deadline_hit = true;
             }
-            if !deadline_hit && enabled("views") {
+            if !deadline_hit && enabled("row_clusters") {
                 let (vf, vout) = onceover_mines::views_pass(&table, &tier.views);
                 // Dropped columns must be visible in coverage, not
                 // only in finding metrics: with no views findings at
@@ -2283,7 +2309,7 @@ fn profile_inner(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
-                    "views".into(),
+                    "row_clusters".into(),
                     if vout.budget_hit {
                         PassInfo::capped(detail)
                     } else if table.n > tier.views.row_cap {
@@ -2298,7 +2324,7 @@ fn profile_inner(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
-                    "views".into(),
+                    "row_clusters".into(),
                     PassInfo::skipped("deadline reached"),
                 );
             }
@@ -2412,12 +2438,12 @@ fn profile_inner(
             "regimes",
             "breaks",
             "ordered_partitions",
-            "changeforest",
+            "distribution_change",
             "association_rules",
             "dependence_screen",
             "arithmetic_identities",
             "period_associations",
-            "views",
+            "row_clusters",
             "slice_shifts",
             "drift",
         ] {
@@ -2615,7 +2641,7 @@ fn profile_inner(
                 "column_profile"|"keys"=>"non-missing values counted; missingness reported separately",
                 "row_duplicates"=>"missing values compare equal; opaque fields excluded",
                 "functional_dependencies"|"numeric_dependence"=>"rows complete on the evaluated inputs and target",
-                "gbm"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
+                "predictability"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
                 "leakage"=>"complete cases per predictor: rows missing the predictor or the target excluded from that predictor's evaluation",
@@ -2623,20 +2649,20 @@ fn profile_inner(
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
                 "level_contrasts"=>"rows missing the grouping value or the measure are excluded from that pair's comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
-                "changeforest"=>"rows missing the axis value or any measure value are excluded",
+                "distribution_change"=>"rows missing the axis value or any measure value are excluded",
                 "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",
                 "ordered_axis"=>"rows missing the axis or the response are excluded from each series and pair; series aggregate rows sharing an axis value by their mean",
-                "boundaries"=>"missing values excluded from the scan; a null is never a boundary value",
+                "boundary_mass"=>"missing values excluded from the scan; a null is never a boundary value",
                 "order_constraints"=>"rows where either column of a pair is missing are excluded from that pair's comparison",
                 "missingness"=>"missing values are the subject; rows missing the explaining column are excluded from its comparison",
-                "association_rules"|"prism"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
+                "association_rules"|"covering_rules"=>"see discovery metrics; normalized rule evidence uses complete predicates and outcome",
                 _=>evidence.scope.missing_values.as_str(),
             }.to_string();
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
-                    "column_profile" | "keys" | "row_duplicates" | "sortedness" | "dates"
-                    | "identities" | "missingness" | "content" => Sampling::Full,
-                    "association_rules" | "prism" => {
+                    "column_profile" | "keys" | "row_duplicates" | "sortedness" | "date_gaps"
+                    | "identities" | "missingness" | "content_anomalies" => Sampling::Full,
+                    "association_rules" | "covering_rules" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample
                         } else {
@@ -2677,8 +2703,7 @@ fn profile_inner(
     let pass_of = |id: &str| -> String {
         match id {
             "column_profile" => "column_cards",
-            "gbm" => "predictability_screen",
-            "prism" => "prism_rules",
+            "predictability" => "predictability_screen",
             "numeric_dependence" => "dependence_screen",
             "identities" => "arithmetic_identities",
             other => other,
@@ -2697,12 +2722,12 @@ fn profile_inner(
             // is more specific and is kept).
             if !coverage.contains_key(pass) {
                 let detail = match activations.get(id) {
-                    Some(crate::detectors::Activation::OptIn) => format!(
-                        "opt-in detector; not in the default set — request it with detectors=[\"{id}\"]"
-                    ),
-                    Some(crate::detectors::Activation::TargetGated) => {
+                    Some((_, crate::detectors::Trigger::Target)) => {
                         "runs when a target is designated, or when explicitly selected together with a target".to_string()
                     }
+                    Some((crate::detectors::Membership::OnRequest, _)) => format!(
+                        "on-request detector; not in the default set — request it with detectors=[\"{id}\"]"
+                    ),
                     _ => "detector not enabled".to_string(),
                 };
                 stamp_insert(
@@ -3127,7 +3152,7 @@ fn build_overview(
     }
     let mut role_counts: BTreeMap<String, usize> = BTreeMap::new();
     for c in columns.values() {
-        *role_counts.entry(c.role.clone()).or_insert(0) += 1;
+        *role_counts.entry(c.card_role.clone()).or_insert(0) += 1;
     }
 
     let n_functional = findings

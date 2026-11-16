@@ -1755,7 +1755,7 @@ pub fn prior_events(
                     });
                 }
             }
-            "distribution_change" => {
+            "joint_distribution_change" => {
                 if let Some(bp) = metric_f64(metrics, "breakpoint_raw") {
                     for resp in &others {
                         events.push(PriorEvent {

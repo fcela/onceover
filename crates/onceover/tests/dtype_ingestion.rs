@@ -86,7 +86,7 @@ fn decimal_profiles_as_a_number() {
         card.distinct, 40,
         "decimal values must be read, not dropped"
     );
-    assert_eq!(card.role, "continuous");
+    assert_eq!(card.card_role, "continuous");
     assert_eq!(card.semantic_role.as_deref(), Some("measure"));
     let stats = card
         .numeric_stats
@@ -147,7 +147,7 @@ fn decimal_affine_identity_is_detected() {
         .iter()
         .chain(rep.grouped_findings.iter())
         .any(|f| {
-            f.is(Category::Dependencies, Some("functional"))
+            f.is(Category::Dependencies, Some("affine"))
                 && f.specification.form.as_deref() == Some("affine")
                 && f.subject.target.as_deref() == Some("double_price")
                 && f.subject.inputs == ["price"]

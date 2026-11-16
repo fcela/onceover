@@ -278,7 +278,7 @@ pub fn prism_rules(
                         ]),
                         None,
                         Method::new(
-                            "prism",
+                            "covering_rules",
                             "prism_covering",
                             "PRISM covering algorithm (Cendrowska 1987; onceover v0.1)",
                         ),

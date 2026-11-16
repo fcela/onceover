@@ -1,7 +1,9 @@
-"""The views column cap must be stated as a finding (issue #214).
+"""The row-clusters column cap is stated in coverage, not as a finding.
 
-A reader of the findings alone — never opening coverage — has to be
-able to tell that the views pass did not examine part of the table.
+Columns the pass did not examine are a statement about the
+examination, not about the data: the pass's coverage entry names
+them under the reason that dropped them (the column cap, or
+extraction), and no finding carries the statement.
 """
 
 import json
@@ -29,56 +31,51 @@ def _wide_frame():
     return pl.DataFrame(data)
 
 
-def test_views_cap_drop_is_a_finding():
-    report = onceover.profile(_wide_frame(), detectors=["views"], max_findings=500)
-    hits = report.select(category="gaps", type="unexamined_columns")
-    assert len(hits) == 1
-    hit = hits[0]
-    dropped = hit["subject"]["columns"]
-    assert len(dropped) == 4
-    # The pre-screen keeps the dependent pair; the dropped columns
-    # are named in the claim itself.
-    assert "late_x" not in dropped and "late_y" not in dropped
-    for name in dropped:
-        assert name in hit["claim"]
-    metrics = hit["evidence"][0]["metrics"]
-    assert metrics["pass"] == "views"
-    assert metrics["reason"] == "column_cap"
-    assert metrics["cap"] == 64
-    assert metrics["n_eligible"] == 68
-    assert metrics["n_examined"] == 64
-    assert sorted(metrics["dropped_columns"]) == dropped
-    # The pre-existing coverage text remains.
-    detail = report.coverage["views"]["detail"]
+def test_views_cap_drop_is_stated_in_coverage():
+    report = onceover.profile(_wide_frame(), detectors=["row_clusters"], max_findings=500)
+    assert not report.select(category="gaps", type="unexamined_columns")
+    assert all(
+        f.get("type") != "unexamined_columns" for f in report.findings
+    )
+    detail = report.coverage["row_clusters"]["detail"]
     assert "dropped 4 column(s) past the 64-column cap" in detail
+    segment = detail.split("dropped 4 column(s) past the 64-column cap: ", 1)[1]
+    dropped = [name.strip() for name in segment.split("; ", 1)[0].split(",")]
+    assert len(dropped) == 4
+    # The pre-screen keeps the dependent pair.
+    assert "late_x" not in dropped and "late_y" not in dropped
 
 
-def test_views_cap_finding_reaches_json_and_digest():
-    report = onceover.profile(_wide_frame(), detectors=["views"], max_findings=500)
+def test_views_cap_statement_reaches_json():
+    report = onceover.profile(_wide_frame(), detectors=["row_clusters"], max_findings=500)
     parsed = json.loads(report.to_json())
-    hits = [f for f in parsed["findings"] if f.get("type") == "unexamined_columns"]
-    assert len(hits) == 1
-    assert hits[0]["category"] == "gaps"
-    digest = report.to_digest(60_000)
-    assert "did not examine" in digest
+    assert not [
+        f for f in parsed["findings"] if f.get("type") == "unexamined_columns"
+    ]
+    assert "dropped 4 column(s) past the 64-column cap" in parsed["coverage"][
+        "row_clusters"
+    ]["detail"]
 
 
-def test_views_at_cap_produces_no_unexamined_finding():
+def test_views_at_cap_produces_no_cap_statement():
     rng = random.Random(4)
     n = 300
     data = {f"c{i}": [rng.gauss(0, 1) for _ in range(n)] for i in range(10)}
-    report = onceover.profile(pl.DataFrame(data), detectors=["views"], max_findings=500)
+    report = onceover.profile(pl.DataFrame(data), detectors=["row_clusters"], max_findings=500)
     assert not report.select(category="gaps", type="unexamined_columns")
+    assert "past the 64-column cap" not in report.coverage["row_clusters"]["detail"]
 
 
-def test_default_run_has_no_views_cap_finding():
-    # Views is opt-in: a default run must not gain the finding.
+def test_default_run_has_no_views_cap_statement():
+    # Row clusters is on request: a default run records it skipped
+    # and gains no cap statement.
     report = onceover.profile(_wide_frame(), max_findings=500)
     assert not report.select(category="gaps", type="unexamined_columns")
+    assert report.coverage["row_clusters"]["status"] == "skipped"
 
 
 def _drop_segments(detail):
-    # The views coverage detail states each drop reason as its own
+    # The coverage detail states each drop reason as its own
     # "; dropped ..." segment; map the segment's opening wording
     # to the names it lists.
     segments = {}
@@ -96,13 +93,8 @@ def test_views_coverage_separates_cap_and_extraction_drops():
     frame = _wide_frame().with_columns(
         pl.Series("payload_list", [[1, 2] for _ in range(600)], dtype=pl.List(pl.Int64))
     )
-    report = onceover.profile(frame, detectors=["views"], max_findings=500)
-    hits = report.select(category="gaps", type="unexamined_columns")
-    assert len(hits) == 1
-    cap_dropped = hits[0]["subject"]["columns"]
-    assert len(cap_dropped) == 4
-
-    detail = report.coverage["views"]["detail"]
+    report = onceover.profile(frame, detectors=["row_clusters"], max_findings=500)
+    detail = report.coverage["row_clusters"]["detail"]
     assert "dropped 4 column(s) past the 64-column cap" in detail
     assert (
         "dropped 1 column(s) at extraction "
@@ -113,7 +105,7 @@ def test_views_coverage_separates_cap_and_extraction_drops():
 
     segments = _drop_segments(detail)
     cap_segment = segments["4 column(s) past the 64-column cap"]
-    assert sorted(cap_segment) == sorted(cap_dropped)
+    assert len(cap_segment) == 4
     assert "payload_list" not in cap_segment
     extraction_segment = segments[
         "1 column(s) at extraction (unsupported type or no non-null values)"
@@ -130,8 +122,8 @@ def test_views_coverage_extraction_drop_only_states_no_cap_group():
     frame = pl.DataFrame(data).with_columns(
         pl.Series("payload_list", [[1] for _ in range(n)], dtype=pl.List(pl.Int64))
     )
-    report = onceover.profile(frame, detectors=["views"], max_findings=500)
-    detail = report.coverage["views"]["detail"]
+    report = onceover.profile(frame, detectors=["row_clusters"], max_findings=500)
+    detail = report.coverage["row_clusters"]["detail"]
     assert (
         "dropped 1 column(s) at extraction "
         "(unsupported type or no non-null values): payload_list"
@@ -142,7 +134,7 @@ def test_views_coverage_extraction_drop_only_states_no_cap_group():
 def test_views_coverage_cap_drop_only_states_no_extraction_group():
     # Only one drop reason present (the cap, on the wide frame):
     # the entry states that group alone, with no extraction group.
-    report = onceover.profile(_wide_frame(), detectors=["views"], max_findings=500)
-    detail = report.coverage["views"]["detail"]
+    report = onceover.profile(_wide_frame(), detectors=["row_clusters"], max_findings=500)
+    detail = report.coverage["row_clusters"]["detail"]
     assert "dropped 4 column(s) past the 64-column cap" in detail
     assert "at extraction" not in detail

@@ -57,7 +57,7 @@ def test_exact_decomposition_is_not_double_stated():
     identity = [
         f
         for f in report.findings
-        if f["type"] == "functional"
+        if f["type"] == "arithmetic_identity"
         and f["subject"].get("target") == "total"
         and set(f["subject"].get("inputs") or []) == {"part", "rest"}
     ]

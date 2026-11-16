@@ -95,7 +95,7 @@ def test_diff_columns_added_removed_retyped_changed():
     cols = base.diff(other)["columns"]
     assert [e["name"] for e in cols["added"]] == ["fresh"]
     assert cols["added"][0]["dtype"] == other.columns["fresh"]["dtype"]
-    assert cols["added"][0]["role"] == other.columns["fresh"]["role"]
+    assert cols["added"][0]["card_role"] == other.columns["fresh"]["card_role"]
     assert [e["name"] for e in cols["removed"]] == ["gone"]
     assert cols["removed"][0]["dtype"] == base.columns["gone"]["dtype"]
     # `code` was recast from integer to string: a retype, stated

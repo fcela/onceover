@@ -33,8 +33,8 @@ mod tests {
         let t = extract(&df);
         assert_eq!(t.n, 4);
         let out = column_card("id", "int64", &t.cols[0]);
-        assert_eq!(out.card.role, "identifier");
+        assert_eq!(out.card.card_role, "unique");
         let out = column_card("cat", "string", &t.cols[1]);
-        assert_eq!(out.card.role, "categorical");
+        assert_eq!(out.card.card_role, "categorical");
     }
 }

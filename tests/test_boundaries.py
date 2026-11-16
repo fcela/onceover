@@ -201,14 +201,14 @@ def test_small_frames_and_floors_stay_quiet():
 
 def test_detector_is_registered_and_ran():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert "boundaries" in registry
-    assert registry["boundaries"]["categories"] == ["formats"]
+    assert "boundary_mass" in registry
+    assert registry["boundary_mass"]["categories"] == ["formats"]
     rng = random.Random(61)
     vals = [rng.gauss(50, 10) for _ in range(1500)]
     report = onceover.profile(pl.DataFrame({"x": vals}))
-    assert report.coverage["boundaries"]["status"] == "ran_exact"
+    assert report.coverage["boundary_mass"]["status"] == "ran_exact"
     assert "numeric columns scanned for boundary mass" in (
-        report.coverage["boundaries"]["detail"]
+        report.coverage["boundary_mass"]["detail"]
     )
 
 

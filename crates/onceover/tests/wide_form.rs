@@ -40,17 +40,12 @@ fn melted_panel() -> DataFrame {
     .unwrap()
 }
 
-/// The default set plus the opt-in pivot detector, whose wide-form
-/// recursion is this module's subject.
+/// The default set plus the on-request pivot detector, whose
+/// wide-form recursion is this module's subject.
 fn default_plus_pivot() -> ProfileConfig {
     let mut detectors: std::collections::BTreeSet<String> = onceover::builtin_detectors()
         .into_iter()
-        .filter(|d| {
-            matches!(
-                d.activation,
-                onceover::Activation::Default | onceover::Activation::HintGated
-            )
-        })
+        .filter(|d| d.membership == onceover::Membership::DefaultSet)
         .map(|d| d.id)
         .collect();
     detectors.insert("pivot".into());

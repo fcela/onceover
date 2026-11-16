@@ -14,7 +14,7 @@ def surprises(report):
 
 def test_detector_registered():
     ids = {d["id"] for d in onceover.available_detectors()}
-    assert "surprises" in ids
+    assert "outliers" in ids
 
 
 def test_global_extreme_isolated():
@@ -24,7 +24,7 @@ def test_global_extreme_isolated():
     hits = surprises(onceover.profile(df))
     assert len(hits) == 1
     hit = hits[0]
-    assert hit["category"] == "intervals"
+    assert hit["category"] == "anomalies"
     assert "age" in hit["subject"]["columns"]
     metrics = hit["evidence"][0]["metrics"]
     assert metrics["extreme_values"] == [455.0]
@@ -115,7 +115,7 @@ def test_categorical_breaker_isolated():
     hits = categorical_outliers(onceover.profile(df))
     assert len(hits) == 1
     hit = hits[0]
-    assert hit["category"] == "intervals"
+    assert hit["category"] == "anomalies"
     metrics = hit["evidence"][0]["metrics"]
     assert metrics["outlier_rows"] == [7]
     assert metrics["outlier_values"] == ["bad"]
@@ -143,7 +143,7 @@ def test_categorical_outlier_lists_every_row_its_share_counts():
         status[r] = "bad"
     report = onceover.profile(
         pl.DataFrame({"region": region, "tier": tier, "status": status}),
-        detectors=["surprises"],
+        detectors=["outliers"],
     )
     hits = [f for f in report.findings if f.get("type") == "categorical_outlier"]
     assert hits

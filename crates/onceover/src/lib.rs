@@ -13,7 +13,9 @@ pub mod frame;
 pub mod panel;
 pub mod pipeline;
 mod rules;
-pub use detectors::{builtin_detectors, Activation, Detector, DetectorContext, DetectorDescriptor};
+pub use detectors::{
+    builtin_detectors, Detector, DetectorContext, DetectorDescriptor, Membership, Trigger,
+};
 
 pub use config::{Budget, ProfileConfig, TierConfig};
 pub use pipeline::{profile, profile_with_detectors};

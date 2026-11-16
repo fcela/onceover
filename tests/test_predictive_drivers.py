@@ -43,7 +43,7 @@ def _single_driver_frame(n=5000, seed=20261104):
 
 
 def test_single_driver_claim_names_only_the_driver():
-    report = onceover.profile(_single_driver_frame(), detectors=["gbm"])
+    report = onceover.profile(_single_driver_frame(), detectors=["predictability"])
     found = _predictive(report, "p_y")
     assert len(found) == 1
     m = _metrics(found[0])
@@ -73,7 +73,7 @@ def _multi_driver_frame(n=5000, seed=7):
 
 
 def test_multi_driver_claim_names_all_drivers_and_no_noise():
-    report = onceover.profile(_multi_driver_frame(), detectors=["gbm"])
+    report = onceover.profile(_multi_driver_frame(), detectors=["predictability"])
     found = _predictive(report, "y")
     assert len(found) == 1
     m = _metrics(found[0])
@@ -90,7 +90,7 @@ def test_pure_noise_target_produces_no_predictive_claim():
     cols = {f"n{i}": [rng.gauss(0.0, 1.0) for _ in range(n)]
             for i in range(10)}
     cols["y"] = [rng.gauss(0.0, 1.0) for _ in range(n)]
-    report = onceover.profile(pl.DataFrame(cols), detectors=["gbm"])
+    report = onceover.profile(pl.DataFrame(cols), detectors=["predictability"])
     assert _predictive(report, "y") == []
 
 
@@ -103,8 +103,8 @@ def test_scaffolding_column_is_not_a_predictor():
         "x": x,
         "y": [v * v + rng.gauss(0.0, 0.05) for v in x],
     })
-    report = onceover.profile(df, detectors=["gbm"],
-                              hints={"roles": {"row_id": "index"}})
+    report = onceover.profile(df, detectors=["predictability"],
+                              hints={"roles": {"row_id": "row_number"}})
     found = _predictive(report, "y")
     assert len(found) == 1
     m = _metrics(found[0])

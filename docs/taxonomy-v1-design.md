@@ -1,6 +1,15 @@
 # Finding taxonomy v1: facets with a derived category
 
-Status: implemented in schema 0.3 (this change). Decision: option B of the
+Status: implemented in schema 0.3 (this change). Amendment
+(schema 0.8, the semantics application): the facet field `evidence`
+is renamed `support`, and the derived category the table below
+calls `intervals` is renamed `anomalies`; the derivation rules are
+unchanged, and the tables in this document use the current names.
+The `unexamined_columns` and `unscanned_series` statement kinds
+named in the original design have left the findings — what a pass
+did not examine is stated in coverage — so their rows no longer
+appear in the per-type table in `docs/findings.md`.
+Decision: option B of the
 taxonomy decision package — facets added, the category kept as a label
 derived from the facets by a fixed, test-pinned table. The category and
 the (category, type) pair remain the compatibility surface for filtering,
@@ -43,7 +52,7 @@ is a data-quality statement.
 |---|---|---|
 | `scope` | `column`, `columns`, `rows`, `sequence`, `frame` | What the statement ranges over |
 | `object` | `distribution`, `relation`, `structure`, `temporal_behaviour`, `role` | What kind of statement it is |
-| `evidence` | `exact`, `approximate`, `model_based`, `inferred` | How the statement is supported: holds without exception in the evaluated rows; holds at a measured rate or within a tolerance; rests on a fitted model; is an interpretation inferred from observations |
+| `support` | `exact`, `approximate`, `model_based`, `inferred` | How the statement is supported: holds without exception in the evaluated rows; holds at a measured rate or within a tolerance; rests on a fitted model; is an interpretation inferred from observations |
 | `conditionality` | `unconditional`, `value_conditioned`, `segment_conditioned` | Whether the statement carries a condition: none; a condition on column values; different behaviour in different segments of an ordering or of an input |
 | `temporality` | `atemporal`, `ordered`, `change_across_segments` | The role of order: none; the statement is about an ordering; the statement compares segments of an ordering |
 | `quality_dimension` | `completeness`, `uniqueness`, `validity` | The DAMA dimension, when the finding is a quality statement |
@@ -82,11 +91,11 @@ every pattern.
 | 8 | temporality = change_across_segments, object ≠ relation | `changes` |
 | 9 | object = relation, status = deviation | `changes` |
 | 10 | object = relation, directed | `dependencies` |
-| 11 | object = relation, not directed, evidence = exact | `column_roles` |
-| 12 | object = relation, not directed, evidence ≠ exact | `associations` |
+| 11 | object = relation, not directed, support = exact | `column_roles` |
+| 12 | object = relation, not directed, support ≠ exact | `associations` |
 | 13 | object = temporal_behaviour | `changes` |
-| 14 | object = distribution, temporality = ordered | `intervals` |
-| 15 | object = distribution, status = deviation | `intervals` |
+| 14 | object = distribution, temporality = ordered | `anomalies` |
+| 15 | object = distribution, status = deviation | `anomalies` |
 | 16 | object = distribution, status = regularity | `concentration` |
 | 17 | object = structure, temporality = ordered | `ordering` |
 | 18 | object = structure | `gaps` |
@@ -122,7 +131,7 @@ Two cells deserve a note:
   above. A finding whose detector record carries a property the table
   does not read (for example, an association computed within periods
   but reported as one number) keeps the pattern's default facets.
-- `evidence = inferred` is used only by the column roles. If more
+- `support = inferred` is used only by the column roles. If more
   interpretation-style findings appear, the value's boundary against
   `model_based` needs a sharper statement.
 - The derivation is checked for consistency, not derived at

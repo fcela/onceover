@@ -23,7 +23,7 @@ def _soybean_report():
 
 def test_every_finding_carries_facets():
     report = _soybean_report()
-    assert report.data["schema_version"] == "0.7"
+    assert report.data["schema_version"] == "0.8"
     assert report.findings
     for f in report.findings:
         facets = f["facets"]
@@ -35,7 +35,7 @@ def test_every_finding_carries_facets():
             "temporal_behaviour",
             "role",
         }
-        assert facets["evidence"] in {"exact", "approximate", "model_based", "inferred"}
+        assert facets["support"] in {"exact", "approximate", "model_based", "inferred"}
         assert facets["conditionality"] in {
             "unconditional",
             "value_conditioned",
@@ -71,7 +71,7 @@ def test_findings_frame_carries_facet_columns():
     for column in (
         "scope",
         "object",
-        "evidence_kind",
+        "support_kind",
         "conditionality",
         "temporality",
         "quality_dimension",

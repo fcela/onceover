@@ -310,7 +310,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
             metrics,
             Some(interpretation),
             Method::new(
-                "boundaries",
+                "boundary_mass",
                 "boundary_mass_scan",
                 "exact value-count scan with a local-median dominance rule (onceover v0.1)",
             ),

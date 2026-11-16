@@ -27,11 +27,11 @@
       "pregnant"
      ],
      "expect": "missed",
-     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated — it appears when the cap widens (present at max_findings=5000, interestingness 0.83) — but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
+     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
     },
     {
      "kind": "finding",
-     "category": "intervals",
+     "category": "anomalies",
      "type": "extreme_value",
      "columns_any": [
       "age"
@@ -41,7 +41,7 @@
     },
     {
      "kind": "finding",
-     "category": "intervals",
+     "category": "anomalies",
      "type": "extreme_value",
      "columns_all": [
       "pregnant",
@@ -169,7 +169,7 @@
     },
     {
      "kind": "finding",
-     "category": "intervals",
+     "category": "anomalies",
      "type": "categorical_outlier",
      "columns_all": [
       "seed",
@@ -177,18 +177,18 @@
       "seed_discolor"
      ],
      "expect": "missed",
-     "note": "GritBot case 558: seed = abnorm breaking a near-universal seed = norm context (mold_growth = absent and seed_discolor = absent, 474 rows, 99.6% norm; rows 250 and 557 flagged). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the (intervals, categorical_outlier) group cap of 12 displaces it — 7 statements in that group were turned away on this dataset. This expectation now asserts its absence from the capped report; if selection changes restore it, the tripwire fires and the expectation is promoted back."
+     "note": "GritBot case 558: seed = abnorm breaking a near-universal seed = norm context (mold_growth = absent and seed_discolor = absent, 474 rows, 99.6% norm; rows 250 and 557 flagged). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the (intervals, categorical_outlier) group cap of 12 displaces it \u2014 7 statements in that group were turned away on this dataset. This expectation now asserts its absence from the capped report; if selection changes restore it, the tripwire fires and the expectation is promoted back."
     },
     {
      "kind": "finding",
-     "category": "intervals",
+     "category": "anomalies",
      "type": "categorical_outlier",
      "columns_all": [
       "stem",
       "stem_cankers"
      ],
      "expect": "missed",
-     "note": "GritBot case 614: stem = norm breaking the stem_cankers = above-sec-nde context (191 rows, 99.5% abnorm; row 613 flagged). Re-baselined 2026-11-13 under report selection: same displacement as case 558 above — still generated, present at max_findings=300, displaced at the default cap by the (intervals, categorical_outlier) group cap of 12."
+     "note": "GritBot case 614: stem = norm breaking the stem_cankers = above-sec-nde context (191 rows, 99.5% abnorm; row 613 flagged). Re-baselined 2026-11-13 under report selection: same displacement as case 558 above \u2014 still generated, present at max_findings=300, displaced at the default cap by the (intervals, categorical_outlier) group cap of 12."
     },
     {
      "kind": "documented_case",
@@ -398,7 +398,7 @@
     {
      "kind": "finding",
      "category": "dependencies",
-     "type": "functional",
+     "type": "affine",
      "columns_all": [
       "Debt ratio %",
       "Net worth/Assets"
@@ -409,7 +409,7 @@
     {
      "kind": "finding",
      "category": "dependencies",
-     "type": "functional",
+     "type": "affine",
      "columns_all": [
       "Current Liabilities/Equity",
       "Current Liability to Equity"
@@ -420,7 +420,7 @@
     {
      "kind": "finding",
      "category": "dependencies",
-     "type": "functional",
+     "type": "affine",
      "columns_all": [
       "Current Liabilities/Liability",
       "Current Liability to Liability"
@@ -471,7 +471,7 @@
       "employee_id"
      ],
      "expect": "missed",
-     "note": "One record per absence, person attributes repeated per employee: employee_id -> education holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: the dependency is still generated by the functional pass (see the documented case below), but at the default cap the (dependencies, functional, value_mapping) group cap of 12 displaces it — 199 statements in that group were turned away on this dataset and the 12 admitted are two-input dependencies. This expectation now asserts its absence from the capped report."
+     "note": "One record per absence, person attributes repeated per employee: employee_id -> education holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: the dependency is still generated by the functional pass (see the documented case below), but at the default cap the (dependencies, functional, value_mapping) group cap of 12 displaces it \u2014 199 statements in that group were turned away on this dataset and the 12 admitted are two-input dependencies. This expectation now asserts its absence from the capped report."
     },
     {
      "kind": "finding",
@@ -482,7 +482,7 @@
       "social_drinker"
      ],
      "expect": "missed",
-     "note": "employee_id -> social_drinker holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: same displacement as the education dependency above — still generated by the functional pass, displaced at the default cap by the (dependencies, functional, value_mapping) group cap of 12."
+     "note": "employee_id -> social_drinker holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: same displacement as the education dependency above \u2014 still generated by the functional pass, displaced at the default cap by the (dependencies, functional, value_mapping) group cap of 12."
     },
     {
      "kind": "finding",
@@ -724,7 +724,7 @@
       "revision_number"
      ],
      "expect": "missed",
-     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated — it appears when the cap widens (present at max_findings=5000, interestingness 0.88) — but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
+     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.88) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found."
     },
     {
      "kind": "finding",
@@ -809,7 +809,7 @@
      "kind": "finding",
      "category": "duplicates",
      "expect": "known_miss",
-     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged — verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report."
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged \u2014 verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report."
     },
     {
      "kind": "documented_case",
@@ -825,7 +825,7 @@
      "columns_any": [
       "value"
      ],
-     "note": "Added 2026-11-14 with the detector's first corpus expectations (issue #275): per-level contrasts on value — JPMorgan Chase (cik 19617) median 391,154,000,000 against 14,042,000,000 pooled, and December period_end values 16.49x as variable as a typical month — verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
+     "note": "Added 2026-11-14 with the detector's first corpus expectations (issue #275): per-level contrasts on value \u2014 JPMorgan Chase (cik 19617) median 391,154,000,000 against 14,042,000,000 pooled, and December period_end values 16.49x as variable as a typical month \u2014 verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
     },
     {
      "kind": "finding",
@@ -877,14 +877,14 @@
     },
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "note": "Views runs on the full table (17 columns)."
     },
     {
      "kind": "finding",
      "category": "changes",
-     "type": "residual_level",
+     "type": "residual_shift",
      "note": "Views row clusters: the greedy partition splits members into clusters with different vote levels (party blocs)."
     }
    ],
@@ -898,17 +898,17 @@
     "pivot",
     "functional_dependencies",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "row_clusters"
    ],
    "sha256": "11e798b454651e10d203d014032d5af0854cf777bf5b570ffaaa3793728c43fa",
    "rows": 435
@@ -939,7 +939,7 @@
     },
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "note": "64 columns: exactly at the views cap."
     },
@@ -964,17 +964,17 @@
     "pivot",
     "functional_dependencies",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views",
+    "row_clusters",
     "discontinuities"
    ],
    "sha256": "e4a06c113f68a4b5411740110fa16181773191aa406be07130dd236a64b59e3d",
@@ -998,7 +998,7 @@
     },
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "note": "Views partitions the 51 state columns."
     },
@@ -1026,17 +1026,17 @@
     "pivot",
     "functional_dependencies",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views",
+    "row_clusters",
     "ordered_partitions"
    ],
    "sha256": "162a9fcab6db0d44a9d7bd00b29fe4d7be0cd56f72a5f027c2c994ebc7e3f475",
@@ -1090,7 +1090,7 @@
    "expectations": [
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "detail_contains": "64-column cap",
      "note": "Views selects 64 of 5,006 columns by the dependence pre-screen (issue #73; the wide-table screen is pair- and row-bounded): coverage reports 4,942 columns dropped past the cap (measured on this table)."
@@ -1118,17 +1118,17 @@
     "pivot",
     "functional_dependencies",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "row_clusters"
    ],
    "sha256": "7a3139c26f763576cee935012b544609c549482f9fa01cbc37b6216793736d09",
    "rows": 86
@@ -1152,7 +1152,7 @@
     },
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "detail_contains": "64-column cap",
      "note": "The views pass selects 64 of 86 columns by a pairwise-dependence pre-screen (issue #73); the 22 dropped columns - the identifier first - are named in the coverage detail. Selection and recall against Lace are recorded in the head-to-head note."
@@ -1168,17 +1168,17 @@
     "pivot",
     "functional_dependencies",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views"
+    "row_clusters"
    ],
    "sha256": "09e32808c5163dc3aa34c735bf5f3f5a59d20cd688b18a28ecf19fe8c9eee4c3",
    "rows": 50
@@ -1202,7 +1202,7 @@
     },
     {
      "kind": "coverage_status",
-     "detector": "views",
+     "detector": "row_clusters",
      "status": "ran_exact",
      "note": "The views pass runs on all 21 columns: 18 views, 2 multi-column ({Class_of_Orbit, Perigee_km, Period_minutes} and {Inclination_radians, longitude_radians_of_geo}) in the first run. The partition itself is compared against Lace in the head-to-head note, not pinned here - it is a greedy point estimate and may move as the pass improves."
     },
@@ -1267,17 +1267,17 @@
     "functional_dependencies",
     "order_constraints",
     "sortedness",
-    "dates",
-    "gbm",
+    "date_gaps",
+    "predictability",
     "decision_tables",
-    "prism",
+    "covering_rules",
     "regimes",
     "breaks",
     "association_rules",
     "numeric_dependence",
     "identities",
     "period_associations",
-    "views",
+    "row_clusters",
     "discontinuities"
    ],
    "sha256": "239eb10a605df2e83101b2732ebee1459c56d96d498b0327be95b5ccc73c6d17",
@@ -1485,7 +1485,7 @@
     {
      "kind": "max_findings",
      "value": 89,
-     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour. Raised to 70 on 2026-11-06 by six functional statements on date_time (40,575 distinct values in 48,204 rows), which the dependency screen used to dismiss as near-unique on its 2,048-row sample: the hours recorded twice agree exactly on traffic_volume, holiday and snow_1h, and nearly on temp, rain_1h and clouds_all Raised to 89 on 2026-11-14 (issue #275): the level_contrasts detector adds 20 selected statements on this frame — hour-of-day contrasts on traffic_volume (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), weather scale contrasts on rain_1h, clouds_all and temp, and holiday contrasts — spot-verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
+     "note": "Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour. Raised to 70 on 2026-11-06 by six functional statements on date_time (40,575 distinct values in 48,204 rows), which the dependency screen used to dismiss as near-unique on its 2,048-row sample: the hours recorded twice agree exactly on traffic_volume, holiday and snow_1h, and nearly on temp, rain_1h and clouds_all Raised to 89 on 2026-11-14 (issue #275): the level_contrasts detector adds 20 selected statements on this frame \u2014 hour-of-day contrasts on traffic_volume (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), weather scale contrasts on rain_1h, clouds_all and temp, and holiday contrasts \u2014 spot-verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
     },
     {
      "kind": "documented_case",
@@ -1540,7 +1540,7 @@
    "expectations": [
     {
      "kind": "finding",
-     "category": "intervals",
+     "category": "anomalies",
      "type": "row_inconsistency",
      "expect": "missed",
      "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the report's 100 slots are filled by account, structure, and shape statements before hygiene-class statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report."
@@ -1556,7 +1556,7 @@
     {
      "kind": "finding",
      "category": "dependencies",
-     "type": "functional",
+     "type": "arithmetic_identity",
      "target": "cnt",
      "note": "(registered, casual) -> cnt holds exactly (0 violations in 17,379 rows). Verified independently in the case study."
     },

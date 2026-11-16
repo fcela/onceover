@@ -1,6 +1,6 @@
-# Design: the `views` detector
+# Design: the `row_clusters` detector
 
-The `views` detector fits groups of columns that can share a clustering of
+The `row_clusters` detector fits groups of columns that can share a clustering of
 rows. It is implemented in
 [`onceover-mines/src/views.rs`](../crates/onceover-mines/src/views.rs) and runs
 only when explicitly selected at the `standard` or `deep` budget.
@@ -28,7 +28,7 @@ clustering alone does not establish distinct populations or temporal regimes.
   it does not use the quantile-binned matrix used by the predictive passes.
 - Standard and deep fitting samples contain at most 20,000 and 50,000 rows,
   respectively. Python's `sample_rows` overrides this cap.
-- `detectors=["views"]` selects the pass. Default profiling excludes it, and
+- `detectors=["row_clusters"]` selects the pass. Default profiling excludes it, and
   the quick budget skips it even when selected.
 - Coverage records sample size, excluded columns, and work-budget exhaustion.
   Model findings use `basis="estimated"` and carry no independent validation.
@@ -100,7 +100,7 @@ finding describes the encoded level, not a repeated single raw value.
 The concentration types keep modal findings and spike findings separate during
 statement consolidation. The reference chapter describes a remaining ranking
 mismatch: the shared selector reads correlation and concentration metrics that
-the views pass does not supply under the same names.
+the row-clusters pass does not supply under the same names.
 
 ## Evaluation
 
@@ -143,4 +143,4 @@ pass beyond the pass's own width cap.
   [Detecting Dependencies in Sparse, Multivariate Databases Using Probabilistic
   Programming and Non-parametric Bayes](https://proceedings.mlr.press/v54/saad17a.html).
   *Proceedings of AISTATS*, PMLR 54, 632–641. This describes Bayesian dependence
-  queries; its method and uncertainty estimates are not implemented by `views`.
+  queries; its method and uncertainty estimates are not implemented by `row_clusters`.

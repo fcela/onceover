@@ -1502,7 +1502,7 @@ pub fn demote_restatements(
         .filter(|(_, r)| {
             matches!(
                 r.as_deref(),
-                Some("index" | "identifier" | "timestamp" | "timestamp_part")
+                Some("row_number" | "identifier" | "timestamp" | "timestamp_part")
             )
         })
         .map(|(i, _)| i)
@@ -1593,7 +1593,7 @@ mod tests {
             .map(|(i, col)| {
                 let card = onceover_core::column_card(&table.names[i], &table.dtypes[i], col);
                 CardFacts {
-                    card_role: card.card.role.clone(),
+                    card_role: card.card.card_role.clone(),
                     distinct: card.card.distinct,
                     null_count: card.card.null_count,
                     numeric_min: card.card.numeric_stats.as_ref().and_then(|s| s.min),
