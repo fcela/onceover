@@ -1,6 +1,6 @@
 # Gate report
 
-2 change(s) recorded. Latest: `ca275fd` (2026-11-15), onceover 0.1.5, seeds [0].
+3 change(s) recorded. Latest: `daf7a79` (2026-11-15), onceover 0.1.5, seeds [0].
 
 Each row is one change on main, newest first. A value is followed, in parentheses, by its movement against the change before it, with `better` or `worse` when the metric has a direction. Seconds are compared only between rows produced on the same platform.
 
@@ -17,12 +17,13 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-15 | `daf7a79` | Merge pull request #324 from fcela/feat/315-corpus-targets | 20 | 7 | 7 | 136 | 408 | 4 | 0 | 12.325 |
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 20 | 7 | 7 | 136 | 408 | 4 | 0 | 13.385 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 20 | 7 | 7 | 136 | 408 | 4 | 0 | 6.859 |
 
-## Latest change: `ca275fd` Merge pull request #323 from fcela/feat/317-gate-history-report
+## Latest change: `daf7a79` Merge pull request #324 from fcela/feat/315-corpus-targets
 
-Compared with `1618886`: 0 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
+Compared with `ca275fd`: 0 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
 
 ### Better
 
@@ -36,78 +37,78 @@ None.
 
 None.
 
-## Every total metric, last 2 changes
+## Every total metric, last 3 changes
 
 Oldest on the left. A value in a column is followed by its movement against the column before it.
 
-| metric | reading | `1618886` | `ca275fd` |
-|---|---|---:|---:|
-| planted.planted | information only | 46 | 46 |
-| planted.found_full | higher is better | 34 | 34 |
-| planted.found_4k | higher is better | 20 | 20 |
-| planted.line_sum_4k | information only | 253 | 253 |
-| permuted.false_full | lower is better | 144 | 144 |
-| permuted.false_4k | lower is better | 136 | 136 |
-| permuted.false_full_target | lower is better | 75 | 75 |
-| permuted.false_4k_target | lower is better | 67 | 67 |
-| permuted.findings_full | information only | 333 | 333 |
-| invariance.reverse | lower is better | 269 | 269 |
-| invariance.row_shuffle | lower is better | 104 | 104 |
-| invariance.rename | lower is better | 0 | 0 |
-| invariance.noise | lower is better | 30 | 30 |
-| invariance.scale | lower is better | 5 | 5 |
-| invariance.total | lower is better | 408 | 408 |
-| reference.check_failed | lower is better | 0 | 0 |
-| reference.must_total | information only | 11 | 11 |
-| reference.must_4k_default | higher is better | 7 | 7 |
-| reference.must_8k_default | higher is better | 11 | 11 |
-| reference.must_full_default | higher is better | 11 | 11 |
-| reference.must_4k_target | higher is better | 7 | 7 |
-| reference.must_8k_target | higher is better | 11 | 11 |
-| reference.must_full_target | higher is better | 11 | 11 |
-| reference.should_total | information only | 12 | 12 |
-| reference.should_4k_default | higher is better | 7 | 7 |
-| reference.should_8k_default | higher is better | 9 | 9 |
-| reference.should_full_default | higher is better | 11 | 11 |
-| reference.should_4k_target | higher is better | 8 | 8 |
-| reference.should_8k_target | higher is better | 8 | 8 |
-| reference.should_full_target | higher is better | 10 | 10 |
-| redundancy.repeated_default | lower is better | 4 | 4 |
-| redundancy.finding_lines_default | information only | 111 | 111 |
-| redundancy.finding_permille_default | higher is better | 7118 | 7118 |
-| redundancy.long_decimals_default | lower is better | 53 | 53 |
-| redundancy.repeated_target | lower is better | 3 | 3 |
-| redundancy.finding_lines_target | information only | 69 | 69 |
-| redundancy.finding_permille_target | higher is better | 4531 | 4531 |
-| redundancy.long_decimals_target | lower is better | 41 | 41 |
-| truth.mismatch | lower is better | 0 | 0 |
-| truth.error | lower is better | 0 | 0 |
-| truth.ok | information only | 858 | 858 |
-| truth.not_checkable | information only | 1423 | 1423 |
-| cost.profile_seconds | lower is better | 6.859 | 13.385 |
-| cost.json_chars | information only | 3335873 | 3335878 (+5) |
-| cost.findings | information only | 1089 | 1089 |
+| metric | reading | `1618886` | `ca275fd` | `daf7a79` |
+|---|---|---:|---:|---:|
+| planted.planted | information only | 46 | 46 | 46 |
+| planted.found_full | higher is better | 34 | 34 | 34 |
+| planted.found_4k | higher is better | 20 | 20 | 20 |
+| planted.line_sum_4k | information only | 253 | 253 | 253 |
+| permuted.false_full | lower is better | 144 | 144 | 144 |
+| permuted.false_4k | lower is better | 136 | 136 | 136 |
+| permuted.false_full_target | lower is better | 75 | 75 | 75 |
+| permuted.false_4k_target | lower is better | 67 | 67 | 67 |
+| permuted.findings_full | information only | 333 | 333 | 333 |
+| invariance.reverse | lower is better | 269 | 269 | 269 |
+| invariance.row_shuffle | lower is better | 104 | 104 | 104 |
+| invariance.rename | lower is better | 0 | 0 | 0 |
+| invariance.noise | lower is better | 30 | 30 | 30 |
+| invariance.scale | lower is better | 5 | 5 | 5 |
+| invariance.total | lower is better | 408 | 408 | 408 |
+| reference.check_failed | lower is better | 0 | 0 | 0 |
+| reference.must_total | information only | 11 | 11 | 11 |
+| reference.must_4k_default | higher is better | 7 | 7 | 7 |
+| reference.must_8k_default | higher is better | 11 | 11 | 11 |
+| reference.must_full_default | higher is better | 11 | 11 | 11 |
+| reference.must_4k_target | higher is better | 7 | 7 | 7 |
+| reference.must_8k_target | higher is better | 11 | 11 | 11 |
+| reference.must_full_target | higher is better | 11 | 11 | 11 |
+| reference.should_total | information only | 12 | 12 | 12 |
+| reference.should_4k_default | higher is better | 7 | 7 | 7 |
+| reference.should_8k_default | higher is better | 9 | 9 | 9 |
+| reference.should_full_default | higher is better | 11 | 11 | 11 |
+| reference.should_4k_target | higher is better | 8 | 8 | 8 |
+| reference.should_8k_target | higher is better | 8 | 8 | 8 |
+| reference.should_full_target | higher is better | 10 | 10 | 10 |
+| redundancy.repeated_default | lower is better | 4 | 4 | 4 |
+| redundancy.finding_lines_default | information only | 111 | 111 | 111 |
+| redundancy.finding_permille_default | higher is better | 7118 | 7118 | 7118 |
+| redundancy.long_decimals_default | lower is better | 53 | 53 | 53 |
+| redundancy.repeated_target | lower is better | 3 | 3 | 3 |
+| redundancy.finding_lines_target | information only | 69 | 69 | 69 |
+| redundancy.finding_permille_target | higher is better | 4531 | 4531 | 4531 |
+| redundancy.long_decimals_target | lower is better | 41 | 41 | 41 |
+| truth.mismatch | lower is better | 0 | 0 | 0 |
+| truth.error | lower is better | 0 | 0 | 0 |
+| truth.ok | information only | 858 | 858 | 858 |
+| truth.not_checkable | information only | 1423 | 1423 | 1423 |
+| cost.profile_seconds | lower is better | 6.859 | 13.385 | 12.325 |
+| cost.json_chars | information only | 3335873 | 3335878 (+5) | 3335878 |
+| cost.findings | information only | 1089 | 1089 | 1089 |
 
 ## Latest scorecard per dataset
 
 | dataset | kind | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| adult-census-income | tabular, mixed types | 2 | 2 | 3 | 2 | 30 | 0 | 0 | 1.815 |
-| bank-marketing | tabular, mixed types | 2 | 1 | 1 | 8 | 44 | 0 | 0 | 1.82 |
-| abalone | tabular, correlated measures | 3 | 2 | 2 | 1 | 13 | 0 | 0 | 0.198 |
-| bike-sharing-hourly | hourly series with calendar columns | 2 | 2 | 1 | 10 | 32 | 0 | 0 | 1.654 |
-| metro-interstate-traffic | hourly time series | 3 | - | - | 9 | 7 | 0 | 0 | 1.651 |
-| thyroid | clinical, many flags and missing values | 1 | - | - | 32 | 40 | 1 | 0 | 0.859 |
-| absenteeism-at-work | small business table | 1 | - | - | 4 | 68 | 0 | 0 | 0.246 |
-| hospital-dha | wide numeric, 64 columns | 1 | - | - | 9 | 40 | 0 | 0 | 0.785 |
-| congressional-voting | categorical votes | 1 | - | - | 1 | 38 | 1 | 0 | 0.049 |
-| adventureworks | sales orders | 1 | - | - | 40 | 30 | 0 | 0 | 2.778 |
-| nab-nyc-taxi | single time series | 3 | - | - | 0 | 0 | 2 | 0 | 0.054 |
-| state-unemployment | wide time series, one column per state | 0 | - | - | 16 | 66 | 0 | 0 | 1.394 |
-| state-unemployment-long | panel, long form | 0 | - | - | 4 | 0 | 0 | 0 | 0.082 |
-| south-german-credit (held out) | credit table | 2 | - | - | 7 | 13 | 1 | 0 | 0.182 |
-| soybean (held out) | categorical agronomy table | 0 | - | - | 7 | 54 | 0 | 0 | 0.199 |
-| lace-satellites (held out) | satellite catalogue | 1 | - | - | 9 | 71 | 0 | 0 | 0.245 |
+| adult-census-income | tabular, mixed types | 2 | 2 | 3 | 2 | 30 | 0 | 0 | 1.735 |
+| bank-marketing | tabular, mixed types | 2 | 1 | 1 | 8 | 44 | 0 | 0 | 1.714 |
+| abalone | tabular, correlated measures | 3 | 2 | 2 | 1 | 13 | 0 | 0 | 0.182 |
+| bike-sharing-hourly | hourly series with calendar columns | 2 | 2 | 1 | 10 | 32 | 0 | 0 | 1.556 |
+| metro-interstate-traffic | hourly time series | 3 | - | - | 9 | 7 | 0 | 0 | 1.47 |
+| thyroid | clinical, many flags and missing values | 1 | - | - | 32 | 40 | 1 | 0 | 0.813 |
+| absenteeism-at-work | small business table | 1 | - | - | 4 | 68 | 0 | 0 | 0.235 |
+| hospital-dha | wide numeric, 64 columns | 1 | - | - | 9 | 40 | 0 | 0 | 0.719 |
+| congressional-voting | categorical votes | 1 | - | - | 1 | 38 | 1 | 0 | 0.048 |
+| adventureworks | sales orders | 1 | - | - | 40 | 30 | 0 | 0 | 2.433 |
+| nab-nyc-taxi | single time series | 3 | - | - | 0 | 0 | 2 | 0 | 0.047 |
+| state-unemployment | wide time series, one column per state | 0 | - | - | 16 | 66 | 0 | 0 | 1.295 |
+| state-unemployment-long | panel, long form | 0 | - | - | 4 | 0 | 0 | 0 | 0.078 |
+| south-german-credit (held out) | credit table | 2 | - | - | 7 | 13 | 1 | 0 | 0.175 |
+| soybean (held out) | categorical agronomy table | 0 | - | - | 7 | 54 | 0 | 0 | 0.202 |
+| lace-satellites (held out) | satellite catalogue | 1 | - | - | 9 | 71 | 0 | 0 | 0.237 |
 
 ## Held-out datasets
 
@@ -115,10 +116,12 @@ These datasets are scored and left out of the pass/fail comparison. A gain on th
 
 | date | commit | change | planted found in 4k digest | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|
+| 2026-11-15 | `daf7a79` | Merge pull request #324 from fcela/feat/315-corpus-targets | 3 | 23 | 138 | 1 | 0 | 0.614 |
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 3 | 23 | 138 | 1 | 0 | 0.626 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 3 | 23 | 138 | 1 | 0 | 0.327 |
 
 ## Platforms
 
+- Linux-7.0.0-1014-aws-x86_64-with-glibc2.39
 - Linux-7.0.0-1017-azure-x86_64-with-glibc2.39
 - macOS-26.3-arm64-arm-64bit-Mach-O
