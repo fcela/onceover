@@ -13,13 +13,17 @@ the changes.
 
 `render` writes a markdown report:
 
-  1. Headline metrics, one row per change, newest first, each value
+  1. A TL;DR: the verdict on the latest change, the digest metrics
+     that decide whether the library is improving against the previous
+     change and the first recorded one, the biggest movements, and
+     the hard lines (verification failures, a lost must-tier fact).
+  2. Headline metrics, one row per change, newest first, each value
      with its movement against the change before it.
-  2. The latest change: what improved, what got worse, what was
+  3. The latest change: what improved, what got worse, what was
      accepted, in totals and per dataset.
-  3. Every total metric over the most recent changes.
-  4. The latest scorecard per dataset.
-  5. The held-out datasets, which the pass/fail comparison leaves out.
+  4. Every total metric over the most recent changes.
+  5. The latest scorecard per dataset.
+  6. The held-out datasets, which the pass/fail comparison leaves out.
 
 The headline metrics and their labels are the "headline" list in
 registry.json. Time metrics are compared only between entries produced
@@ -211,6 +215,158 @@ def change_rows(rows: list, with_reason: bool = False) -> list[str]:
     return lines
 
 
+TLDR_METRICS = [
+    "reference.must_4k_default",
+    "reference.must_4k_target",
+    "reference.should_4k_default",
+    "reference.should_4k_target",
+    "planted.found_4k",
+    "redundancy.repeated_default",
+    "redundancy.repeated_target",
+    "permuted.false_4k",
+    "truth.mismatch",
+]
+
+# The metric specs carry direction and kind but no words, so the
+# TL;DR's plain labels live here. A metric missing from this map
+# falls back to its registry headline label.
+TLDR_LABELS = {
+    "reference.must_4k_default":
+        "Must-tier reference facts stated in the 4,000-character digest",
+    "reference.must_4k_target":
+        "Must-tier reference facts stated in the 4,000-character digest, target mode",
+    "reference.should_4k_default":
+        "Should-tier reference facts stated in the 4,000-character digest",
+    "reference.should_4k_target":
+        "Should-tier reference facts stated in the 4,000-character digest, target mode",
+    "planted.found_4k":
+        "Planted structures stated in the 4,000-character digest",
+    "redundancy.repeated_default":
+        "Facts repeated in the 4,000-character digest",
+    "redundancy.repeated_target":
+        "Facts repeated in the 4,000-character digest, target mode",
+    "permuted.false_4k":
+        "Relationship statements in the 4,000-character digest of shuffled tables "
+        "(all false by construction)",
+    "truth.mismatch":
+        "Statements that fail verification against the data",
+}
+
+
+def tldr_label(metric: str, headline: list[dict]) -> str:
+    if metric in TLDR_LABELS:
+        return TLDR_LABELS[metric]
+    for h in headline:
+        if h["metric"] == metric:
+            return h["label"]
+    return metric.replace(".", " ").replace("_", " ")
+
+
+def tldr_value(entry: dict, metric: str) -> str:
+    """A TL;DR cell value; reference counts are stated against the
+    number of reference statements of their tier."""
+    v = total(entry, metric)
+    if v is None:
+        return "-"
+    m = re.fullmatch(r"reference\.(must|should)_.+", metric)
+    if m:
+        n = total(entry, f"reference.{m.group(1)}_total")
+        if n is not None:
+            return f"{cmp.fmt(v)} of {cmp.fmt(n)}"
+    return cmp.fmt(v)
+
+
+def tldr_marker(cur: dict, prev: dict, metric: str) -> str:
+    b, h = total(prev, metric), total(cur, metric)
+    if b is None or h is None:
+        return ""
+    verdict, text = movement(spec_of(cur, metric), b, h, prev, cur)
+    return text if verdict != "same" else " (unchanged)"
+
+
+def tldr_movements(rows: list, headline: list[dict], limit: int = 3) -> list[str]:
+    """The largest total-scope movements in a classify() row list,
+    largest relative change first."""
+    totals = [r for r in rows if r[1] == "total"]
+
+    def rank(r):
+        delta = abs(r[3] - r[2])
+        return (-(delta / max(abs(r[2]), 1)), -delta, r[0])
+
+    out = []
+    for r in sorted(totals, key=rank)[:limit]:
+        text = f"{tldr_label(r[0], headline)} {cmp.fmt(r[2])} → {cmp.fmt(r[3])}"
+        if len(r) > 4:
+            text += f" ({r[4]})"
+        out.append(text)
+    return out
+
+
+def tldr_hard_lines(entries: list[dict]) -> list[str]:
+    cur = entries[-1]
+    lines = []
+    for metric, words in (("truth.mismatch", "statements failed verification against the data"),
+                          ("truth.error", "statements errored during verification")):
+        v = total(cur, metric)
+        if v:
+            lines.append(f"Hard line breached: {cmp.fmt(v)} {words} in the latest scorecard.")
+    if len(entries) > 1:
+        prev = entries[-2]
+        for mode in ("default", "target"):
+            metric = f"reference.must_4k_{mode}"
+            b, h = total(prev, metric), total(cur, metric)
+            if b is not None and h is not None and h < b:
+                lines.append("Hard line breached: a must-tier reference fact was lost from "
+                             f"the 4,000-character digest ({mode} mode): "
+                             f"{cmp.fmt(b)} → {cmp.fmt(h)}.")
+    if not lines:
+        lines.append("Hard lines: none breached — no statement failed or errored in "
+                     "verification, and no must-tier reference fact was lost from "
+                     "the 4,000-character digest.")
+    return lines
+
+
+def tldr_section(entries: list[dict], headline: list[dict]) -> list[str]:
+    cur = entries[-1]
+    m = cur["meta"]
+    out = ["", "## TL;DR", ""]
+    classified = classify(entries[-2], cur) if len(entries) > 1 else None
+    if classified is None:
+        out.append(f"`{m['commit'][:7]}` ({m['date'][:10]}) is the first recorded change; "
+                   "there is nothing to compare it with yet.")
+        cols = [("latest", cur)]
+    else:
+        prev = entries[-2]
+        tot = lambda rows: sum(1 for r in rows if r[1] == "total")  # noqa: E731
+        out.append(f"Latest change `{m['commit'][:7]}` ({m['date'][:10]}), "
+                   f"{short(m['subject'], 80)}: compared with `{prev['meta']['commit'][:7]}`, "
+                   f"{tot(classified['improved'])} total metrics better, "
+                   f"{tot(classified['worse'])} worse, "
+                   f"{tot(classified['accepted'])} worse and accepted.")
+        cols = [("latest", cur), ("previous", prev), ("first recorded", entries[0])]
+    out += ["", "| measure | " + " | ".join(f"{name} (`{e['meta']['commit'][:7]}`)"
+                                            for name, e in cols) + " |",
+            "|---|" + "---:|" * len(cols)]
+    for metric in TLDR_METRICS:
+        cells = []
+        for i, (_name, e) in enumerate(cols):
+            text = tldr_value(e, metric)
+            if i == 0 and classified is not None:
+                text += tldr_marker(cur, entries[-2], metric)
+            cells.append(text)
+        out.append(f"| {tldr_label(metric, headline)} | " + " | ".join(cells) + " |")
+    if classified is not None:
+        improved = tldr_movements(classified["improved"], headline)
+        worse = tldr_movements(classified["worse"], headline)
+        accepted = tldr_movements(classified["accepted"], headline)
+        out += ["",
+                "Biggest improvements: " + ("; ".join(improved) if improved else "none."),
+                "Biggest regressions: " + ("; ".join(worse) if worse else "none."),
+                "Accepted regressions: " + ("; ".join(accepted) if accepted else "none.")]
+    out += [""] + tldr_hard_lines(entries)
+    return out
+
+
 def latest_section(entries: list[dict]) -> list[str]:
     cur = entries[-1]
     m = cur["meta"]
@@ -281,7 +437,9 @@ def render(args) -> int:
     headline = headline_spec()
     latest = entries[-1]
     prov = latest["scorecard"]["provenance"]
-    md = ["# Gate report", "",
+    md = ["# Gate report"]
+    md += tldr_section(entries, headline)
+    md += ["",
           f"{len(entries)} change(s) recorded. Latest: `{latest['meta']['commit'][:7]}` "
           f"({latest['meta']['date'][:10]}), onceover {prov.get('onceover_version')}, "
           f"seeds {prov.get('seeds')}.", "",
