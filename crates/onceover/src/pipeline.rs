@@ -502,19 +502,14 @@ fn profile_inner(
     // membership/trigger vocabulary has no condition for "the frame
     // model found a time axis", so the gate lives here and each
     // gated pass records the skip in its coverage entry. Naming a
-    // detector explicitly lifts the gate for that detector.
-    let declared_axis = cfg
-        .hints
-        .as_ref()
-        .and_then(|h| h.ordered_axis.as_deref());
-    let axis_declared = declared_axis
-        .is_some_and(|name| table.names.iter().any(|n| n == name));
+    // detector explicitly lifts the gate for that detector. An
+    // already-expired deadline takes precedence over the gate for
+    // the discontinuities screen: its dispatch is deadline-exempt
+    // by design, and its coverage entry records the stop.
+    let declared_axis = cfg.hints.as_ref().and_then(|h| h.ordered_axis.as_deref());
+    let axis_declared = declared_axis.is_some_and(|name| table.names.iter().any(|n| n == name));
     let axis_gate_open = frame_time_hint.is_some() || axis_declared;
-    let axis_explicit = |id: &str| {
-        cfg.detectors
-            .as_ref()
-            .is_some_and(|set| set.contains(id))
-    };
+    let axis_explicit = |id: &str| cfg.detectors.as_ref().is_some_and(|set| set.contains(id));
     let axis_gate_reason = |pass: &str| {
         format!(
             "{pass} not run: a default run scans along the frame's time axis or an axis \
@@ -2121,7 +2116,10 @@ fn profile_inner(
                     .filter(|(_, r)| r.as_deref() == Some("measure"))
                     .map(|(i, _)| i)
                     .collect();
-                if !axis_explicit("discontinuities") && disc_axes.is_empty() {
+                if !axis_explicit("discontinuities")
+                    && disc_axes.is_empty()
+                    && !tier.disc.deadline.exceeded()
+                {
                     stamp_insert(
                         &mut coverage,
                         &mut last_mark,
@@ -2130,11 +2128,12 @@ fn profile_inner(
                         PassInfo::skipped(axis_gate_reason("discontinuity screen")),
                     );
                 } else {
-                    let axes_arg = if axis_explicit("discontinuities") {
-                        None
-                    } else {
-                        Some(disc_axes.as_slice())
-                    };
+                    let axes_arg =
+                        if axis_explicit("discontinuities") || tier.disc.deadline.exceeded() {
+                            None
+                        } else {
+                            Some(disc_axes.as_slice())
+                        };
                     let out = profile_discontinuities(
                         &table,
                         excluded,
@@ -2484,7 +2483,10 @@ fn profile_inner(
                     .filter(|(_, r)| r.as_deref() == Some("measure"))
                     .map(|(i, _)| i)
                     .collect();
-                if !axis_explicit("discontinuities") && disc_axes.is_empty() {
+                if !axis_explicit("discontinuities")
+                    && disc_axes.is_empty()
+                    && !tier.disc.deadline.exceeded()
+                {
                     stamp_insert(
                         &mut coverage,
                         &mut last_mark,
@@ -2493,11 +2495,12 @@ fn profile_inner(
                         PassInfo::skipped(axis_gate_reason("discontinuity screen")),
                     );
                 } else {
-                    let axes_arg = if axis_explicit("discontinuities") {
-                        None
-                    } else {
-                        Some(disc_axes.as_slice())
-                    };
+                    let axes_arg =
+                        if axis_explicit("discontinuities") || tier.disc.deadline.exceeded() {
+                            None
+                        } else {
+                            Some(disc_axes.as_slice())
+                        };
                     let out = profile_discontinuities(
                         &table,
                         excluded,

@@ -151,14 +151,18 @@ def test_quality_line_absent_on_a_clean_frame():
 
 def test_digest_keeps_body_lines_when_the_omission_line_grows():
     # On this table the omission line for the kept set is longer than for
-    # the full set; the digest must still carry statements.
+    # the full set; the digest must still carry statements. (The table's
+    # changes lines used to come from the discontinuities screen; that
+    # screen is axis-gated in a default run since issue #317 phase 3 and
+    # this frame has no time axis or declared axis, so the witness
+    # categories are dependencies and associations.)
     import glob
     path = glob.glob("benchmarks/corpus/data/business/absenteeism-at-work/*.csv")[0]
     report = onceover.profile(pl.read_csv(path, infer_schema_length=None))
     digest = report.to_digest(4000)
     assert len(digest) <= 4000
     cats = _digest_line_categories(report, digest)
-    assert "dependencies" in cats and "changes" in cats
+    assert "dependencies" in cats and "associations" in cats
 
 
 # --- statement-class ordering (issue #271) ---

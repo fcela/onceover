@@ -232,7 +232,13 @@ and `model_failures` are
 on request and run only when named — a default run records each as
 skipped in coverage, naming it on-request. `expectations` and
 `group_contrast` are in the default set but engage only on
-declared hints. Passing
+declared hints. The along-axis passes (`breaks`,
+`ordered_partitions`, `ordered_axis`, `discontinuities`) are in
+the default set but scan only along the frame's time axis or an
+axis declared with the `ordered_axis` hint; on a frame with
+neither, a default run records them as skipped in coverage, and
+naming one in `detectors=[...]` runs it along any axis it
+supports. Passing
 `target="y"` additionally enables the target-triggered passes (the shape pass, the leakage screen, which states when one column nearly determines the target on its own, and the model-failure pass, which states where a cross-fitted model of the target fails).
 The full category and type reference is `docs/findings.md`.
 

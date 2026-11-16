@@ -2335,7 +2335,9 @@ mod tests {
         let caches = DiscCaches::new();
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let stop = || calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 4;
-        let out = screen_target(&table, 1, &numeric, &values, &pos_map, None, &cfg, &caches, &stop);
+        let out = screen_target(
+            &table, 1, &numeric, &values, &pos_map, None, &cfg, &caches, &stop,
+        );
         assert!(out.screened);
         assert!(out.truncated);
         assert!(!out.not_started);
