@@ -34,6 +34,16 @@
 //! ranked by a binomial significance (the dominant level's
 //! global rate against the context's count), capped per target,
 //! and a row already isolated for a target is not reported twice.
+//!
+//! A default run adds one requirement (issue #317, phase 3): every
+//! level a statement's breaker rows carry must be rare in the
+//! target column overall — at or below `MAX_RARE_SHARE` of the
+//! column's values, the share the content pass uses for a rare
+//! label. A level that is common overall is ordinary, however
+//! thin the context that isolates it. The pipeline sets
+//! `require_rare_breakers` for default runs; naming the outliers
+//! detector explicitly states the statements as before, and the
+//! coverage detail counts the statements the requirement withheld.
 
 use onceover_core::{TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
@@ -73,6 +83,12 @@ pub struct SurpriseConfig {
     /// Categorical: minimum share for a pair context to be
     /// extended to a triple.
     pub deep_share_floor: f64,
+    /// Categorical: require every level a statement's breaker
+    /// rows carry to be rare in the target column overall (share
+    /// at most `MAX_RARE_SHARE`). The pipeline sets this for
+    /// default runs; explicit selection of the outliers detector
+    /// leaves it off.
+    pub require_rare_breakers: bool,
     /// Cooperative deadline (issue #117, stage 2), polled before
     /// each numeric and each categorical target: a target is
     /// either scanned whole or not started, and the coverage
@@ -97,6 +113,7 @@ impl Default for SurpriseConfig {
             max_deep_conditions: 12,
             context_beam: 128,
             deep_share_floor: 0.95,
+            require_rare_breakers: false,
             deadline: crate::deadline::Deadline::none(),
         }
     }
@@ -488,6 +505,11 @@ fn make_finding(
 // context's near-universal pattern.
 // ---------------------------------------------------------------------
 
+/// A level counts as rare in its column overall at or below this
+/// share of the column's values — the bar the content pass uses
+/// for a rare label (MAX_RARE_SHARE in onceover-deps' content.rs).
+const MAX_RARE_SHARE: f64 = 0.01;
+
 /// Per-row level codes and labels for one eligible column
 /// (2..=max_condition_levels distinct non-null levels).
 pub(crate) struct Coded {
@@ -738,7 +760,7 @@ fn profile_categorical_surprises(
     excluded: &[usize],
     cfg: &SurpriseConfig,
     budget: usize,
-) -> (Vec<Finding>, usize, usize, usize) {
+) -> (Vec<Finding>, usize, usize, usize, usize) {
     let words = table.n.div_ceil(64);
     // Eligible columns coded once: conditions may be any eligible
     // column; targets are the text/bool ones.
@@ -766,6 +788,9 @@ fn profile_categorical_surprises(
     let mut candidates: Vec<CatCandidate> = Vec::new();
     let mut contexts_evaluated = 0usize;
     let mut not_started = 0usize;
+    // Per-target global level counts, kept for the rare-overall
+    // requirement at selection time.
+    let mut global_counts: Vec<Option<(Vec<usize>, usize)>> = vec![None; table.cols.len()];
 
     for (at, &t) in targets.iter().enumerate() {
         // Targets run in column order, so a deadline stop leaves
@@ -786,6 +811,7 @@ fn profile_categorical_surprises(
         if gtotal < cfg.min_subset_rows {
             continue;
         }
+        global_counts[t] = Some((gcounts.clone(), gtotal));
         let conds: Vec<usize> = conditions.iter().copied().filter(|&c| c != t).collect();
         // Item bitsets per condition column.
         let item_bits: Vec<Vec<Vec<u64>>> = conds
@@ -950,9 +976,28 @@ fn profile_categorical_surprises(
     let mut findings: Vec<Finding> = Vec::new();
     let mut reported: BTreeMap<usize, std::collections::BTreeSet<usize>> = BTreeMap::new();
     let mut per_target: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut withheld = 0usize;
+    // A shadow of this selection with the rarity requirement off.
+    // The coverage count is the statements the shadow selection
+    // states and the requirement withholds — never more than the
+    // pass could have stated — while a withheld statement leaves
+    // its real selection slot free, so a later statement whose
+    // breaker levels are all rare can still be stated.
+    let mut shadow_reported: BTreeMap<usize, std::collections::BTreeSet<usize>> = BTreeMap::new();
+    let mut shadow_per_target: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut shadow_emitted = 0usize;
     for cand in &candidates {
         if findings.len() >= budget {
             break;
+        }
+        let shadow_seen = shadow_reported.entry(cand.target).or_default();
+        let shadow_selected = shadow_emitted < budget
+            && shadow_per_target.get(&cand.target).copied().unwrap_or(0) < 3
+            && !cand.breakers.iter().all(|r| shadow_seen.contains(r));
+        if shadow_selected {
+            shadow_seen.extend(cand.breakers.iter().copied());
+            *shadow_per_target.entry(cand.target).or_insert(0) += 1;
+            shadow_emitted += 1;
         }
         if per_target.get(&cand.target).copied().unwrap_or(0) >= 3 {
             continue;
@@ -963,6 +1008,27 @@ fn profile_categorical_surprises(
         let seen = reported.entry(cand.target).or_default();
         if cand.breakers.iter().all(|r| seen.contains(r)) {
             continue;
+        }
+        if cfg.require_rare_breakers {
+            // The statement spotlights its breaker rows as the
+            // anomaly. When any level they carry is common in the
+            // column overall, the level is ordinary and only the
+            // thin context makes it look deviant: withhold the
+            // statement, and count it for the coverage detail when
+            // the shadow selection would have stated it.
+            let tcoded = coded[cand.target].as_ref().unwrap();
+            if let Some((gcounts, gtotal)) = &global_counts[cand.target] {
+                let any_common = cand.breakers.iter().any(|&r| {
+                    let lvl = tcoded.codes[r].unwrap() as usize;
+                    gcounts[lvl] as f64 / *gtotal as f64 > MAX_RARE_SHARE
+                });
+                if any_common {
+                    if shadow_selected {
+                        withheld += 1;
+                    }
+                    continue;
+                }
+            }
         }
         seen.extend(cand.breakers.iter().copied());
         *per_target.entry(cand.target).or_insert(0) += 1;
@@ -995,6 +1061,7 @@ fn profile_categorical_surprises(
         targets.len() - not_started,
         contexts_evaluated,
         not_started,
+        withheld,
     )
 }
 
@@ -1146,11 +1213,11 @@ pub fn profile_surprises(
     findings.append(&mut subset_findings);
     findings.truncate(cfg.max_findings);
     let numeric_findings = findings.len();
-    let (cat_findings, cat_targets, cat_contexts, cat_not_started) =
+    let (cat_findings, cat_targets, cat_contexts, cat_not_started, cat_withheld) =
         if findings.len() < cfg.max_findings {
             profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
         } else {
-            (Vec::new(), 0, 0, 0)
+            (Vec::new(), 0, 0, 0, 0)
         };
     let cat_count = cat_findings.len();
     findings.extend(cat_findings);
@@ -1164,6 +1231,11 @@ pub fn profile_surprises(
         cfg.max_context_conditions,
         cat_count
     );
+    if cat_withheld > 0 {
+        detail.push_str(&format!(
+            "; {cat_withheld} categorical outlier statements not stated: a deviating level is common in its column overall (a default run requires every deviating level at or below 1% of the column's values); name the outliers detector explicitly to state them"
+        ));
+    }
     let stopped = numeric_not_started + cat_not_started > 0;
     if stopped {
         detail.push_str(&format!(
@@ -1397,7 +1469,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert_eq!(
             findings.len(),
             1,
@@ -1432,7 +1504,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1464,7 +1536,7 @@ mod tests {
             400,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         // The planted context ranks first; the same row is also
         // the breaker from the other two columns' perspectives
         // (one finding per target, by design).
@@ -1483,6 +1555,154 @@ mod tests {
             findings.iter().all(|f| f.claim.contains("row 42")),
             "claims: {:?}",
             findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    fn single_breaker_table() -> TypedTable<'static> {
+        // grp = A (150 rows): outcome is "ok" except row 7.
+        // grp = B (150 rows): outcome is "bad" every fifth row, so
+        // the breaker level "bad" is 31 of 300 rows overall.
+        let mut grp: Vec<Option<&str>> = Vec::new();
+        let mut out: Vec<Option<&str>> = Vec::new();
+        for i in 0..150 {
+            grp.push(Some("A"));
+            out.push(Some(if i == 7 { "bad" } else { "ok" }));
+        }
+        for i in 0..150 {
+            grp.push(Some("B"));
+            out.push(Some(if i % 5 == 0 { "bad" } else { "ok" }));
+        }
+        cat_table(
+            vec!["grp", "outcome"],
+            vec![str_col(grp), str_col(out)],
+            300,
+        )
+    }
+
+    #[test]
+    fn categorical_gate_withholds_common_breaker_level() {
+        // The breaker level "bad" is common in the column overall
+        // (31 of 300 rows), so the rare-overall requirement
+        // withholds the statement and counts it (issue #317).
+        let table = single_breaker_table();
+        let cfg = SurpriseConfig {
+            require_rare_breakers: true,
+            ..SurpriseConfig::default()
+        };
+        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        assert!(
+            findings.is_empty(),
+            "claims: {:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert_eq!(withheld, 1);
+    }
+
+    #[test]
+    fn categorical_gate_count_reaches_the_coverage_detail() {
+        let table = single_breaker_table();
+        let cfg = SurpriseConfig {
+            require_rare_breakers: true,
+            ..SurpriseConfig::default()
+        };
+        let (findings, detail, _) = profile_surprises(&table, &[], &cfg);
+        assert!(findings.is_empty());
+        assert!(
+            detail.contains("1 categorical outlier statements not stated"),
+            "{detail}"
+        );
+    }
+
+    #[test]
+    fn categorical_gate_states_rare_breaker_level() {
+        // grp = A (500 rows): outcome is "ok" except rows 7 and 8,
+        // which carry "glitch" — 2 of 1000 rows overall, rare
+        // under the 1% bar. grp = B (500 rows): outcome alternates
+        // and forms no near-degenerate context.
+        let mut grp: Vec<Option<&str>> = Vec::new();
+        let mut out: Vec<Option<&str>> = Vec::new();
+        for i in 0..500 {
+            grp.push(Some("A"));
+            out.push(Some(if i == 7 || i == 8 { "glitch" } else { "ok" }));
+        }
+        for i in 0..500 {
+            grp.push(Some("B"));
+            out.push(Some(if i % 2 == 0 { "ok" } else { "no" }));
+        }
+        let table = cat_table(
+            vec!["grp", "outcome"],
+            vec![str_col(grp), str_col(out)],
+            1000,
+        );
+        let cfg = SurpriseConfig {
+            require_rare_breakers: true,
+            ..SurpriseConfig::default()
+        };
+        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        assert_eq!(withheld, 0);
+        assert_eq!(
+            findings.len(),
+            1,
+            "claims: {:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert!(
+            findings[0].claim.contains("glitch"),
+            "claim: {}",
+            findings[0].claim
+        );
+    }
+
+    #[test]
+    fn categorical_gate_counts_only_would_be_statements() {
+        // One target, five near-degenerate contexts. Four break on
+        // levels that are common overall ("common" is 202 of 700
+        // rows; "ok" is 497); the fifth's breaker "rare" is 1 of
+        // 700. The shadow selection without the requirement states
+        // three statements for the target (the per-target cap):
+        // two of them are withheld by the requirement and the
+        // third is the rare-breaker statement, so the withheld
+        // count is 2 — the statements that would otherwise have
+        // been stated, never every candidate the scan produced.
+        // The withheld statements leave their real slots free, so
+        // the rare-breaker statement is still stated.
+        let mut grp: Vec<Option<&str>> = Vec::new();
+        let mut out: Vec<Option<&str>> = Vec::new();
+        for g in ["A", "B", "C"] {
+            for i in 0..100 {
+                grp.push(Some(g));
+                out.push(Some(if i == 0 { "common" } else { "ok" }));
+            }
+        }
+        for i in 0..200 {
+            grp.push(Some("D"));
+            out.push(Some(if i == 0 { "rare" } else { "ok" }));
+        }
+        for i in 0..200 {
+            grp.push(Some("E"));
+            out.push(Some(if i == 0 { "ok" } else { "common" }));
+        }
+        let table = cat_table(
+            vec!["grp", "outcome"],
+            vec![str_col(grp), str_col(out)],
+            700,
+        );
+        let cfg = SurpriseConfig {
+            require_rare_breakers: true,
+            ..SurpriseConfig::default()
+        };
+        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        assert_eq!(withheld, 2);
+        assert_eq!(
+            findings.len(),
+            1,
+            "claims: {:?}",
+            findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        assert!(
+            findings[0].claim.contains("rare"),
+            "claim: {}",
+            findings[0].claim
         );
     }
 

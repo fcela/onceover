@@ -232,7 +232,13 @@ and `model_failures` are
 on request and run only when named — a default run records each as
 skipped in coverage, naming it on-request. `expectations` and
 `group_contrast` are in the default set but engage only on
-declared hints. Passing
+declared hints. The `outliers` pass is in the default set, but a
+default run states a `categorical_outlier` finding only when
+every level its pattern-breaking rows carry is rare in the
+column overall (at or below 1% of the column's values);
+statements withheld by that requirement are counted in the
+pass's coverage entry, and naming `outliers` in `detectors=[...]`
+states them. Passing
 `target="y"` additionally enables the target-triggered passes (the shape pass, the leakage screen, which states when one column nearly determines the target on its own, and the model-failure pass, which states where a cross-fitted model of the target fails).
 The full category and type reference is `docs/findings.md`.
 

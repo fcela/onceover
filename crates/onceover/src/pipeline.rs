@@ -148,6 +148,14 @@ fn profile_inner(
     tier.disc.deadline = pass_deadline;
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
+    // A default run requires a categorical outlier statement's
+    // deviating levels to be rare in their column overall
+    // (issue #317, phase 3); naming the outliers detector
+    // explicitly lifts the requirement.
+    tier.surprises.require_rare_breakers = !cfg
+        .detectors
+        .as_ref()
+        .is_some_and(|set| set.contains("outliers"));
     tier.slices.deadline = pass_deadline;
     tier.modelfail.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
