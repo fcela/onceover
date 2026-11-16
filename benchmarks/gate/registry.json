@@ -32,6 +32,13 @@
   {"id": "sec-edgar-company-facts", "corpus": "sec-edgar-company-facts", "target": "value",
    "read": {"parse_dates": true}, "held_out": true, "kind": "event log, filing events"},
   {"id": "gse15258-expression", "corpus": "gse15258-expression", "target": "response_to_therapy",
-   "components": ["reference"], "held_out": true, "kind": "wide table, 86 samples x 5,006 columns"}
+   "components": ["reference"], "held_out": true, "kind": "wide table, 86 samples x 5,006 columns"},
+  {"id": "column_order_stress", "corpus": "column_order_stress", "kind": "generated numeric battery, latent factors"},
+  {"id": "planted_mix", "corpus": "planted_mix", "target": "approved", "kind": "generated application records with plants"},
+  {"id": "daily_regime_break", "corpus": "daily_regime_break", "kind": "generated daily series, planted breaks"},
+  {"id": "dominant_driver", "corpus": "dominant_driver", "target": "price", "kind": "generated listings, numeric target"},
+  {"id": "daily_level_collapse", "corpus": "daily_level_collapse", "kind": "generated daily series, planted sustained collapse"},
+  {"id": "marginal_ranges", "corpus": "marginal_ranges", "held_out": true, "kind": "generated range battery"},
+  {"id": "messy_intake", "corpus": "messy_intake", "held_out": true, "kind": "generated messy intake records"}
  ]
 }
