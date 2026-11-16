@@ -1317,6 +1317,7 @@ fn screen_target(
     numeric: &[usize],
     values: &[NumericColumn],
     pos_map: &[usize],
+    axes_filter: Option<&[usize]>,
     cfg: &DiscConfig,
     caches: &DiscCaches,
     stop: &(dyn Fn() -> bool + Sync),
@@ -1338,7 +1339,11 @@ fn screen_target(
         return out;
     }
     out.screened = true;
-    let axes: Vec<usize> = numeric.iter().copied().filter(|&c| c != tcol).collect();
+    let axes: Vec<usize> = numeric
+        .iter()
+        .copied()
+        .filter(|&c| c != tcol && axes_filter.is_none_or(|a| a.contains(&c)))
+        .collect();
     let mut flagged_units: Vec<Flagged> = Vec::new();
     let mut axis_strength: Vec<(usize, f64)> = Vec::new();
 
@@ -1600,6 +1605,7 @@ pub fn profile_discontinuities(
     table: &TypedTable,
     excluded: &[usize],
     targets: Option<&[usize]>,
+    axes: Option<&[usize]>,
     cfg: &DiscConfig,
 ) -> DiscOutcome {
     use rayon::prelude::*;
@@ -1641,7 +1647,7 @@ pub fn profile_discontinuities(
         .par_iter()
         .map(|&tcol| {
             screen_target(
-                table, tcol, &numeric, &values, &pos_map, cfg, &caches, &stop,
+                table, tcol, &numeric, &values, &pos_map, axes, cfg, &caches, &stop,
             )
         })
         .collect();
@@ -2240,8 +2246,8 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let out1 = profile_discontinuities(&table, &[], None, &cfg);
-            let out2 = profile_discontinuities(&table, &[], None, &cfg);
+            let out1 = profile_discontinuities(&table, &[], None, None, &cfg);
+            let out2 = profile_discontinuities(&table, &[], None, None, &cfg);
             let (f1, cov1) = (out1.findings, out1.coverage);
             let (f2, cov2) = (out2.findings, out2.coverage);
             assert_eq!(cov1, cov2);
@@ -2329,7 +2335,7 @@ mod tests {
         let caches = DiscCaches::new();
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let stop = || calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 4;
-        let out = screen_target(&table, 1, &numeric, &values, &pos_map, &cfg, &caches, &stop);
+        let out = screen_target(&table, 1, &numeric, &values, &pos_map, None, &cfg, &caches, &stop);
         assert!(out.screened);
         assert!(out.truncated);
         assert!(!out.not_started);
@@ -2345,7 +2351,7 @@ mod tests {
             deadline: Deadline::at(std::time::Instant::now() - std::time::Duration::from_secs(1)),
             ..DiscConfig::default()
         };
-        let out = profile_discontinuities(&table, &[], None, &cfg);
+        let out = profile_discontinuities(&table, &[], None, None, &cfg);
         assert!(out.deadline_stopped);
         assert!(out.findings.is_empty());
         assert!(
@@ -2360,12 +2366,12 @@ mod tests {
     #[test]
     fn future_deadline_matches_no_deadline() {
         let table = disc_fixture();
-        let plain = profile_discontinuities(&table, &[], None, &DiscConfig::default());
+        let plain = profile_discontinuities(&table, &[], None, None, &DiscConfig::default());
         let cfg = DiscConfig {
             deadline: Deadline::at(std::time::Instant::now() + std::time::Duration::from_secs(600)),
             ..DiscConfig::default()
         };
-        let timed = profile_discontinuities(&table, &[], None, &cfg);
+        let timed = profile_discontinuities(&table, &[], None, None, &cfg);
         assert!(!plain.deadline_stopped);
         assert!(!timed.deadline_stopped);
         assert_eq!(plain.coverage, timed.coverage);

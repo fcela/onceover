@@ -118,7 +118,9 @@ def test_discontinuities_cap_is_disclosed_with_counts():
     # must be disclosed the same way.
     path = "benchmarks/corpus/data/crosscat/state-unemployment/data.csv"
     df = pl.read_csv(path, infer_schema_length=None, try_parse_dates=True)
-    report = onceover.profile(df)
+    # The screen is axis-gated in a default run (issue #317 phase 3);
+    # the cap disclosure is exercised with the detector named.
+    report = onceover.profile(df, detectors=["discontinuities"])
     disc = [
         f
         for f in report.findings

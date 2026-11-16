@@ -976,6 +976,7 @@ pub fn profile_breaks(
     excluded: &[usize],
     cfg: &BreaksConfig,
     time_hint: Option<&str>,
+    hinted_only: bool,
 ) -> (Vec<Finding>, String) {
     // Axis selection, in order: a declared `hints.time` column of a
     // date, datetime, or integer type; the first date/datetime
@@ -985,7 +986,10 @@ pub fn profile_breaks(
     // pairs increasing, at least 48 distinct values). Panels keyed
     // by integer years are the common case the third rule exists
     // for; the sequence rule admits row-order indices and other
-    // declared-order integer axes.
+    // declared-order integer axes. With `hinted_only` only the
+    // hinted axis is used: the caller named the one axis a default
+    // run may scan along (the frame's time axis or a declared
+    // `ordered_axis`), and the pass picks no axis of its own.
     fn axis_of(col: &TypedCol) -> Option<Axis> {
         match col {
             TypedCol::Date { .. } => Some(Axis::Date),
@@ -1048,13 +1052,28 @@ pub fn profile_breaks(
         let is_sequence = distinct.len() >= 48 && increasing as f64 >= 0.99 * pairs as f64;
         is_sequence.then_some((i, Axis::Integer))
     });
-    let (time_col, axis) = match hinted.or(auto_date).or(year_like).or(sequence) {
+    let chosen = if hinted_only {
+        hinted
+    } else {
+        hinted.or(auto_date).or(year_like).or(sequence)
+    };
+    let (time_col, axis) = match chosen {
         Some(pair) => pair,
         None => {
             return (
                 Vec::new(),
-                "no date, datetime, year-like integer, or sequence column; break scan skipped"
-                    .to_string(),
+                if hinted_only {
+                    match time_hint {
+                        Some(name) => format!(
+                            "the axis {name} named for the break scan is not a date, datetime, \
+                             or integer column; break scan skipped"
+                        ),
+                        None => "no axis named for the break scan; break scan skipped".to_string(),
+                    }
+                } else {
+                    "no date, datetime, year-like integer, or sequence column; break scan skipped"
+                        .to_string()
+                },
             )
         }
     };
@@ -1409,7 +1428,7 @@ mod tests {
         // about the examination, not about the data: it is stated
         // in the pass's coverage, and no finding carries it.
         let table = cap_table(16, 4);
-        let (findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None);
+        let (findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None, false);
         assert!(
             findings.iter().all(|f| !f.claim.contains("did not scan")),
             "findings: {findings:?}"
@@ -1429,7 +1448,7 @@ mod tests {
         // Exactly at the cap: every eligible series is scanned, so
         // no cap wording in coverage.
         let table = cap_table(12, 4);
-        let (_findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None);
+        let (_findings, coverage) = profile_breaks(&table, &[], &test_cfg(), None, false);
         assert!(!coverage.contains("series cap"), "coverage: {coverage}");
     }
 

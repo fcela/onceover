@@ -494,6 +494,58 @@ fn profile_inner(
         note
     };
 
+    // ---------- along-axis gate (issue #317, phase 3) ----------
+    // In a default run the along-axis passes (breaks,
+    // ordered_partitions, ordered_axis, discontinuities) scan along
+    // one axis: a caller-declared `ordered_axis` when a pass can use
+    // it, else the frame model's time axis. The registry's
+    // membership/trigger vocabulary has no condition for "the frame
+    // model found a time axis", so the gate lives here and each
+    // gated pass records the skip in its coverage entry. Naming a
+    // detector explicitly lifts the gate for that detector.
+    let declared_axis = cfg
+        .hints
+        .as_ref()
+        .and_then(|h| h.ordered_axis.as_deref());
+    let axis_declared = declared_axis
+        .is_some_and(|name| table.names.iter().any(|n| n == name));
+    let axis_gate_open = frame_time_hint.is_some() || axis_declared;
+    let axis_explicit = |id: &str| {
+        cfg.detectors
+            .as_ref()
+            .is_some_and(|set| set.contains(id))
+    };
+    let axis_gate_reason = |pass: &str| {
+        format!(
+            "{pass} not run: a default run scans along the frame's time axis or an axis \
+             declared with the ordered_axis hint, and this frame has neither; name the \
+             detector explicitly or declare an axis to run it"
+        )
+    };
+    // The axis a hinted-only pass is handed: the declared axis when
+    // present, else the frame's time axis. A pass that cannot use
+    // the named column says so in its own coverage text.
+    let default_axis_hint = match declared_axis {
+        Some(name) => Some(name),
+        None => frame_time_hint,
+    };
+    // Discontinuities choose axes from the numeric pool, which the
+    // time axis never joins (date and datetime columns are not
+    // numeric to it), so for that pass only a declared axis opens
+    // the gate in a default run.
+    let disc_declared_axis: Option<usize> = if axis_declared {
+        declared_axis.and_then(|name| {
+            table
+                .names
+                .iter()
+                .position(|n| n == name)
+                .filter(|&i| table.cols[i].is_numeric() && !scaffold_excluded.contains(&i))
+        })
+    } else {
+        None
+    };
+    let disc_axes: Vec<usize> = disc_declared_axis.into_iter().collect();
+
     // ---------- duplicate rows ----------
     if check_deadline(&mut coverage, "row_duplicates") {
         deadline_hit = true;
@@ -1782,53 +1834,89 @@ fn profile_inner(
                 // the pass's time hint; scaffolding columns are
                 // excluded as series.
                 let excluded: &[usize] = &scaffold_excluded;
-                let time_hint =
-                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref()));
-                let (f, cov) = profile_breaks(ttable, excluded, &tier.breaks, time_hint);
-                let cov = if cov.ends_with("skipped") {
-                    cov
+                if !axis_explicit("breaks") && !axis_gate_open {
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "breaks".into(),
+                        PassInfo::skipped(axis_gate_reason("break scan")),
+                    );
                 } else {
-                    format!("{cov}{exclusion_note}")
-                };
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "breaks".into(),
-                    PassInfo::sampled(cov),
-                );
-                findings.extend(f);
+                    let (time_hint, hinted_only) = if axis_explicit("breaks") {
+                        (
+                            frame_time_hint
+                                .or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref())),
+                            false,
+                        )
+                    } else {
+                        (default_axis_hint, true)
+                    };
+                    let (f, cov) =
+                        profile_breaks(ttable, excluded, &tier.breaks, time_hint, hinted_only);
+                    let cov = if cov.ends_with("skipped") {
+                        cov
+                    } else {
+                        format!("{cov}{exclusion_note}")
+                    };
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "breaks".into(),
+                        PassInfo::sampled(cov),
+                    );
+                    findings.extend(f);
+                }
             }
             if check_deadline(&mut coverage, "ordered_partitions") {
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("ordered_partitions") {
                 let excluded: &[usize] = &scaffold_excluded;
-                let time_hint =
-                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref()));
-                let out = onceover_mines::ordered_partitions(
-                    ttable,
-                    excluded,
-                    &tier.partitions,
-                    time_hint,
-                );
-                let info2 = match out.status {
-                    onceover_mines::PartitionsStatus::NotApplicable(d) => PassInfo::na(d),
-                    onceover_mines::PartitionsStatus::Ran(d) => {
-                        PassInfo::ran(format!("{d}{exclusion_note}"))
-                    }
-                    onceover_mines::PartitionsStatus::Capped(d) => {
-                        PassInfo::capped(format!("{d}{exclusion_note}"))
-                    }
-                };
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "ordered_partitions".into(),
-                    info2,
-                );
-                findings.extend(out.findings);
+                if !axis_explicit("ordered_partitions") && !axis_gate_open {
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "ordered_partitions".into(),
+                        PassInfo::skipped(axis_gate_reason("ordered partition scan")),
+                    );
+                } else {
+                    let (time_hint, hinted_only) = if axis_explicit("ordered_partitions") {
+                        (
+                            frame_time_hint
+                                .or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref())),
+                            false,
+                        )
+                    } else {
+                        (default_axis_hint, true)
+                    };
+                    let out = onceover_mines::ordered_partitions(
+                        ttable,
+                        excluded,
+                        &tier.partitions,
+                        time_hint,
+                        hinted_only,
+                    );
+                    let info2 = match out.status {
+                        onceover_mines::PartitionsStatus::NotApplicable(d) => PassInfo::na(d),
+                        onceover_mines::PartitionsStatus::Ran(d) => {
+                            PassInfo::ran(format!("{d}{exclusion_note}"))
+                        }
+                        onceover_mines::PartitionsStatus::Capped(d) => {
+                            PassInfo::capped(format!("{d}{exclusion_note}"))
+                        }
+                    };
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "ordered_partitions".into(),
+                        info2,
+                    );
+                    findings.extend(out.findings);
+                }
             }
             if check_deadline(&mut coverage, "distribution_change") {
                 deadline_hit = true;
@@ -1900,45 +1988,65 @@ fn profile_inner(
                 let hints = cfg.hints.as_ref();
                 let axis_hint = hints.and_then(|h| h.ordered_axis.as_deref());
                 let ordinals = hints.map(|h| h.level_order.clone()).unwrap_or_default();
-                let entity_names: Vec<String> = {
-                    let axis_name = frame
-                        .info
-                        .axis
-                        .as_ref()
-                        .map(|a| a.name.clone())
-                        .unwrap_or_default();
-                    entity_columns(&table, &frame, &card_facts, &axis_name)
-                        .iter()
-                        .map(|&i| table.names[i].clone())
-                        .collect()
-                };
-                let out = onceover_mines::profile_ordered_axis(
-                    ttable,
-                    &scaffold_excluded,
-                    &tier.axis_battery,
-                    axis_hint,
-                    frame_time_hint.or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref())),
-                    &ordinals,
-                    &entity_names,
-                    &findings,
-                );
-                let info = match out.status {
-                    onceover_mines::AxisBatteryStatus::NotApplicable(d) => PassInfo::na(d),
-                    onceover_mines::AxisBatteryStatus::Ran(d) => {
-                        PassInfo::ran(format!("{d}{exclusion_note}"))
-                    }
-                    onceover_mines::AxisBatteryStatus::Capped(d) => {
-                        PassInfo::capped(format!("{d}{exclusion_note}"))
-                    }
-                };
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "ordered_axis".into(),
-                    info,
-                );
-                findings.extend(out.findings);
+                if !axis_explicit("ordered_axis") && !axis_gate_open {
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "ordered_axis".into(),
+                        PassInfo::skipped(axis_gate_reason("ordered-axis scan")),
+                    );
+                } else {
+                    let entity_names: Vec<String> = {
+                        let axis_name = frame
+                            .info
+                            .axis
+                            .as_ref()
+                            .map(|a| a.name.clone())
+                            .unwrap_or_default();
+                        entity_columns(&table, &frame, &card_facts, &axis_name)
+                            .iter()
+                            .map(|&i| table.names[i].clone())
+                            .collect()
+                    };
+                    let (time_arg, hinted_only) = if axis_explicit("ordered_axis") {
+                        (
+                            frame_time_hint
+                                .or_else(|| cfg.hints.as_ref().and_then(|h| h.time.as_deref())),
+                            false,
+                        )
+                    } else {
+                        (default_axis_hint, true)
+                    };
+                    let out = onceover_mines::profile_ordered_axis(
+                        ttable,
+                        &scaffold_excluded,
+                        &tier.axis_battery,
+                        axis_hint,
+                        time_arg,
+                        &ordinals,
+                        &entity_names,
+                        &findings,
+                        hinted_only,
+                    );
+                    let info = match out.status {
+                        onceover_mines::AxisBatteryStatus::NotApplicable(d) => PassInfo::na(d),
+                        onceover_mines::AxisBatteryStatus::Ran(d) => {
+                            PassInfo::ran(format!("{d}{exclusion_note}"))
+                        }
+                        onceover_mines::AxisBatteryStatus::Capped(d) => {
+                            PassInfo::capped(format!("{d}{exclusion_note}"))
+                        }
+                    };
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "ordered_axis".into(),
+                        info,
+                    );
+                    findings.extend(out.findings);
+                }
             }
             if check_deadline(&mut coverage, "outliers") {
                 deadline_hit = true;
@@ -2013,22 +2121,43 @@ fn profile_inner(
                     .filter(|(_, r)| r.as_deref() == Some("measure"))
                     .map(|(i, _)| i)
                     .collect();
-                let out = profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
-                if out.deadline_stopped {
-                    deadline_hit = true;
-                }
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "discontinuities".into(),
-                    if out.deadline_stopped {
-                        PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                if !axis_explicit("discontinuities") && disc_axes.is_empty() {
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "discontinuities".into(),
+                        PassInfo::skipped(axis_gate_reason("discontinuity screen")),
+                    );
+                } else {
+                    let axes_arg = if axis_explicit("discontinuities") {
+                        None
                     } else {
-                        PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
-                    },
-                );
-                findings.extend(out.findings);
+                        Some(disc_axes.as_slice())
+                    };
+                    let out = profile_discontinuities(
+                        &table,
+                        excluded,
+                        Some(&measures),
+                        axes_arg,
+                        &tier.disc,
+                    );
+                    if out.deadline_stopped {
+                        deadline_hit = true;
+                    }
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "discontinuities".into(),
+                        if out.deadline_stopped {
+                            PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                        } else {
+                            PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
+                        },
+                    );
+                    findings.extend(out.findings);
+                }
             }
             if check_deadline(&mut coverage, "drift") {
                 deadline_hit = true;
@@ -2355,19 +2484,40 @@ fn profile_inner(
                     .filter(|(_, r)| r.as_deref() == Some("measure"))
                     .map(|(i, _)| i)
                     .collect();
-                let out = profile_discontinuities(&table, excluded, Some(&measures), &tier.disc);
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "discontinuities".into(),
-                    if out.deadline_stopped {
-                        PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                if !axis_explicit("discontinuities") && disc_axes.is_empty() {
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "discontinuities".into(),
+                        PassInfo::skipped(axis_gate_reason("discontinuity screen")),
+                    );
+                } else {
+                    let axes_arg = if axis_explicit("discontinuities") {
+                        None
                     } else {
-                        PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
-                    },
-                );
-                findings.extend(out.findings);
+                        Some(disc_axes.as_slice())
+                    };
+                    let out = profile_discontinuities(
+                        &table,
+                        excluded,
+                        Some(&measures),
+                        axes_arg,
+                        &tier.disc,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "discontinuities".into(),
+                        if out.deadline_stopped {
+                            PassInfo::capped(format!("{}{exclusion_note}", out.coverage))
+                        } else {
+                            PassInfo::ran(format!("{}{exclusion_note}", out.coverage))
+                        },
+                    );
+                    findings.extend(out.findings);
+                }
             }
             if enabled("hotspots") {
                 // The scan reads the encoded table; build it for
@@ -2438,6 +2588,8 @@ fn profile_inner(
             "regimes",
             "breaks",
             "ordered_partitions",
+            "ordered_axis",
+            "discontinuities",
             "distribution_change",
             "association_rules",
             "dependence_screen",
