@@ -232,6 +232,69 @@ def test_digest_orders_sections_by_reader_question():
     ]
 
 
+def _contrast(measure, grouping, score, form, claim):
+    return {
+        "id": f"associations-level_contrast-{measure}-{grouping}",
+        "category": "associations",
+        "type": "level_contrast",
+        "specification": {},
+        "subject": {"columns": [measure, grouping]},
+        "claim": claim,
+        "interestingness": score,
+        "facets": {"scope": "column", "conditionality": "unconditional"},
+        "evidence": [{"metrics": {
+            "measure_column": measure,
+            "grouping_column": grouping,
+            "form": form,
+        }}],
+    }
+
+
+def test_digest_contrast_breadth_runs_across_measures():
+    # A level contrast is the per-level statement of one measure's
+    # relationship with a grouping. Keyed as a single kind, the
+    # contrasts of one measure (one per grouping, at near-identical
+    # scores) fill the relationship section's early rounds and
+    # another measure's only contrast never reaches the digest
+    # (issue #317 phase 2: the bank/abalone/bike misses). The kind
+    # counts once per measure it states, so the strongest contrast
+    # of every measure is offered before any measure's second.
+    findings = [
+        _contrast("alpha", f"g{i}", 0.90 - i * 0.01, "location",
+                  f"alpha contrast {i} statement " + "x" * 90)
+        for i in range(6)
+    ]
+    findings.append(_contrast(
+        "beta", "g0", 0.50, "location",
+        "beta contrast statement " + "x" * 90))
+    digest = _report(findings).to_digest(1500)
+    assert len(digest) <= 1500
+    assert "beta contrast statement" in digest
+
+
+def test_digest_location_contrast_precedes_scale_only():
+    # Within the level statements, one that locates the measure
+    # precedes one that only spreads it: the location is the
+    # relationship, the spread refines it — and on sentinel-driven
+    # measures the spread statement is often a restatement of the
+    # sentinel's mass (issue #317 phase 2: the bank duration
+    # contrast, a location statement, was crowded out by
+    # higher-scored scale statements with no location shift).
+    findings = [
+        _contrast("alpha", "g0", 0.90, "scale",
+                  "alpha scale statement " + "x" * 90),
+        _contrast("gamma", "g0", 0.88, "scale",
+                  "gamma scale statement " + "x" * 90),
+        _contrast("beta", "g0", 0.60, "location",
+                  "beta location statement " + "x" * 90),
+    ]
+    digest = _report(findings).to_digest(1500)
+    assert len(digest) <= 1500
+    assert "beta location statement" in digest
+    assert (digest.index("beta location statement")
+            < digest.index("alpha scale statement"))
+
+
 def test_digest_keeps_hygiene_lines_under_pressure():
     # The #280 settlement (issue #317 phase 2): the "what is
     # wrong" section holds its own allowance, so hygiene lines

@@ -1440,14 +1440,65 @@ class ProfileReport:
                 (e for e in entries if e[1].get("type") == "predictive"),
                 key=score,
             )
+            def bucket_key(rep):
+                # A level contrast states how one measure separates
+                # across a grouping's levels — the per-level
+                # statement of that measure's relationship with the
+                # grouping. Keyed as a single kind, the contrasts
+                # crowd onto a few measures (every measure against
+                # one grouping, at near-identical scores) and the
+                # remaining measures' contrasts never reach the
+                # early rounds. The kind therefore counts once per
+                # measure it states: the strongest contrast of
+                # every measure is offered before any measure's
+                # second contrast, as the strongest line of every
+                # kind is offered before any kind's second line.
+                if rep.get("type") == "level_contrast":
+                    for ev in rep.get("evidence") or []:
+                        measure = (ev.get("metrics") or {}).get(
+                            "measure_column"
+                        )
+                        if isinstance(measure, str) and measure:
+                            return (
+                                rep.get("category"),
+                                rep.get("type"),
+                                measure,
+                            )
+                return (rep.get("category"), rep.get("type"))
+
             buckets: dict[tuple, list] = {}
             for e in entries:
                 if e[1].get("type") in ("leakage_signature", "predictive"):
                     continue
-                key = (e[1].get("category"), e[1].get("type"))
-                buckets.setdefault(key, []).append(e)
+                buckets.setdefault(bucket_key(e[1]), []).append(e)
             for bucket in buckets.values():
                 bucket.sort(key=score)
+
+            def round_lead(e):
+                # The lead order inside a round. Break and regime
+                # statements along an ordered axis lead: they are
+                # the table's shape over its axis, the statements
+                # a reader acts on first after the directory. The
+                # level statements follow: where a measure sits
+                # across a grouping's levels is the closest
+                # statement the section has to an outcome fact for
+                # that measure. Within the level statements, one
+                # that locates the measure precedes one that only
+                # spreads it — the location is the relationship;
+                # the spread refines it, and on sentinel-driven
+                # measures the spread statement is often a
+                # restatement of the sentinel's mass.
+                rep = e[1]
+                if rep.get("category") == "changes":
+                    return (0, 0)
+                if rep.get("type") == "level_contrast":
+                    form = None
+                    for ev in rep.get("evidence") or []:
+                        form = (ev.get("metrics") or {}).get("form")
+                        if form:
+                            break
+                    return (1, 1 if form == "scale" else 0)
+                return (2, 0)
 
             def rounds_from(depth):
                 out = []
@@ -1457,15 +1508,8 @@ class ProfileReport:
                     ]
                     if not round_entries:
                         return out
-                    # Break and regime statements along an ordered
-                    # axis lead each round: they are the table's
-                    # shape over its axis, the statements a reader
-                    # acts on first after the directory.
                     round_entries.sort(
-                        key=lambda e: (
-                            0 if e[1].get("category") == "changes" else 1,
-                            score(e),
-                        )
+                        key=lambda e: (round_lead(e), score(e))
                     )
                     out.extend(round_entries)
                     depth += 1
@@ -1478,12 +1522,7 @@ class ProfileReport:
             first_round = [b[0] for b in buckets.values() if b]
             if directory:
                 first_round.append(directory[0])
-            first_round.sort(
-                key=lambda e: (
-                    0 if e[1].get("category") == "changes" else 1,
-                    score(e),
-                )
-            )
+            first_round.sort(key=lambda e: (round_lead(e), score(e)))
             return leakage + first_round + directory[1:] + rounds_from(1)
 
         for name, entries in sections.items():
