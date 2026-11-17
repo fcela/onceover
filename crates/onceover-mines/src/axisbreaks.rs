@@ -1290,6 +1290,7 @@ fn select_primary_axis(
     axis_hint: Option<&str>,
     time_hint: Option<&str>,
     ordinals: &BTreeMap<String, Vec<String>>,
+    automatic: bool,
 ) -> Option<AxisDef> {
     let by_name = |name: &str| table.names.iter().position(|n| n == name);
     let kind_of = |i: usize| -> Option<AxisKind> {
@@ -1347,6 +1348,9 @@ fn select_primary_axis(
                 _ => {}
             }
         }
+    }
+    if !automatic {
+        return None;
     }
     for (i, col) in table.cols.iter().enumerate() {
         match col {
@@ -2099,6 +2103,7 @@ pub fn profile_ordered_axis(
     ordinals: &BTreeMap<String, Vec<String>>,
     entity_columns: &[String],
     prior: &[Finding],
+    hinted_only: bool,
 ) -> AxisBatteryOutcome {
     let na = |msg: String| AxisBatteryOutcome {
         findings: Vec::new(),
@@ -2120,15 +2125,25 @@ pub fn profile_ordered_axis(
         attached: 0,
     };
     let sample = stride_sample(table.n, cfg.row_cap);
-    let primary = select_primary_axis(table, axis_hint, time_hint, ordinals);
+    let primary = select_primary_axis(table, axis_hint, time_hint, ordinals, !hinted_only);
+    if hinted_only && primary.is_none() {
+        return na(match axis_hint.or(time_hint) {
+            Some(name) => format!(
+                "the axis {name} named for the ordered-axis scan is not an axis the scan can use"
+            ),
+            None => "no axis named for the ordered-axis scan".into(),
+        });
+    }
 
     // Scan axes: the primary axis, then numeric columns with at
     // least 48 distinct values at a median of 5 rows per value.
+    // A hinted-only scan adds no axes of its own: the primary is
+    // the one axis the caller named.
     let mut scan_axes: Vec<AxisDef> = Vec::new();
     if let Some(p) = &primary {
         scan_axes.push(p.clone());
     }
-    if scan_axes.len() < cfg.max_scan_axes {
+    if !hinted_only && scan_axes.len() < cfg.max_scan_axes {
         for (i, name) in table.names.iter().enumerate() {
             if scan_axes.len() >= cfg.max_scan_axes {
                 break;
@@ -2272,15 +2287,18 @@ pub fn profile_ordered_axis(
     }
 
     // Shapes: (axis, response) pairs over numeric, primary, and
-    // declared-ordinal axes.
+    // declared-ordinal axes. A hinted-only scan evaluates shapes
+    // along the primary axis only.
     let mut shape_axes: Vec<AxisDef> = Vec::new();
-    for (i, name) in table.names.iter().enumerate() {
-        if is_numeric_col(table, i) {
-            shape_axes.push(AxisDef {
-                col: i,
-                name: name.clone(),
-                kind: AxisKind::Numeric,
-            });
+    if !hinted_only {
+        for (i, name) in table.names.iter().enumerate() {
+            if is_numeric_col(table, i) {
+                shape_axes.push(AxisDef {
+                    col: i,
+                    name: name.clone(),
+                    kind: AxisKind::Numeric,
+                });
+            }
         }
     }
     if let Some(p) = &primary {
@@ -2288,14 +2306,16 @@ pub fn profile_ordered_axis(
             shape_axes.push(p.clone());
         }
     }
-    for name in ordinals.keys() {
-        if let Some(i) = table.names.iter().position(|n| n == name) {
-            if !shape_axes.iter().any(|a| a.col == i) {
-                shape_axes.push(AxisDef {
-                    col: i,
-                    name: name.clone(),
-                    kind: AxisKind::Ordinal,
-                });
+    if !hinted_only {
+        for name in ordinals.keys() {
+            if let Some(i) = table.names.iter().position(|n| n == name) {
+                if !shape_axes.iter().any(|a| a.col == i) {
+                    shape_axes.push(AxisDef {
+                        col: i,
+                        name: name.clone(),
+                        kind: AxisKind::Ordinal,
+                    });
+                }
             }
         }
     }

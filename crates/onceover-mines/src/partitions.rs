@@ -135,6 +135,7 @@ fn display_time(axis: Axis, t: i64) -> String {
 fn select_axis(
     table: &TypedTable,
     time_hint: Option<&str>,
+    hinted_only: bool,
 ) -> Option<(usize, Axis, Vec<Option<i64>>)> {
     fn axis_of(col: &TypedCol) -> Option<Axis> {
         match col {
@@ -189,7 +190,11 @@ fn select_axis(
         }
         _ => None,
     });
-    let (idx, axis) = hinted.or(auto_date).or(year_like)?;
+    let (idx, axis) = if hinted_only {
+        hinted?
+    } else {
+        hinted.or(auto_date).or(year_like)?
+    };
     Some((idx, axis, ticks(&table.cols[idx], table.n)))
 }
 
@@ -699,6 +704,7 @@ pub fn ordered_partitions(
     excluded: &[usize],
     cfg: &PartitionsConfig,
     time_hint: Option<&str>,
+    hinted_only: bool,
 ) -> PartitionsOutcome {
     if !cfg.is_enabled() {
         return PartitionsOutcome {
@@ -706,12 +712,20 @@ pub fn ordered_partitions(
             status: PartitionsStatus::NotApplicable("disabled at this budget".into()),
         };
     }
-    let Some((axis_idx, axis, ticks)) = select_axis(table, time_hint) else {
+    let Some((axis_idx, axis, ticks)) = select_axis(table, time_hint, hinted_only) else {
         return PartitionsOutcome {
             findings: Vec::new(),
-            status: PartitionsStatus::NotApplicable(
-                "no date, datetime, or year-like integer column to order by".into(),
-            ),
+            status: PartitionsStatus::NotApplicable(if hinted_only {
+                match time_hint {
+                    Some(name) => format!(
+                        "the axis {name} named for the partition scan is not a date, datetime, \
+                         or integer column to order by"
+                    ),
+                    None => "no axis named for the partition scan".into(),
+                }
+            } else {
+                "no date, datetime, or year-like integer column to order by".into()
+            }),
         };
     };
     let axis_name = table.names[axis_idx].clone();

@@ -2,7 +2,10 @@
 
 Planted structures: an axis-aligned step, a diagonal step no single
 column can express, and a steep but smooth transition that must not
-be typed as a jump.
+be typed as a jump. Since issue #317 phase 3 the screen runs by
+default only along an axis declared with the `ordered_axis` hint;
+on these frames the tests name the detector explicitly, and the
+first test also pins the default-run gate.
 """
 
 import math
@@ -29,7 +32,11 @@ def test_axis_step_found():
         (2.0 if xi > 0.6 else 0.0) + 1.5 * xi + 0.3 * rng.gauss(0, 1) for xi in x
     ]
     df = pl.DataFrame({"x": x, "y": y, "w": [rng.gauss(0, 1) for _ in range(n)]})
-    report = onceover.profile(df, budget="standard")
+    default = onceover.profile(df, budget="standard")
+    assert _steps(default) == []
+    entry = default.coverage["discontinuities"]
+    assert entry["status"] == "skipped" and "ordered_axis" in entry["detail"]
+    report = onceover.profile(df, budget="standard", detectors=["discontinuities"])
     steps = _steps(report)
     assert steps, "no step finding reported"
     top = steps[0]
@@ -61,7 +68,7 @@ def test_diagonal_step_found():
     ]
     df = pl.DataFrame({"s0": s0, "s1": s1, "y": y})
     # Diagonal scans run at the deep budget.
-    report = onceover.profile(df, budget="deep")
+    report = onceover.profile(df, budget="deep", detectors=["discontinuities"])
     steps = [
         f
         for f in _steps(report)
@@ -83,7 +90,11 @@ def test_diagonal_claim_states_the_boundary_in_original_units():
         (2.0 if b > 0.45 + 0.35 * a else 0.0) + 1.5 * a + 0.5 * rng.gauss(0, 1)
         for a, b in zip(s0, s1)
     ]
-    report = onceover.profile(pl.DataFrame({"s0": s0, "s1": s1, "y": y}), budget="deep")
+    report = onceover.profile(
+        pl.DataFrame({"s0": s0, "s1": s1, "y": y}),
+        budget="deep",
+        detectors=["discontinuities"],
+    )
     step = next(
         f for f in _steps(report)
         if f["evidence"][0]["metrics"]["kind"] == "diagonal"
@@ -106,7 +117,9 @@ def test_standard_budget_scans_axes_only():
         (2.0 if b > 0.45 + 0.35 * a else 0.0) + 1.5 * a + 0.5 * rng.gauss(0, 1)
         for a, b in zip(s0, s1)
     ]
-    report = onceover.profile(pl.DataFrame({"s0": s0, "s1": s1, "y": y}))
+    report = onceover.profile(
+        pl.DataFrame({"s0": s0, "s1": s1, "y": y}), detectors=["discontinuities"]
+    )
     assert all(f["evidence"][0]["metrics"]["kind"] == "axis" for f in _steps(report))
 
 
@@ -120,7 +133,7 @@ def test_flags_and_labels_are_not_targets():
         "flag": [1 if v > 0.6 else 0 for v in x],
         "w": [rng.gauss(0, 1) for _ in range(n)],
     })
-    report = onceover.profile(frame)
+    report = onceover.profile(frame, detectors=["discontinuities"])
     assert not [f for f in _steps(report) if f["claim"].startswith("flag jumps")]
 
 
@@ -133,7 +146,7 @@ def test_smooth_transition_not_reported():
         for xi in x
     ]
     df = pl.DataFrame({"x": x, "y": y})
-    report = onceover.profile(df, budget="standard")
+    report = onceover.profile(df, budget="standard", detectors=["discontinuities"])
     assert _steps(report) == []
 
 
@@ -147,7 +160,7 @@ def test_noise_not_reported():
             "c": [rng.gauss(0, 1) for _ in range(n)],
         }
     )
-    report = onceover.profile(df, budget="standard")
+    report = onceover.profile(df, budget="standard", detectors=["discontinuities"])
     assert _steps(report) == []
 
 

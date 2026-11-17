@@ -543,11 +543,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "known_miss",
      "columns_any": [
       "contacts_before_this_campaign"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
     },
     {
      "kind": "coverage_status",
@@ -653,11 +653,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "known_miss",
      "columns_any": [
       "Current Asset Turnover Rate"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 28 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 28 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
     },
     {
      "kind": "coverage_status",
@@ -763,11 +763,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "known_miss",
      "columns_any": [
       "distance_from_residence_to_work_km"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 31 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 31 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
     },
     {
      "kind": "coverage_status",
@@ -1259,11 +1259,11 @@
      "kind": "finding",
      "category": "changes",
      "type": "step_discontinuity",
-     "expect": "found",
+     "expect": "known_miss",
      "columns_any": [
       "value"
      ],
-     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
     }
    ],
    "notes": [
@@ -2234,8 +2234,8 @@
      "category": "dependencies",
      "type": "predictive",
      "target": "cnt",
-     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315). Re-baselined 2026-11-16 (issue #317 phase 2): the hygiene floor admits the reserve's hygiene statements ahead of structure and shape; on this table the structure class is squeezed (85 of its candidates capped) and this statement is displaced from the 100-finding report body. It is still generated (present at max_findings=1000). This expectation now asserts the measured state.",
-     "expect": "missed"
+     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315). Re-baselined 2026-11-16 (issue #317 phase 2): the hygiene floor admits the reserve's hygiene statements ahead of structure and shape; on this table the structure class is squeezed (85 of its candidates capped) and this statement is displaced from the 100-finding report body. It is still generated (present at max_findings=1000). This expectation now asserts the measured state. Promoted 2026-11-16 (issue #317 phase 3): the axis gate removed the gated passes' along-axis findings from this table's capped report, relieving the cap pressure that displaced this statement, and it is selected in the 100-finding report body again.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2532,8 +2532,8 @@
     {
      "kind": "coverage_status",
      "detector": "ordered_axis",
-     "status": "capped",
-     "note": "Measured on the current build: the ordered-axis scan caps on this table (row_id is a strictly increasing integer axis over fourteen measures)."
+     "status": "skipped",
+     "note": "The entry declares no time axis and no ordered_axis hint, so under the axis gate a default run does not run the ordered-axis pass on this frame and records it skipped; the earlier 'capped' expectation was pinned against the pre-gate build, where the scan ran along row_id."
     }
    ],
    "sha256": "12bac825ae09688fd8f0f1c6887e2cb2d8317080d264e39fa8b2d57747c88692",
