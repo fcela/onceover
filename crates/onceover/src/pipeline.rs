@@ -148,6 +148,14 @@ fn profile_inner(
     tier.disc.deadline = pass_deadline;
     tier.hotspots.deadline = pass_deadline;
     tier.surprises.deadline = pass_deadline;
+    // A default run requires a categorical outlier statement's
+    // deviating levels to be rare in their column overall
+    // (issue #317, phase 3); naming the outliers detector
+    // explicitly lifts the requirement.
+    tier.surprises.require_rare_breakers = !cfg
+        .detectors
+        .as_ref()
+        .is_some_and(|set| set.contains("outliers"));
     tier.slices.deadline = pass_deadline;
     tier.modelfail.deadline = pass_deadline;
     tier.dupe.deadline = cfg.deadline.map(|d| start + d);
@@ -1489,6 +1497,17 @@ fn profile_inner(
                 out.pairs_passing,
                 out.findings.len(),
             );
+            if out.directions_unstated > 0 {
+                detail.push_str(&format!(
+                    "; {} reportable order {} not stated: no stated basis (not functionally related, not a temporal pair, no component relation, rank correlation below 0.5 on the screening sample)",
+                    out.directions_unstated,
+                    if out.directions_unstated == 1 {
+                        "direction"
+                    } else {
+                        "directions"
+                    },
+                ));
+            }
             if !oc_axis.is_empty() {
                 detail.push_str(&format!(
                     "; pairs involving the time axis column {} excluded \
@@ -1739,7 +1758,10 @@ fn profile_inner(
                     },
                 );
                 findings.extend(f);
-            } else {
+            } else if enabled("decision_tables") {
+                // When the pass is not enabled, no entry is stamped
+                // here; the closing coverage loop records the
+                // on-request skip for it instead.
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,

@@ -25,6 +25,11 @@ ON_REQUEST = [
     "granularity",
     "distribution_change",
     "slice_shifts",
+    # On request since the 2026-11-16 per-detector audit
+    # (docs/benchmarks/2026-11-16-detector-audit.md).
+    "decision_tables",
+    "interactions",
+    "hotspots",
 ]
 
 
@@ -64,7 +69,7 @@ def test_registry_membership_trigger_partition():
         for d in registry.values()
         if d["membership"] == "default_set" and d["trigger"] == "always"
     ]
-    assert len(default_always) == 30
+    assert len(default_always) == 27
 
 
 def test_default_run_discloses_on_request_passes_as_skipped():

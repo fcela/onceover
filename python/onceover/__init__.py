@@ -82,11 +82,12 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Detailed numeric pairs retained after screening all numeric pairs.
 
     detectors : list[str], optional
-        Detector IDs to select; None selects the default set (32 of the
+        Detector IDs to select; None selects the default set (29 of the
         43 registered detectors). Excluded unless requested: the
         on-request detectors "row_clusters" (experimental),
         "date_gaps", "pivot", "period_associations", "drift",
-        "granularity", "distribution_change" and "slice_shifts" \u2014 each
+        "granularity", "distribution_change", "slice_shifts",
+        "decision_tables", "interactions" and "hotspots" \u2014 each
         records a skipped coverage entry in default runs \u2014 and the
         target-triggered "target_shapes", "leakage", and
         "model_failures", which run when a target is designated.

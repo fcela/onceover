@@ -107,12 +107,15 @@ def categorical_outliers(report):
 
 def test_categorical_breaker_isolated():
     # Within grp = A the outcome is "ok" except row 7; grp = B
-    # varies ordinarily (issue #68).
+    # varies ordinarily (issue #68). The breaker level "bad" is
+    # common in the column overall (31 of 300 rows), so a default
+    # run withholds the statement (issue #317, phase 3); naming
+    # the detector states it.
     grp = ["A"] * 150 + ["B"] * 150
     out = ["ok"] * 150 + ["ok" if i % 5 else "bad" for i in range(150)]
     out[7] = "bad"
     df = pl.DataFrame({"grp": grp, "outcome": out})
-    hits = categorical_outliers(onceover.profile(df))
+    hits = categorical_outliers(onceover.profile(df, detectors=["outliers"]))
     assert len(hits) == 1
     hit = hits[0]
     assert hit["category"] == "anomalies"
@@ -122,6 +125,37 @@ def test_categorical_breaker_isolated():
     assert metrics["dominant_level"] == "ok"
     assert metrics["dominant_share"] >= 0.99
     assert metrics["n"] == 150
+
+
+def test_categorical_breaker_withheld_by_default_when_level_common():
+    # Same table as test_categorical_breaker_isolated: in a
+    # default run the statement is withheld because the deviating
+    # level is common overall, and the outliers coverage entry
+    # counts it (issue #317, phase 3).
+    grp = ["A"] * 150 + ["B"] * 150
+    out = ["ok"] * 150 + ["ok" if i % 5 else "bad" for i in range(150)]
+    out[7] = "bad"
+    df = pl.DataFrame({"grp": grp, "outcome": out})
+    report = onceover.profile(df)
+    assert categorical_outliers(report) == []
+    detail = report.coverage["outliers"]["detail"]
+    assert "1 categorical outlier statements not stated" in detail, detail
+
+
+def test_categorical_breaker_stated_by_default_when_level_rare():
+    # The breaker level "glitch" is 2 of 2000 rows overall
+    # (0.1%), rare under the 1% bar, so a default run states the
+    # finding (issue #317, phase 3).
+    grp = ["A"] * 1000 + ["B"] * 1000
+    out = ["ok"] * 1000 + ["ok" if i % 2 == 0 else "no" for i in range(1000)]
+    out[7] = "glitch"
+    out[8] = "glitch"
+    df = pl.DataFrame({"grp": grp, "outcome": out})
+    hits = categorical_outliers(onceover.profile(df))
+    assert len(hits) == 1
+    metrics = hits[0]["evidence"][0]["metrics"]
+    assert metrics["outlier_values"] == ["glitch", "glitch"]
+    assert metrics["outlier_rows"] == [7, 8]
 
 
 def test_categorical_quiet_on_ordinary_variation():

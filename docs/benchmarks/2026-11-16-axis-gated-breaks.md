@@ -147,6 +147,12 @@ changed, each with the mechanism in its note:
   from missed to found: the gated findings no longer fill the
   capped report, so the statement is selected again.
 
+One further re-baseline arose when this branch was merged with
+the gate-expansion tables: the column_order_stress entry's
+`ordered_axis` coverage expectation moved from capped to
+skipped, because that table declares no axis and the gate
+therefore skips the pass in a default run.
+
 ## Regression tests
 
 `tests/test_axis_gate.py` pins the contract: a time-axis frame

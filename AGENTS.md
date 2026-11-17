@@ -224,15 +224,22 @@ categories each produces and each detector's `membership`
 (`default_set` or `on_request`) and `trigger` (`always`, `hints`,
 or `target`) (also frozen in `docs/capability-manifest.json`).
 `detectors=[...]`
-restricts a run to named detectors. The default set has 32 of
+restricts a run to named detectors. The default set has 29 of
 the 43 registered detectors: `row_clusters` (experimental), `date_gaps`,
 `pivot`, `period_associations`, `drift`, `granularity`,
-`distribution_change`, `slice_shifts`, `target_shapes`, `leakage`,
+`distribution_change`, `slice_shifts`, `decision_tables`,
+`interactions`, `hotspots`, `target_shapes`, `leakage`,
 and `model_failures` are
 on request and run only when named — a default run records each as
 skipped in coverage, naming it on-request. `expectations` and
 `group_contrast` are in the default set but engage only on
-declared hints. The along-axis passes (`breaks`,
+declared hints. The `outliers` pass is in the default set, but a
+default run states a `categorical_outlier` finding only when
+every level its pattern-breaking rows carry is rare in the
+column overall (at or below 1% of the column's values);
+statements withheld by that requirement are counted in the
+pass's coverage entry, and naming `outliers` in `detectors=[...]`
+states them. The along-axis passes (`breaks`,
 `ordered_partitions`, `ordered_axis`, `discontinuities`) are in
 the default set but scan only along the frame's time axis or an
 axis declared with the `ordered_axis` hint; on a frame with

@@ -25,7 +25,9 @@ def test_equivalent_rules_have_multiple_sources_and_one_statement():
 
 
 def test_predictive_statements_merge_methods_without_losing_direction():
-    report=onceover.profile(related_pair())
+    # decision_tables is on request since the 2026-11-16 audit;
+    # the merge under test needs both methods named.
+    report=onceover.profile(related_pair(),detectors=['predictability','decision_tables'])
     statements=select(report,'dependencies',subtype='predictive',inputs=['segment'],target='shipping')
     assert len(statements)==1
     assert {'predictability','decision_tables'} <= {e['method']['detector'] for e in statements[0]['evidence']}

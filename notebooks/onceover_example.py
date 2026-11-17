@@ -72,21 +72,27 @@ def orders_fixture(n=8000, seed=2024):
 def notebook_detectors():
     """Detector selection for the example notebook's profiles.
 
-    The default set plus the opt-in ``dates`` pass. The notebook's
-    calendar-completeness results (the "Calendar completeness" row of
-    Table 1 and section 4) report the date-gap finding, which only the
-    ``dates`` detector produces; that detector has been opt-in since
-    the 2026-11-02 detector battery
+    The default set plus the opt-in passes whose findings the
+    notebook reads. The notebook's calendar-completeness results
+    (the "Calendar completeness" row of Table 1 and section 4)
+    report the date-gap finding, which only the ``date_gaps``
+    detector produces; that detector has been opt-in since the
+    2026-11-02 detector battery
     (docs/benchmarks/2026-11-02-detector-opt-in.md), so a bare
-    ``profile()`` call no longer yields the finding. The selection is
-    derived from the registry, so it tracks the default set as that
-    set evolves; only ``date_gaps`` is named explicitly.
+    ``profile()`` call no longer yields the finding. The summary's
+    churn statement (churn predictable from tenure) is a
+    ``decision_tables`` finding; that detector has been opt-in
+    since the 2026-11-16 per-detector audit
+    (docs/benchmarks/2026-11-16-detector-audit.md). The selection
+    is derived from the registry, so it tracks the default set as
+    that set evolves; only ``date_gaps`` and ``decision_tables``
+    are named explicitly.
     """
     import onceover
 
     ids = [d["id"] for d in onceover.available_detectors()
            if d["membership"] == "default_set"]
-    return ids + ["date_gaps"]
+    return ids + ["date_gaps", "decision_tables"]
 
 
 def find(report, category, *, subtype=None, form=None, column=None, inputs=None, target=None):
