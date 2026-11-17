@@ -36,6 +36,7 @@ failed reference checks) fail whenever the head value is above zero.
 | `permuted` | Every column is shuffled independently, which keeps each column's values and destroys every relationship. How many statements about two or more columns remain (full report and 4k digest, default and target mode)? Each is false by construction. | lower |
 | `invariance` | Facts (category, type, sorted column names) lost plus gained when the column order is reversed, the rows are shuffled (only for tables without a time axis), the columns are renamed, an independent noise column is added, or one numeric column is multiplied by 1000. The exclusions are listed in `components/invariance.py`. | lower |
 | `reference` | Hand-written statements per dataset (see below), found in the 4k digest, the 8k digest and the full report, in default and target mode. | higher |
+| `weighted` | The hinted run: a dataset declaring `weights` is profiled once more with those weights in the hints. Reference statements carrying a `hinted_tier` must match in that run (4k digest, 8k digest, full report), and controls declared as `weighted_controls` must stay silent — no weighted finding fits the control's columns and kind. A satisfied control counts as a must match at every scope. | higher |
 | `redundancy` | In the 4k digest: finding lines whose column set and relation kind repeat an earlier line, characters on finding lines (per thousand), and numbers printed with six or more decimals. | `repeated`, `long_decimals` lower; `finding_permille` higher |
 | `truth` | `report.verify(df)` statuses. `mismatch` and `error` must be 0. | lower |
 | `cost` | Median profile time over three runs; JSON size; number of findings. | time lower |
@@ -79,6 +80,12 @@ A gate dataset refers to a corpus dataset id in
 
 - `target`: a column name, `"@last"` for the last column, or omit it.
   With a target, the target-mode scores are recorded.
+- `weights`: weight columns for the `weighted` component's hinted
+  run; `weighted_controls`: silence assertions for that run, each
+  `{"columns": [...], "kind": ...}` — satisfied when no weighted
+  finding fits. A reference statement may carry `hinted_tier`
+  (`must` or `should`), scored by the `weighted` component in the
+  hinted run only; its `tier` still governs the unhinted runs.
 - `components`: omit to run every component.
 - `held_out`: scored but excluded from the verdict.
 - `fast`: member of the `--fast` subset.

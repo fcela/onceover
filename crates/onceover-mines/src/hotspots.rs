@@ -14,9 +14,28 @@
 //! Bonferroni threshold over all examined cells at family
 //! alpha 0.01, on top of absolute bars (expected count, ratio,
 //! observed count, share of scanned rows).
+//!
+//! With weight columns declared (the `weights` hint, resolved
+//! and validated by the pipeline), the same row walk also
+//! accumulates each weight's sums per cell, and a cell is
+//! judged under each weight: the share of the weight's total
+//! its rows carry against the cell's share of rows. Counting
+//! is the special case where every row weighs 1; the weighted
+//! judgment states concentration of a quantity, not departure
+//! from independence, so its baseline is the row share, with
+//! the weight-margin independence expectation carried in the
+//! evidence for decomposition. The weighted scan runs over a
+//! wider eligibility (the encoder's `MAX_BINS`) than the count
+//! scan: the cells that motivate it — an hour-of-day column's
+//! cells, a fine age band's — encode above the count scan's
+//! level cap. Its Bonferroni family is the examined cells x
+//! weights, and its z uses the weight's effective row count,
+//! (sum w)^2 / sum w^2, because a total dominated by a few
+//! heavy rows carries less information than the row count
+//! claims.
 
 use crate::deadline::Deadline;
-use crate::encode::{EncodedMatrix, MISSING};
+use crate::encode::{EncodedMatrix, MAX_BINS, MISSING};
 use crate::fmt_float;
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
@@ -78,6 +97,48 @@ struct CellHit {
     z: f64,
 }
 
+/// A declared weight column, resolved by the pipeline:
+/// `values` is indexed by original row (the encoded matrix's
+/// `rows` map positions back through it), `None` where the row
+/// carries no value. Resolution validates the column (numeric,
+/// no negative values, positive total, not constant) and
+/// reports what it refuses in coverage; the pass trusts the
+/// series it is handed.
+pub struct WeightSeries<'a> {
+    pub name: &'a str,
+    pub values: &'a [Option<f64>],
+}
+
+/// A weight in the scan: its series, and the encoded feature
+/// index when the weight column is itself an encoded feature.
+/// A weight is never judged over a combination containing its
+/// own feature — bins of the weight mechanically concentrate
+/// the weight, so those cells would state a tautology.
+struct ActiveWeight<'a> {
+    series: WeightSeries<'a>,
+    feat: Option<usize>,
+}
+
+struct WeightedHit {
+    feats: Vec<usize>,
+    codes: Vec<u8>,
+    /// Index into the scan's weights.
+    weight: usize,
+    observed_rows: usize,
+    /// The weight's complete rows for the combination.
+    rows_scanned: usize,
+    cell_weight: f64,
+    weight_total: f64,
+    row_share: f64,
+    weight_share: f64,
+    /// The cell's expected weight share under independence of
+    /// the features' weight margins (the decomposition of the
+    /// stated concentration against the margins' prediction).
+    expected_weight_share: f64,
+    effective_rows: f64,
+    z: f64,
+}
+
 /// A combination reports only when it has at least this many
 /// complete rows; `evaluate_combo` returns without a hit below
 /// it, so combinations whose complete-row count is bounded
@@ -95,18 +156,55 @@ pub struct HotspotsOutcome {
     pub deadline_stopped: bool,
 }
 
-pub fn hotspots(enc: &EncodedMatrix, cfg: &HotspotConfig) -> HotspotsOutcome {
-    hotspots_impl(enc, cfg, &|| cfg.deadline.exceeded())
+pub fn hotspots(
+    enc: &EncodedMatrix,
+    cfg: &HotspotConfig,
+    weights: &[WeightSeries],
+) -> HotspotsOutcome {
+    hotspots_impl(enc, cfg, weights, &|| cfg.deadline.exceeded())
 }
 
 fn hotspots_impl(
     enc: &EncodedMatrix,
     cfg: &HotspotConfig,
+    weights: &[WeightSeries],
     stop: &dyn Fn() -> bool,
 ) -> HotspotsOutcome {
     let eligible: Vec<usize> = (0..enc.feat_names.len())
         .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= cfg.max_levels)
         .collect();
+    // The weighted judgment's eligibility is wider than the
+    // count scan's: any feature the encoder produced, up to
+    // its own bin cap. It applies only when weights were
+    // declared; the count scan's set is untouched either way.
+    let active: Vec<ActiveWeight> = weights
+        .iter()
+        .map(|w| ActiveWeight {
+            feat: enc.feat_names.iter().position(|n| n == w.name),
+            series: WeightSeries {
+                name: w.name,
+                values: w.values,
+            },
+        })
+        .collect();
+    let eligible_w: Vec<usize> = if active.is_empty() {
+        Vec::new()
+    } else {
+        (0..enc.feat_names.len())
+            .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= MAX_BINS)
+            .collect()
+    };
+    let mut in_eligible = vec![false; enc.feat_names.len()];
+    for &f in &eligible {
+        in_eligible[f] = true;
+    }
+    // Cells examined per weight, accumulated at visit time in
+    // the same convention as the count scan's: a visited
+    // combination's cells count as examined, including
+    // combinations then skipped by the complete-rows floor.
+    // A combination containing a weight's own feature does not
+    // count toward that weight — it is never judged for it.
+    let mut w_cells: Vec<usize> = vec![0; active.len()];
     // Features a triple may use: at most 8 bins, so a triple's
     // cell count stays inside the triple cell cap's reach.
     let small: Vec<usize> = eligible
@@ -161,6 +259,7 @@ fn hotspots_impl(
     // complete-rows floor, whose cells were part of the
     // counting pass's total.
     let mut cand_hits: Vec<CellHit> = Vec::new();
+    let mut cand_weighted: Vec<WeightedHit> = Vec::new();
     let mut pair_scores: HashMap<(usize, usize), f64> = HashMap::new();
     let mut pairs_evaluated = 0usize;
     let mut pair_cells_evaluated = 0usize;
@@ -175,17 +274,58 @@ fn hotspots_impl(
                 return false;
             }
             pairs_evaluated += 1;
-            pair_cells_evaluated += enc.n_bins[combo[0]] * enc.n_bins[combo[1]];
+            let cells = enc.n_bins[combo[0]] * enc.n_bins[combo[1]];
+            pair_cells_evaluated += cells;
+            for (wi, w) in active.iter().enumerate() {
+                if !matches!(w.feat, Some(f) if combo.contains(&f)) {
+                    w_cells[wi] += cells;
+                }
+            }
             if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
                 return true;
             }
-            let (hits, best_z) = evaluate_combo(enc, combo, cfg);
+            let (hits, best_z, whits) = evaluate_combo(enc, combo, cfg, &active);
             cand_hits.extend(hits);
+            cand_weighted.extend(whits);
             if in_small[combo[0]] && in_small[combo[1]] {
                 if let Some(z) = best_z {
                     pair_scores.insert((combo[0], combo[1]), z);
                 }
             }
+            true
+        });
+    }
+
+    // The weighted judgment's remaining pairs: combinations
+    // the count scan's eligibility excludes. They are evaluated
+    // after the count pairs, under the same deadline discipline;
+    // a stop here is a pair-phase stop (triple selection below
+    // needs the completed screens). Their count hits are
+    // computed by the shared evaluation and discarded — the
+    // row-count scan's cell set does not widen.
+    if !active.is_empty() && !stopped_in_pairs {
+        enumerate_pairs(&enc.n_bins, cfg, &eligible_w, |combo| {
+            if stopped_in_pairs {
+                return false;
+            }
+            if in_eligible[combo[0]] && in_eligible[combo[1]] {
+                return true; // evaluated with the count pairs
+            }
+            if stop() {
+                stopped_in_pairs = true;
+                return false;
+            }
+            let cells = enc.n_bins[combo[0]] * enc.n_bins[combo[1]];
+            for (wi, w) in active.iter().enumerate() {
+                if !matches!(w.feat, Some(f) if combo.contains(&f)) {
+                    w_cells[wi] += cells;
+                }
+            }
+            if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
+                return true;
+            }
+            let (_, _, whits) = evaluate_combo(enc, combo, cfg, &active);
+            cand_weighted.extend(whits);
             true
         });
     }
@@ -204,13 +344,23 @@ fn hotspots_impl(
     };
     let triples_selected = selected_triples.len();
     let n_combos = n_pairs + triples_selected;
-    if !stopped_in_pairs && (n_combos == 0 || pair_cells + triple_cells == 0) {
+    if !stopped_in_pairs
+        && (n_combos == 0 || pair_cells + triple_cells == 0)
+        && w_cells.iter().all(|&c| c == 0)
+    {
+        let mut cov = format!(
+            "{} eligible columns, no combinations within the cell caps",
+            eligible.len()
+        );
+        if !active.is_empty() {
+            cov.push_str(&format!(
+                "; {} declared weights had no combinations to judge",
+                active.len()
+            ));
+        }
         return HotspotsOutcome {
             findings: Vec::new(),
-            coverage: format!(
-                "{} eligible columns, no combinations within the cell caps",
-                eligible.len()
-            ),
+            coverage: cov,
             deadline_stopped: false,
         };
     }
@@ -230,12 +380,19 @@ fn hotspots_impl(
             break;
         }
         triples_evaluated += 1;
-        triple_cells_evaluated += combo.iter().map(|&f| enc.n_bins[f]).product::<usize>();
+        let cells = combo.iter().map(|&f| enc.n_bins[f]).product::<usize>();
+        triple_cells_evaluated += cells;
+        for (wi, w) in active.iter().enumerate() {
+            if !matches!(w.feat, Some(f) if combo.contains(&f)) {
+                w_cells[wi] += cells;
+            }
+        }
         if combo.iter().any(|&f| present[f] < MIN_COMPLETE_ROWS) {
             continue;
         }
-        let (hits, _) = evaluate_combo(enc, combo, cfg);
+        let (hits, _, whits) = evaluate_combo(enc, combo, cfg, &active);
         cand_hits.extend(hits);
+        cand_weighted.extend(whits);
     }
     let stopped = stopped_in_pairs || stopped_in_triples;
     // The Bonferroni denominator is the examined cells: the
@@ -279,12 +436,77 @@ fn hotspots_impl(
             },
         ));
     }
+
+    // The weighted family is filtered on its own bar — family
+    // alpha 0.01 over the examined cell-weight tests — and
+    // capped in its own pool, so weighted findings never
+    // displace count findings inside the pass.
+    let w_tests: usize = w_cells.iter().sum();
+    let z_bar_w = if w_tests > 0 {
+        inv_normal_cdf(1.0 - 0.01 / (2.0 * w_tests as f64))
+    } else {
+        f64::INFINITY
+    };
+    let mut whits: Vec<WeightedHit> = cand_weighted
+        .into_iter()
+        .filter(|h| h.z >= z_bar_w)
+        .collect();
+    whits.sort_by(|a, b| {
+        b.z.total_cmp(&a.z)
+            .then(a.feats.cmp(&b.feats))
+            .then(a.codes.cmp(&b.codes))
+            .then(a.weight.cmp(&b.weight))
+    });
+    let mut per_combo_weight: BTreeMap<(Vec<usize>, usize), usize> = BTreeMap::new();
+    let mut n_weighted_findings = 0usize;
+    for hit in whits {
+        let n_in = per_combo_weight
+            .entry((hit.feats.clone(), hit.weight))
+            .or_insert(0);
+        if *n_in >= cfg.max_per_combination || n_weighted_findings >= cfg.max_findings {
+            continue;
+        }
+        *n_in += 1;
+        n_weighted_findings += 1;
+        findings.push(render_weighted(
+            enc,
+            &hit,
+            &active,
+            w_cells[hit.weight],
+            w_tests,
+            z_bar_w,
+            stopped,
+        ));
+    }
+    let weighted_clause = if active.is_empty() {
+        String::new()
+    } else if w_tests == 0 {
+        format!(
+            "; weights {} declared but the scan stopped before any weighted cell was examined",
+            active
+                .iter()
+                .map(|w| w.series.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        format!(
+            "; weights {} applied — {} cell-weight tests examined, z bar {:.2} (Bonferroni over cells x weights, family alpha 0.01)",
+            active
+                .iter()
+                .map(|w| w.series.name)
+                .collect::<Vec<_>>()
+                .join(", "),
+            w_tests,
+            z_bar_w
+        )
+    };
     // Partial coverage is disclosed, never silent: how much
     // of the scan was examined before the deadline stopped it,
     // and (on a pair-phase stop) that triples were never
     // selected, because their selection spends the completed
     // pair screen's pre-scores.
-    let coverage = if stopped_in_pairs {
+    let mut coverage = if stopped_in_pairs {
         if pairs_evaluated == 0 {
             format!(
                 "{} eligible columns, {} of {} pair combinations examined, {} of {} pair cells examined before the deadline stopped the scan; triples were not selected or examined — selection needs the complete pair screen; counts over the encoded sample of {} rows",
@@ -329,13 +551,25 @@ fn hotspots_impl(
         }
         cov
     } else {
+        // The count side can examine nothing while the
+        // weighted scan examined cells (weights declared on a
+        // table with fewer than two count-eligible features):
+        // then there is no count bar to state.
+        let bar_clause = if cells_examined > 0 {
+            format!(
+                "z bar {:.2} (Bonferroni over cells, family alpha 0.01)",
+                z_bar
+            )
+        } else {
+            "no count z bar (no count cells examined)".to_string()
+        };
         let mut cov = format!(
-            "{} eligible columns, {} combinations examined ({} triples), {} cells examined, z bar {:.2} (Bonferroni over cells, family alpha 0.01); counts over the encoded sample of {} rows",
+            "{} eligible columns, {} combinations examined ({} triples), {} cells examined, {}; counts over the encoded sample of {} rows",
             eligible.len(),
             n_combos,
             triples_selected,
             cells_examined,
-            z_bar,
+            bar_clause,
             enc.n,
         );
         if triple_universe > triples_selected {
@@ -348,6 +582,7 @@ fn hotspots_impl(
         }
         cov
     };
+    coverage.push_str(&weighted_clause);
     HotspotsOutcome {
         findings,
         coverage,
@@ -501,16 +736,47 @@ fn select_triples(
 /// pairs dilute toward their margins, so a pair can sit below
 /// the ratio bar while its z still marks the triple as worth
 /// examining.
+///
+/// With weights, the same walk also accumulates each weight's
+/// cell sums, margins, total, and squared total over the
+/// weight's complete rows (complete on the combination and
+/// present for the weight), and returns the cells whose weight
+/// share clears the weighted bars — same absolute bars, the
+/// ratio taken against the cell's row share. A weight whose
+/// feature is in the combination is not judged: its cells
+/// would state a tautology.
 fn evaluate_combo(
     enc: &EncodedMatrix,
     combo: &[usize],
     cfg: &HotspotConfig,
-) -> (Vec<CellHit>, Option<f64>) {
+    weights: &[ActiveWeight],
+) -> (Vec<CellHit>, Option<f64>, Vec<WeightedHit>) {
     let dims: Vec<usize> = combo.iter().map(|&f| enc.n_bins[f]).collect();
     let n_cells: usize = dims.iter().product();
     let mut counts = vec![0usize; n_cells];
     let mut margins: Vec<Vec<usize>> = dims.iter().map(|&d| vec![0usize; d]).collect();
     let mut n_complete = 0usize;
+    // Per weight: cell sums, cell row counts, margins, total,
+    // and squared total over the weight's complete rows.
+    struct WeightAcc {
+        sums: Vec<f64>,
+        rows: Vec<usize>,
+        margins: Vec<Vec<f64>>,
+        total: f64,
+        sumsq: f64,
+        n_complete: usize,
+    }
+    let mut wacc: Vec<WeightAcc> = weights
+        .iter()
+        .map(|_| WeightAcc {
+            sums: vec![0.0; n_cells],
+            rows: vec![0usize; n_cells],
+            margins: dims.iter().map(|&d| vec![0.0; d]).collect(),
+            total: 0.0,
+            sumsq: 0.0,
+            n_complete: 0,
+        })
+        .collect();
     // `pos` indexes a different bin column on each inner iteration.
     #[allow(clippy::needless_range_loop)]
     for pos in 0..enc.n {
@@ -536,17 +802,31 @@ fn evaluate_combo(
         for (k, &code) in codes.iter().enumerate().take(combo.len()) {
             margins[k][code as usize] += 1;
         }
+        if !weights.is_empty() {
+            let row = enc.rows[pos] as usize;
+            for (wi, w) in weights.iter().enumerate() {
+                if let Some(v) = w.series.values.get(row).copied().flatten() {
+                    let acc = &mut wacc[wi];
+                    acc.sums[idx] += v;
+                    acc.rows[idx] += 1;
+                    for (k, &code) in codes.iter().enumerate().take(combo.len()) {
+                        acc.margins[k][code as usize] += v;
+                    }
+                    acc.total += v;
+                    acc.sumsq += v * v;
+                    acc.n_complete += 1;
+                }
+            }
+        }
     }
     if n_complete < MIN_COMPLETE_ROWS {
-        return (Vec::new(), None);
+        return (Vec::new(), None, Vec::new());
     }
     let nf = n_complete as f64;
     let mut hits = Vec::new();
+    let mut whits = Vec::new();
     let mut best_z: Option<f64> = None;
     for (idx, &obs) in counts.iter().enumerate() {
-        if obs < cfg.min_observed {
-            continue;
-        }
         // Decode the cell's codes from its flat index.
         let mut rem = idx;
         let mut codes = Vec::with_capacity(combo.len());
@@ -557,24 +837,77 @@ fn evaluate_combo(
             codes.push(code as u8);
             expected *= margins[k][code] as f64 / nf;
         }
-        if expected < cfg.min_expected {
-            continue;
+        if obs >= cfg.min_observed && expected >= cfg.min_expected {
+            let z = (obs as f64 - expected) / expected.sqrt();
+            best_z = Some(best_z.map_or(z, |b: f64| b.max(z)));
+            let ratio = obs as f64 / expected;
+            if ratio >= cfg.min_ratio && obs as f64 / enc.n as f64 > cfg.min_share {
+                hits.push(CellHit {
+                    feats: combo.to_vec(),
+                    codes: codes.clone(),
+                    observed: obs,
+                    expected,
+                    z,
+                });
+            }
         }
-        let z = (obs as f64 - expected) / expected.sqrt();
-        best_z = Some(best_z.map_or(z, |b: f64| b.max(z)));
-        let ratio = obs as f64 / expected;
-        if ratio < cfg.min_ratio || obs as f64 / enc.n as f64 <= cfg.min_share {
-            continue;
+        for (wi, w) in weights.iter().enumerate() {
+            if matches!(w.feat, Some(f) if combo.contains(&f)) {
+                continue;
+            }
+            let acc = &wacc[wi];
+            if acc.n_complete < MIN_COMPLETE_ROWS || acc.total <= 0.0 {
+                continue;
+            }
+            let cell_rows = acc.rows[idx];
+            if cell_rows < cfg.min_observed {
+                continue;
+            }
+            let cell_weight = acc.sums[idx];
+            if cell_weight <= 0.0 {
+                continue;
+            }
+            let weight_share = cell_weight / acc.total;
+            if weight_share <= cfg.min_share {
+                continue;
+            }
+            let row_share = cell_rows as f64 / acc.n_complete as f64;
+            let share_ratio = weight_share / row_share;
+            if share_ratio < cfg.min_ratio {
+                continue;
+            }
+            // The weight-margin independence expectation, for
+            // decomposition: what the cell would hold if the
+            // weight followed the features' weight margins.
+            let mut expected_weight_share = 1.0;
+            for (k, &code) in codes.iter().enumerate() {
+                expected_weight_share *= acc.margins[k][code as usize] / acc.total;
+            }
+            // Kish's effective sample size of the weight over
+            // the combination's complete rows.
+            let n_eff = acc.total * acc.total / acc.sumsq;
+            let z = (weight_share - row_share)
+                / (row_share * (1.0 - row_share) / n_eff).sqrt();
+            if !z.is_finite() {
+                continue;
+            }
+            whits.push(WeightedHit {
+                feats: combo.to_vec(),
+                codes: codes.clone(),
+                weight: wi,
+                observed_rows: cell_rows,
+                rows_scanned: acc.n_complete,
+                cell_weight,
+                weight_total: acc.total,
+                row_share,
+                weight_share,
+                expected_weight_share,
+                effective_rows: n_eff,
+                z,
+            });
         }
-        hits.push(CellHit {
-            feats: combo.to_vec(),
-            codes,
-            observed: obs,
-            expected,
-            z,
-        });
     }
-    (hits, best_z)
+    (hits, best_z, whits)
 }
 
 fn cell_label(enc: &EncodedMatrix, f: usize, code: u8) -> String {
@@ -684,6 +1017,135 @@ fn render(
             "hotspots",
             "independence_excess_scan",
             "exact cell counts over the encoded sample vs independence margins (onceover v0.1)",
+        ),
+    )
+}
+
+/// A share as a percentage at three significant figures:
+/// 35.9%, 8.02%, 0.500%.
+fn fmt_pct(share: f64) -> String {
+    let p = 100.0 * share;
+    if p >= 10.0 {
+        format!("{p:.1}%")
+    } else if p >= 1.0 {
+        format!("{p:.2}%")
+    } else {
+        format!("{p:.3}%")
+    }
+}
+
+/// A ratio at three significant figures: 2.77, 12.4.
+fn fmt_ratio(ratio: f64) -> String {
+    if ratio >= 10.0 {
+        format!("{ratio:.1}")
+    } else {
+        format!("{ratio:.2}")
+    }
+}
+
+fn render_weighted(
+    enc: &EncodedMatrix,
+    hit: &WeightedHit,
+    weights: &[ActiveWeight],
+    cells_examined: usize,
+    tests_examined: usize,
+    z_bar: f64,
+    stopped: bool,
+) -> Finding {
+    let weight_name = weights[hit.weight].series.name;
+    let cell_names: Vec<String> = hit
+        .feats
+        .iter()
+        .map(|&f| enc.feat_names[f].clone())
+        .collect();
+    // The weight is part of the finding's identity: the same
+    // cell under two weights is two findings, and a weighted
+    // finding never merges with the row-count finding on the
+    // same cell.
+    let mut names = cell_names.clone();
+    names.push(weight_name.to_string());
+    let cell_desc: Vec<String> = hit
+        .feats
+        .iter()
+        .zip(&hit.codes)
+        .map(|(&f, &c)| format!("{} = '{}'", enc.feat_names[f], cell_label(enc, f, c)))
+        .collect();
+    let share_ratio = hit.weight_share / hit.row_share;
+    let margin_ratio = hit.weight_share / hit.expected_weight_share;
+    let bar_clause = if stopped {
+        format!(
+            "bar {:.1} over {} cell-weight tests examined before the deadline stopped the scan",
+            z_bar, tests_examined
+        )
+    } else {
+        format!(
+            "bar {:.1} over {} cell-weight tests examined",
+            z_bar, tests_examined
+        )
+    };
+    let mut evidence = BTreeMap::from([
+        ("columns".into(), json!(cell_names)),
+        (
+            "cell".into(),
+            json!(hit
+                .feats
+                .iter()
+                .zip(&hit.codes)
+                .map(|(&f, &c)| (enc.feat_names[f].clone(), json!(cell_label(enc, f, c))))
+                .collect::<BTreeMap<String, serde_json::Value>>()),
+        ),
+        ("weight".into(), json!(weight_name)),
+        ("observed_rows".into(), json!(hit.observed_rows)),
+        ("rows_scanned".into(), json!(hit.rows_scanned)),
+        ("cell_weight".into(), json!(hit.cell_weight)),
+        ("weight_total".into(), json!(hit.weight_total)),
+        ("row_share".into(), json!(hit.row_share)),
+        ("weight_share".into(), json!(hit.weight_share)),
+        ("share_ratio".into(), json!(share_ratio)),
+        (
+            "expected_weight_share".into(),
+            json!(hit.expected_weight_share),
+        ),
+        ("margin_ratio".into(), json!(margin_ratio)),
+        ("effective_rows".into(), json!(hit.effective_rows)),
+        ("z".into(), json!(hit.z)),
+        ("z_bar".into(), json!(z_bar)),
+        ("cells_examined".into(), json!(cells_examined)),
+        ("weights_examined".into(), json!(weights.len())),
+        ("tests_examined".into(), json!(tests_examined)),
+        (
+            "method".into(),
+            json!("cell sum of the declared weight vs the cell's share of rows over the rows complete on the combination and present for the weight, in the encoded sample; a cell reports only past absolute bars (rows >= 20, weight share > 0.5%, share ratio >= 2) and a Bonferroni z bar over all examined cells x weights at family alpha 0.01, the z computed on the weight's effective row count (sum w)^2 / sum w^2"),
+        ),
+    ]);
+    if stopped {
+        evidence.insert("tests_evaluated".into(), json!(tests_examined));
+    }
+    Finding::new(
+        Pattern::Hotspot,
+        BTreeMap::from([("columns".into(), json!(names))]),
+        format!(
+            "cell ({}) concentrates {} of {} on {} of scanned rows ({} of {}) — {}x its row share (z = {:.1}, {})",
+            cell_desc.join(", "),
+            fmt_pct(hit.weight_share),
+            weight_name,
+            fmt_pct(hit.row_share),
+            hit.observed_rows,
+            hit.rows_scanned,
+            fmt_ratio(share_ratio),
+            hit.z,
+            bar_clause,
+        ),
+        EvidenceBasis::Measured,
+        0.5,
+        evidence,
+        Some(format!(
+            "the combination's rows carry a share of {weight_name} far above their share of rows; check for a process, segment, or recording rule concentrating {weight_name} here before treating per-row averages as uniform across the table"
+        )),
+        Method::new(
+            "hotspots",
+            "weighted_share_scan",
+            "exact cell sums of a declared weight over the encoded sample vs the cells' row shares (onceover v0.1)",
         ),
     )
 }
@@ -869,7 +1331,7 @@ mod tests {
             deadline: Deadline::at(std::time::Instant::now() - std::time::Duration::from_secs(1)),
             ..HotspotConfig::default()
         };
-        let out = hotspots(&enc, &cfg);
+        let out = hotspots(&enc, &cfg, &[]);
         assert!(out.deadline_stopped);
         assert!(out.findings.is_empty());
         assert!(
@@ -907,7 +1369,7 @@ mod tests {
             ..HotspotConfig::default()
         };
         let calls = std::cell::Cell::new(0usize);
-        let out = hotspots_impl(&enc, &cfg, &|| {
+        let out = hotspots_impl(&enc, &cfg, &[], &|| {
             calls.set(calls.get() + 1);
             calls.get() > 5
         });
@@ -962,7 +1424,7 @@ mod tests {
             ..HotspotConfig::default()
         };
         let calls = std::cell::Cell::new(0usize);
-        let out = hotspots_impl(&enc, &cfg, &|| {
+        let out = hotspots_impl(&enc, &cfg, &[], &|| {
             calls.set(calls.get() + 1);
             calls.get() > 17
         });
@@ -998,15 +1460,196 @@ mod tests {
         assert_eq!(triple_findings, 1);
     }
 
+    /// Four features of four bins over 1,600 rows, codes
+    /// cycling so every pair cell holds exactly 100 rows: the
+    /// count scan sees uniform marginals everywhere.
+    fn uniform_matrix() -> EncodedMatrix {
+        let n = 1600usize;
+        let mut bins: Vec<Vec<u8>> = (0..4).map(|_| vec![0u8; n]).collect();
+        for r in 0..n {
+            bins[0][r] = (r % 4) as u8;
+            bins[1][r] = ((r / 4) % 4) as u8;
+            bins[2][r] = ((r / 16) % 4) as u8;
+            bins[3][r] = ((r / 64) % 4) as u8;
+        }
+        EncodedMatrix {
+            rows: (0..n as u32).collect(),
+            n,
+            bins,
+            n_bins: vec![4; 4],
+            feat_names: (0..4).map(|i| format!("f{i}")).collect(),
+            feat_cols: (0..4).collect(),
+            feat_dtypes: vec!["int64".into(); 4],
+            feat_nominal: vec![false; 4],
+            edges: vec![Vec::new(); 4],
+            levels: vec![Vec::new(); 4],
+        }
+    }
+
+    fn weighted_findings(out: &HotspotsOutcome) -> Vec<&Finding> {
+        out.findings
+            .iter()
+            .filter(|f| f.evidence[0].metrics.get("weight").is_some())
+            .collect()
+    }
+
+    #[test]
+    fn weighted_cell_fires_where_counts_are_uniform() {
+        // The weight sits on cell (0, 0) of pair (f0, f1):
+        // 100 of its rows carry 100 each, every other row 1.
+        // The cell holds 87% of the weight on 6.25% of rows
+        // while its row count is exactly at expectation.
+        let enc = uniform_matrix();
+        let values: Vec<Option<f64>> = (0..enc.n)
+            .map(|r| {
+                if enc.bins[0][r] == 0 && enc.bins[1][r] == 0 {
+                    Some(100.0)
+                } else {
+                    Some(1.0)
+                }
+            })
+            .collect();
+        let weights = [WeightSeries {
+            name: "payout",
+            values: &values,
+        }];
+        let out = hotspots(&enc, &HotspotConfig::default(), &weights);
+        assert_eq!(
+            out.findings.len(),
+            weighted_findings(&out).len(),
+            "no count finding may appear on the uniform matrix: {:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+        let hits = weighted_findings(&out);
+        assert!(!hits.is_empty(), "the weighted cell must be stated");
+        let top = hits[0];
+        let m = &top.evidence[0].metrics;
+        assert_eq!(m["weight"], json!("payout"));
+        assert_eq!(m["columns"], json!(["f0", "f1"]));
+        assert_eq!(m["observed_rows"], json!(100));
+        assert!((m["weight_share"].as_f64().unwrap() - 0.8696).abs() < 0.001);
+        assert!((m["row_share"].as_f64().unwrap() - 0.0625).abs() < 1e-9);
+        assert!(top.claim.contains("concentrates"), "claim: {}", top.claim);
+        assert!(top.claim.contains("of payout on"), "claim: {}", top.claim);
+        // The finding's subject names the weight as well as
+        // the cell columns.
+        assert!(
+            format!("{:?}", top.subject).contains("payout"),
+            "subject: {:?}",
+            top.subject
+        );
+        assert!(
+            out.coverage.contains("weights payout applied"),
+            "coverage: {}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn noise_weight_stays_silent() {
+        // A weight from a seeded generator independent of the
+        // codes: no cell may be stated under it.
+        let enc = uniform_matrix();
+        let mut state = 0x2545F491u64;
+        let values: Vec<Option<f64>> = (0..enc.n)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                Some(((state >> 33) % 1000) as f64 / 10.0 + 1.0)
+            })
+            .collect();
+        let weights = [WeightSeries {
+            name: "noise",
+            values: &values,
+        }];
+        let out = hotspots(&enc, &HotspotConfig::default(), &weights);
+        assert!(
+            weighted_findings(&out).is_empty(),
+            "noise weight produced findings: {:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn uniform_weight_restates_no_cell() {
+        // The planted count concentration under a constant
+        // weight: the count finding stands, and no weighted
+        // finding appears — a constant weight's shares are the
+        // row shares, so every share ratio is 1.
+        let enc = planted_matrix();
+        let values: Vec<Option<f64>> = vec![Some(10.0); enc.n];
+        let weights = [WeightSeries {
+            name: "flat",
+            values: &values,
+        }];
+        let out = hotspots(&enc, &HotspotConfig::default(), &weights);
+        assert!(!out.findings.is_empty(), "the count plant must stand");
+        assert!(
+            weighted_findings(&out).is_empty(),
+            "a constant weight must state nothing: {:?}",
+            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn two_weights_judged_in_one_scan_and_never_over_their_own_feature() {
+        let enc = uniform_matrix();
+        let on = |r: usize, a: usize, b: usize| enc.bins[a][r] == 0 && enc.bins[b][r] == 0;
+        let alpha: Vec<Option<f64>> = (0..enc.n)
+            .map(|r| Some(if on(r, 0, 1) { 100.0 } else { 1.0 }))
+            .collect();
+        let beta: Vec<Option<f64>> = (0..enc.n)
+            .map(|r| Some(if on(r, 2, 3) { 100.0 } else { 1.0 }))
+            .collect();
+        // A weight named after feature f0, concentrated on
+        // (f0 = 0, f1 = 0) rows: judged over pairs without f0,
+        // never over pairs containing it.
+        let own: Vec<Option<f64>> = (0..enc.n)
+            .map(|r| Some(if on(r, 0, 1) { 100.0 } else { 1.0 }))
+            .collect();
+        let weights = [
+            WeightSeries {
+                name: "alpha",
+                values: &alpha,
+            },
+            WeightSeries {
+                name: "beta",
+                values: &beta,
+            },
+            WeightSeries {
+                name: "f0",
+                values: &own,
+            },
+        ];
+        let out = hotspots(&enc, &HotspotConfig::default(), &weights);
+        let hits = weighted_findings(&out);
+        let names: Vec<&str> = hits
+            .iter()
+            .map(|f| f.evidence[0].metrics["weight"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"alpha"), "weights stated: {names:?}");
+        assert!(names.contains(&"beta"), "weights stated: {names:?}");
+        assert!(names.contains(&"f0"), "weights stated: {names:?}");
+        for f in hits.iter().filter(|f| f.evidence[0].metrics["weight"] == "f0") {
+            let cols = f.evidence[0].metrics["columns"].as_array().unwrap();
+            assert!(
+                !cols.iter().any(|c| c == "f0"),
+                "a weight was judged over its own feature: {}",
+                f.claim
+            );
+        }
+    }
+
     #[test]
     fn future_deadline_matches_no_deadline() {
         let enc = planted_matrix();
-        let plain = hotspots(&enc, &HotspotConfig::default());
+        let plain = hotspots(&enc, &HotspotConfig::default(), &[]);
         let cfg = HotspotConfig {
             deadline: Deadline::at(std::time::Instant::now() + std::time::Duration::from_secs(600)),
             ..HotspotConfig::default()
         };
-        let timed = hotspots(&enc, &cfg);
+        let timed = hotspots(&enc, &cfg, &[]);
         assert!(!plain.deadline_stopped);
         assert!(!timed.deadline_stopped);
         assert_eq!(plain.coverage, timed.coverage);

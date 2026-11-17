@@ -19,23 +19,24 @@ fails). An unknown target goes to coverage, not an error.
 **Meanings and structure.** `roles` overrides a column's
 semantic role; the vocabulary is `identifier`, `row_number`,
 `timestamp`, `timestamp_part`, `dimension`, `flag`, `measure`,
-`text`. A role outside the vocabulary is ignored; the frame section's
-evidence shows whether one took. `labels` gives a column a
+`text`. A role outside the vocabulary is ignored. `labels` gives a column a
 display label for prose; evidence keeps raw names.
 
-Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`.
+Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`.
 
 The expectations pass checks `order_by`, `no_gaps`, `cadence`,
-`hierarchies`, and `dimensions`/`measures` exactly; checked
-declarations tag their evidence `reference_source="declared"`,
-and unusable entries go to coverage, not errors. `cadence`
+`hierarchies`, and `dimensions`/`measures` exactly;
+declarations tag their evidence `reference_source="declared"`;
+unusable entries go to coverage, not errors. `cadence`
 values are `"daily"`, `"business_day"`, `"weekly"`, `"monthly"`,
 or a step count; `hierarchies` are level columns, finest to
 coarsest. Instructions to the run: `time`, `ordered_axis` (a non-date
 ordering column), `level_order` ({column: [levels in order]},
 never inferred), `exclude_columns` (dropped pre-run),
 `contrast` (`{"column": name, "value": scalar}`; a boolean
-column needs no `value`) profiles one subset against the rest. Other unknown keys raise an error.
+column needs no `value`) profiles one subset against the rest;
+`weights` ([columns]): hotspots also judge cells by share of
+each weight. Other unknown keys raise an error.
 
 **Units, grain, and your questions.** No hint key carries a
 column's unit, the grain (what one row is), or the questions
@@ -52,8 +53,7 @@ report = onceover.profile(df, target="is_canceled",
 ## 2. The call and the budgets
 
 `profile()` also accepts a LazyFrame or a file path, sampled
-above 200,000 rows unless `exact=True`: the `source` section
-states the basis.
+above 200,000 rows unless `exact=True`: `source` states the basis.
 
 Budgets: `quick`, `standard`, `deep`.
 
@@ -86,5 +86,4 @@ df)` returns one statement's rows.
 
 The default set runs 30 of the 43 registered detectors;
 `detectors=[...]` restricts a run. `capabilities()` lists each
-detector's membership, trigger, and purpose. Skip
-selection at first.
+detector's membership, trigger, and purpose.

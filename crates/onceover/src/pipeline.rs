@@ -6,13 +6,13 @@ use onceover_report::{Method, Pattern};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use onceover_core::{extract, find_duplicate_rows, CardOut, TypedTable, VKey};
+use onceover_core::{extract, find_duplicate_rows, CardOut, TypedCol, TypedTable, VKey};
 use onceover_deps::{analyze_keys, discover, sortedness, ColInfo, DepsOutcome};
 use onceover_mines::{
     analyze_temporal, association_rules, decision_tables, encode, hotspots, identities,
     prism_rules, profile_breaks, profile_discontinuities, profile_drift, profile_interactions,
     profile_regimes, profile_surprises, profile_target_shapes, screen_leakage,
-    screen_model_failures, screen_predictability,
+    screen_model_failures, screen_predictability, WeightSeries,
 };
 use onceover_report::{
     group_findings, select_findings_counted, Category, ColumnCard, Finding, Overview, PassInfo,
@@ -271,6 +271,90 @@ fn profile_inner(
             }
         )),
     );
+
+    // ---------- declared weights (issue #329) ----------
+    // Resolve the `weights` hint against the extracted table:
+    // each declared column is validated once here and handed
+    // to the hotspots pass as a value series. A declaration
+    // that cannot be applied is stated in the hotspots
+    // coverage entry (through `weight_note` below), never
+    // silently dropped and never raised.
+    let mut weight_names: Vec<&str> = Vec::new();
+    let mut weight_values: Vec<Vec<Option<f64>>> = Vec::new();
+    let mut weight_notes: Vec<String> = Vec::new();
+    if let Some(hints) = &cfg.hints {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for name in &hints.weights {
+            if !seen.insert(name.as_str()) {
+                weight_notes.push(format!("weight '{name}' declared twice; applied once"));
+                continue;
+            }
+            let Some(ci) = table.names.iter().position(|n| n == name) else {
+                weight_notes.push(format!(
+                    "weight '{name}' not applied: not a column of the table"
+                ));
+                continue;
+            };
+            let col = &table.cols[ci];
+            if !matches!(
+                col,
+                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            ) {
+                weight_notes.push(format!(
+                    "weight '{name}' not applied: not a numeric column"
+                ));
+                continue;
+            }
+            let values: Vec<Option<f64>> = (0..table.n).map(|r| col.numeric_at(r)).collect();
+            let mut total = 0.0f64;
+            let mut min = f64::INFINITY;
+            let mut max = f64::NEG_INFINITY;
+            let mut negatives = 0usize;
+            for v in values.iter().flatten() {
+                total += v;
+                min = min.min(*v);
+                max = max.max(*v);
+                if *v < 0.0 {
+                    negatives += 1;
+                }
+            }
+            if negatives > 0 {
+                weight_notes.push(format!(
+                    "weight '{name}' not applied: {negatives} rows carry negative values; shares need a non-negative measure"
+                ));
+                continue;
+            }
+            if total <= 0.0 {
+                weight_notes.push(format!(
+                    "weight '{name}' not applied: its total over present values is zero"
+                ));
+                continue;
+            }
+            if min == max {
+                weight_notes.push(format!(
+                    "weight '{name}' not applied: it is constant ({min}), so its shares restate row shares"
+                ));
+                continue;
+            }
+            weight_names.push(name.as_str());
+            weight_values.push(values);
+        }
+    }
+    // The series borrow the owned value vectors; both live
+    // until the hotspots dispatches below have run.
+    let weight_series: Vec<WeightSeries> = weight_names
+        .iter()
+        .zip(weight_values.iter())
+        .map(|(name, values)| WeightSeries {
+            name,
+            values: values.as_slice(),
+        })
+        .collect();
+    let weight_note = if weight_notes.is_empty() {
+        String::new()
+    } else {
+        format!("; {}", weight_notes.join("; "))
+    };
 
     if let Some(detail) = &exclusion_detail {
         stamp_insert(
@@ -2257,7 +2341,7 @@ fn profile_inner(
             // deadline has already expired, its first poll stops
             // it, and its coverage entry discloses the stop.
             if enabled("hotspots") {
-                let out = hotspots(&enc, &tier.hotspots);
+                let out = hotspots(&enc, &tier.hotspots, &weight_series);
                 if out.deadline_stopped {
                     deadline_hit = true;
                 }
@@ -2267,9 +2351,9 @@ fn profile_inner(
                     timing_on,
                     "hotspots".into(),
                     if out.deadline_stopped {
-                        PassInfo::capped(out.coverage)
+                        PassInfo::capped(format!("{}{weight_note}", out.coverage))
                     } else {
-                        PassInfo::sampled(out.coverage)
+                        PassInfo::sampled(format!("{}{weight_note}", out.coverage))
                     },
                 );
                 findings.extend(out.findings);
@@ -2550,16 +2634,16 @@ fn profile_inner(
                 // entry (the block that normally produces it was
                 // skipped).
                 let (enc, _) = encode(&table, &tier.encode);
-                let out = hotspots(&enc, &tier.hotspots);
+                let out = hotspots(&enc, &tier.hotspots, &weight_series);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     "hotspots".into(),
                     if out.deadline_stopped {
-                        PassInfo::capped(out.coverage)
+                        PassInfo::capped(format!("{}{weight_note}", out.coverage))
                     } else {
-                        PassInfo::sampled(out.coverage)
+                        PassInfo::sampled(format!("{}{weight_note}", out.coverage))
                     },
                 );
                 findings.extend(out.findings);

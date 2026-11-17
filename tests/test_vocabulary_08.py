@@ -56,6 +56,13 @@ def test_level_order_only_hint_is_not_no_hints():
     assert entry["detail"] != "no hints provided"
 
 
+def test_weights_only_hint_is_not_no_hints():
+    frame = _dose_frame().with_columns(pl.Series("amount", [2.0] * 20 + [9.0] * 20))
+    report = onceover.profile(frame, hints={"weights": ["amount"]})
+    entry = report.coverage["expectations"]
+    assert entry["detail"] != "no hints provided"
+
+
 def test_deprecated_axis_alias_is_accepted_and_stated():
     report = onceover.profile(_dose_frame(), hints={"axis": "dose"})
     assert report.coverage["expectations"]["detail"] != "no hints provided"

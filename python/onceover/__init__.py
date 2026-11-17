@@ -133,7 +133,17 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         subset of the rows \u2014 the rows where the column equals the
         value, or a boolean column's true rows when ``value`` is
         omitted \u2014 and the "group_contrast" pass profiles that
-        subset against the rest of the table, column by column).
+        subset against the rest of the table, column by column), and
+        ``weights`` (numeric columns whose values weight the rows
+        for the "hotspots" pass: with weights declared, the pass
+        also judges each cell it examines by the share of each
+        weight its rows carry against the cell's share of rows, and
+        states both shares naming the weight; several weights may
+        be declared and each is judged on its own. A weight that
+        is not a column of the table, is not numeric, carries
+        negative values, totals zero, or is constant is not
+        applied, and the "hotspots" coverage entry states each
+        case).
         Presentation: ``labels`` (per-column display labels: claims
         and interpretations name the column by its label instead of
         the raw column name, while subjects, evidence, metrics, and
