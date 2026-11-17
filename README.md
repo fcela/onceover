@@ -66,7 +66,7 @@ probability that a claim is correct.
 | What happens within a group? | Conditional rules, decision tables, unexpectedly concentrated combinations, local linear equations | [Rules](docs/book/methodology/rules_tables.ipynb), [hotspots](docs/book/methodology/hotspots.ipynb), [local regimes](docs/book/methodology/local_linear_regimes.ipynb) |
 | How are variables related? | Linear, monotone, and nonlinear dependence; changing associations by period; target shapes and predictor interactions | [Dependence measures](docs/book/methodology/dependence_measures.ipynb), [target shapes](docs/book/methodology/target_shapes.ipynb), [interactions](docs/book/methodology/interactions.ipynb) |
 | Where does behavior change? | Calendar gaps, appended backfills, sustained level/trend/variance changes, temporary excursions, threshold jumps, model-routing drift | [Temporal analysis](docs/book/methodology/temporal_analysis.ipynb), [discontinuities](docs/book/methodology/step_discontinuities.ipynb), [drift](docs/book/methodology/drift.ipynb) |
-| Does the layout hide structure? | Verified long-format layouts and relationships in their wide form; shared row states across column groups | [Long-format reports](docs/book/usage/findings.ipynb), [experimental views](docs/book/methodology/view_clusters.ipynb) |
+| Does the layout hide structure? | Verified long-format layouts and relationships in their wide form; shared row states across column groups | [Long-format reports](docs/book/usage/findings.ipynb), [view and cluster structure](docs/book/methodology/view_clusters.ipynb) |
 
 The [capability guide](docs/book/usage/capabilities.ipynb) connects these
 questions to detector IDs, examples, and the methodological chapters.
@@ -114,14 +114,16 @@ Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 | `deep` | Larger samples and wider searches for those detectors |
 
 Use `detectors=[...]` to replace the default selection with named methods.
-Required resource passes may also run; coverage explains that work. Seven
-detectors are opt-in and run only when named: the experimental `views`
-detector, `changeforest`, and `dates`, `pivot`, `period_associations`,
-`drift`, and `granularity` (a default run records each as skipped in
-coverage).
-Designating `target="response"` adds the target-gated shape pass when using
-the default detector selection; with an explicit list, include
-`target_shapes` yourself.
+Required resource passes may also run; coverage explains that work.
+Thirteen detectors are not in the default set: `row_clusters`
+(experimental), `date_gaps`, `pivot`, `period_associations`, `drift`,
+`granularity`, `distribution_change`, `slice_shifts`, `decision_tables`,
+and `interactions` run only when named, and `target_shapes`, `leakage`,
+and `model_failures` run when named or when a target is designated (a
+default run records each as skipped in coverage).
+Designating `target="response"` adds the target-gated passes
+(`target_shapes`, `leakage`, and `model_failures`) when using the default
+detector selection; with an explicit list, include them yourself.
 
 Hints declare intended structure, including ordering, complete sequences,
 calendar cadence, and panel dimensions. For example:
@@ -149,7 +151,11 @@ ordering, integer sequences, and panel completeness.
 
 Results are deterministic for the same package version, data, and settings
 when neither a deadline nor timing is enabled. `deadline_seconds` is a
-soft limit checked between passes; a running pass completes.
+soft limit checked between passes and at work quanta inside five
+searches — the dependence screen, the hotspots scan, the discontinuities
+pass, the surprises scan, and the duplicate-encodings scan — which can
+stop mid-pass; their coverage entries state how much of the search was
+examined.
 `timing=True` records per-pass elapsed time without changing the findings.
 
 ## Large and wide tables

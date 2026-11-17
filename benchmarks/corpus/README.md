@@ -6,6 +6,12 @@ impressions. Issues #20 (harness), #21 (business pack), #23 (GritBot pack).
 
 ## Layout
 
+The registry holds 57 entries in six packs: business (14), uci (14),
+synthetic (9), crosscat (7), anomaly (7), and gritbot (6). The synthetic
+pack holds generated fixtures and is bundled. The uci pack's 14 entries
+are all test-only: each dataset's data is fetched by its `prepare.py`
+and is not committed.
+
 - `registry.json` — every dataset: pack, mode, license, source, shape,
   content hash (bundled, and for reference datasets), expectations, notes.
 - `data/<pack>/<dataset>/` — `data.csv` (bundled datasets only),
@@ -34,7 +40,7 @@ Every transformation is listed in the dataset's `ATTRIBUTION.md`, and
 
 ## Running
 
-    python benchmarks/corpus/run_benchmarks.py [--pack gritbot|business]
+    python benchmarks/corpus/run_benchmarks.py [--pack business|uci|synthetic|crosscat|anomaly|gritbot]
                                                [--only <dataset-id>]
 
 Bundled datasets are hash-verified against the registry before
