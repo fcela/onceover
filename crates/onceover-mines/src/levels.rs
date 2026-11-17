@@ -379,7 +379,10 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
         .filter(|&ci| {
             matches!(
                 table.cols[ci],
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                TypedCol::I64 { .. }
+                    | TypedCol::U64 { .. }
+                    | TypedCol::F64 { .. }
+                    | TypedCol::Decimal { .. }
             )
         })
         .collect();

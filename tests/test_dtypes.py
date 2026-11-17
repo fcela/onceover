@@ -272,3 +272,60 @@ def test_time_is_not_counted_as_unsupported():
 def test_other_dtypes_still_profile(series):
     rep = onceover.profile(pl.DataFrame({"x": series}), budget="quick")
     assert set(rep.columns) == {"x"}
+
+
+@pytest.mark.parametrize("values", [
+    [str(2**60 + i) for i in range(4)],
+    [str(-(2**60) + i) for i in range(4)],
+    [f"1.{i:018d}" for i in range(4)],
+    [f"-1.{i:018d}" for i in range(4)],
+])
+def test_decimal_integrity_retains_exact_values(values):
+    """Exact integrity must agree with Polars even when f64 merges values (#365)."""
+    from decimal import Decimal
+
+    data = [Decimal(v) for v in values] * 30 + [None] * 5
+    df = pl.DataFrame({"x": data})
+    report = onceover.profile(df, budget="quick")
+    card = report.columns["x"]
+    assert card["distinct"] == df["x"].drop_nulls().n_unique() == 4
+    assert card["null_count"] == 5
+    assert card["card_role"] != "constant"
+    assert "drop_candidate" not in card["action_hints"]
+    assert sorted(v["count"] for v in card["top_values"]) == [30] * 4
+    assert {Decimal(v["value"]) for v in card["top_values"]} == set(data[:-5])
+    duplicates = report.select(type="duplicate_rows")
+    assert len(duplicates) == 1
+    assert duplicates[0]["evidence"][0]["metrics"]["n_redundant"] == df.height - df.unique().height
+    assert not report.select(type="column_ordering")
+    assert not report.verify(df).filter(pl.col("status") == "mismatch").height
+
+
+def test_decimal_sortedness_and_unique_key_are_exact():
+    from decimal import Decimal
+
+    df = pl.DataFrame({"x": [Decimal(2**60 + i) for i in range(120)]})
+    report = onceover.profile(df, budget="quick")
+    assert report.columns["x"]["distinct"] == 120
+    assert report.select(type="uniqueness")
+    assert any("strictly increasing" in f["claim"] for f in report.select(type="column_ordering"))
+    assert not report.verify(df).filter(pl.col("status") == "mismatch").height
+
+
+def test_decimal_dependency_verification_keeps_distinct_determinants():
+    from decimal import Decimal
+
+    df = pl.DataFrame({
+        "x": [Decimal(2**60 + i % 4) for i in range(400)],
+        "label": [f"level_{i % 4}" for i in range(400)],
+    })
+    report = onceover.profile(df, detectors=["functional_dependencies"], max_findings=500)
+    assert report.select(type="functional", target="label", column="x", include_grouped=True)
+
+
+def test_decimal_near_one_does_not_become_an_exact_binary_flag():
+    from decimal import Decimal
+
+    df = pl.DataFrame({"x": [Decimal(0), Decimal("1.000000000000000001")] * 60})
+    report = onceover.profile(df, budget="quick")
+    assert report.columns["x"]["semantic_role"] != "flag"

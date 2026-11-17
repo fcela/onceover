@@ -212,6 +212,10 @@ fn extract_columns(
                     .collect();
                 Some(standardize(name.clone(), raw))
             }
+            TypedCol::Decimal { .. } => {
+                let raw = sample.iter().map(|&r| col.numeric_at(r)).collect();
+                Some(standardize(name.clone(), raw))
+            }
             TypedCol::F64 { vals } => {
                 let raw: Vec<Option<f64>> = sample.iter().map(|&r| vals.at(r)).collect();
                 Some(standardize(name.clone(), raw))

@@ -120,7 +120,7 @@ fn membership(
             };
             vals.iter().map(|v| v.map(|b| b == want)).collect()
         }
-        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } | TypedCol::Decimal { .. } => {
             let Some(GroupValue::Number(x)) = value else {
                 return Err(match value {
                     None => format!(
@@ -519,7 +519,10 @@ pub fn group_contrast(table: &TypedTable, spec: &GroupContrast) -> ContrastOutco
             continue;
         }
         let hit = match tcol {
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+            TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
+            | TypedCol::F64 { .. }
+            | TypedCol::Decimal { .. } => {
                 evaluated += 1;
                 numeric_contrast(&ctx, ci)
             }

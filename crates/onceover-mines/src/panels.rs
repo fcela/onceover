@@ -91,7 +91,11 @@ fn flag_values(table: &TypedTable, col: usize) -> Option<Vec<Option<bool>>> {
 fn flag_shaped(table: &TypedTable, col: usize) -> bool {
     matches!(
         table.cols[col],
-        TypedCol::Bool { .. } | TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+        TypedCol::Bool { .. }
+            | TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
+            | TypedCol::F64 { .. }
+            | TypedCol::Decimal { .. }
     )
 }
 

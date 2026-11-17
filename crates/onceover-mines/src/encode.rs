@@ -66,7 +66,10 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
 
     for (ci, col) in table.cols.iter().enumerate() {
         match col {
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+            TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
+            | TypedCol::F64 { .. }
+            | TypedCol::Decimal { .. } => {
                 let vals: Vec<Option<f64>> = (0..m)
                     .map(|j| col.numeric_at(out.rows[j] as usize))
                     .collect();

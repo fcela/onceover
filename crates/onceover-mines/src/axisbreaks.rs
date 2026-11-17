@@ -1297,9 +1297,10 @@ fn select_primary_axis(
         match &table.cols[i] {
             TypedCol::Date { .. } => Some(AxisKind::Date),
             TypedCol::Datetime { .. } => Some(AxisKind::Datetime),
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
-                Some(AxisKind::Numeric)
-            }
+            TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
+            | TypedCol::F64 { .. }
+            | TypedCol::Decimal { .. } => Some(AxisKind::Numeric),
             TypedCol::Str { .. } | TypedCol::StrOwned { .. } | TypedCol::Bool { .. } => {
                 if ordinals.contains_key(&table.names[i]) {
                     Some(AxisKind::Ordinal)
