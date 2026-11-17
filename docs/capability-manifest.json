@@ -282,6 +282,26 @@
    "purpose": "Non-additive predictor pairs under a fitted target model"
   },
   {
+   "id": "outcome_account",
+   "categories": [
+    "concentration"
+   ],
+   "requires": [],
+   "membership": "on_request",
+   "trigger": "target",
+   "purpose": "The designated outcome's own distribution: center, spread, and range for a numeric outcome; the share of each level for a categorical one, with the declared event's rate when an event is declared"
+  },
+  {
+   "id": "outcome_contrasts",
+   "categories": [
+    "dependencies"
+   ],
+   "requires": [],
+   "membership": "on_request",
+   "trigger": "target",
+   "purpose": "Per-level outcome contrasts for a designated target: each categorical level's event rate (or median, for a numeric outcome) against the pooled outcome, with measured absences stated as nulls in the pointed mode"
+  },
+  {
    "id": "target_shapes",
    "categories": [
     "dependencies"

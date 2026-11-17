@@ -85,6 +85,42 @@ pub struct GroupContrast {
     pub value: Option<serde_json::Value>,
 }
 
+/// A declared meaning for one column: either one text for the
+/// column as a whole, or one text per level of a categorical
+/// column. A gloss cannot be checked against the data; it is
+/// carried into the report's frame account and stated beside the
+/// column in the prose of the pointed pass's findings. An entry
+/// naming a column the table does not have is reported in the
+/// report's `declarations` coverage entry rather than raising an
+/// error.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Gloss {
+    /// What the column means, in the caller's words.
+    Text(String),
+    /// What each level of the column means, keyed by the level's
+    /// label as the profiler renders it.
+    Levels(BTreeMap<String, String>),
+}
+
+impl Gloss {
+    /// The column-level text, when the entry is a plain text.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Gloss::Text(s) => Some(s.as_str()),
+            Gloss::Levels(_) => None,
+        }
+    }
+    /// The declared meaning of one level, when the entry carries
+    /// per-level texts.
+    pub fn level(&self, label: &str) -> Option<&str> {
+        match self {
+            Gloss::Levels(m) => m.get(label).map(String::as_str),
+            Gloss::Text(_) => None,
+        }
+    }
+}
+
 /// Declared structure for one table. Every field is optional; unknown
 /// columns and unusable types are reported in a coverage entry (the
 /// expectations pass's, or `column_exclusions` for the exclusion
@@ -189,6 +225,65 @@ pub struct ProfileHints {
     /// against the rest of the table by the group_contrast pass.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contrast: Option<GroupContrast>,
+    /// Declared meanings, per column: what a column is, in the
+    /// caller's words, optionally with one text per level of a
+    /// categorical column. Metadata, not structure: a gloss cannot
+    /// be checked against the data, so it is carried unchecked —
+    /// recorded in the report's frame account, stated in the prose
+    /// of findings whose subject is the column, and accounted for
+    /// in the report's `declarations` coverage entry.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub gloss: BTreeMap<String, Gloss>,
+    /// Declared units, per column: the unit the column's values
+    /// are measured in ("percent", "euros", "days"). Carried
+    /// unchecked like the gloss; statements about the column
+    /// state the declared unit through the finding subject's
+    /// `unit` field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub units: BTreeMap<String, String>,
+    /// The level of the designated target that counts as the
+    /// event (a string, number, or boolean scalar, matching the
+    /// target column's values as rendered). Partly checked: the
+    /// named level must exist in the target column, and a name
+    /// that does not is reported in the `declarations` coverage
+    /// entry rather than raising an error. With an event declared,
+    /// the outcome contrasts state each level's event rate against
+    /// the pooled event rate; without one they take the weaker
+    /// per-level form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<serde_json::Value>,
+    /// The frame's entity column for panel passes, declared when
+    /// the caller's grain is the authority: the panel passes use
+    /// it instead of the inferred entity. Checked to exist; a name
+    /// that is not a column is reported in the `declarations`
+    /// coverage entry. The `dimensions` key still declares the
+    /// whole grid when the grid itself is the claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
+    /// Columns the caller declares are recorded after the outcome
+    /// (or derived from it): the leakage screen's declared
+    /// suspects. Checked to exist. A declared column that
+    /// determines the target, or nearly does, is stated as a
+    /// declared suspect, ahead of determiners found on strength
+    /// alone; the declared columns are also excluded from the
+    /// predictor pools of the model-failure and predictability
+    /// screens, named in those passes' coverage entries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recorded_after: Vec<String>,
+    /// What the data is for, in the caller's words: one string.
+    /// Carried unchecked into the frame account; selection and
+    /// ranking read it only through the declared questions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// The questions the data serves, in the caller's words.
+    /// Carried unchecked into the frame account. Findings matched
+    /// to a declared question — by the columns the question names
+    /// — are admitted ahead of unmatched findings of equal score,
+    /// and the report's `questions` coverage entry states, per
+    /// declared question, how many findings answer it, including
+    /// zero.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<String>,
     /// Hint keys the caller supplied under their pre-0.8 names
     /// (`axis`, `ordinal`), recorded by the binding that accepted
     /// them so the pipeline can state the rename in coverage. Not
@@ -218,6 +313,13 @@ pub const HINT_KEYS: &[&str] = &[
     "exclude_columns",
     "labels",
     "contrast",
+    "gloss",
+    "units",
+    "event",
+    "entity",
+    "recorded_after",
+    "purpose",
+    "questions",
 ];
 
 impl ProfileHints {
@@ -236,6 +338,13 @@ impl ProfileHints {
             && self.exclude_columns.is_empty()
             && self.labels.is_empty()
             && self.contrast.is_none()
+            && self.gloss.is_empty()
+            && self.units.is_empty()
+            && self.event.is_none()
+            && self.entity.is_none()
+            && self.recorded_after.is_empty()
+            && self.purpose.is_none()
+            && self.questions.is_empty()
     }
 }
 
@@ -470,6 +579,13 @@ mod tests {
                 column: "r".into(),
                 value: None,
             }),
+            gloss: BTreeMap::from([("v".into(), Gloss::Text("the value".into()))]),
+            units: BTreeMap::from([("v".into(), "euros".into())]),
+            event: Some(json!("yes")),
+            entity: Some("r".into()),
+            recorded_after: vec!["z".into()],
+            purpose: Some("deciding".into()),
+            questions: vec!["what drives v?".into()],
             deprecated_keys: Vec::new(),
         };
         let value = serde_json::to_value(&full).unwrap();
@@ -500,6 +616,13 @@ mod tests {
             ("exclude_columns", json!(["x"])),
             ("labels", json!({"v": "value"})),
             ("contrast", json!({"column": "r"})),
+            ("gloss", json!({"v": "the value"})),
+            ("units", json!({"v": "euros"})),
+            ("event", json!("yes")),
+            ("entity", json!("r")),
+            ("recorded_after", json!(["z"])),
+            ("purpose", json!("deciding")),
+            ("questions", json!(["what drives v?"])),
         ];
         assert_eq!(samples.len(), HINT_KEYS.len());
         for (key, value) in samples {
@@ -568,6 +691,32 @@ mod tests {
             ..Default::default()
         };
         assert!(!weights_only.is_empty());
+        let questions_only = ProfileHints {
+            questions: vec!["what drives v?".to_string()],
+            ..Default::default()
+        };
+        assert!(!questions_only.is_empty());
+        let event_only = ProfileHints {
+            event: Some(json!(1)),
+            ..Default::default()
+        };
+        assert!(!event_only.is_empty());
+    }
+
+    #[test]
+    fn gloss_reads_text_and_per_level_entries() {
+        let parsed: ProfileHints = serde_json::from_value(json!({
+            "gloss": {
+                "v": "the value",
+                "g": {"a": "first kind", "b": "second kind"}
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.gloss["v"].text(), Some("the value"));
+        assert_eq!(parsed.gloss["v"].level("a"), None);
+        assert_eq!(parsed.gloss["g"].text(), None);
+        assert_eq!(parsed.gloss["g"].level("b"), Some("second kind"));
+        assert_eq!(parsed.gloss["g"].level("nope"), None);
     }
 
     #[test]

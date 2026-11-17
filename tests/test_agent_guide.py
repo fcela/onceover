@@ -83,12 +83,18 @@ def test_guide_detector_counts_match_the_registry():
 
 
 def test_guide_names_the_target_triggered_passes():
-    # The guide's first section promises three target-triggered
-    # passes by name; a fourth registering fails here until the
+    # The guide's first section promises the target-triggered
+    # passes by name; another registering fails here until the
     # guide is updated.
     registry = _registry()
     target_triggered = {i for i, d in registry.items() if d["trigger"] == "target"}
-    assert target_triggered == {"target_shapes", "leakage", "model_failures"}
+    assert target_triggered == {
+        "outcome_account",
+        "outcome_contrasts",
+        "target_shapes",
+        "leakage",
+        "model_failures",
+    }
     guide = onceover.agent_guide()
     for detector_id in target_triggered:
         assert f"`{detector_id}`" in guide
@@ -141,6 +147,13 @@ def test_every_advertised_hint_key_is_accepted():
         "exclude_columns": ["not_a_column"],
         "labels": {"a": "A"},
         "contrast": {"column": "b", "value": "x"},
+        "gloss": {"a": "a small number"},
+        "units": {"a": "widgets"},
+        "event": "x",
+        "entity": "b",
+        "recorded_after": ["b"],
+        "purpose": "checking the hint surface",
+        "questions": ["does a relate to b?"],
     }
     assert set(benign) == set(onceover.capabilities()["hint_keys"])
     for key, value in benign.items():

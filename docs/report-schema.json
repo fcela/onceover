@@ -866,11 +866,61 @@
           "items": {
             "$ref": "#/$defs/frameDominant"
           }
+        },
+        "declarations": {
+          "$ref": "#/$defs/declaredMetadata"
         }
       },
       "required": [
         "roles"
       ]
+    },
+    "declaredMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gloss": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
+        "units": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "event": true,
+        "entity": {
+          "type": "string"
+        },
+        "recorded_after": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
     "frameColumnRole": {
       "type": "object",

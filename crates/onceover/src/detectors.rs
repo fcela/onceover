@@ -172,6 +172,8 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // matched reference statement. The record is
         // docs/benchmarks/2026-11-16-detector-audit.md.
         make("interactions", vec![Dependencies], &["predictability"], OnRequest, Always, "Non-additive predictor pairs under a fitted target model"),
+        make("outcome_account", vec![Concentration], &[], OnRequest, Target, "The designated outcome's own distribution: center, spread, and range for a numeric outcome; the share of each level for a categorical one, with the declared event's rate when an event is declared"),
+        make("outcome_contrasts", vec![Dependencies], &[], OnRequest, Target, "Per-level outcome contrasts for a designated target: each categorical level's event rate (or median, for a numeric outcome) against the pooled outcome, with measured absences stated as nulls in the pointed mode"),
         make("target_shapes", vec![Dependencies], &[], OnRequest, Target, "Line, curve, and step comparisons for a designated numeric target"),
         make("leakage", vec![Dependencies], &[], OnRequest, Target, "A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it"),
         make("model_failures", vec![Dependencies], &[], OnRequest, Target, "Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error"),
@@ -256,7 +258,8 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // drift, granularity, distribution_change, slice_shifts,
         // decision_tables, interactions)
         // run only when explicitly requested via detectors=[...];
-        // the target-triggered detectors (target_shapes, leakage,
+        // the target-triggered detectors (outcome_account,
+        // outcome_contrasts, target_shapes, leakage,
         // model_failures) run only when a target is designated
         // (the pipeline adds them then) or when explicitly
         // requested together with a target.
@@ -299,10 +302,10 @@ mod tests {
     #[test]
     fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 43 registered: 30 in the default set (28 always-triggered
+        // 45 registered: 30 in the default set (28 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 13 on request (10 always-triggered, 3 target-triggered).
-        assert_eq!(builtin_detectors().len(), 43);
+        // 15 on request (10 always-triggered, 5 target-triggered).
+        assert_eq!(builtin_detectors().len(), 45);
         assert_eq!(active.len(), 30);
         for id in [
             "row_clusters",
@@ -315,6 +318,8 @@ mod tests {
             "slice_shifts",
             "decision_tables",
             "interactions",
+            "outcome_account",
+            "outcome_contrasts",
             "target_shapes",
             "leakage",
             "model_failures",
@@ -345,10 +350,10 @@ mod tests {
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
         assert_eq!(membership.get("DefaultSet"), Some(&30));
-        assert_eq!(membership.get("OnRequest"), Some(&13));
+        assert_eq!(membership.get("OnRequest"), Some(&15));
         assert_eq!(trigger.get("Always"), Some(&38));
         assert_eq!(trigger.get("Hints"), Some(&2));
-        assert_eq!(trigger.get("Target"), Some(&3));
+        assert_eq!(trigger.get("Target"), Some(&5));
     }
 
     #[test]
