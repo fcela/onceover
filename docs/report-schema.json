@@ -1338,7 +1338,7 @@
   "$id": "docs/report-schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.7 adds the associations table: a top-level `associations` list carrying every pair the association screens tested, with effect sizes, raw p-values, Benjamini-Hochberg q-values, and reporting tiers. Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
+  "description": "The JSON report produced by onceover.profile (report.data / report.to_json()). Schema 0.8 renames parts of the vocabulary without changing the envelope: the column card's role field is `card_role` (its value `identifier` becomes `unique`, and the row-position value is `row_number`), the `intervals` category becomes `anomalies`, the facet field `evidence` becomes `support`, the finding types `residual_level`, `distribution_shift` and `distribution_change` become `residual_shift`, `predictor_drift` and `joint_distribution_change`, the `functional` relation splits into `functional`, `affine` and `arithmetic_identity`, and the finding types `unexamined_columns` and `unscanned_series` are removed (their content is stated in coverage). Schema 0.7 adds the associations table: a top-level `associations` list carrying every pair the association screens tested, with effect sizes, raw p-values, Benjamini-Hochberg q-values, and reporting tiers. Schema 0.6 adds verified relationship families: a top-level `grouped_findings` list (statements grouped under a family lead; each carries `grouped_under`, and the lead carries `grouped_members`) and the `families` / `grouped_statements` counts on `selection`; grouped statements no longer appear in `findings`. The envelope \u2014 top-level sections, the finding object, evidence records, column cards, coverage \u2014 is fixed by this schema. Two maps are open by design: evidence `metrics` and specification `definition`, whose keys are defined per finding type in docs/findings.md (evidence payloads are bespoke per type; there is no shared envelope).",
   "properties": {
     "columns": {
       "additionalProperties": {
@@ -1403,6 +1403,6 @@
     "selection",
     "coverage"
   ],
-  "title": "onceover profile report (schema_version 0.7)",
+  "title": "onceover profile report (schema_version 0.8)",
   "type": "object"
 }
