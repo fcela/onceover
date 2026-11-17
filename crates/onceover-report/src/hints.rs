@@ -125,6 +125,19 @@ pub struct ProfileHints {
     /// Declared measure columns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub measures: Vec<String>,
+    /// Declared weight columns: numeric columns whose values
+    /// weight the rows for the hotspots pass. With weights
+    /// declared, the pass also judges each cell it examines by
+    /// the share of each weight its rows carry against the
+    /// cell's share of rows, and states both shares naming the
+    /// weight. A column can be both a measure and a weight.
+    /// Entries that cannot be applied — a name that is not a
+    /// column, a non-numeric column, a column carrying negative
+    /// values, a zero total, or a constant column (whose shares
+    /// restate row shares) — are not applied and are stated in
+    /// the hotspots coverage entry rather than raising an error.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weights: Vec<String>,
     /// Declared semantic roles, per column: one of the frame model's
     /// role vocabulary (identifier, row_number, timestamp, timestamp_part,
     /// dimension, flag, measure, text). An entry overrides the inferred
@@ -199,6 +212,7 @@ pub const HINT_KEYS: &[&str] = &[
     "cadence",
     "dimensions",
     "measures",
+    "weights",
     "roles",
     "hierarchies",
     "exclude_columns",
@@ -216,6 +230,7 @@ impl ProfileHints {
             && self.cadence.is_empty()
             && self.dimensions.is_empty()
             && self.measures.is_empty()
+            && self.weights.is_empty()
             && self.roles.is_empty()
             && self.hierarchies.is_empty()
             && self.exclude_columns.is_empty()
@@ -446,6 +461,7 @@ mod tests {
             cadence: BTreeMap::from([("d".into(), Cadence::Days(1))]),
             dimensions: vec!["r".into()],
             measures: vec!["v".into()],
+            weights: vec!["w".into()],
             roles: BTreeMap::from([("v".into(), "measure".into())]),
             hierarchies: vec![vec!["a".into(), "b".into()]],
             exclude_columns: vec!["x".into()],
@@ -478,6 +494,7 @@ mod tests {
             ("cadence", json!({"d": 1})),
             ("dimensions", json!(["r"])),
             ("measures", json!(["v"])),
+            ("weights", json!(["w"])),
             ("roles", json!({"v": "measure"})),
             ("hierarchies", json!([["a", "b"]])),
             ("exclude_columns", json!(["x"])),
@@ -546,6 +563,11 @@ mod tests {
             ..Default::default()
         };
         assert!(!order_only.is_empty());
+        let weights_only = ProfileHints {
+            weights: vec!["w".to_string()],
+            ..Default::default()
+        };
+        assert!(!weights_only.is_empty());
     }
 
     #[test]

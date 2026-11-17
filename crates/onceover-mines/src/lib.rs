@@ -63,7 +63,7 @@ pub use gbm::{
     screen as screen_predictability, screen_missing_indicator, IndicatorScreen, ScreenConfig,
     ScreenOutcome, TargetResult,
 };
-pub use hotspots::{hotspots, HotspotConfig, HotspotsOutcome};
+pub use hotspots::{hotspots, HotspotConfig, HotspotsOutcome, WeightSeries};
 pub use hstat::{profile_interactions, HConfig};
 pub use ident::identities;
 pub use ident::multiterm_identities;

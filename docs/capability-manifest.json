@@ -414,7 +414,7 @@
    "requires": [],
    "membership": "default_set",
    "trigger": "always",
-   "purpose": "Combinations concentrated beyond their marginal frequencies"
+   "purpose": "Combinations concentrated beyond their marginal frequencies, in rows or in a declared weight"
   },
   {
    "id": "numeric_dependence",

@@ -19,13 +19,14 @@ A component is a module with:
 Adding a component is one module plus one line in COMPONENTS.
 """
 from . import (cost, invariance, permuted, planted, redundancy, reference,
-               truth)
+               truth, weighted)
 
 COMPONENTS = [
     planted,
     permuted,
     invariance,
     reference,
+    weighted,
     redundancy,
     truth,
     cost,

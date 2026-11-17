@@ -32,11 +32,11 @@
    "kind": "relates", "columns": ["cnt"], "columns_any": ["yr", "dteday", "instant"],
    "patterns": ["\\bcnt\\b", "\\byr\\b|dteday|instant|trend"],
    "check": "pl.col('cnt').filter(pl.col('yr') == 1).mean() > pl.col('cnt').filter(pl.col('yr') == 0).mean()"},
-  {"id": "cnt-rush-hour-concentration", "tier": "should", "provisional": true,
+  {"id": "cnt-rush-hour-concentration", "tier": "should", "hinted_tier": "must", "provisional": true,
    "text": "rentals concentrate in rush hours on working days: 35.9% of all rentals sit on 17.2% of rows (2.09x their row share)",
    "kind": "concentration", "columns": ["cnt", "workingday", "hr"],
    "patterns": ["\\bcnt\\b", "workingday|working day", "rush|hour|concentrat"],
-   "note": "Measured: the cell workingday = 1 and hr in (7, 8, 9, 17, 18, 19) holds 2,983 of 17,379 rows (17.2%) and 1,181,285 of 3,292,679 rentals (35.9%), 2.09x its row share. The concentration is measure-weighted: it lives in the cnt values over the cell, not in the cell's row count (row counts over the (workingday, hr) grid track independence almost exactly). No current pass aggregates a measure over categorical cells outside panel structure (issue #329), so no finding states this yet; the miss is the measurement.",
+   "note": "Measured: the cell workingday = 1 and hr in (7, 8, 9, 17, 18, 19) holds 2,983 of 17,379 rows (17.2%) and 1,181,285 of 3,292,679 rentals (35.9%), 2.09x its row share. The concentration is measure-weighted: it lives in the cnt values over the cell, not in the cell's row count (row counts over the (workingday, hr) grid track independence almost exactly). In the unhinted runs no pass states it: the hotspots pass counts rows, and this concentration lives in the cnt values. With cnt declared through the weights hint, the weighted scan states the cell (issue #329); the gate's weighted component scores this statement as must-tier in that hinted run, and its miss in the unhinted runs is the measurement.",
    "check": "(((pl.col('cnt').filter(((pl.col('workingday') == 1) & (pl.col('hr').is_in([7, 8, 9, 17, 18, 19])))).sum() / pl.col('cnt').sum()) > 0.30) & ((pl.col('cnt').filter(((pl.col('workingday') == 1) & (pl.col('hr').is_in([7, 8, 9, 17, 18, 19])))).sum() / pl.col('cnt').sum()) > 1.8 * ((pl.col('workingday') == 1) & (pl.col('hr').is_in([7, 8, 9, 17, 18, 19]))).mean()))"}
  ]
 }
