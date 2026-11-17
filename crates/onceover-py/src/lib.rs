@@ -179,11 +179,20 @@ fn hint_keys() -> Vec<String> {
         .collect()
 }
 
+/// The finding taxonomy as a JSON string: every pattern with its
+/// type, derived category, and facets, plus the registered forms
+/// and the facet vocabularies.
+#[pyfunction]
+fn taxonomy() -> String {
+    onceover_report::taxonomy_json()
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(profile_py, m)?)?;
     m.add_function(wrap_pyfunction!(available_detectors, m)?)?;
     m.add_function(wrap_pyfunction!(hint_keys, m)?)?;
+    m.add_function(wrap_pyfunction!(taxonomy, m)?)?;
     m.add_class::<ProfileReportPy>()?;
     Ok(())
 }

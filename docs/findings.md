@@ -1,5 +1,13 @@
 # Finding schema 0.8
 
+<!-- Parts of this file are generated. The blocks between
+`<!-- generated:NAME -->` markers are rendered by
+`scripts/findings_doc.py` from the detector registry and the
+finding taxonomy — the same lists validation enforces — and
+are checked fresh by a test in the standard gate; do not edit
+them by hand. Every other part of the file is hand-maintained
+prose, which the generator preserves verbatim. -->
+
 A finding describes a statement about the data. Detectors supply evidence for the
 statement. Detector names do not determine the public taxonomy.
 
@@ -51,6 +59,24 @@ path.
 
 ## Categories and statement definitions
 
+<!-- generated:taxonomy-index -->
+| Category | Types |
+|---|---|
+| `missingness` | `missing_values`, `sentinel_values`, `predictable_missingness` |
+| `concentration` | `value_concentration`, `modal_share`, `spike_cells`, `hotspot`, `concentration_over_time`, `outlier_entity` |
+| `column_roles` | `categorical_role`, `identifier_role`, `long_format`, `duplicate_encoding` |
+| `uniqueness` | `uniqueness` |
+| `duplicates` | `duplicate_rows`, `near_duplicate_rows` |
+| `formats` | `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` |
+| `changes` | `series_structure`, `residual_shift`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `predictor_drift`, `joint_distribution_change`, `slope_break`, `regime_contrast`, `spike_contrast`, `ordered_partition`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity` |
+| `anomalies` | `row_inconsistency`, `interval_variation`, `extreme_value`, `categorical_outlier` |
+| `dependencies` | `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure` |
+| `conditional_rules` | `if_then` |
+| `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift` |
+| `gaps` | `gap`, `sequence_gap`, `missing_combinations`, `partial_period` |
+| `ordering` | `column_ordering` |
+<!-- /generated:taxonomy-index -->
+
 | Category | Type or required definition | Meaning |
 |---|---|---|
 | `missingness` | Missing counts and scope in evidence | Missing observations within recorded rows: a statement for each column missing on at least 1% of rows, with the pattern behind it when one clears a Bonferroni bar (a grouping level, a numeric threshold, or a point on the time axis, from `pattern`, `pattern_column` and the rate metrics in the evidence), and blocks of columns missing on the same rows (`pattern`: `co_missing`), from the `missingness` detector; also, from the same detector, a statement when a column's missingness is predictable from the other columns (`predictable_missingness`): a gradient-boosting model of the column's missingness indicator, stated when its holdout AUC reaches 0.65, with the driver columns and their gain shares in the evidence; also sentinel values standing in for missing data — one implausible value repeated in a narrow row window (the `sentinels` detector; value, count, window, and the column mean with and without it in the evidence) |
@@ -97,6 +123,60 @@ sources against the list. The forms in use include `value_mapping`,
 algorithm can support a predictive dependency without establishing
 an exact functional constraint. A high predictive score never
 upgrades a statement to an exact constraint.
+
+<!-- generated:forms -->
+| Form | Type | Definition |
+|---|---|---|
+| `value_mapping` | `functional` | Each combination of the inputs' values carries one target value, up to the recorded violations. |
+| `affine` | `affine` | target = a * input + b, fitted by least squares and holding within tolerance. |
+| `sum` | `arithmetic_identity` | The target equals the sum of the inputs. |
+| `difference` | `arithmetic_identity` | The target equals the inputs combined with unit coefficients and signs (a difference of terms). |
+| `product` | `arithmetic_identity` | The target equals the product of the inputs. |
+| `ratio` | `arithmetic_identity` | The target equals the ratio of the inputs. |
+| `linear_combination` | `arithmetic_identity` | The target equals a linear combination of the inputs with the recorded coefficients, holding within tolerance. |
+| `piecewise_linear` | `predictive` | The dependence of the target on the input is fitted in segments by a piecewise-linear surrogate. |
+| `interaction_h` | `predictive` | The dependence is stated through the Friedman-Popescu interaction statistic H for the named pair of inputs. |
+| `step_shape` | `predictive` | The fitted dependence of the target on the input is a step function. |
+| `curved_shape` | `predictive` | The fitted dependence of the target on the input is a smooth curve. |
+| `pairwise_order` | `order_constraint` | One column is at most the other on every row, compared row by row. |
+| `pairwise_order` | `order_violation` | The rows where one column exceeds the other, compared row by row. |
+| `period_split` | `period_association` | The association is stated separately in two periods of the time axis. |
+| `recursive_partition` | `ordered_partition` | The ordered axis is split recursively where the target's level changes. |
+| `regime_contrast` | `regime_contrast` | The target's level in one regime of the ordered axis against another regime. |
+| `spike_contrast` | `spike_contrast` | The target's level in spike periods against the surrounding periods. |
+| `monotone` | `axis_shape` | The binned target rises (or falls) monotonically along the ordered axis. |
+| `monotone_with_reversal_blocks` | `axis_shape` | The binned target is monotone along the ordered axis apart from recorded reversal blocks. |
+| `non_monotone_reversal` | `axis_shape` | The binned target reverses direction along the ordered axis. |
+| `saturating` | `axis_shape` | The binned target rises along the ordered axis and then flattens, the shape confirmed on bootstrap resamples. |
+| `rises_then_flattens` | `axis_shape` | The binned target rises along the ordered axis and then flattens (the point-estimate shape, without bootstrap confirmation). |
+| `pivot` | `long_format` | The frame is a pivot of a wider table: an attribute column's levels and a measure column's values. |
+| `excursion` | `transient_excursion` | A stretch of periods where the series leaves its typical band and returns. |
+| `step` | `step_discontinuity` | The series' level jumps at one point of the ordered axis and stays at the new level. |
+| `drift` | `predictor_drift` | A predictor's distribution in a recent window against its distribution in an earlier window. |
+| `duplicate_encoding` | `duplicate_encoding` | Two columns encode the same values under a value mapping. |
+| `rollup` | `duplicate_encoding` | One column is the rollup of another under a mapping (continents of countries, categories of items). |
+| `hierarchy` | `duplicate_encoding` | The mapping is the declared hierarchy; the statement leads its verified family of mappings. |
+| `isolation_gap` | `extreme_value` | The value is separated from the rest of the column by a wide empty gap. |
+| `tail_shift` | `slice_shift` | The slice's rows sit in the target's upper tail at a higher rate than the table's rows. |
+| `median_shift` | `slice_shift` | The slice's median of the target against the table-wide median. |
+| `level_share` | `slice_shift` | The slice's share of one level of a categorical target against its share of rows. |
+| `location` | `level_contrast` | The level's median of the measure differs from the rest's median. |
+| `scale` | `level_contrast` | The level's interquartile range of the measure differs from the rest's. |
+| `location_scale` | `level_contrast` | The level's median and interquartile range of the measure both differ from the rest's. |
+| `constant_multiple` | `level_contrast` | The level's values sit at a near-constant multiple of the rest's distribution. |
+| `bias` | `model_failure` | The model's residuals in the slice are biased: their mean differs from zero beyond the stated bar. |
+| `accuracy` | `model_failure` | The model's error in the slice exceeds its table-wide error beyond the stated bar. |
+| `absorbing_state` | `one_way_flag` | The flag switches on within entities and never switches off. |
+| `entry_block` | `entry_block` | A block of entities first appears in one period of the panel. |
+| `exit_block` | `exit_block` | A block of entities last appears in one period of the panel. |
+| `first_activity` | `first_activity` | Entities first become active on the measure after their first observed period. |
+| `per_period_top_share` | `concentration_over_time` | The share of the measure held by the top entities in each period. |
+| `entity_total_tail` | `outlier_entity` | The entity's total of the measure sits in the tail of the entity totals. |
+| `nominal_pair` | `statistical` | The association of two categorical columns. |
+| `mixed_pair` | `statistical` | The association of a categorical column and a numeric column. |
+| `reversal` | `conditioned_association` | The pooled association reverses direction within every usable level of the stratifier. |
+| `vanishing` | `conditioned_association` | The pooled association is absent within the stratifier's levels. |
+<!-- /generated:forms -->
 
 When the pivot pass verifies a long-format frame, the relationships
 between the attribute's levels exist only in the pivoted wide form, so
@@ -194,6 +274,7 @@ category is derived from the facets by a fixed table (checked by
 two never silently disagree. The design and the full derivation table
 are in `docs/taxonomy-v1-design.md`.
 
+<!-- generated:facet-fields -->
 | Field | Values |
 |---|---|
 | `scope` | `column`, `columns`, `rows`, `sequence`, `frame` — what the statement ranges over |
@@ -203,57 +284,51 @@ are in `docs/taxonomy-v1-design.md`.
 | `temporality` | `atemporal`, `ordered` (about an ordering), `change_across_segments` (compares segments of an ordering) |
 | `quality_dimension` | `completeness`, `uniqueness`, or `validity`, present only on data-quality findings |
 | `status` | `regularity` (a structure that holds) or `deviation` (a departure from an expectation) |
+<!-- /generated:facet-fields -->
 
 Facets by finding type (a dash is an absent `quality_dimension`):
 
+<!-- generated:facets-by-type -->
 | Type | Scope | Object | Support | Conditionality | Temporality | Quality | Status |
 |---|---|---|---|---|---|---|---|
-| `missing_values`, `sentinel_values` | column | distribution | exact | unconditional | atemporal | completeness | deviation |
-| `predictable_missingness` | column | distribution | model_based | unconditional | atemporal | completeness | regularity |
-| `value_concentration`, `modal_share`, `spike_cells` | column | distribution | exact | unconditional | atemporal | — | regularity |
-| `concentration_over_time`, `outlier_entity` | columns | distribution | exact | unconditional | atemporal | — | regularity |
-| `hotspot` | columns | distribution | approximate | unconditional | atemporal | — | regularity |
-| `categorical_role`, `identifier_role` | column | role | inferred | unconditional | atemporal | — | regularity |
-| `long_format` | frame | role | inferred | unconditional | atemporal | — | regularity |
-| `duplicate_encoding` | columns | relation | exact | unconditional | atemporal | — | regularity |
-| `uniqueness` | column or columns | relation | exact | unconditional | atemporal | uniqueness | regularity |
-| `duplicate_rows`, `near_duplicate_rows` | rows | structure | exact | unconditional | atemporal | uniqueness | deviation |
-| `format_variation`, `boundary_mass`, `content_anomaly` | column | distribution | exact | unconditional | atemporal | validity | deviation |
-| `heaping`, `digit_preference`, `benford_deviation` | column | distribution | approximate | unconditional | atemporal | validity | deviation |
-| `functional` | columns | relation | exact, or approximate when the mapping has violations | unconditional | atemporal | — | regularity |
-| `affine`, `arithmetic_identity` | columns | relation | approximate | unconditional | atemporal | — | regularity |
-| `order_constraint` | columns | relation | exact, or approximate when the order has violations | unconditional | atemporal | — | regularity |
-| `order_violation` | columns | relation | approximate | unconditional | atemporal | — | regularity |
-| `predictive` | columns | relation | model_based | unconditional; `segment_conditioned` in the piecewise form | atemporal | — | regularity |
-| `model_failure` | columns | relation | model_based | segment_conditioned | atemporal | — | regularity |
-| `if_then` | columns | relation | exact, or approximate when the rule has violations | value_conditioned | atemporal | — | regularity |
-| `statistical` | columns | relation | approximate | unconditional | atemporal | — | regularity |
-| `period_association` | columns | relation | approximate | segment_conditioned | change_across_segments | — | regularity |
-| `group_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
-| `conditioned_association` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
-| `slice_shift` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
-| `level_contrast` | columns | relation | approximate | segment_conditioned | atemporal | — | regularity |
-| `axis_shape` | columns | relation | approximate | unconditional | ordered | — | regularity |
-
-| `gap`, `sequence_gap` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
-| `partial_period` | sequence | structure | exact | unconditional | ordered | completeness | deviation |
-| `missing_combinations` | columns | structure | exact | unconditional | atemporal | completeness | deviation |
-| `interval_variation` | sequence | distribution | exact | unconditional | ordered | — | deviation |
-| `extreme_value` | column | distribution | exact | unconditional; `value_conditioned` within a categorical subset | atemporal | — | deviation |
-| `categorical_outlier` | columns | distribution | approximate | value_conditioned | atemporal | — | deviation |
-| `column_ordering` | column | structure | exact | unconditional | ordered | — | regularity |
-| `residual_shift`, `level_shift`, `trend_change`, `variance_change` | sequence | temporal_behaviour | model_based | unconditional | change_across_segments | — | regularity |
-| `slope_break`, `regime_contrast` | sequence | temporal_behaviour | model_based | unconditional | change_across_segments | — | regularity |
-| `spike_contrast` | sequence | temporal_behaviour | approximate | unconditional | change_across_segments | — | deviation |
-| `row_inconsistency` | columns | distribution | exact | unconditional | atemporal | — | deviation |
-| `transient_excursion` | sequence | temporal_behaviour | approximate | unconditional | change_across_segments | — | deviation |
-| `step_discontinuity` | columns | relation | approximate | unconditional | atemporal | — | deviation |
-| `predictor_drift` | columns | distribution | model_based | unconditional | change_across_segments | — | regularity |
-| `joint_distribution_change` | sequence | distribution | model_based | unconditional | change_across_segments | — | regularity |
-| `ordered_partition` | sequence | temporal_behaviour | model_based | segment_conditioned | change_across_segments | — | regularity |
-| `one_way_flag` | columns | temporal_behaviour | exact | unconditional | ordered | — | regularity |
-| `series_structure` | column | temporal_behaviour | approximate | unconditional | ordered | — | regularity |
-| `entry_block`, `exit_block`, `first_activity` | columns | temporal_behaviour | exact | unconditional | ordered | — | regularity |
+| `missing_values`, `sentinel_values` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | `completeness` | `deviation` |
+| `predictable_missingness` | `column` | `distribution` | `model_based` | `unconditional` | `atemporal` | `completeness` | `regularity` |
+| `value_concentration`, `modal_share`, `spike_cells` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+| `hotspot` | `columns` | `distribution` | `approximate` | `unconditional` | `atemporal` | — | `regularity` |
+| `categorical_role`, `identifier_role` | `column` | `role` | `inferred` | `unconditional` | `atemporal` | — | `regularity` |
+| `uniqueness` | `column` or `columns` | `relation` | `exact` | `unconditional` | `atemporal` | `uniqueness` | `regularity` |
+| `duplicate_rows`, `near_duplicate_rows` | `rows` | `structure` | `exact` | `unconditional` | `atemporal` | `uniqueness` | `deviation` |
+| `format_variation`, `boundary_mass`, `content_anomaly` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | `validity` | `deviation` |
+| `heaping`, `digit_preference`, `benford_deviation` | `column` | `distribution` | `approximate` | `unconditional` | `atemporal` | `validity` | `deviation` |
+| `series_structure` | `column` | `temporal_behaviour` | `approximate` | `unconditional` | `ordered` | — | `regularity` |
+| `row_inconsistency` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `deviation` |
+| `functional` | `columns` | `relation` | exact, or approximate when the mapping has violations | `unconditional` | `atemporal` | — | `regularity` |
+| `affine`, `arithmetic_identity`, `leakage_signature`, `statistical` | `columns` | `relation` | `approximate` | `unconditional` | `atemporal` | — | `regularity` |
+| `predictive` | `columns` | `relation` | `model_based` | `unconditional`; `segment_conditioned` in the piecewise form | `atemporal` | — | `regularity` |
+| `order_constraint` | `columns` | `relation` | exact, or approximate when the order has violations | `unconditional` | `atemporal` | — | `regularity` |
+| `order_violation` | `columns` | `relation` | approximate | `unconditional` | `atemporal` | — | `regularity` |
+| `model_failure` | `columns` | `relation` | `model_based` | `segment_conditioned` | `atemporal` | — | `regularity` |
+| `if_then` | `columns` | `relation` | exact, or approximate when the rule has violations | `value_conditioned` | `atemporal` | — | `regularity` |
+| `period_association` | `columns` | `relation` | `approximate` | `segment_conditioned` | `change_across_segments` | — | `regularity` |
+| `gap`, `sequence_gap`, `partial_period` | `sequence` | `structure` | `exact` | `unconditional` | `ordered` | `completeness` | `deviation` |
+| `missing_combinations` | `columns` | `structure` | `exact` | `unconditional` | `atemporal` | `completeness` | `deviation` |
+| `interval_variation` | `sequence` | `distribution` | `exact` | `unconditional` | `ordered` | — | `deviation` |
+| `column_ordering` | `column` | `structure` | `exact` | `unconditional` | `ordered` | — | `regularity` |
+| `residual_shift`, `level_shift`, `trend_change`, `variance_change`, `slope_break`, `regime_contrast` | `sequence` | `temporal_behaviour` | `model_based` | `unconditional` | `change_across_segments` | — | `regularity` |
+| `long_format` | `frame` | `role` | `inferred` | `unconditional` | `atemporal` | — | `regularity` |
+| `extreme_value` | `column` | `distribution` | `exact` | `unconditional`; `value_conditioned` within a categorical subset | `atemporal` | — | `deviation` |
+| `categorical_outlier` | `columns` | `distribution` | `approximate` | `value_conditioned` | `atemporal` | — | `deviation` |
+| `transient_excursion`, `spike_contrast` | `sequence` | `temporal_behaviour` | `approximate` | `unconditional` | `change_across_segments` | — | `deviation` |
+| `step_discontinuity` | `columns` | `relation` | `approximate` | `unconditional` | `atemporal` | — | `deviation` |
+| `duplicate_encoding` | `columns` | `relation` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+| `predictor_drift` | `columns` | `distribution` | `model_based` | `unconditional` | `change_across_segments` | — | `regularity` |
+| `joint_distribution_change` | `sequence` | `distribution` | `model_based` | `unconditional` | `change_across_segments` | — | `regularity` |
+| `axis_shape` | `columns` | `relation` | `approximate` | `unconditional` | `ordered` | — | `regularity` |
+| `ordered_partition` | `sequence` | `temporal_behaviour` | `model_based` | `segment_conditioned` | `change_across_segments` | — | `regularity` |
+| `one_way_flag`, `entry_block`, `exit_block`, `first_activity` | `columns` | `temporal_behaviour` | `exact` | `unconditional` | `ordered` | — | `regularity` |
+| `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
+| `concentration_over_time`, `outlier_entity` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+<!-- /generated:facets-by-type -->
 
 Consumers can filter on facets with `report.select(...)` (one keyword
 per facet) and read them as columns of `report.findings_frame()`.
@@ -1186,17 +1261,63 @@ report = onceover.profile(df, detectors=["covering_rules", "association_rules"],
 
 Each registry entry lists its ID, produced categories, resource dependencies,
 and two activation fields: `membership` — `default_set` or `on_request` —
-and `trigger` — `always`, `hints`, or `target`. The default set has 30
-of the 43 registered detectors. Thirteen are on request and run only when
-named in `detectors`: `row_clusters` (experimental),
-`distribution_change`, `slice_shifts`, `date_gaps`, `pivot`,
-`period_associations`, `drift`, `granularity`, `decision_tables`,
-`interactions`, `target_shapes`,
-`leakage`, and `model_failures` — the 2026-11-02 detector battery
-measured five of them producing no findings in 40 runs over 20
-datasets, so a default run no longer spends time or report space on
-them; it records each as skipped in coverage, naming it on-request
-(the benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
+and `trigger` — `always`, `hints`, or `target`.
+
+<!-- generated:detectors -->
+The default set has 30 of the 43 registered detectors; the other 13 run only when named in `detectors`.
+
+| Detector | Categories | Membership | Trigger | Requires | Purpose |
+|---|---|---|---|---|---|
+| `column_profile` | `missingness`, `concentration`, `column_roles`, `formats` | `default_set` | `always` | — | Column summaries, role suggestions, missingness, concentration, string formats |
+| `row_duplicates` | `duplicates` | `default_set` | `always` | — | Repeated rows under the stated comparison and missing-value policy |
+| `keys` | `uniqueness` | `default_set` | `always` | — | Single-column, composite, and nearly unique keys |
+| `pivot` | `column_roles` | `on_request` | `always` | — | Verified long layout and relationships in its wide form |
+| `functional_dependencies` | `dependencies` | `default_set` | `always` | — | Exact or approximate value mappings, including multi-column determinants |
+| `order_constraints` | `dependencies` | `default_set` | `always` | — | Pairwise order between two columns (a <= b), exact or with counted violations |
+| `duplicate_encodings` | `column_roles` | `default_set` | `always` | — | Alternative labels for a grouping and finer-to-coarser rollups |
+| `sortedness` | `ordering` | `default_set` | `always` | — | Order in the row sequence and late appended backfills |
+| `granularity` | `formats` | `on_request` | `always` | — | Changes between fractional and integer-valued recording |
+| `sentinels` | `missingness` | `default_set` | `always` | — | Repeated, windowed candidate missing-value codes |
+| `boundary_mass` | `formats` | `default_set` | `always` | — | Mass piled at a numeric column's minimum or maximum, and interior mass points in zero-inflated columns |
+| `missingness` | `missingness` | `default_set` | `always` | — | Each column's missing rate, the grouping level, threshold, or time point it follows, and columns missing on the same rows |
+| `content_anomalies` | `formats` | `default_set` | `always` | — | What text columns hold (numbers, dates, recognized formats), label variants and likely misspellings, repeated extremes, stray signs, zero inflation, separated modes, and far-out dates |
+| `series` | `gaps`, `changes` | `default_set` | `always` | — | Absent steps on the time axis; trend, cycle and persistence of each measure; grouping levels that appear, end or shift share over time |
+| `row_consistency` | `duplicates`, `anomalies` | `default_set` | `always` | `numeric_dependence` | Rows repeating another on every column but one, rows far from the line two tight columns follow, and rows with two columns' values swapped |
+| `digit_fingerprints` | `formats` | `default_set` | `always` | — | Heaping, terminal-digit preferences, and eligible Benford deviations |
+| `date_gaps` | `gaps`, `anomalies` | `on_request` | `always` | — | Inferred calendar gaps and interval irregularity |
+| `expectations` | `gaps`, `ordering` | `default_set` | `hints` | — | Declared sequences, calendars, ordering, and panel completeness |
+| `panel_coverage` | `gaps` | `default_set` | `always` | — | Per-period row and entity volume on the time axis, against the typical period |
+| `group_contrast` | `associations` | `default_set` | `hints` | — | How one declared subset of the rows differs from the rest of the table |
+| `level_contrasts` | `associations` | `default_set` | `always` | — | Each level of a categorical column against the pooled rest on each numeric measure: location, scale, and constant-multiple contrasts, plus the date axis's calendar parts |
+| `predictability` | `dependencies` | `default_set` | `always` | — | Predictability of eligible columns from the other columns |
+| `decision_tables` | `dependencies` | `on_request` | `always` | `predictability` | Compact predictive tables selected by cross-validation |
+| `covering_rules` | `conditional_rules` | `default_set` | `always` | `predictability` | Multi-condition rules for categorical targets |
+| `regimes` | `dependencies`, `changes` | `default_set` | `always` | `predictability` | Local linear equations and dated reference-model residual shifts |
+| `interactions` | `dependencies` | `on_request` | `always` | `predictability` | Non-additive predictor pairs under a fitted target model |
+| `target_shapes` | `dependencies` | `on_request` | `target` | — | Line, curve, and step comparisons for a designated numeric target |
+| `leakage` | `dependencies` | `on_request` | `target` | — | A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it |
+| `model_failures` | `dependencies` | `on_request` | `target` | — | Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error |
+| `breaks` | `changes`, `gaps` | `default_set` | `always` | — | Sustained level, trend, variance changes, and transient excursions |
+| `ordered_partitions` | `changes` | `default_set` | `always` | — | Model-based recursive partitions of a numeric response along a time axis or a categorical dimension |
+| `outliers` | `anomalies` | `default_set` | `always` | — | Isolated numeric values and context-breaking categorical values |
+| `discontinuities` | `changes` | `default_set` | `always` | — | Axis-aligned and diagonal threshold jumps |
+| `drift` | `changes` | `on_request` | `always` | `predictability` | Reference-period model-routing changes along a declared time axis |
+| `distribution_change` | `changes` | `on_request` | `always` | — | Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection |
+| `slice_shifts` | `associations` | `on_request` | `always` | — | Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows |
+| `ordered_axis` | `changes`, `associations` | `default_set` | `always` | — | Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level |
+| `association_rules` | `conditional_rules`, `associations` | `default_set` | `always` | — | Pairwise nominal rules with train and diagnostic evidence |
+| `hotspots` | `concentration` | `default_set` | `always` | — | Combinations concentrated beyond their marginal frequencies |
+| `numeric_dependence` | `associations` | `default_set` | `always` | — | Pearson, Spearman, and both directions of Chatterjee's xi |
+| `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
+| `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
+| `row_clusters` | `associations`, `changes`, `concentration`, `gaps` | `on_request` | `always` | — | Experimental shared row partitions, cluster differences, and density findings |
+<!-- /generated:detectors -->
+
+The 2026-11-02 detector battery measured five of the on-request
+detectors producing no findings in 40 runs over 20 datasets, so a
+default run no longer spends time or report space on them; it
+records each as skipped in coverage, naming it on-request (the
+benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
 `decision_tables` and `interactions` joined the
 on-request set in the 2026-11-16 per-detector audit: across the gate
 tables none of their findings matched a reference statement, and
@@ -1206,12 +1327,13 @@ the on-request set in the same audit and returned to the default
 set in the 2026-11-16 gate-concentration change, which added the
 concentration statements the audit's reference set lacked (the
 record is `docs/benchmarks/2026-11-16-gate-concentration.md`).
-`expectations` and `group_contrast` are in the default set with the
-`hints` trigger: they engage only on declared hints. `target_shapes`,
-`leakage` and `model_failures` carry the `target` trigger: they run
-when a target is designated. Required detectors may execute to supply shared target
-descriptions without contributing their own findings. An empty selection
-still returns column summaries and coverage but no detector findings.
+`expectations` and `group_contrast` are in the default set with
+the `hints` trigger: they engage only on declared hints.
+`target_shapes`, `leakage` and `model_failures` carry the `target`
+trigger: they run when a target is designated. Required detectors
+may execute to supply shared target descriptions without
+contributing their own findings. An empty selection still returns
+column summaries and coverage but no detector findings.
 
 The `discontinuities` detector (standard and deep budgets) scans for
 cross-sectional step jumps: for each numeric target column, step
@@ -1310,7 +1432,7 @@ breaking each direction's majority mapping, the exceptions, and whether an
 exact pairing is one-to-one — so a statement of either form edited after the
 fact fails verification.
 
-The experimental `views` detector is excluded from the default selection.
+The experimental `row_clusters` detector is excluded from the default selection.
 Request it explicitly at the standard or deep budget. It uses
 `concentration/modal_share` for concentrated modeled values within fitted clusters and
 `concentration/spike_cells` for cells below its predictive-density threshold.

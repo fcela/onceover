@@ -2,10 +2,11 @@
 one declaration of each detector's name, membership, trigger, and purpose,
 and the finding taxonomy's type strings live in one list in the
 report crate. These tests pin the surfaces that used to be
-hand-maintained copies — the capability manifest, the detector
-counts stated in prose, and the registry's purpose text — to the
-registry itself, so a missed registration fails the suite instead
-of drifting silently.
+hand-maintained copies — the capability manifest, the generated
+blocks of the findings document, the detector counts stated in
+prose, and the registry's purpose text — to the registry itself,
+so a missed registration fails the suite instead of drifting
+silently.
 """
 
 import json
@@ -47,6 +48,21 @@ def test_capability_manifest_is_fresh():
     assert committed == expected, (
         "docs/capability-manifest.json is stale; regenerate it with "
         "python scripts/capability_manifest.py"
+    )
+
+
+def test_findings_doc_is_fresh():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "findings_doc", ROOT / "scripts" / "findings_doc.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    committed = (ROOT / "docs" / "findings.md").read_text(encoding="utf-8")
+    assert module.render(committed) == committed, (
+        "docs/findings.md is stale; regenerate it with "
+        "python scripts/findings_doc.py"
     )
 
 

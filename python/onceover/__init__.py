@@ -26,6 +26,7 @@ __all__ = [
     "profile_many",
     "MultiTableReport",
     "available_detectors",
+    "taxonomy",
     "agent_guide",
     "capabilities",
 ]
@@ -746,6 +747,19 @@ def available_detectors():
     a target is designated)."""
     from onceover._native import available_detectors as _available
     return _json.loads(_available())
+
+
+def taxonomy():
+    """The finding taxonomy: every pattern with its type, its derived
+    category, and its facets, plus the registered forms and the facet
+    vocabularies. Facets are the canonical evaluation the taxonomy's
+    own type lists use; an entry also carries a varied value beside
+    the canonical one when a statement can differ
+    (`support_with_violations`, `scope_one_column`,
+    `conditionality_conditioned`). The taxonomy tables in
+    docs/findings.md are generated from this export."""
+    from onceover._native import taxonomy as _taxonomy
+    return _json.loads(_taxonomy())
 
 
 def capabilities() -> dict:

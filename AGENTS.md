@@ -6,7 +6,7 @@ what looks structurally notable, and what was checked and found
 nothing. It is built for an agent that needs a good picture of an
 unfamiliar dataset in a single turn.
 
-## Quickstart
+## The packaged guide
 
 ```python
 import polars as pl
@@ -17,70 +17,40 @@ report = onceover.profile(df)          # budget="standard" by default
 print(report.to_digest(4_000))         # sized for a context window
 ```
 
-The same brief ships inside the package: `onceover.agent_guide()`
-returns the packaged quickstart (the handover, the budgets,
-reading the report, detector selection), and
-`onceover.capabilities()` returns the compact capability manifest
-derived from the registry.
+The brief for using the library ships inside the package,
+version-matched to the build: `onceover.agent_guide()` returns
+it — the handover (a designated target, column roles, display
+labels, and every hint key with its semantics), the call and the
+budgets, reading the report, and detector selection.
+`onceover.capabilities()` returns the compact capability
+manifest derived from the registry on every call. Read the guide
+first; what follows here is only what it does not carry.
 
-## Budgets
+## What the guide states only in brief
 
-`budget` is `"quick"`, `"standard"` (default), or `"deep"`.
-Quick runs column summaries and integrity checks only. Standard
-runs the default detector set with caps. Deep widens the caps and
-searches further (more pairs, more periods, more rules). A
-`deadline_seconds=` argument bounds wall time; work skipped for
-time is reported in coverage, not silently dropped. The bound
-also applies inside the dependence screen, the hotspots scan,
-the discontinuities pass, the surprises scan, and the
-duplicate-encodings scan: they stop at internal work quanta
-and their coverage entries state how much of the search space
-was examined (pairs screened of total, combinations examined
-of total, targets fully screened of total), so a pass stopped
-early reads as `capped`, not as a clean negative.
-
-## Reading a report
-
-A report is a JSON-shaped object (contract:
-`docs/report-schema.json`, field-by-field in
-`docs/report-schema.md`). Its parts:
-
-- **Findings** — ranked statements. Every finding carries an
-  `id`, a `category`, and a `type` (always present; the pair is
-  the reliable key for filtering and grouping). Every finding also
-  carries `facets` — its properties as fields (`scope`, `object`,
-  `support`, `conditionality`, `temporality`, `status`, and
-  `quality_dimension` on data-quality findings); the category is
-  derived from the facets by a fixed table, so filtering on either
-  agrees. `claim` is the
-  human-readable statement; treat it as a hypothesis with
-  evidence attached, not a conclusion.
-- **Evidence** — each finding carries evidence blocks with a
-  `scope` (rows evaluated), a `validation` status, a `basis`
-  (`measured`, `estimated`, or `inferred`), and `metrics`. Metric
-  keys are detector-specific and stay open by design: several
-  detectors attach a bespoke evidence payload under a named key
-  (for example `mapping` on functional dependencies, `segments`
-  on breaks, `duplicate_groups` on duplicate rows, `periods` on
-  drift). Read the payload before paraphrasing the finding.
-- **Interestingness** — a ranking score for attention, roughly
-  0–1. It is not a probability that the finding is correct, and
-  scores are not comparable across categories. Demotion for
-  triviality (a true finding that follows from something simpler,
-  such as a key implied by a unique column) lowers the score; it
-  never removes the finding.
-- **Coverage** — per-pass status: what ran, what was skipped,
-  capped, or ineligible, and why. **An empty findings list does
-  not mean clean data.** Check coverage first: passes may have
-  been skipped (budget, deadline, column-count caps) rather than
-  run and found nothing.
-- **Source** — `profile()` also accepts a Polars LazyFrame or a
-  file path (`.parquet`, `.csv`, `.ipc`). Those reports carry a
-  `source` section: the source's full row count and the basis —
-  `full`, or `sampled` with the sample's method, seed, and cap.
-  On a sampled basis every finding's evidence scope records the
-  sample and the source population; read sampled numbers as
-  statements about the sample, not the population.
+- **Deadline reach.** A `deadline_seconds=` bound also applies
+  inside the dependence screen, the hotspots scan, the
+  discontinuities pass, the surprises scan, and the
+  duplicate-encodings scan: they stop at internal work quanta
+  and their coverage entries state how much of the search space
+  was examined (pairs screened of total, combinations examined
+  of total, targets fully screened of total), so a pass stopped
+  early reads as `capped`, not as a clean negative.
+- **Evidence payloads.** Several detectors attach a bespoke
+  evidence payload under a named metric key (for example
+  `mapping` on functional dependencies, `segments` on breaks,
+  `duplicate_groups` on duplicate rows, `periods` on drift).
+  Read the payload before paraphrasing the finding.
+- **Sampled sources.** On a sampled basis every finding's
+  evidence scope records the sample and the source population;
+  read sampled numbers as statements about the sample, not the
+  population.
+- **Report contract.** The report's JSON shape is
+  `docs/report-schema.json`, field by field in
+  `docs/report-schema.md`.
+- **Hint syntax.** Passing a bare string where a list is
+  expected raises `ValueError`. The per-key reference beyond
+  the guide is "Declared expectations" in `docs/findings.md`.
 
 ## Multiple tables
 
@@ -106,16 +76,11 @@ columns were not examined.
 
 ## Getting findings back out
 
+The guide covers `report.finding(id)`, `report.select(...)`,
+`report.to_digest()`, `report.to_json()`, `report.verify(df)`,
+and `report.rows(id, df)`. The rest of the surface:
+
 ```python
-report.finding("<id>")                       # one finding or None
-report.select(category="dependencies")       # filters compose:
-report.select(type="functional", column="x") # category, type,
-                                             # column, target,
-                                             # and facet fields
-                                             # (object=, status=,
-                                             # conditionality=, ...)
-report.to_digest(budget_chars=8_000)                # rollup for triage
-report.to_json()                             # full report
 report.to_html()                             # self-contained HTML
         # rendering of the same report (needs the `html` extra:
         # pip install 'onceover[html]'); charts are Altair with
@@ -135,10 +100,6 @@ report.diff(other)                           # findings added /
         # matched by stable id, plus coverage status changes
         # and a column-card comparison (columns added, removed,
         # retyped, and the card quantities that moved)
-report.verify(df)                            # recount statements
-        # through Polars: ok, mismatch, or not_checkable
-report.rows("<id>", df)                      # the rows behind a
-        # statement, with positions in `__row`
 report.to_checks()                           # exact statements as
         # Polars expressions; "great_expectations" gives a suite
 ```
@@ -164,90 +125,31 @@ The flags mirror the renderings plus the file-input controls
 `--sample-seed`, `--target`). The HTML format needs the `html`
 extra, like `report.to_html()`.
 
-## Hints
-
-Declare what you know about the data; detectors and the
-expectations pass use it, and unusable hints are reported in
-coverage rather than raised:
-
-```python
-report = onceover.profile(df, hints={
-    "time": "date",                 # time-axis column
-    "ordered_axis": "dose",         # ordered axis for the
-                                    # ordered-axis battery (shape
-                                    # and break statements); wins
-                                    # over automatic axis choice
-    "level_order": {"grade": ["low", "mid", "high"]},
-                                    # declared level order for a
-                                    # categorical column; the order
-                                    # is never inferred from names
-                                    # or frequencies
-    "order_by": ["date"],           # list of column names
-    "no_gaps": ["date"],            # list of column names
-    "cadence": {"date": "daily"},   # daily | business_day |
-                                    # weekly | monthly | day count
-    "dimensions": ["region"],
-    "measures": ["revenue"],
-    "roles": {"row_no": "row_number"},   # semantic role override:
-                                    # identifier | row_number | timestamp |
-                                    # timestamp_part | dimension |
-                                    # flag | measure | text
-    "hierarchies": [["unit", "team", "division"]],
-                                    # known hierarchy, levels finest
-                                    # to coarsest; verified exactly,
-                                    # stated once (or once as a
-                                    # deviation naming broken mappings)
-    "exclude_columns": ["note"],    # columns not profiled at all;
-                                    # stated in coverage as user-declared
-    "labels": {"wk_act_usr": "weekly active users"},
-                                    # display labels used in claim
-                                    # strings; each finding uses only
-                                    # the labels of the columns its
-                                    # own statement names; evidence
-                                    # and metrics keep the raw names
-    "contrast": {"column": "region", "value": "north"},
-                                    # group contrast: the named
-                                    # subset of rows profiled against
-                                    # the rest of the table (a boolean
-                                    # column needs no value: its true
-                                    # rows are the group)
-})
-```
-
-Passing a bare string where a list is expected raises
-`ValueError`.
-
 ## Detectors and targeting
 
 `onceover.available_detectors()` lists the detector set with the
 categories each produces and each detector's `membership`
 (`default_set` or `on_request`) and `trigger` (`always`, `hints`,
 or `target`) (also frozen in `docs/capability-manifest.json`).
-`detectors=[...]`
-restricts a run to named detectors. The default set has 30 of
-the 43 registered detectors: `row_clusters` (experimental), `date_gaps`,
-`pivot`, `period_associations`, `drift`, `granularity`,
-`distribution_change`, `slice_shifts`, `decision_tables`,
-`interactions`, `target_shapes`, `leakage`,
-and `model_failures` are
-on request and run only when named — a default run records each as
-skipped in coverage, naming it on-request. `expectations` and
-`group_contrast` are in the default set but engage only on
-declared hints. The `outliers` pass is in the default set, but a
-default run states a `categorical_outlier` finding only when
-every level its pattern-breaking rows carry is rare in the
-column overall (at or below 1% of the column's values);
-statements withheld by that requirement are counted in the
-pass's coverage entry, and naming `outliers` in `detectors=[...]`
-states them. The along-axis passes (`breaks`,
-`ordered_partitions`, `ordered_axis`, `discontinuities`) are in
-the default set but scan only along the frame's time axis or an
-axis declared with the `ordered_axis` hint; on a frame with
-neither, a default run records them as skipped in coverage, and
-naming one in `detectors=[...]` runs it along any axis it
-supports. Passing
-`target="y"` additionally enables the target-triggered passes (the shape pass, the leakage screen, which states when one column nearly determines the target on its own, and the model-failure pass, which states where a cross-fitted model of the target fails).
-The full category and type reference is `docs/findings.md`.
+`detectors=[...]` restricts a run to named detectors. The
+default set has 30 of the 43 registered detectors; the rest run
+only when named in `detectors`, and a default run records each
+as skipped in coverage, naming it on-request. The full category
+and type reference is `docs/findings.md`.
+
+The `outliers` pass is in the default set, but a default run
+states a `categorical_outlier` finding only when every level
+its pattern-breaking rows carry is rare in the column overall
+(at or below 1% of the column's values); statements withheld
+by that requirement are counted in the pass's coverage entry,
+and naming `outliers` in `detectors=[...]` states them.
+
+The along-axis passes (`breaks`, `ordered_partitions`,
+`ordered_axis`, `discontinuities`) are in the default set but
+scan only along the frame's time axis or an axis declared with
+the `ordered_axis` hint; on a frame with neither, a default run
+records them as skipped in coverage, and naming one in
+`detectors=[...]` runs it along any axis it supports.
 
 ## Empty and partial results
 
