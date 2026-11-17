@@ -104,8 +104,45 @@ record.
   `applicant_age` is numeric, outside the columns the pass scans.
   Measure-weighted — issue #329.
 
-<FILL: full-run totals before/after and per-scope digest results for
-the bank statement.>
+Full run on the enlarged set (seed 0; baseline on main 7612842d,
+final on this change's tree, which also carries PR #339, merged
+while this work ran — movements caused by #339 are named as such
+below):
+
+| Reference totals (gated) | Baseline | Final |
+|---|---:|---:|
+| must matched at 4k, default | 14/19 | 16/19 |
+| must matched at 8k, default | 15/19 | 16/19 |
+| must matched at full, default | 16/19 | 17/19 |
+| must matched at 4k, target | 15/19 | 16/19 |
+| must matched at full, target | 16/19 | 17/19 |
+| should total | 42 | 45 |
+| should matched at 4k, default | 28 | 29 |
+| should matched at 8k, default | 33 | 35 |
+| should matched at full, default | 35 | 37 |
+| should matched at full, target | 20 | 22 |
+| check_failed | 0 | 0 |
+
+Held out: should total 15 → 16 (the new south-german file), matched
++1 at 4k in both modes and at 8k/full in target mode; must unchanged.
+
+Of the two must gains at 4k, one is this change (the panel's
+`missing-month`, now credited at every scope in both modes) and one
+is PR #339's (abalone `rings-sex` reaching the 4k digest, as its own
+record reports). The should gains at 8k/full are the adult and bank
+statements. The bank statement's scopes: matched at 8k and full in
+default mode and at full in target mode; at 4k the hotspot finding
+does not reach the digest, so the credit is a full-report credit —
+the audit's unit.
+
+Everything else that moved between the two runs is dominated by
+PR #339's axis gating, which landed between the baseline and the
+final run: permuted false statements fell 126 → 99 (full) and
+73 → 47 (4k), invariance total fell 446 → 334, report findings fell
+1,288 → 1,198. Those are #339's effects, recorded in its own
+benchmark record; this change's movements are the reference rows
+above, the restore's credits below, and the restore's three
+displacements, also below.
 
 ## The hotspots restore
 
@@ -140,9 +177,55 @@ already made: hotspots is in the gating. What the enlarged gate adds
 is that the family's remaining gap is now a measured miss with a
 named cause, not an absence of statements.
 
-<FILL: attribution table (credits per detector for the new
-statements, as-gated, per mode) and any digest displacement the
-restore causes, per dataset, from the full run.>
+Attribution, by the audit's method (a credit is a distinct
+(dataset, statement, mode) triple whose fitting full-report finding
+carries the detector in an evidence block; profiles are the gate's
+own, default and target modes):
+
+| Statement | Credited detector | Modes |
+|---|---|---|
+| adult `native-country-concentration` | `column_profile` | default, target |
+| south-german `foreign-worker-concentration` | `column_profile` | default, target |
+| panel `missing-month` | `panel_coverage` | default, target |
+| bank `previous-contact-february-concentration` | `hotspots` | default, target |
+| bike `cnt-rush-hour-concentration` | — (no fitting finding; 7 hotspot findings in the report, none for this cell) | — |
+| planted_mix `hotspot-payout` | — (no hotspot findings in the report) | — |
+
+So `hotspots` earns 2 matched credits where the audit recorded 0,
+and the gate's default profiles now contain 25 `hotspot` findings
+across the reference tables. The detector is exercised and credited;
+the two statements it cannot earn are the measure-weighted ones.
+
+The restore also has three measured costs, each verified by
+re-running the affected measurement with `hotspots` excluded on the
+same build — in each case the lost match returns:
+
+- bike-sharing-hourly: the should statement `cnt-temperature` loses
+  its default-mode match at 4k, 8k and full, and its target match at
+  4k. The default report sits at the 100-finding cap; the hotspot
+  findings push the dependence findings that carry the statement
+  below the cap (3 fit with hotspots excluded; the carrier exists at
+  a raised cap). In the same reshuffle, `temp-atemp` gains a
+  default 4k match.
+- sec-edgar-company-facts (held out): the should statement
+  `filed-after-period-end` loses its default 8k and full match; its
+  report is also at the cap, and its order-constraint carrier fits
+  only with hotspots excluded.
+- metro-interstate-traffic: the planted sentinel structure stays in
+  the full report but loses its line in the 4k digest (it is back at
+  line 9 with hotspots excluded), so planted found at 4k falls by
+  one on that dataset.
+
+The common mechanism is the findings cap: reports at 100 findings
+trade places when a pass joins the default set. PR #342 measured
+the cap as a weak size lever; this run shows it is also a
+displacement surface, and any future membership change should expect
+to re-measure these three datasets. Small invariance increases on
+three datasets are also the restore's (thyroid +4 net, adventureworks
++1, absenteeism-at-work −2 net, each verified the same way) —
+hotspot findings are sensitive to row order and shuffling in a way
+most passes are not. Redundancy permille moved by at most 6 per
+mille on five datasets in the same reshuffles.
 
 ## Remaining uncreditable families
 
@@ -156,5 +239,23 @@ order this change followed for concentration.
 
 ## Legs
 
-<FILL after the full run: test_gate.py, full pytest, corpus harness,
-cargo tests, strict book build.>
+- `tests/test_gate.py`: 16 passed (the 14 existing tests plus the
+  two kind tests added here).
+- Full pytest suite: 767 passed, including the corpus harness and
+  the quality battery (corpus expectations untouched by this change;
+  the corpus registry's only change on this base is PR #339's
+  re-baseline, which is not part of this change).
+- Cargo, release profile: the `onceover` lib tests 40 passed
+  (including the two registry partition tests updated to 30/13) and
+  the integration tests 10 passed, including the deadline test that
+  again asserts the hotspots pass's capped status in a default run.
+- Capability manifest regenerated against the restored build
+  (`hotspots` reads `default_set`).
+- The nine book notebooks whose stored outputs embed the default
+  set were re-executed (capabilities, coverage, quickstart,
+  serialization, glossary, report_contract, architecture,
+  talking_to_the_profiler, and the hotspots methodology page); the
+  capabilities registry table and the profiler-guide capabilities
+  dump now show `hotspots` as `default_set`, and the quickstart
+  coverage table shows the pass as `ran_sampled`.
+- Strict book build: exit 0 (62 pages built; the rendered capabilities page carries the restored registry).
