@@ -2,8 +2,9 @@
 far more rows than the marginals predict is reported with its
 independence baseline; an independent frame with the same
 marginals stays quiet. Triples are a deep-budget scan. The
-detector is on request since the 2026-11-16 per-detector audit,
-so these tests name it."""
+detector returned to the default set in the 2026-11-16
+gate-concentration change; these tests name it to isolate
+the pass."""
 
 import random
 

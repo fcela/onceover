@@ -178,3 +178,36 @@ def test_report_render_without_history_fails(tmp_path):
     (tmp_path / "empty").mkdir()
     r = _report("render", "--history", str(tmp_path / "empty"), "--out", str(tmp_path / "r.md"))
     assert r.returncode == 2
+
+
+def _reference_module():
+    if str(GATE) not in sys.path:
+        sys.path.insert(0, str(GATE))
+    from components import reference
+    return reference
+
+
+def _finding(category, type_, columns):
+    return {"category": category, "type": type_, "subject": {"columns": list(columns)}}
+
+
+def test_reference_concentration_kind_credits_both_concentration_shapes():
+    reference = _reference_module()
+    value = _finding("concentration", "value_concentration", ["native_country"])
+    assert reference.finding_fits(value, {"columns": ["native_country"], "kind": "concentration"})
+    cell = _finding("concentration", "hotspot", ["clouds_all", "weather_main"])
+    st = {"columns": ["clouds_all", "weather_main"], "kind": "concentration"}
+    assert reference.finding_fits(cell, st)
+    # the relates kind does not credit the concentration category
+    assert not reference.finding_fits(cell, {**st, "kind": "relates"})
+    assert not reference.finding_fits(value, {"columns": ["native_country"], "kind": "relates"})
+
+
+def test_reference_completeness_kind_credits_gaps_not_missingness():
+    reference = _reference_module()
+    period = _finding("gaps", "partial_period", ["date", "state", "unemployment_rate"])
+    st = {"columns": ["unemployment_rate", "date"], "kind": "completeness"}
+    assert reference.finding_fits(period, st)
+    # the missingness kind requires the missingness category and does
+    # not credit a gaps finding
+    assert not reference.finding_fits(period, {**st, "kind": "missingness"})

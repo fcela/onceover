@@ -224,11 +224,11 @@ categories each produces and each detector's `membership`
 (`default_set` or `on_request`) and `trigger` (`always`, `hints`,
 or `target`) (also frozen in `docs/capability-manifest.json`).
 `detectors=[...]`
-restricts a run to named detectors. The default set has 29 of
+restricts a run to named detectors. The default set has 30 of
 the 43 registered detectors: `row_clusters` (experimental), `date_gaps`,
 `pivot`, `period_associations`, `drift`, `granularity`,
 `distribution_change`, `slice_shifts`, `decision_tables`,
-`interactions`, `hotspots`, `target_shapes`, `leakage`,
+`interactions`, `target_shapes`, `leakage`,
 and `model_failures` are
 on request and run only when named — a default run records each as
 skipped in coverage, naming it on-request. `expectations` and

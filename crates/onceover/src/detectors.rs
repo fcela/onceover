@@ -219,7 +219,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // findings matched a reference statement, and it is not an
         // integrity check. The record is
         // docs/benchmarks/2026-11-16-detector-audit.md.
-        make("hotspots", vec![Concentration], &[], OnRequest, Always, "Combinations concentrated beyond their marginal frequencies"),
+        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies"),
         make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
         make(
             "identities",
@@ -254,7 +254,7 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // hints declare their structure. On-request detectors
         // (row_clusters, date_gaps, pivot, period_associations,
         // drift, granularity, distribution_change, slice_shifts,
-        // decision_tables, interactions, hotspots)
+        // decision_tables, interactions)
         // run only when explicitly requested via detectors=[...];
         // the target-triggered detectors (target_shapes, leakage,
         // model_failures) run only when a target is designated
@@ -315,7 +315,6 @@ mod tests {
             "slice_shifts",
             "decision_tables",
             "interactions",
-            "hotspots",
             "target_shapes",
             "leakage",
             "model_failures",

@@ -27,6 +27,12 @@
    "text": "subscription depends on housing_loan",
    "kind": "relates", "columns": ["subscribed_term_deposit", "housing_loan"],
    "patterns": ["subscribed", "housing_loan"],
-   "check": "(pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'no').mean() > 1.5 * (pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'yes').mean()"}
+   "check": "(pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'no').mean() > 1.5 * (pl.col('subscribed_term_deposit') == 'yes').filter(pl.col('housing_loan') == 'yes').mean()"},
+  {"id": "previous-contact-february-concentration", "tier": "should", "provisional": true,
+   "text": "rows concentrate in one recency and month cell: customers contacted 191-278 days after the previous campaign and reached in February hold 6.5x their independence expectation",
+   "kind": "concentration", "columns": ["days_since_previous_campaign_contact", "month"],
+   "patterns": ["days_since_previous", "month|feb", "concentrat|cell|hotspot"],
+   "note": "Measured on the full table: the cell holds 542 of 45,211 rows; the recency band holds 3.15% of rows and February 5.86%, so independence expects 83.5 rows and the cell holds 6.49x that. The hotspots pass states this cell in a default run (on its encoded sample: 236 rows against 36.6 expected, 6.44x).",
+   "check": "(((pl.col('days_since_previous_campaign_contact') > 190) & (pl.col('days_since_previous_campaign_contact') <= 278) & (pl.col('month') == 'feb')).sum() > 200) & (((pl.col('days_since_previous_campaign_contact') > 190) & (pl.col('days_since_previous_campaign_contact') <= 278) & (pl.col('month') == 'feb')).mean() > 4 * (((pl.col('days_since_previous_campaign_contact') > 190) & (pl.col('days_since_previous_campaign_contact') <= 278)).mean() * (pl.col('month') == 'feb').mean()))"}
  ]
 }

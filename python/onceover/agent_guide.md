@@ -84,7 +84,7 @@ df)` returns one statement's rows.
 
 ## 4. Detector selection
 
-The default set runs 29 of the 43 registered detectors;
+The default set runs 30 of the 43 registered detectors;
 `detectors=[...]` restricts a run. `capabilities()` lists each
 detector's membership, trigger, and purpose. Skip
 selection at first.

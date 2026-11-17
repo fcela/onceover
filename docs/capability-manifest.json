@@ -412,7 +412,7 @@
     "concentration"
    ],
    "requires": [],
-   "membership": "on_request",
+   "membership": "default_set",
    "trigger": "always",
    "purpose": "Combinations concentrated beyond their marginal frequencies"
   },

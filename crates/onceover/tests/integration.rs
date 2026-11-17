@@ -447,20 +447,10 @@ fn expired_deadline_dispatches_self_limiting_passes() {
         "{}",
         dep.detail
     );
-    // hotspots is on request since the 2026-11-16 per-detector
-    // audit, so its deadline exemption is asserted on a run that
-    // names it; in the default run above it records the
-    // on-request skip instead.
-    assert_eq!(report.coverage["hotspots"].status, "skipped");
-    let hot_report = profile(
-        &df,
-        &ProfileConfig {
-            deadline: Some(std::time::Duration::ZERO),
-            detectors: Some(["hotspots".into()].into_iter().collect()),
-            ..Default::default()
-        },
-    );
-    let hot = &hot_report.coverage["hotspots"];
+    // hotspots is in the default set (it returned in the
+    // 2026-11-16 gate-concentration change) and stops
+    // cooperatively at the deadline in the default run.
+    let hot = &report.coverage["hotspots"];
     assert_eq!(hot.status, "capped", "{}", hot.detail);
     assert!(
         hot.detail.contains("0 of 45 pair combinations examined"),
