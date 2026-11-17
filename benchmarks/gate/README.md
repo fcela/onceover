@@ -185,8 +185,8 @@ Example:
 A statement whose `check` is false is wrong about the data and is
 counted in `check_failed`. To add statements for a dataset, create
 `reference/<id>.json`; a dataset without a file is skipped by this
-component. Digest lines identify findings by exemplar id when they are
-rolled up and otherwise by claim text, and the gate looks the finding up
+component. Each digest line carries the id of the finding that speaks
+for the fact it states, and the gate looks the finding up
 in the report to compare its columns.
 
 ## Accepted regressions

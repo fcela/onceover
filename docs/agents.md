@@ -19,7 +19,7 @@ bindings (`python/onceover/`, PyO3/maturin).
 - Rust: `cargo test --workspace`, `cargo clippy --workspace`,
   `cargo fmt --check`.
 - Notebooks committed to git are committed executed; the notebook
-  check (`notebooks/check_notebook.py`) fails otherwise.
+  check (`scripts/check_notebook.py`) fails otherwise.
 - The book (`docs/book/`) is executable too, but neither the gate
   nor PR CI builds it: the Docs workflow runs only on pushes to
   `main`, so a broken page surfaces only after merge. A change
@@ -60,8 +60,9 @@ bindings (`python/onceover/`, PyO3/maturin).
   `docs/findings.md`, and the derivation table in
   `docs/taxonomy-v1-design.md`.
 - `report.to_digest(chars)` renders a context-budgeted digest
-  (header + rollup groups + a stated omission count when the
-  budget truncates). Reach for it when the full JSON will not fit
+  (a briefing in sections by reader question, one line per fact,
+  with a stated omission count when the budget truncates). Reach
+  for it when the full JSON will not fit
   the reading budget; the digest is an index, the JSON is the
   record. `report.to_json(max_chars=N)` renders a size-budgeted
   JSON view instead: findings collapse to an index, then column

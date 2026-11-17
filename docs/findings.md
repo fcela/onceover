@@ -574,9 +574,9 @@ The same ledger is available in four forms:
   no sum, so none is reported, and the rest of the card is not
   diffed. Column identity is by name, so a renamed column reads
   as a removal plus an addition, and row-level changes are not
-  compared. Digest rollups for multi-member groups list
-  up to three exemplar finding ids so a rolled-up line can be
-  expanded with `report.finding(id)`.
+  compared. Each digest line names the one finding that speaks
+  for its fact, so a line can be expanded with
+  `report.finding(id)`.
 - **Markdown** (`report.to_markdown()`): the headline and overview,
   then each finding's claim followed directly by its evidence. An
   evidence block names the detector and algorithm, the validation
@@ -587,18 +587,29 @@ The same ledger is available in four forms:
   Piecewise-linear leaves keep their equation rendering and are not
   repeated as a table. Column cards and coverage close the document.
 - **Digest** (`report.to_digest(chars)`): a context-budgeted
-  plain-text summary for a single pass of reading — header (shape,
-  headline, coverage exceptions, counts by category), then one line
-  per rollup group (findings sharing category, type, form, and
-  target) carrying the group's strongest claim, strongest first.
-  When the groups exceed the budget, the digest keeps as many as
-  fit and ends by stating how many were omitted; it never exceeds
-  the budget. Rollups are an index into the ledger, not a
-  replacement for it.
+  plain-text briefing for a single pass of reading — a header line
+  (rows, columns, finding count, schema version), then sections by
+  reader question (what a row is; what is wrong; what is redundant;
+  what relates to the target, when one is designated; other
+  relationships; anomalies; not examined), each with its own share
+  of the budget, a section that cannot fill its share passing the
+  remainder to the sections still holding facts. Inside a section,
+  findings are merged into facts — one line per distinct set of
+  stated columns, the exact form of a fact standing for its
+  statistical restatements — and each line is the representative
+  finding's claim, its numbers at three significant figures,
+  followed by that finding's id. Weak tested associations collapse
+  into a single counted line. When the lines exceed the budget,
+  the briefing ends by stating how many facts were omitted and how
+  to retrieve them; it never exceeds the budget. The briefing is
+  an index into the ledger, not a replacement for it.
 - **DataFrame** (`report.findings_frame()`): one row per finding with
-  `id`, `category`, `type`, `columns`, `inputs`, `target`,
-  `interestingness`, `claim`, `n_evidence`, and the primary evidence
-  record's `basis`, in report order. It is an index for sorting and
+  `id`, `category`, `type`, the facet columns (`scope`, `object`,
+  `support_kind`, `conditionality`, `temporality`,
+  `quality_dimension`, `status`), `columns`, `inputs`, `target`,
+  `interestingness`, `claim`, `n_evidence`, the primary evidence
+  record's `basis`, and `detector_interestingness`, in report order.
+  It is an index for sorting and
   filtering; the measurements themselves stay in the JSON findings.
 
 ### Tested associations
@@ -1031,7 +1042,7 @@ also rations by statement class. Each statement is classified from its facets
 and type as account (frame-scope statements and keys), structure
 (dependencies, associations, conditional rules, duplicate encodings, and any
 value- or segment-conditioned statement), shape (changes, and extreme values
-in intervals), or hygiene (the remaining data-quality statements). Account
+in anomalies), or hygiene (the remaining data-quality statements). Account
 statements are admitted in full. Structure and shape statements are admitted
 in selection-score order, with at most 12 selected statements sharing one
 (category, type, form) group, and two further per-detector caps binding only
@@ -1170,6 +1181,12 @@ Callers can declare structure the profiler cannot infer, through the
 `hints` argument (Rust: `ProfileConfig.hints`):
 
 - `time`: the time/ordering axis column;
+- `ordered_axis`: an ordering column that is not a date or datetime
+  (a dose, an age, a sequence number); the along-axis passes scan
+  it as they scan the time axis;
+- `level_order`: per-column declared level orders for categorical
+  columns (`{column: [levels in order]}`), never inferred; the
+  ordered-axis pass scans the column in that order;
 - `order_by`: columns the rows are claimed to be ordered by;
 - `no_gaps`: columns expected to form a complete sequence;
 - `cadence`: per-column cadence — `daily`, `business_day`, `weekly`,
@@ -1177,8 +1194,9 @@ Callers can declare structure the profiler cannot infer, through the
 - `dimensions`, `measures`: the panel's declared dimension and measure
   columns;
 - `roles`: semantic roles for individual columns, overriding the roles
-  the frame model infers — each value is one of `identifier`, `index`,
-  `timestamp`, `timestamp_part`, `dimension`, `measure`, or `text`; an
+  the frame model infers — each value is one of `identifier`,
+  `row_number`, `timestamp`, `timestamp_part`, `dimension`, `flag`,
+  `measure`, or `text`; an
   entry naming a column the table does not have, or a role outside
   that vocabulary, is ignored;
 - `hierarchies`: known hierarchies — each entry is one hierarchy's
@@ -1206,7 +1224,7 @@ Callers can declare structure the profiler cannot infer, through the
   `hotspots` coverage entry states each case.
 
 The `expectations` pass checks the declarations exactly and tags its
-evidence `reference_source: "declared"`, against the dates pass's
+evidence `reference_source: "declared"`, against the date_gaps pass's
 `"inferred"`. Five checks run:
 
 - **Declared-cadence gaps** on temporal columns, against the declared
@@ -1450,7 +1468,7 @@ Request it explicitly at the standard or deep budget. It uses
 `concentration/spike_cells` for cells below its predictive-density threshold.
 It also emits `changes/residual_shift` for differences between unordered
 clusters; these findings do not identify a temporal breakpoint. See the
-[views reference](book/methodology/view_clusters_reference.ipynb) for how to
+[row-clusters reference](book/methodology/view_clusters_reference.ipynb) for how to
 interpret these outputs.
 
 Rust extensions implement `Detector`, declare a `DetectorDescriptor`, and return

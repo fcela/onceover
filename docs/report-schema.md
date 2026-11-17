@@ -80,7 +80,7 @@ assembled from part columns, or — recorded at low confidence — a
 single year-like integer column.
 
 Detectors consume the model in two ways. The temporal passes
-(breaks, ordered partitions, drift, period associations, dates)
+(breaks, ordered partitions, drift, period associations, date_gaps)
 receive the axis, with string and part columns materialized as a
 real date or datetime column, so they run on frames whose time is
 stored as text or split into parts. And columns the model marks
@@ -151,7 +151,7 @@ frame-scope and uniqueness findings (the account) first, then
 missingness, gaps, and duplicates (completeness), then
 dependencies, associations, and conditional rules (relations),
 then column roles, formats, ordering, and concentration, then
-changes and intervals (deviations); the selection score orders
+changes and anomalies (deviations); the selection score orders
 findings within a band. Selection itself is unchanged: the caps
 consume candidates in demotion-adjusted score order, so no
 finding is lost to the re-ranking — the band orders the report
@@ -176,9 +176,9 @@ evidence metrics; the demotion counts are stated in the
 | key | content |
 |---|---|
 | `id` | stable finding id within the report |
-| `category` | one of `dependencies`, `conditional_rules`, `concentration`, `gaps`, `changes`, `associations`, `uniqueness`, `duplicates`, `formats`, `missingness`, `intervals`, `column_roles`, `ordering` |
+| `category` | one of `missingness`, `concentration`, `column_roles`, `uniqueness`, `duplicates`, `formats`, `changes`, `anomalies`, `dependencies`, `conditional_rules`, `associations`, `gaps`, `ordering` |
 | `facets` | the finding's properties as fields: `scope` (`column`, `columns`, `rows`, `sequence`, `frame`), `object` (`distribution`, `relation`, `structure`, `temporal_behaviour`, `role`), `support` (`exact`, `approximate`, `model_based`, `inferred`), `conditionality` (`unconditional`, `value_conditioned`, `segment_conditioned`), `temporality` (`atemporal`, `ordered`, `change_across_segments`), `status` (`regularity`, `deviation`), and `quality_dimension` (`completeness`, `uniqueness`, `validity`; only on data-quality findings). The category is derived from the facets by the fixed table in `docs/taxonomy-v1-design.md`; the per-type assignment is tabulated in `docs/findings.md` |
-| `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values`, `predictable_missingness` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the views pass, and `concentration_over_time` / `outlier_entity` from the series detector's panel scan (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows`, `near_duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` (formats); `functional`, `predictive`, `order_constraint`, `order_violation`, `model_failure`, `leakage_signature` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association`, `group_contrast`, `conditioned_association`, `slice_shift`, `level_contrast`, `axis_shape` (associations); `gap`, `sequence_gap`, `missing_combinations`, `unexamined_columns`, `unscanned_series`, `partial_period` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier`, `row_inconsistency` (intervals); `column_ordering` (ordering); `residual_level`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `distribution_shift`, `distribution_change`, `ordered_partition`, `series_structure`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity`, `slope_break`, `regime_contrast`, `spike_contrast` (changes) |
+| `type` | subtype within the category; always present, and part of the finding `id`. By category: `missing_values`, `sentinel_values`, `predictable_missingness` (missingness); `value_concentration`, `hotspot`, plus `modal_share` / `spike_cells` from the row_clusters pass, and `concentration_over_time` / `outlier_entity` from the series detector's panel scan (concentration); `categorical_role`, `identifier_role`, `duplicate_encoding`, `long_format` (column_roles); `uniqueness` (uniqueness); `duplicate_rows`, `near_duplicate_rows` (duplicates); `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` (formats); `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure` (dependencies); `if_then` (conditional_rules); `statistical`, `period_association`, `group_contrast`, `conditioned_association`, `slice_shift`, `level_contrast`, `axis_shape` (associations); `gap`, `sequence_gap`, `missing_combinations`, `partial_period` (gaps); `interval_variation`, `extreme_value`, `categorical_outlier`, `row_inconsistency` (anomalies); `column_ordering` (ordering); `residual_shift`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `predictor_drift`, `joint_distribution_change`, `ordered_partition`, `series_structure`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity`, `slope_break`, `regime_contrast`, `spike_contrast` (changes). The generated taxonomy index in `docs/findings.md` carries the same list |
 | `subject` | what the finding is about: `columns` (list), usually `target` and/or `inputs`, `unit` |
 | `specification` | the pattern instance: a `definition` (e.g. comparison mode) and, for typed patterns, a `form` (`value_mapping`, `sum`, `linear_combination`, `piecewise_linear`, `hierarchy`, ...) |
 | `claim` | the human-readable statement, with the measured numbers in it |
@@ -191,6 +191,6 @@ evidence metrics; the demotion counts are stated in the
 
 Findings produced from user-declared hints come from the
 expectations pass and carry `reference_source: "declared"` in
-their evidence metrics, versus `"inferred"` for the dates pass —
+their evidence metrics, versus `"inferred"` for the date_gaps pass —
 declared structure is never silently presented as discovered
 structure.

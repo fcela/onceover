@@ -1,8 +1,10 @@
 # Building the onceover book
 
 The book is a [MyST](https://mystmd.org) site. Every chapter is an
-executable notebook; outputs are produced during the build and are never
-stored in the sources. The Part I tutorials, the case studies, and the
+executable notebook; the sources carry stored outputs, refreshed by
+re-execution against the installed package and checked by
+`scripts/check_notebook.py`, and the HTML build executes them again.
+The Part I tutorials, the case studies, and the
 code-bearing methodology and implementation chapters profile the
 **installed** `onceover` package. Executing the chapters checks that the
 examples run with that installed version.

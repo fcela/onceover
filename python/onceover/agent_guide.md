@@ -25,9 +25,9 @@ display label for prose; evidence keeps raw names.
 Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`.
 
 The expectations pass checks `order_by`, `no_gaps`, `cadence`,
-`hierarchies`, and `dimensions`/`measures` exactly;
-declarations tag their evidence `reference_source="declared"`;
-unusable entries go to coverage, not errors. `cadence`
+`hierarchies`, and `dimensions`/`measures` exactly (evidence
+tagged `reference_source="declared"`); unusable entries go to
+coverage, not errors. `cadence`
 values are `"daily"`, `"business_day"`, `"weekly"`, `"monthly"`,
 or a step count; `hierarchies` are level columns, finest to
 coarsest. Instructions to the run: `time`, `ordered_axis` (a non-date
@@ -40,9 +40,9 @@ each weight. Other unknown keys raise an error.
 
 **Units, grain, and your questions.** No hint key carries a
 column's unit, the grain (what one row is), or the questions
-the data serves. Hold them on your side: read magnitudes
-against your units; pull each question's findings with
-`report.select(...)`. A question no finding answers is
+the data serves. Read magnitudes against your units; pull
+each question's findings with `report.select(...)`. A
+question no finding answers is
 information when coverage shows the pass ran.
 
 ```python
@@ -65,9 +65,9 @@ listing the valid values.
 
 ## 3. Reading the answer
 
-The digest, `report.to_digest()`, leads with the frame account
-(grain, time axis), then counts and one line per
-group of related findings; `report.finding(id)` expands one.
+The digest, `report.to_digest()`, is a briefing in sections by
+reader question, one line per fact, each line naming the
+finding that speaks for it; `report.finding(id)` expands one.
 `report.coverage` records each pass as run, skipped, capped,
 or ineligible; an empty findings list with skipped or capped
 coverage means the table was not fully examined, not clean data.
@@ -77,8 +77,8 @@ A finding's key is its (`category`, `type`) pair;
 also filters on facet fields. The `claim` is a statement with
 evidence attached: read its `metrics` payload and `basis`
 (`measured`, `estimated`, `inferred`) before quoting it.
-`interestingness` ranks attention within a category; it is
-not a probability. Verify before acting:
+`interestingness` is the selection score that orders the
+report; it is not a probability. Verify before acting:
 `report.verify(df)` recounts the statements; `report.rows(id,
 df)` returns one statement's rows.
 
