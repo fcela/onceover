@@ -2,7 +2,7 @@
 
 The JSON report (`report.to_json()`, `report.data`) is versioned:
 `schema_version` is `"0.8"` (the vocabulary renames of the
-semantics application; `"0.7"` was onceover 0.1.3). The machine-readable
+semantics application, in onceover 0.1.6; `"0.7"` was onceover 0.1.3). The machine-readable
 contract is [`report-schema.json`](report-schema.json) (JSON Schema,
 draft 2020-12); the test suite validates live reports against it
 (`tests/test_report_schema.py`), including profiles of the bundled

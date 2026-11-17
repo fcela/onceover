@@ -53,7 +53,8 @@ finding object itself is unchanged from schema 0.4. Schema 0.4 adds a `frame` se
 unchanged from schema 0.3. Schema 0.3 adds a `facets` object to every
 finding (see "Facets" below); the category and type values are
 unchanged from schema 0.2, which replaced schema 0.1. Schema 0.7 is
-used by package version 0.1.3. A finding's category is derived
+used by package version 0.1.3; schema 0.8, the vocabulary renames
+of the semantics application, is used by package version 0.1.6. A finding's category is derived
 from its facets by a fixed table; there is no second assignment
 path.
 

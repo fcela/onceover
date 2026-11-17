@@ -19,7 +19,7 @@ from onceover._many import MultiTableReport, profile_many
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 __all__ = [
     "profile",
     "ProfileReport",
