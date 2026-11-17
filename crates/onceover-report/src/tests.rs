@@ -2109,3 +2109,47 @@ fn form_literals_in(path: &std::path::Path, src: &str) -> std::collections::BTre
     }
     out
 }
+
+#[test]
+fn taxonomy_json_matches_the_taxonomy_it_exports() {
+    let value: serde_json::Value =
+        serde_json::from_str(&taxonomy_json()).expect("the taxonomy export parses");
+    let patterns = value["patterns"].as_array().expect("patterns is an array");
+    assert_eq!(patterns.len(), Pattern::ALL.len());
+    for pattern in Pattern::ALL {
+        let facets = Facets::for_pattern(
+            *pattern,
+            &Specification::default(),
+            &Details::new(),
+            &Subject::columns(vec!["a".to_string(), "b".to_string()]),
+        );
+        let name = format!("{pattern:?}");
+        let entry = patterns
+            .iter()
+            .find(|entry| entry["pattern"].as_str() == Some(name.as_str()))
+            .unwrap_or_else(|| panic!("no taxonomy entry for {name}"));
+        assert_eq!(entry["type"].as_str(), Some(pattern.subtype()), "{name}");
+        assert_eq!(
+            entry["category"].as_str(),
+            Some(facets.derive_category(pattern.names_target()).as_str()),
+            "{name}"
+        );
+        assert!(
+            Pattern::types_for(facets.derive_category(pattern.names_target()))
+                .contains(&pattern.subtype()),
+            "{name}: its type is not among its category's types"
+        );
+    }
+    let forms = value["forms"].as_array().expect("forms is an array");
+    assert_eq!(forms.len(), FORMS.len());
+    for spec in FORMS {
+        assert!(
+            forms.iter().any(|entry| {
+                entry["form"].as_str() == Some(spec.form)
+                    && entry["type"].as_str() == Some(spec.finding_type)
+            }),
+            "no forms entry for {}",
+            spec.form
+        );
+    }
+}
