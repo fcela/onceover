@@ -87,7 +87,29 @@ def _skip_reason(dtype):
 def _log_choose(n, k):
     if k < 0 or k > n:
         return float("-inf")
-    return math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+    k = min(k, n - k)
+    if k == 0:
+        return 0.0
+    if k <= 128:
+        # Subtracting lgamma(n + 1) and lgamma(n - k + 1) loses
+        # the entire result for wide integer spans and small k (#365).
+        return math.fsum(math.log(n - i) - math.log(i + 1) for i in range(k))
+
+    # Stirling's expansion rearranged around the binomial entropy.
+    # Its terms add, rather than cancel two large log-factorials.
+    # The omitted term is O(k^-7), with k > 128 by construction.
+    rest = n - k
+
+    def correction(x):
+        inverse = 1.0 / x
+        return inverse / 12 - inverse**3 / 360 + inverse**5 / 1260
+
+    return math.fsum((
+        k * math.log(n / k),
+        rest * math.log1p(k / rest),
+        0.5 * (math.log(n) - math.log(k) - math.log(rest) - math.log(2 * math.pi)),
+        correction(n), -correction(k), -correction(rest),
+    ))
 
 
 def _chance_from_logs(log_num, log_den):
