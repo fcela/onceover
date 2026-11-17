@@ -886,8 +886,7 @@ fn evaluate_combo(
             // Kish's effective sample size of the weight over
             // the combination's complete rows.
             let n_eff = acc.total * acc.total / acc.sumsq;
-            let z = (weight_share - row_share)
-                / (row_share * (1.0 - row_share) / n_eff).sqrt();
+            let z = (weight_share - row_share) / (row_share * (1.0 - row_share) / n_eff).sqrt();
             if !z.is_finite() {
                 continue;
             }
@@ -1489,7 +1488,7 @@ mod tests {
     fn weighted_findings(out: &HotspotsOutcome) -> Vec<&Finding> {
         out.findings
             .iter()
-            .filter(|f| f.evidence[0].metrics.get("weight").is_some())
+            .filter(|f| f.evidence[0].metrics.contains_key("weight"))
             .collect()
     }
 
@@ -1631,7 +1630,10 @@ mod tests {
         assert!(names.contains(&"alpha"), "weights stated: {names:?}");
         assert!(names.contains(&"beta"), "weights stated: {names:?}");
         assert!(names.contains(&"f0"), "weights stated: {names:?}");
-        for f in hits.iter().filter(|f| f.evidence[0].metrics["weight"] == "f0") {
+        for f in hits
+            .iter()
+            .filter(|f| f.evidence[0].metrics["weight"] == "f0")
+        {
             let cols = f.evidence[0].metrics["columns"].as_array().unwrap();
             assert!(
                 !cols.iter().any(|c| c == "f0"),

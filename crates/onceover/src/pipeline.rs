@@ -300,9 +300,7 @@ fn profile_inner(
                 col,
                 TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
             ) {
-                weight_notes.push(format!(
-                    "weight '{name}' not applied: not a numeric column"
-                ));
+                weight_notes.push(format!("weight '{name}' not applied: not a numeric column"));
                 continue;
             }
             let values: Vec<Option<f64>> = (0..table.n).map(|r| col.numeric_at(r)).collect();

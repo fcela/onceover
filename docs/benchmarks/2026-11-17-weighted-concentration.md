@@ -335,7 +335,60 @@ As designed above, with these particulars:
 (Filled from the runs on the final tree; see the pull request
 for the scorecard comparison.)
 
-- Hinted gate run (weighted component): TO FILL.
-- Negative controls: TO FILL.
-- Unhinted gate comparison (base 610812ef vs head): TO FILL.
-- Corpus: TO FILL.
+- Hinted gate run (weighted component, head tree): the two
+  #329 statements are must-tier in the hinted run. The
+  planted_mix statement (payout over channel × applicant_age)
+  matches at all three scopes (4k digest, 8k digest, full
+  report). The bike statement (cnt over workingday × hr)
+  matches at 8k and in the full report, and misses at 4k: the
+  hinted profile's 4k briefing carries one hotspot line — the
+  strongest weighted cell (holiday × casual top bin, z = 30.9)
+  — and the rush-hour cell (z = 29.0) is the fifth weighted
+  line, present from 8k up. The miss is briefing crowding
+  inside the hinted profile, not detection: the finding is in
+  the report the scopes are drawn from. Several of the cells
+  outranking it are driven by cnt's own additive components
+  (casual, registered), which concentrate cnt mechanically.
+  Ranking among true statements is the selection problem
+  (#343/#347 territory); this change does not tune it.
+  Weighted findings in the hinted profiles: 8 (bike), 7
+  (planted_mix, all under payout; total_cost states none).
+  Weighted totals: must 3/4 at 4k, 4/4 at 8k, 4/4 at full.
+- Negative controls: both satisfied at every scope.
+  weighted_noise states no weighted finding (0 in the hinted
+  profile; the control weight stays silent despite its heavy
+  spread), and weighted_large_cell states none (the cell
+  holding 40.04% of rows and 40.25% of revenue is large in
+  both alike and is not stated). The corpus runs of both
+  datasets carry the same silence as `missed` tripwire
+  expectations, and both tripwires hold.
+- Unhinted gate comparison (base 610812ef vs head, same
+  scorecard machinery): the reference component is unchanged
+  — must 16/16/17 of 19 and should 29/35/37 of 45 at
+  4k/8k/full in default mode, check_failed 0 on both sides.
+  compare.py's verdict is FAIL on totals alone: every
+  per-dataset row in the comparison has delta 0, and
+  recomputing the totals over the 25 shared datasets makes
+  every metric identical (permuted false_full 125 = 125,
+  invariance total 500 = 500, planted found_full 59 = 59,
+  redundancy finding lines 361 = 361). The totals move only
+  because the gated set grew: the two new datasets contribute
+  their own rows (their planted expectations, found 4 of 5
+  and 4 of 6; one permuted false positive on weighted_noise;
+  one noise-sensitivity count each). No unhinted number on a
+  shared dataset moved.
+- Corpus: exit 2 (machine checks clean, documented misses on
+  record), 220/220 machine-verified expectations over 43
+  datasets — the 218 of the base plus the two new control
+  tripwires, both holding.
+- Verification legs on the final tree: `scripts/release.py
+  check` passes; `scripts/test_release.py` 6 passed;
+  `cargo fmt --all -- --check` clean; clippy on the Rust
+  1.100 toolchain (`--workspace --all-targets --locked --
+  -D warnings`) clean; `cargo test --workspace --locked` in
+  the debug profile died at the link of an example binary
+  (ld terminated with signal 7 — the disk-quota failure), so
+  the suite was run in the release profile instead: 476
+  passed, 0 failed; `python -m pytest tests/ -q`: 775
+  passed; the strict book build (`docs/book/build-html.sh`,
+  executed, strict) completes.
