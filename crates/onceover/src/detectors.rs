@@ -219,7 +219,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // findings matched a reference statement, and it is not an
         // integrity check. The record is
         // docs/benchmarks/2026-11-16-detector-audit.md.
-        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies"),
+        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies, in rows or in a declared weight"),
         make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
         make(
             "identities",

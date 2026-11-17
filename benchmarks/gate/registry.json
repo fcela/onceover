@@ -1,6 +1,6 @@
 {
  "version": 1,
- "doc": "Gate datasets. Fields: id (also the name of the reference file), corpus (an id in benchmarks/corpus/registry.json), target (a column name, \"@last\" for the last column, or omitted), components (names; omitted means all registered components), held_out (scored and written to the scorecard, reported apart, excluded from the pass/fail comparison by default), fast (member of the --fast subset), read (overrides of the corpus read options, for example parse_dates), hints and detectors (passed to profile; hints default to the corpus entry's), options ({component: {option: value}}, for example {\"planted\": {\"plants\": [\"sum_identity\"]}}). The headline list names the metrics report.py shows first, each with a column label and a one-line meaning. See benchmarks/gate/README.md.",
+ "doc": "Gate datasets. Fields: id (also the name of the reference file), corpus (an id in benchmarks/corpus/registry.json), target (a column name, \"@last\" for the last column, or omitted), components (names; omitted means all registered components), held_out (scored and written to the scorecard, reported apart, excluded from the pass/fail comparison by default), fast (member of the --fast subset), read (overrides of the corpus read options, for example parse_dates), hints and detectors (passed to profile; hints default to the corpus entry's), options ({component: {option: value}}, for example {\"planted\": {\"plants\": [\"sum_identity\"]}}), weights (weight columns declared for the weighted component's hinted run), weighted_controls (silence assertions scored by that run). The headline list names the metrics report.py shows first, each with a column label and a one-line meaning. See benchmarks/gate/README.md.",
  "headline": [
   {"metric": "planted.found_4k", "label": "planted found in 4k digest", "meaning": "known structures injected into real tables that the 4,000-character digest states"},
   {"metric": "reference.must_4k_default", "label": "must statements in 4k digest", "meaning": "hand-written reference statements of tier must that the digest states, default mode"},
@@ -15,7 +15,7 @@
   {"id": "adult-census-income", "corpus": "adult-census-income", "target": "income", "kind": "tabular, mixed types"},
   {"id": "bank-marketing", "corpus": "bank-marketing", "target": "@last", "kind": "tabular, mixed types"},
   {"id": "abalone", "corpus": "abalone", "target": "rings", "fast": true, "kind": "tabular, correlated measures"},
-  {"id": "bike-sharing-hourly", "corpus": "bike-sharing-hourly", "target": "cnt", "kind": "hourly series with calendar columns"},
+  {"id": "bike-sharing-hourly", "corpus": "bike-sharing-hourly", "target": "cnt", "weights": ["cnt"], "kind": "hourly series with calendar columns"},
   {"id": "metro-interstate-traffic", "corpus": "metro-interstate-traffic", "target": "traffic_volume",
    "read": {"parse_dates": true}, "hints": {"time": "date_time"}, "kind": "hourly time series"},
   {"id": "thyroid", "corpus": "thyroid", "target": "diagnosis", "kind": "clinical, many flags and missing values"},
@@ -34,11 +34,17 @@
   {"id": "gse15258-expression", "corpus": "gse15258-expression", "target": "response_to_therapy",
    "components": ["reference"], "held_out": true, "kind": "wide table, 86 samples x 5,006 columns"},
   {"id": "column_order_stress", "corpus": "column_order_stress", "kind": "generated numeric battery, latent factors"},
-  {"id": "planted_mix", "corpus": "planted_mix", "target": "approved", "kind": "generated application records with plants"},
+  {"id": "planted_mix", "corpus": "planted_mix", "target": "approved", "weights": ["payout", "total_cost"], "kind": "generated application records with plants"},
   {"id": "daily_regime_break", "corpus": "daily_regime_break", "kind": "generated daily series, planted breaks"},
   {"id": "dominant_driver", "corpus": "dominant_driver", "target": "price", "kind": "generated listings, numeric target"},
   {"id": "daily_level_collapse", "corpus": "daily_level_collapse", "kind": "generated daily series, planted sustained collapse"},
   {"id": "marginal_ranges", "corpus": "marginal_ranges", "held_out": true, "kind": "generated range battery"},
-  {"id": "messy_intake", "corpus": "messy_intake", "held_out": true, "kind": "generated messy intake records"}
+  {"id": "messy_intake", "corpus": "messy_intake", "held_out": true, "kind": "generated messy intake records"},
+  {"id": "weighted_noise", "corpus": "weighted_noise", "weights": ["noise_weight"],
+   "weighted_controls": [{"columns": ["noise_weight"], "kind": "concentration"}],
+   "kind": "generated control: independent noise weight"},
+  {"id": "weighted_large_cell", "corpus": "weighted_large_cell", "weights": ["revenue"],
+   "weighted_controls": [{"columns": ["revenue"], "kind": "concentration"}],
+   "kind": "generated control: merely large cell"}
  ]
 }

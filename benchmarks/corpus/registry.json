@@ -2693,7 +2693,7 @@
       "channel"
      ],
      "expect": "missed",
-     "note": "Known miss: the planted hotspot cell (channel = kiosk, age 18-24; 3.5% of rows holding 24.3% of payout) is not stated. The hotspots pass counts rows over categorical cells; this concentration is measure-weighted over a numeric age band (issue #329). The gate's reference file carries the fact as a checked statement."
+     "note": "Known miss in this unhinted run: the planted hotspot cell (channel = kiosk, age 18-24; 3.5% of rows holding 24.3% of payout) is not stated. The hotspots pass counts rows over categorical cells; this concentration is measure-weighted over a numeric age band. Since the weighted-concentration change (issue #329) the pass states the cell when payout is declared through the weights hint; the gate's weighted component asserts that in its hinted run, and this expectation keeps asserting the unhinted absence."
     }
    ],
    "sha256": "89bc24428e65a7c958f9c4329b8f94aaa39bae024c2268db9acb1fd00a924928",
@@ -3054,6 +3054,74 @@
    ],
    "sha256": "28d47f9915f559a4cb840e2db2826f07296b9b4434b1da2feb881c3cd702c5cb",
    "rows": 1096
+  },
+  {
+   "id": "weighted_noise",
+   "pack": "synthetic",
+   "title": "Weighted noise: independent lognormal weight (generated control)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec as a negative control for measure-weighted concentration (issue #329); prepare.py is the seeded generator (seed 20261117)",
+   "dir": "data/synthetic/weighted_noise",
+   "budget": "standard",
+   "hints": {
+    "weights": [
+     "noise_weight"
+    ]
+   },
+   "notes": [
+    "Negative control for the weighted hotspots judgment: segment and region are independent categoricals, amount is gamma-distributed, and noise_weight is lognormal and independent of every other column. With noise_weight declared as a weight, no cell may be stated as a weighted concentration; the expectation below tripwires if one appears."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "hotspot",
+     "columns_all": [
+      "noise_weight",
+      "region",
+      "segment"
+     ],
+     "expect": "missed",
+     "note": "Control (issue #329): noise_weight is independent of segment and region by construction, so no weighted hotspot over their cells may be stated. The corpus run profiles with the entry's weights hint, so this expectation fails the run if a weighted finding appears."
+    }
+   ],
+   "sha256": "3aaf3b7b2edb5032b70f3bbd2f58179712b1fca6b33a6a7226e2dfe3b218d571",
+   "rows": 8000
+  },
+  {
+   "id": "weighted_large_cell",
+   "pack": "synthetic",
+   "title": "Weighted large cell: a 40% cell with a uniform revenue distribution (generated control)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated to a written spec as a negative control for measure-weighted concentration (issue #329); prepare.py is the seeded generator (seed 20261118)",
+   "dir": "data/synthetic/weighted_large_cell",
+   "budget": "standard",
+   "hints": {
+    "weights": [
+     "revenue"
+    ]
+   },
+   "notes": [
+    "Negative control for the weighted hotspots judgment: the channel = web, plan = basic cell holds 3,203 of 8,000 rows (40.0%) and 40.3% of revenue, because revenue is drawn from the same distribution in every cell. Merely large is not concentration: with revenue declared as a weight, the cell must not be stated, and the expectation below tripwires if any weighted hotspot appears."
+   ],
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "hotspot",
+     "columns_all": [
+      "channel",
+      "plan",
+      "revenue"
+     ],
+     "expect": "missed",
+     "note": "Control (issue #329): revenue's distribution is identical in every channel x plan cell by construction, so no weighted hotspot may be stated. The corpus run profiles with the entry's weights hint, so this expectation fails the run if a weighted finding appears."
+    }
+   ],
+   "sha256": "4528426df0a3afa5cad75d30612b8df00673b4af5f3c0acc8a544dfd333bcac2",
+   "rows": 8000
   }
  ]
 }

@@ -135,6 +135,7 @@ def test_every_advertised_hint_key_is_accepted():
         "cadence": {"d": 1},
         "dimensions": ["b"],
         "measures": ["a"],
+        "weights": ["a"],
         "roles": {"a": "measure"},
         "hierarchies": [["b", "a"]],
         "exclude_columns": ["not_a_column"],

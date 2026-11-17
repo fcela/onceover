@@ -65,6 +65,84 @@ def _planted_triple(seed: int = 13, n: int = 9000, plant: int = 1800) -> pl.Data
     )
 
 
+def _weighted_frame(seed: int = 21, n: int = 4000) -> pl.DataFrame:
+    # City x channel counts are uniform; the payout mass sits
+    # in one cell, whose row count is at its independence
+    # expectation.
+    rng = random.Random(seed)
+    cities = ["a1", "a2", "a3", "a4"]
+    chans = ["b1", "b2", "b3", "b4"]
+    rows = [(rng.choice(cities), rng.choice(chans)) for _ in range(n)]
+    return pl.DataFrame(
+        {
+            "city": [r[0] for r in rows],
+            "channel": [r[1] for r in rows],
+            "payout": [900.0 if r == ("a1", "b1") else 10.0 for r in rows],
+        }
+    )
+
+
+def _weighted_hits(report) -> list:
+    return [
+        f
+        for f in _hits(report)
+        if "weight" in f["evidence"][0]["metrics"]
+    ]
+
+
+def test_weighted_cell_is_stated_with_both_shares():
+    report = onceover.profile(
+        _weighted_frame(), detectors=["hotspots"], hints={"weights": ["payout"]}
+    )
+    hits = _weighted_hits(report)
+    assert hits, "expected a weighted hotspot finding for the payout cell"
+    top = hits[0]
+    payload = top["evidence"][0]["metrics"]
+    assert payload["weight"] == "payout"
+    assert payload["cell"] == {"channel": "b1", "city": "a1"}
+    assert payload["weight_share"] > 0.5
+    assert payload["row_share"] < 0.1
+    assert payload["share_ratio"] > 5.0
+    assert "payout" in top["subject"]["columns"]
+    assert "concentrates" in top["claim"] and "of payout on" in top["claim"]
+
+
+def test_unhinted_run_states_no_weighted_finding():
+    report = onceover.profile(_weighted_frame(), detectors=["hotspots"])
+    assert _weighted_hits(report) == []
+
+
+def test_noise_weight_stays_silent():
+    rng = random.Random(22)
+    frame = _weighted_frame().with_columns(
+        pl.Series("noise", [rng.uniform(1.0, 100.0) for _ in range(4000)])
+    )
+    report = onceover.profile(
+        frame, detectors=["hotspots"], hints={"weights": ["noise"]}
+    )
+    assert _weighted_hits(report) == []
+
+
+def test_unusable_weights_are_noted_in_coverage_not_raised():
+    frame = _weighted_frame().with_columns(
+        [
+            pl.Series("neg", [-1.0] * 2000 + [5.0] * 2000),
+            pl.Series("flat", [7.0] * 4000),
+        ]
+    )
+    report = onceover.profile(
+        frame,
+        detectors=["hotspots"],
+        hints={"weights": ["missing_col", "city", "neg", "flat", "payout", "payout"]},
+    )
+    detail = report.coverage["hotspots"]["detail"]
+    for name in ("missing_col", "city", "neg", "flat"):
+        assert f"weight '{name}' not applied" in detail, detail
+    assert "declared twice" in detail, detail
+    # The one usable weight still applies.
+    assert _weighted_hits(report), "the valid weight must still be judged"
+
+
 def test_triples_run_at_deep_budget_only():
     frame = _planted_triple()
     deep = onceover.profile(frame, budget="deep", detectors=["hotspots"])
