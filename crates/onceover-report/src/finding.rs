@@ -2290,3 +2290,80 @@ pub struct FindingGroup {
     pub finding_ids: Vec<String>,
     pub description: String,
 }
+
+/// The taxonomy as JSON: every pattern with its type, its derived
+/// category, and its facets, plus the registered forms and the
+/// facet vocabularies. The facets are the canonical evaluation
+/// `types_for` uses (a two-column subject, an empty specification,
+/// no metrics). Three evaluations vary with the statement, and an
+/// entry carries the varied value beside the canonical one when it
+/// differs: `support_with_violations` (a violations metric
+/// present), `scope_one_column` (a one-column subject), and
+/// `conditionality_conditioned` (a specification declaring a
+/// condition column). This is the export the findings-document
+/// generator renders from, so the published taxonomy tables cannot
+/// drift from the lists validation enforces.
+pub fn taxonomy_json() -> String {
+    let spec = Specification::default();
+    let details = Details::new();
+    let two_columns = Subject::columns(vec!["a".to_string(), "b".to_string()]);
+    let one_column = Subject::columns(vec!["a".to_string()]);
+    let mut violations = Details::new();
+    violations.insert("violations".to_string(), json!(1));
+    let mut conditioned_spec = Specification::default();
+    conditioned_spec
+        .definition
+        .insert("condition_column".to_string(), json!("c"));
+
+    let patterns: Vec<Value> = Pattern::ALL
+        .iter()
+        .map(|pattern| {
+            let facets = Facets::for_pattern(*pattern, &spec, &details, &two_columns);
+            let mut entry = json!({
+                "pattern": format!("{pattern:?}"),
+                "type": pattern.subtype(),
+                "category": facets.derive_category(pattern.names_target()).as_str(),
+                "facets": facets,
+            });
+            let with_violations = Facets::for_pattern(*pattern, &spec, &violations, &two_columns);
+            if with_violations.support != facets.support {
+                entry["support_with_violations"] = json!(with_violations.support);
+            }
+            let one = Facets::for_pattern(*pattern, &spec, &details, &one_column);
+            if one.scope != facets.scope {
+                entry["scope_one_column"] = json!(one.scope);
+            }
+            let conditioned =
+                Facets::for_pattern(*pattern, &conditioned_spec, &details, &two_columns);
+            if conditioned.conditionality != facets.conditionality {
+                entry["conditionality_conditioned"] = json!(conditioned.conditionality);
+            }
+            entry
+        })
+        .collect();
+    let forms: Vec<Value> = FORMS
+        .iter()
+        .map(|spec| {
+            json!({
+                "form": spec.form,
+                "type": spec.finding_type,
+                "definition": spec.definition,
+            })
+        })
+        .collect();
+    let facet_values = json!({
+        "scope": [Scope::Column, Scope::Columns, Scope::Rows, Scope::Sequence, Scope::Frame],
+        "object": [Object::Distribution, Object::Relation, Object::Structure, Object::TemporalBehaviour, Object::Role],
+        "support": [SupportKind::Exact, SupportKind::Approximate, SupportKind::ModelBased, SupportKind::Inferred],
+        "conditionality": [Conditionality::Unconditional, Conditionality::ValueConditioned, Conditionality::SegmentConditioned],
+        "temporality": [Temporality::Atemporal, Temporality::Ordered, Temporality::ChangeAcrossSegments],
+        "quality_dimension": [QualityDimension::Completeness, QualityDimension::Uniqueness, QualityDimension::Validity],
+        "status": [Status::Regularity, Status::Deviation],
+    });
+    json!({
+        "patterns": patterns,
+        "forms": forms,
+        "facet_values": facet_values,
+    })
+    .to_string()
+}
