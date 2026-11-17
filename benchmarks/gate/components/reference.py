@@ -55,6 +55,7 @@ KINDS = {
     "missingness": {"categories": {"missingness"}},
     "outlier": {"types": {"extreme_value", "categorical_outlier", "transient_excursion"}},
     "concentration": {"categories": {"concentration"}},
+    "completeness": {"categories": {"gaps"}},
     "role": {"categories": {"column_roles", "uniqueness"}},
 }
 

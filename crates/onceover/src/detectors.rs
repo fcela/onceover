@@ -219,7 +219,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // findings matched a reference statement, and it is not an
         // integrity check. The record is
         // docs/benchmarks/2026-11-16-detector-audit.md.
-        make("hotspots", vec![Concentration], &[], OnRequest, Always, "Combinations concentrated beyond their marginal frequencies"),
+        make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies"),
         make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
         make(
             "identities",
@@ -254,7 +254,7 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // hints declare their structure. On-request detectors
         // (row_clusters, date_gaps, pivot, period_associations,
         // drift, granularity, distribution_change, slice_shifts,
-        // decision_tables, interactions, hotspots)
+        // decision_tables, interactions)
         // run only when explicitly requested via detectors=[...];
         // the target-triggered detectors (target_shapes, leakage,
         // model_failures) run only when a target is designated
@@ -297,13 +297,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_29_measured_detectors() {
+    fn default_set_is_the_30_measured_detectors() {
         let active = active_detectors(None);
-        // 43 registered: 29 in the default set (27 always-triggered
+        // 43 registered: 30 in the default set (28 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 14 on request (11 always-triggered, 3 target-triggered).
+        // 13 on request (10 always-triggered, 3 target-triggered).
         assert_eq!(builtin_detectors().len(), 43);
-        assert_eq!(active.len(), 29);
+        assert_eq!(active.len(), 30);
         for id in [
             "row_clusters",
             "date_gaps",
@@ -315,7 +315,6 @@ mod tests {
             "slice_shifts",
             "decision_tables",
             "interactions",
-            "hotspots",
             "target_shapes",
             "leakage",
             "model_failures",
@@ -325,6 +324,7 @@ mod tests {
         assert!(active.contains("expectations"));
         assert!(active.contains("group_contrast"));
         assert!(active.contains("discontinuities"));
+        assert!(active.contains("hotspots"));
     }
 
     #[test]
@@ -344,8 +344,8 @@ mod tests {
             *membership.entry(format!("{:?}", d.membership)).or_insert(0) += 1;
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
-        assert_eq!(membership.get("DefaultSet"), Some(&29));
-        assert_eq!(membership.get("OnRequest"), Some(&14));
+        assert_eq!(membership.get("DefaultSet"), Some(&30));
+        assert_eq!(membership.get("OnRequest"), Some(&13));
         assert_eq!(trigger.get("Always"), Some(&38));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&3));

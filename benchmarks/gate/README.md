@@ -159,7 +159,7 @@ and not compared.
 | `provisional` | `true` while the statement has not been reviewed |
 | `columns` | columns a matching finding must state |
 | `columns_any` | optional: a matching finding states at least one of these |
-| `kind` | optional relation kind: `relates`, `encoding`, `identity`, `order`, `sentinel`, `missingness`, `outlier`, `concentration`, `role` (table `KINDS` in `components/reference.py`) |
+| `kind` | optional relation kind: `relates`, `encoding`, `identity`, `order`, `sentinel`, `missingness`, `outlier`, `concentration`, `completeness`, `role` (table `KINDS` in `components/reference.py`) |
 | `types` | optional: finding types allowed |
 | `patterns` | optional list of regular expressions; the fallback match when no finding fits: all must match one statement line of the digest, or one claim of the full report |
 | `modes` | optional: `["default"]` or `["target"]` to score in one mode only |

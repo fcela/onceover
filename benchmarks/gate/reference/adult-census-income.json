@@ -36,6 +36,12 @@
    "text": "occupation and work_class are missing on the same rows",
    "kind": "missingness", "columns": ["occupation", "work_class"],
    "patterns": ["occupation", "work_class", "missing|null"],
-   "check": "(pl.col('occupation').is_null() == pl.col('work_class').is_null()).mean() > 0.9"}
+   "check": "(pl.col('occupation').is_null() == pl.col('work_class').is_null()).mean() > 0.9"},
+  {"id": "native-country-concentration", "tier": "should", "provisional": true,
+   "text": "native_country is concentrated in one level: 91.3% of non-null rows are 'United-States'",
+   "kind": "concentration", "columns": ["native_country"],
+   "patterns": ["native_country", "United-States", "concentrat|share"],
+   "note": "Measured: 'United-States' holds 43,832 of 47,985 non-null rows (91.3%); the next level, 'Mexico', holds 951 (2.0%), and 857 rows are null. The column profile states this as a value_concentration finding.",
+   "check": "((pl.col('native_country') == 'United-States').mean() > 0.85)"}
  ]
 }

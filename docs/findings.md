@@ -1264,7 +1264,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 29 of the 43 registered detectors; the other 14 run only when named in `detectors`.
+The default set has 30 of the 43 registered detectors; the other 13 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1306,7 +1306,7 @@ The default set has 29 of the 43 registered detectors; the other 14 run only whe
 | `slice_shifts` | `associations` | `on_request` | `always` | — | Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows |
 | `ordered_axis` | `changes`, `associations` | `default_set` | `always` | — | Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level |
 | `association_rules` | `conditional_rules`, `associations` | `default_set` | `always` | — | Pairwise nominal rules with train and diagnostic evidence |
-| `hotspots` | `concentration` | `on_request` | `always` | — | Combinations concentrated beyond their marginal frequencies |
+| `hotspots` | `concentration` | `default_set` | `always` | — | Combinations concentrated beyond their marginal frequencies |
 | `numeric_dependence` | `associations` | `default_set` | `always` | — | Pearson, Spearman, and both directions of Chatterjee's xi |
 | `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
 | `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
@@ -1318,11 +1318,15 @@ detectors producing no findings in 40 runs over 20 datasets, so a
 default run no longer spends time or report space on them; it
 records each as skipped in coverage, naming it on-request (the
 benchmark record is `docs/benchmarks/2026-11-02-detector-opt-in.md`).
-`decision_tables`, `interactions`, and `hotspots` joined the
+`decision_tables` and `interactions` joined the
 on-request set in the 2026-11-16 per-detector audit: across the gate
 tables none of their findings matched a reference statement, and
-none of the three is an integrity check (the record is
-`docs/benchmarks/2026-11-16-detector-audit.md`).
+neither is an integrity check (the record is
+`docs/benchmarks/2026-11-16-detector-audit.md`). `hotspots` joined
+the on-request set in the same audit and returned to the default
+set in the 2026-11-16 gate-concentration change, which added the
+concentration statements the audit's reference set lacked (the
+record is `docs/benchmarks/2026-11-16-gate-concentration.md`).
 `expectations` and `group_contrast` are in the default set with
 the `hints` trigger: they engage only on declared hints.
 `target_shapes`, `leakage` and `model_failures` carry the `target`
