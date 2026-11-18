@@ -64,16 +64,16 @@ path.
 | Category | Types |
 |---|---|
 | `missingness` | `missing_values`, `sentinel_values`, `predictable_missingness` |
-| `concentration` | `value_concentration`, `modal_share`, `spike_cells`, `hotspot`, `concentration_over_time`, `outlier_entity`, `outcome_distribution` |
+| `concentration` | `value_concentration`, `modal_share`, `spike_cells`, `hotspot`, `concentration_over_time`, `outlier_entity`, `entity_specialists`, `outcome_distribution` |
 | `column_roles` | `categorical_role`, `identifier_role`, `long_format`, `duplicate_encoding` |
 | `uniqueness` | `uniqueness` |
 | `duplicates` | `duplicate_rows`, `near_duplicate_rows` |
 | `formats` | `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` |
 | `changes` | `series_structure`, `residual_shift`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `predictor_drift`, `joint_distribution_change`, `slope_break`, `regime_contrast`, `spike_contrast`, `ordered_partition`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity` |
-| `anomalies` | `row_inconsistency`, `interval_variation`, `extreme_value`, `categorical_outlier` |
+| `anomalies` | `row_inconsistency`, `interval_variation`, `extreme_value`, `categorical_outlier`, `entity_misfits` |
 | `dependencies` | `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure`, `outcome_contrast` |
 | `conditional_rules` | `if_then` |
-| `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift` |
+| `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift`, `entity_groups`, `entity_continuum` |
 | `gaps` | `gap`, `sequence_gap`, `missing_combinations`, `partial_period` |
 | `ordering` | `column_ordering` |
 <!-- /generated:taxonomy-index -->
@@ -313,7 +313,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `series_structure` | `column` | `temporal_behaviour` | `approximate` | `unconditional` | `ordered` | — | `regularity` |
 | `row_inconsistency` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `deviation` |
 | `functional` | `columns` | `relation` | exact, or approximate when the mapping has violations | `unconditional` | `atemporal` | — | `regularity` |
-| `affine`, `arithmetic_identity`, `leakage_signature`, `statistical` | `columns` | `relation` | `approximate` | `unconditional` | `atemporal` | — | `regularity` |
+| `affine`, `arithmetic_identity`, `leakage_signature`, `statistical`, `entity_groups`, `entity_continuum` | `columns` | `relation` | `approximate` | `unconditional` | `atemporal` | — | `regularity` |
 | `predictive` | `columns` | `relation` | `model_based` | `unconditional`; `segment_conditioned` in the piecewise form | `atemporal` | — | `regularity` |
 | `order_constraint` | `columns` | `relation` | exact, or approximate when the order has violations | `unconditional` | `atemporal` | — | `regularity` |
 | `order_violation` | `columns` | `relation` | approximate | `unconditional` | `atemporal` | — | `regularity` |
@@ -337,7 +337,8 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `ordered_partition` | `sequence` | `temporal_behaviour` | `model_based` | `segment_conditioned` | `change_across_segments` | — | `regularity` |
 | `one_way_flag`, `entry_block`, `exit_block`, `first_activity` | `columns` | `temporal_behaviour` | `exact` | `unconditional` | `ordered` | — | `regularity` |
 | `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift`, `outcome_contrast` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
-| `concentration_over_time`, `outlier_entity` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+| `concentration_over_time`, `outlier_entity`, `entity_specialists` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+| `entity_misfits` | `columns` | `distribution` | `approximate` | `unconditional` | `atemporal` | — | `deviation` |
 <!-- /generated:facets-by-type -->
 
 Consumers can filter on facets with `report.select(...)` (one keyword
@@ -1454,7 +1455,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 31 of the 45 registered detectors; the other 14 run only when named in `detectors`.
+The default set has 31 of the 46 registered detectors; the other 15 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1503,6 +1504,7 @@ The default set has 31 of the 45 registered detectors; the other 14 run only whe
 | `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
 | `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
 | `row_clusters` | `associations`, `changes`, `concentration`, `gaps` | `on_request` | `always` | — | Experimental shared row partitions, cluster differences, and density findings |
+| `entity_fingerprints` | `associations`, `anomalies`, `concentration` | `on_request` | `always` | — | Each entity's mix over each dimension, compared across entities: groups of entities with a similar mix, a continuum, entities that match no group, and specialists |
 <!-- /generated:detectors -->
 
 The 2026-11-02 detector battery measured five of the on-request

@@ -245,6 +245,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             &[],
             OnRequest, Always,
         "Experimental shared row partitions, cluster differences, and density findings"),
+        make("entity_fingerprints", vec![Associations, Anomalies, Concentration], &[], OnRequest, Always, "Each entity's mix over each dimension, compared across entities: groups of entities with a similar mix, a continuum, entities that match no group, and specialists"),
     ]
 }
 
@@ -303,10 +304,11 @@ mod tests {
     #[test]
     fn default_set_is_the_31_measured_detectors() {
         let active = active_detectors(None);
-        // 45 registered: 31 in the default set (29 always-triggered
+        // 46 registered: 31 in the default set (29 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 14 on request (9 always-triggered, 5 target-triggered).
-        assert_eq!(builtin_detectors().len(), 45);
+        // 15 on request (9 always-triggered, 5 target-triggered, and
+        // entity_fingerprints, hint-triggered).
+        assert_eq!(builtin_detectors().len(), 46);
         assert_eq!(active.len(), 31);
         for id in [
             "row_clusters",
@@ -350,8 +352,8 @@ mod tests {
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
         assert_eq!(membership.get("DefaultSet"), Some(&31));
-        assert_eq!(membership.get("OnRequest"), Some(&14));
-        assert_eq!(trigger.get("Always"), Some(&38));
+        assert_eq!(membership.get("OnRequest"), Some(&15));
+        assert_eq!(trigger.get("Always"), Some(&39));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&5));
     }

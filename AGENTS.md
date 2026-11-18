@@ -147,7 +147,7 @@ categories each produces and each detector's `membership`
 (`default_set` or `on_request`) and `trigger` (`always`, `hints`,
 or `target`) (also frozen in `docs/capability-manifest.json`).
 `detectors=[...]` restricts a run to named detectors. The
-default set has 31 of the 45 registered detectors; the rest run
+default set has 31 of the 46 registered detectors; the rest run
 only when named in `detectors`, and a default run records each
 as skipped in coverage, naming it on-request. The full category
 and type reference is `docs/findings.md`.

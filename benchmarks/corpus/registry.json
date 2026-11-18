@@ -3321,6 +3321,163 @@
    "expectations": [],
    "skip_reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md",
    "notes": "Target designated from the UCI metadata (id 110 declares the localization-site class). 1,484 rows, 8 score features, 10 classes with strong imbalance; sequence_name is an identifier column. DOI and license are confirmed from the fetched metadata on the first prepare run; prepare.py refuses to write data.csv unless the license the fetched metadata reports is CC BY 4.0."
+  },
+  {
+   "id": "entity_profiles",
+   "pack": "synthetic",
+   "title": "Entity profiles: customer transactions from three category profiles (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated for issue #448; prepare.py is the seeded generator, truth.json the ground truth",
+   "dir": "data/synthetic/entity_profiles",
+   "budget": "standard",
+   "detectors": [
+    "entity_fingerprints"
+   ],
+   "hints": {
+    "entity": "cust_id"
+   },
+   "notes": [
+    "400 customers from three category profiles (A fresh, B household and personal care, C beverages and snacks), 12 misfits concentrated on frozen and dairy, 40 customers drifting from B to A in 2025-07, 71% single-location customers."
+   ],
+   "sha256": "ded2db1cfe05ed744d61388738c04927061f8d95994214c779cad571b0b1c227",
+   "rows": 28421,
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "entity_groups",
+     "columns_all": [
+      "cust_id",
+      "category"
+     ],
+     "expect": "found",
+     "note": "Four groups by category mix: A, B, C, and the 12 planted misfits, which share one frozen-and-dairy profile and so form a group of their own. The 40 drifting customers have an annual mix between B and A and sit in group A."
+    },
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "entity_groups",
+     "columns_all": [
+      "cust_id",
+      "location"
+     ],
+     "expect": "found",
+     "note": "Six groups by location mix: one per location for the single-location customers, and one spread over all five."
+    },
+    {
+     "kind": "finding",
+     "category": "concentration",
+     "type": "entity_specialists",
+     "columns_all": [
+      "cust_id",
+      "location"
+     ],
+     "expect": "found",
+     "note": "71% of customers buy at one location only, against 5.0 effective levels in the overall mix."
+    },
+    {
+     "kind": "finding",
+     "category": "anomalies",
+     "type": "entity_misfits",
+     "columns_all": [
+      "cust_id",
+      "category"
+     ],
+     "expect": "found",
+     "note": "12 customers reject their group's profile; 11 are planted drifters (the drift statement is a later step of #448). The planted misfits are stated as their own group instead."
+    }
+   ]
+  },
+  {
+   "id": "entity_profiles_null_shuffled",
+   "pack": "synthetic",
+   "title": "Entity profiles null control: levels shuffled across rows (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated for issue #448; prepare.py is the seeded generator, truth.json the ground truth",
+   "dir": "data/synthetic/entity_profiles_null_shuffled",
+   "budget": "standard",
+   "detectors": [
+    "entity_fingerprints"
+   ],
+   "hints": {
+    "entity": "cust_id"
+   },
+   "notes": [
+    "entity_profiles with category and location permuted independently across rows."
+   ],
+   "sha256": "7fff98f131b8692688a9725a59f4a9a00746d540f7834c6e083e0db6cbbccbc3",
+   "rows": 28421,
+   "expectations": [
+    {
+     "kind": "max_findings",
+     "value": 0,
+     "note": "Null control: entities share one mix up to sampling noise, so the pass states nothing and its coverage says entities do not differ beyond noise."
+    }
+   ]
+  },
+  {
+   "id": "entity_profiles_null_one_profile",
+   "pack": "synthetic",
+   "title": "Entity profiles null control: one profile, varying support (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated for issue #448; prepare.py is the seeded generator, truth.json the ground truth",
+   "dir": "data/synthetic/entity_profiles_null_one_profile",
+   "budget": "standard",
+   "detectors": [
+    "entity_fingerprints"
+   ],
+   "hints": {
+    "entity": "cust_id"
+   },
+   "notes": [
+    "One category profile for all 400 customers; half have 3 to 8 rows, half 50 to 150."
+   ],
+   "sha256": "308a5ad00bbadb7d5dfc08cc10399962ac5a643ba8dc92f78682e7642fe1f3f5",
+   "rows": 20725,
+   "expectations": [
+    {
+     "kind": "max_findings",
+     "value": 0,
+     "note": "Null control: entities share one mix up to sampling noise, so the pass states nothing and its coverage says entities do not differ beyond noise. Customers with 3 to 8 rows must not be stated as misfits."
+    }
+   ]
+  },
+  {
+   "id": "entity_profiles_continuum",
+   "pack": "synthetic",
+   "title": "Entity profiles: a continuum between two profiles (generated)",
+   "mode": "bundled",
+   "license": "MIT (generated for this corpus; no external source)",
+   "source": "Generated for issue #448; prepare.py is the seeded generator, truth.json the ground truth",
+   "dir": "data/synthetic/entity_profiles_continuum",
+   "budget": "standard",
+   "detectors": [
+    "entity_fingerprints"
+   ],
+   "hints": {
+    "entity": "cust_id"
+   },
+   "notes": [
+    "Each customer's category profile is w*A + (1-w)*B with w uniform on (0, 1)."
+   ],
+   "sha256": "236c2d5f41574c714a93811a8195dde97a3c21f1ba1bf3e50dc8fa4b4e866fe0",
+   "rows": 35245,
+   "expectations": [
+    {
+     "kind": "finding",
+     "category": "associations",
+     "type": "entity_continuum",
+     "columns_all": [
+      "cust_id",
+      "category"
+     ],
+     "expect": "found",
+     "note": "Customers spread along the fresh-against-household axis with no clusters: the continuum statement, not k groups."
+    }
+   ]
   }
  ]
 }

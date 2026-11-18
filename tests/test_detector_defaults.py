@@ -28,6 +28,8 @@ ON_REQUEST = [
     # (docs/benchmarks/2026-11-16-detector-audit.md).
     "decision_tables",
     "interactions",
+    # Hint-triggered and on request: it runs only when named.
+    "entity_fingerprints",
 ]
 
 
@@ -44,7 +46,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_membership_trigger_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 45
+    assert len(registry) == 46
     on_request = sorted(
         d["id"] for d in registry.values() if d["membership"] == "on_request"
     )
@@ -63,8 +65,10 @@ def test_registry_membership_trigger_partition():
     )
     assert hint_triggered == ["expectations", "group_contrast"]
     assert all(
-        registry[d]["membership"] == "default_set" for d in hint_triggered
+        registry[d]["membership"] == "default_set"
+        for d in ("expectations", "group_contrast")
     )
+    assert registry["entity_fingerprints"]["membership"] == "on_request"
     target_triggered = sorted(
         d["id"] for d in registry.values() if d["trigger"] == "target"
     )

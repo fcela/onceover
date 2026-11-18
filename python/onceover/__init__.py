@@ -114,11 +114,11 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
     detectors : list[str], optional
         Detector IDs to select; None selects the default set (31 of the
-        45 registered detectors). Excluded unless requested: the
+        46 registered detectors). Excluded unless requested: the
         on-request detectors "row_clusters" (experimental),
         "date_gaps", "pivot", "period_associations", "drift",
         "granularity", "distribution_change", "slice_shifts",
-        "decision_tables" and "interactions" \u2014 each
+        "decision_tables", "interactions", and "entity_fingerprints" \u2014 each
         records a skipped coverage entry in default runs \u2014 and the
         target-triggered "outcome_account", "outcome_contrasts",
         "target_shapes", "leakage", and "model_failures", which
@@ -940,7 +940,11 @@ def _fact_section(rep: dict, columns: set, designated: str | None) -> str:
         return "target"
     if cat == "anomalies":
         return "anomalies"
-    if cat == "concentration" and typ in ("outlier_entity", "spike_cells"):
+    if cat == "concentration" and typ in (
+        "outlier_entity",
+        "spike_cells",
+        "entity_specialists",
+    ):
         return "anomalies"
     return "relationships"
 

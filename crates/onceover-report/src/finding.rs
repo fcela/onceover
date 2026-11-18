@@ -197,6 +197,23 @@ pub enum Pattern {
     /// entities' totals. No single cell needs to be extreme:
     /// every row of such an entity is.
     OutlierEntity,
+    /// Entities fall into groups by their distribution over one
+    /// categorical dimension: each entity's share of rows on each
+    /// level, with entities of one group sharing a mix and groups
+    /// differing from each other.
+    EntityGroups,
+    /// Entities differ in their distribution over one categorical
+    /// dimension along one continuous axis, with no separable groups:
+    /// the mix shifts gradually from one end of the axis to the other.
+    EntityContinuum,
+    /// Entities whose distribution over a categorical dimension is
+    /// rejected by the profile of every group: their mix matches no
+    /// group's pooled mix.
+    EntityMisfits,
+    /// A share of entities concentrated on essentially one level of
+    /// a categorical dimension: their rows fall on a single level,
+    /// where the overall mix spreads over several.
+    EntitySpecialists,
     /// The designated outcome's own distribution: for a numeric
     /// outcome its center, spread, and range in the outcome's own
     /// units; for a categorical outcome the share of each level
@@ -304,6 +321,10 @@ impl Pattern {
             Self::FirstActivity => "first_activity",
             Self::ConcentrationOverTime => "concentration_over_time",
             Self::OutlierEntity => "outlier_entity",
+            Self::EntityGroups => "entity_groups",
+            Self::EntityContinuum => "entity_continuum",
+            Self::EntityMisfits => "entity_misfits",
+            Self::EntitySpecialists => "entity_specialists",
             Self::OutcomeDistribution => "outcome_distribution",
             Self::OutcomeContrast => "outcome_contrast",
             Self::DuplicateEncoding => "duplicate_encoding",
@@ -379,6 +400,10 @@ impl Pattern {
         Pattern::SliceShift,
         Pattern::ConcentrationOverTime,
         Pattern::OutlierEntity,
+        Pattern::EntityGroups,
+        Pattern::EntityContinuum,
+        Pattern::EntityMisfits,
+        Pattern::EntitySpecialists,
         Pattern::OutcomeDistribution,
         Pattern::OutcomeContrast,
     ];
@@ -919,7 +944,9 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
-            Pattern::ConcentrationOverTime | Pattern::OutlierEntity => (
+            Pattern::ConcentrationOverTime
+            | Pattern::OutlierEntity
+            | Pattern::EntitySpecialists => (
                 Sc::Columns,
                 O::Distribution,
                 E::Exact,
@@ -927,6 +954,24 @@ impl Facets {
                 T::Atemporal,
                 None,
                 S::Regularity,
+            ),
+            Pattern::EntityGroups | Pattern::EntityContinuum => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::EntityMisfits => (
+                Sc::Columns,
+                O::Distribution,
+                E::Approximate,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Deviation,
             ),
             Pattern::Hotspot => (
                 Sc::Columns,
@@ -1378,6 +1423,7 @@ impl Facets {
                 Pattern::ConcentrationOverTime
             }
             (Category::Concentration, Some("outlier_entity")) => Pattern::OutlierEntity,
+            (Category::Concentration, Some("entity_specialists")) => Pattern::EntitySpecialists,
             (Category::Concentration, Some("outcome_distribution")) => Pattern::OutcomeDistribution,
             (Category::Concentration, Some("modal_share")) => Pattern::ModalShare,
             (Category::Concentration, Some("spike_cells")) => Pattern::SpikeCells,
@@ -1411,6 +1457,8 @@ impl Facets {
             (Category::Dependencies, Some("arithmetic_identity")) => Pattern::ArithmeticIdentity,
             (Category::Dependencies, _) => Pattern::FunctionalDependency,
             (Category::ConditionalRules, _) => Pattern::ConditionalRule,
+            (Category::Associations, Some("entity_groups")) => Pattern::EntityGroups,
+            (Category::Associations, Some("entity_continuum")) => Pattern::EntityContinuum,
             (Category::Associations, Some("period_association")) => Pattern::PeriodAssociation,
             (Category::Associations, Some("group_contrast")) => Pattern::GroupContrast,
             (Category::Associations, Some("conditioned_association")) => {
@@ -1427,6 +1475,7 @@ impl Facets {
             (Category::Anomalies, Some("row_inconsistency")) => Pattern::RowInconsistency,
             (Category::Anomalies, Some("extreme_value")) => Pattern::ExtremeValue,
             (Category::Anomalies, Some("categorical_outlier")) => Pattern::CategoricalOutlier,
+            (Category::Anomalies, Some("entity_misfits")) => Pattern::EntityMisfits,
             (Category::Anomalies, _) => Pattern::IntervalVariation,
             (Category::Ordering, _) => Pattern::ColumnOrdering,
             (Category::Changes, Some("series_structure")) => Pattern::SeriesStructure,
