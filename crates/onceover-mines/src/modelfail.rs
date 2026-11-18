@@ -93,14 +93,14 @@ use crate::slices::{
 };
 
 /// Configuration for the model-failure pass. The search fields
-/// mirror `SliceConfig` (the search machinery is shared); the
-/// pipeline sets `row_cap` from the tier's encoding row cap.
+/// mirror `SliceConfig` (the search machinery is shared). The
+/// search runs on the cross-fit residual set, whose size the
+/// encoding row cap and the screen's model-row cap bound; this
+/// configuration carries no row cap of its own.
 #[derive(Clone)]
 pub struct ModelFailureConfig {
     /// Cross-fitting folds.
     pub folds: usize,
-    /// Rows of the residual set the search runs on.
-    pub row_cap: usize,
     /// Maximum conjunction depth (2).
     pub max_depth: usize,
     /// Maximum levels kept per categorical column, and the
@@ -153,7 +153,6 @@ impl Default for ModelFailureConfig {
     fn default() -> Self {
         Self {
             folds: 5,
-            row_cap: 20_000,
             max_depth: 2,
             max_levels: 25,
             max_condition_columns: 12,
@@ -955,6 +954,12 @@ fn search_failure_slices(
         detail.push_str(&format!(
             "; the modelled rows are {} of {} rows",
             n_sample, table.n
+        ));
+        detail.push_str(&format!(
+            "; slices holding under {}% of the rows cannot be stated on these rows (support floor {} of {} rows)",
+            crate::fmt_float(100.0 * min_support as f64 / n_sample as f64),
+            min_support,
+            n_sample
         ));
     }
     if cat_cols_capped {

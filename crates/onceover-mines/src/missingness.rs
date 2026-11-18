@@ -602,6 +602,19 @@ pub fn profile_missingness(
     axis: Option<MissingnessAxis>,
     indicator_cap: usize,
 ) -> (Vec<Finding>, String) {
+    profile_missingness_with(table, excluded, axis, indicator_cap, SEARCH_ROWS)
+}
+
+/// `profile_missingness` with the pattern-search sample size given
+/// explicitly. The pipeline passes the tier's value; the default
+/// entry point passes the module default.
+pub fn profile_missingness_with(
+    table: &TypedTable,
+    excluded: &[usize],
+    axis: Option<MissingnessAxis>,
+    indicator_cap: usize,
+    search_rows: usize,
+) -> (Vec<Finding>, String) {
     if table.n == 0 {
         return (Vec::new(), "empty table".into());
     }
@@ -626,7 +639,7 @@ pub fn profile_missingness(
     }
 
     // ---- conditions ----
-    let sample = crate::stride_rows(n, SEARCH_ROWS);
+    let sample = crate::stride_rows(n, search_rows);
     let surprise_cfg = SurpriseConfig::default();
     let coded: Vec<(usize, Coded)> = (0..table.cols.len())
         .filter(|c| !excluded.contains(c))

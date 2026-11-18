@@ -151,7 +151,10 @@ impl TierConfig {
                     nominal_max_levels: 32,
                     skip_columns: Vec::new(),
                 },
-                screen: ScreenConfig::default(),
+                screen: ScreenConfig {
+                    max_model_rows: 5_000,
+                    ..Default::default()
+                },
                 dtable: DtableConfig::default(),
                 prism: PrismConfig::default(),
                 regimes: RegimesConfig::default(),
@@ -264,7 +267,7 @@ impl TierConfig {
                 screen: ScreenConfig {
                     max_rounds: 40,
                     max_predictors: 64,
-                    max_model_rows: 10_000,
+                    max_model_rows: 200_000,
                     ..Default::default()
                 },
                 dtable: DtableConfig::default(),
