@@ -28,6 +28,11 @@ pub struct EncodedMatrix {
     pub edges: Vec<Vec<f64>>,
     /// Nominal: code -> value label. Numeric: empty.
     pub levels: Vec<Vec<String>>,
+    /// For a feature derived from the time axis (hour of day, day of
+    /// week, month of year), the part it is; None for a column's own
+    /// feature. A calendar feature's `feat_cols` entry is the axis
+    /// column it is read from.
+    pub calendar_part: Vec<Option<&'static str>>,
 }
 
 pub struct EncodeConfig {
@@ -38,6 +43,11 @@ pub struct EncodeConfig {
     /// Table columns never encoded: the redundant side of a
     /// one-to-one recoding, whose information the kept side carries.
     pub skip_columns: Vec<usize>,
+    /// The time axis column, when the table has one held as a date or
+    /// datetime column: its calendar parts are encoded as features of
+    /// their own, so models can name an hour of day or a day of week
+    /// as a driver.
+    pub calendar_axis: Option<usize>,
 }
 
 impl Default for EncodeConfig {
@@ -47,6 +57,7 @@ impl Default for EncodeConfig {
             feature_cap: 48,
             nominal_max_levels: 32,
             skip_columns: Vec::new(),
+            calendar_axis: None,
         }
     }
 }
@@ -65,6 +76,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         n_bins: Vec::new(),
         edges: Vec::new(),
         levels: Vec::new(),
+        calendar_part: Vec::new(),
     };
     let mut skipped = 0usize;
 
@@ -88,6 +100,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
                     out.n_bins.push(edges.len() + 1);
                     out.edges.push(edges);
                     out.levels.push(Vec::new());
+                    out.calendar_part.push(None);
                 } else {
                     skipped += 1;
                 }
@@ -103,8 +116,12 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
                     out.n_bins.push(edges.len() + 1);
                     out.edges.push(edges);
                     out.levels.push(Vec::new());
+                    out.calendar_part.push(None);
                 } else {
                     skipped += 1;
+                }
+                if cfg.calendar_axis == Some(ci) {
+                    push_calendar_parts(&mut out, table, ci);
                 }
             }
             TypedCol::Bool { vals } => {
@@ -123,6 +140,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
                 out.n_bins.push(2);
                 out.edges.push(Vec::new());
                 out.levels.push(vec!["false".into(), "true".into()]);
+                out.calendar_part.push(None);
             }
             TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
                 // Count levels over the subsample.
@@ -159,6 +177,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
                 out.n_bins.push(labels.len());
                 out.edges.push(Vec::new());
                 out.levels.push(labels);
+                out.calendar_part.push(None);
             }
             TypedCol::Null { .. } | TypedCol::Other { .. } => {
                 skipped += 1;
@@ -166,6 +185,7 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         }
     }
 
+    drop_duplicate_calendar_parts(&mut out);
     out.feat_dtypes = out
         .feat_cols
         .iter()
@@ -182,6 +202,167 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
         skipped + uncapped.saturating_sub(out.feat_cols.len()),
     );
     (out, coverage)
+}
+
+/// Ticks of a date or datetime column in microseconds.
+fn micros_at(col: &TypedCol, r: usize) -> Option<i64> {
+    match col {
+        TypedCol::Date { vals } => vals[r].map(|d| d as i64 * 86_400_000_000),
+        TypedCol::Datetime { vals, unit } => vals[r].map(|v| {
+            let per_s = onceover_core::dateutil::ticks_per_second(*unit);
+            (v as i128 * 1_000_000 / per_s as i128) as i64
+        }),
+        _ => None,
+    }
+}
+
+/// Encode the axis column's calendar parts as nominal features:
+/// hour of day (datetime axes with times of day), day of week, and
+/// month of year, each kept only when at least two of its levels
+/// occur.
+fn push_calendar_parts(out: &mut EncodedMatrix, table: &TypedTable, ci: usize) {
+    const DAY: i64 = 86_400_000_000;
+    const WEEKDAYS: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let col = &table.cols[ci];
+    let ticks: Vec<Option<i64>> = out
+        .rows
+        .iter()
+        .map(|&r| micros_at(col, r as usize))
+        .collect();
+    if ticks.iter().flatten().count() < 30 {
+        return;
+    }
+    let sub_day = ticks.iter().flatten().any(|t| t.rem_euclid(DAY) != 0);
+    let mut parts: Vec<(&'static str, Vec<String>, Vec<u8>)> = Vec::new();
+    if sub_day {
+        let codes = ticks
+            .iter()
+            .map(|t| t.map_or(MISSING, |t| (t.rem_euclid(DAY) / 3_600_000_000) as u8))
+            .collect();
+        parts.push((
+            "hour of day",
+            (0..24).map(|h| h.to_string()).collect(),
+            codes,
+        ));
+    }
+    let weekday = ticks
+        .iter()
+        .map(|t| {
+            t.map_or(MISSING, |t| {
+                onceover_core::dateutil::weekday(t.div_euclid(DAY)) as u8
+            })
+        })
+        .collect();
+    parts.push((
+        "day of week",
+        WEEKDAYS.iter().map(|s| s.to_string()).collect(),
+        weekday,
+    ));
+    let month = ticks
+        .iter()
+        .map(|t| {
+            t.map_or(MISSING, |t| {
+                (onceover_core::dateutil::civil_from_days(t.div_euclid(DAY)).1 - 1) as u8
+            })
+        })
+        .collect();
+    parts.push((
+        "month of year",
+        MONTHS.iter().map(|s| s.to_string()).collect(),
+        month,
+    ));
+    for (part, labels, codes) in parts {
+        let mut present = vec![false; labels.len()];
+        for &c in &codes {
+            if c != MISSING {
+                present[c as usize] = true;
+            }
+        }
+        if present.iter().filter(|&&p| p).count() < 2 {
+            continue;
+        }
+        out.feat_cols.push(ci);
+        out.feat_names
+            .push(format!("{part} of {}", table.names[ci]));
+        out.feat_nominal.push(true);
+        out.bins.push(codes);
+        out.n_bins.push(labels.len());
+        out.edges.push(Vec::new());
+        out.levels.push(labels);
+        out.calendar_part.push(Some(match part {
+            "hour of day" => "hour_of_day",
+            "day of week" => "day_of_week",
+            _ => "month_of_year",
+        }));
+    }
+}
+
+/// Drop a calendar feature whose bins partition the rows exactly as a
+/// column's own feature does (an hour column beside the timestamp
+/// already carries the hour of day).
+fn drop_duplicate_calendar_parts(out: &mut EncodedMatrix) {
+    let same = |a: &[u8], b: &[u8]| -> bool {
+        let mut ab = [u8::MAX; 256];
+        let mut ba = [u8::MAX; 256];
+        for (&x, &y) in a.iter().zip(b) {
+            if (x == MISSING) != (y == MISSING) {
+                return false;
+            }
+            if x == MISSING {
+                continue;
+            }
+            if ab[x as usize] == u8::MAX {
+                ab[x as usize] = y;
+            } else if ab[x as usize] != y {
+                return false;
+            }
+            if ba[y as usize] == u8::MAX {
+                ba[y as usize] = x;
+            } else if ba[y as usize] != x {
+                return false;
+            }
+        }
+        true
+    };
+    let drop: Vec<usize> = (0..out.bins.len())
+        .filter(|&f| out.calendar_part[f].is_some())
+        .filter(|&f| {
+            (0..out.bins.len())
+                .any(|g| out.calendar_part[g].is_none() && same(&out.bins[f], &out.bins[g]))
+        })
+        .collect();
+    for &f in drop.iter().rev() {
+        out.feat_cols.remove(f);
+        out.feat_names.remove(f);
+        out.feat_nominal.remove(f);
+        out.bins.remove(f);
+        out.n_bins.remove(f);
+        out.edges.remove(f);
+        out.levels.remove(f);
+        out.calendar_part.remove(f);
+    }
 }
 
 fn days_at(col: &TypedCol, r: usize) -> Option<f64> {

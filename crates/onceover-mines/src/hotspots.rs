@@ -1352,6 +1352,7 @@ mod tests {
             feat_nominal: vec![false; 6],
             edges: vec![Vec::new(); 6],
             levels: vec![Vec::new(); 6],
+            calendar_part: vec![None; 6],
         }
     }
 
@@ -1514,6 +1515,7 @@ mod tests {
             feat_nominal: vec![false; 4],
             edges: vec![Vec::new(); 4],
             levels: vec![Vec::new(); 4],
+            calendar_part: vec![None; 4],
         }
     }
 

@@ -192,6 +192,18 @@ def check_predictive(f: dict) -> list[str]:
     reduced = None if reduced is None else float(reduced)
     baseline = float(m["baseline"])
 
+    # A trailing clause states how the target moves over its main
+    # driver's bins (issue #374); its bins must be the payload's.
+    if "); " in claim:
+        claim, profile = claim.split("); ", 1)
+        claim += ")"
+        bins = m.get("top_driver_profile")
+        if not isinstance(bins, list) or len(bins) < 2:
+            problems.append("driver-profile")
+        else:
+            labels = {b["bin"] for b in bins}
+            if not any(label in profile for label in labels):
+                problems.append("driver-profile")
     parsed = re.search(r"^.+? is predictable from (.+?) \(holdout (.+)\)$",
                        claim)
     if parsed is None:

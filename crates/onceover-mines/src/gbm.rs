@@ -456,6 +456,175 @@ fn column_seed(enc: &EncodedMatrix, ci: usize) -> u64 {
     h
 }
 
+/// The target's profile over its strongest driver's bins.
+struct DriverProfile {
+    text: String,
+    bins: serde_json::Value,
+}
+
+/// A driver bin's label as a claim reads it: a level, or a range of
+/// the driver's values.
+fn driver_bin_label(enc: &EncodedMatrix, f: usize, code: u8) -> String {
+    let name = &enc.feat_names[f];
+    if enc.feat_nominal[f] {
+        let level = enc.levels[f]
+            .get(code as usize)
+            .cloned()
+            .unwrap_or_else(|| "?".into());
+        return format!("{name} = '{level}'");
+    }
+    let edges = &enc.edges[f];
+    let c = code as usize;
+    if edges.is_empty() {
+        return format!("{name} in bin {c}");
+    }
+    if c == 0 {
+        format!("{name} <= {}", crate::fmt_float(edges[0]))
+    } else if c >= edges.len() {
+        format!("{name} > {}", crate::fmt_float(edges[edges.len() - 1]))
+    } else {
+        format!(
+            "{name} in ({}, {}]",
+            crate::fmt_float(edges[c - 1]),
+            crate::fmt_float(edges[c])
+        )
+    }
+}
+
+/// Where the target is highest and lowest over the bins of `driver`
+/// on the encoded rows: the median of a numeric target per bin, or
+/// for a categorical target the share of its least frequent of the
+/// two most frequent levels (the event a reader asks about). Bins
+/// with fewer than max(30, 1% of rows) are not compared. For a
+/// numeric driver whose bin medians (or shares) rise or fall with
+/// the bin order (Spearman |rho| >= 0.9 over the compared bins), the
+/// text says so. None when fewer than two bins can be compared or
+/// the profile is flat.
+fn driver_profile(
+    table: &TypedTable,
+    enc: &EncodedMatrix,
+    target: &str,
+    is_categorical: bool,
+    driver: &str,
+) -> Option<DriverProfile> {
+    let f = enc.feat_names.iter().position(|n| n == driver)?;
+    let tc = table.names.iter().position(|n| n == target)?;
+    let tf = enc.feat_cols.iter().position(|&c| c == tc);
+    let n_bins = enc.n_bins[f];
+    let min_support = 30usize.max(enc.n / 100);
+    // The event of a categorical target: the less frequent of its
+    // two most frequent levels.
+    let event: Option<u8> = if is_categorical {
+        let tf = tf?;
+        let mut counts = vec![0usize; 256];
+        for &b in &enc.bins[tf] {
+            if b != MISSING {
+                counts[b as usize] += 1;
+            }
+        }
+        let mut order: Vec<usize> = (0..256).filter(|&i| counts[i] > 0).collect();
+        order.sort_by(|&a, &b| counts[b].cmp(&counts[a]).then(a.cmp(&b)));
+        if order.len() < 2 {
+            return None;
+        }
+        Some(order[1] as u8)
+    } else {
+        None
+    };
+    let mut per_bin: Vec<Vec<f64>> = vec![Vec::new(); n_bins];
+    for j in 0..enc.n {
+        let b = enc.bins[f][j];
+        if b == MISSING || (b as usize) >= n_bins {
+            continue;
+        }
+        let y = match event {
+            Some(e) => {
+                let t = enc.bins[tf?][j];
+                if t == MISSING {
+                    continue;
+                }
+                if t == e {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            None => match table.cols[tc].numeric_at(enc.rows[j] as usize) {
+                Some(v) if v.is_finite() => v,
+                _ => continue,
+            },
+        };
+        per_bin[b as usize].push(y);
+    }
+    let stat = |v: &mut Vec<f64>| -> f64 {
+        if event.is_some() {
+            v.iter().sum::<f64>() / v.len() as f64
+        } else {
+            v.sort_by(f64::total_cmp);
+            onceover_core::stats::median_sorted(v)
+        }
+    };
+    let mut rows: Vec<(usize, usize, f64)> = Vec::new(); // (bin, n, stat)
+    for (b, v) in per_bin.iter_mut().enumerate() {
+        if v.len() >= min_support {
+            let n = v.len();
+            rows.push((b, n, stat(v)));
+        }
+    }
+    if rows.len() < 2 {
+        return None;
+    }
+    let hi = rows.iter().max_by(|a, b| a.2.total_cmp(&b.2))?;
+    let lo = rows.iter().min_by(|a, b| a.2.total_cmp(&b.2))?;
+    if hi.2 <= lo.2 {
+        return None;
+    }
+    let monotone = if enc.feat_nominal[f] || rows.len() < 3 {
+        None
+    } else {
+        let idx: Vec<f64> = rows.iter().map(|r| r.0 as f64).collect();
+        let vals: Vec<f64> = rows.iter().map(|r| r.2).collect();
+        onceover_core::stats::spearman(&idx, &vals).filter(|rho| rho.abs() >= 0.9)
+    };
+    let fmt = |x: f64| -> String {
+        if event.is_some() {
+            format!("{:.0}%", 100.0 * x)
+        } else {
+            crate::fmt_float(x)
+        }
+    };
+    let what = match event {
+        Some(e) => format!("the share of rows with {}", driver_bin_label(enc, tf?, e)),
+        None => format!("{target}'s median"),
+    };
+    let text = match monotone {
+        Some(rho) => format!(
+            "{} {} with {}: {} where {} against {} where {}",
+            what,
+            if rho > 0.0 { "rises" } else { "falls" },
+            driver,
+            fmt(if rho > 0.0 { hi.2 } else { lo.2 }),
+            driver_bin_label(enc, f, if rho > 0.0 { hi.0 } else { lo.0 } as u8),
+            fmt(if rho > 0.0 { lo.2 } else { hi.2 }),
+            driver_bin_label(enc, f, if rho > 0.0 { lo.0 } else { hi.0 } as u8),
+        ),
+        None => format!(
+            "{} is highest where {} ({}) and lowest where {} ({})",
+            what,
+            driver_bin_label(enc, f, hi.0 as u8),
+            fmt(hi.2),
+            driver_bin_label(enc, f, lo.0 as u8),
+            fmt(lo.2),
+        ),
+    };
+    let bins = serde_json::Value::Array(
+        rows.iter()
+            .map(|(b, n, s)| json!({"bin": driver_bin_label(enc, f, *b as u8), "rows": n, "value": s}))
+            .collect(),
+    );
+    Some(DriverProfile { text, bins })
+}
+
 // ---------- screening ----------
 
 pub fn screen(
@@ -483,12 +652,14 @@ pub fn screen(
         .copied()
         .filter(|i| !inputs_allowed.contains(i))
         .collect();
-    let eligible_targets: Vec<usize> = enc
+    let mut eligible_targets: Vec<usize> = enc
         .feat_cols
         .iter()
         .copied()
         .filter(|i| !excluded_targets.contains(i))
         .collect();
+    // A column with calendar features appears once per feature.
+    eligible_targets.dedup();
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
@@ -571,51 +742,66 @@ pub fn screen(
                 ),
             }
         };
+        // How the target moves with its strongest driver: where it
+        // is highest and lowest over the driver's bins, read from the
+        // data, so the statement says how, not only that.
+        let profile = r
+            .drivers
+            .first()
+            .and_then(|(d, _)| driver_profile(table, enc, &r.name, r.is_categorical, d));
+        let claim = match &profile {
+            Some(p) => format!("{claim}; {}", p.text),
+            None => claim,
+        };
+        let mut metrics = BTreeMap::from([
+            ("metric".into(), json!(r.metric)),
+            (
+                "task".into(),
+                json!(if r.is_categorical {
+                    "classification"
+                } else {
+                    "regression"
+                }),
+            ),
+            ("inputs".into(), json!(r.inputs)),
+            ("baseline".into(), json!(r.baseline)),
+            ("n_train".into(), json!(r.n_train)),
+            ("n_holdout".into(), json!(r.n_holdout)),
+            (
+                "top_features".into(),
+                json!(r
+                    .top_features
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()),
+            ),
+            (
+                "gain_shares".into(),
+                json!(r.top_features.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+            ),
+            (
+                "drivers".into(),
+                json!(r.drivers.iter().map(|(name, _)| name).collect::<Vec<_>>()),
+            ),
+            (
+                "driver_shares".into(),
+                json!(r.drivers.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+            ),
+            ("reduced_metric".into(), json!(r.reduced_metric)),
+            ("reduced_rounds".into(), json!(r.reduced_rounds)),
+            ("rounds".into(), json!(r.rounds)),
+            ("rows_used".into(), json!(enc.n)),
+        ]);
+        if let Some(p) = profile {
+            metrics.insert("top_driver_profile".into(), p.bins);
+        }
         findings.push(Finding::new(
             Pattern::PredictiveDependency,
             BTreeMap::from([("column".into(), json!(r.name))]),
             claim,
             EvidenceBasis::Estimated,
             interest,
-            BTreeMap::from([
-                ("metric".into(), json!(r.metric)),
-                (
-                    "task".into(),
-                    json!(if r.is_categorical {
-                        "classification"
-                    } else {
-                        "regression"
-                    }),
-                ),
-                ("inputs".into(), json!(r.inputs)),
-                ("baseline".into(), json!(r.baseline)),
-                ("n_train".into(), json!(r.n_train)),
-                ("n_holdout".into(), json!(r.n_holdout)),
-                (
-                    "top_features".into(),
-                    json!(r
-                        .top_features
-                        .iter()
-                        .map(|(name, _)| name)
-                        .collect::<Vec<_>>()),
-                ),
-                (
-                    "gain_shares".into(),
-                    json!(r.top_features.iter().map(|(_, s)| s).collect::<Vec<_>>()),
-                ),
-                (
-                    "drivers".into(),
-                    json!(r.drivers.iter().map(|(name, _)| name).collect::<Vec<_>>()),
-                ),
-                (
-                    "driver_shares".into(),
-                    json!(r.drivers.iter().map(|(_, s)| s).collect::<Vec<_>>()),
-                ),
-                ("reduced_metric".into(), json!(r.reduced_metric)),
-                ("reduced_rounds".into(), json!(r.reduced_rounds)),
-                ("rounds".into(), json!(r.rounds)),
-                ("rows_used".into(), json!(enc.n)),
-            ]),
+            metrics,
             Some(format!(
                 "inspect the predictive inputs and validation before treating {} as derived",
                 r.name
@@ -627,6 +813,20 @@ pub fn screen(
             ),
         ));
     }
+
+    // A numeric pair whose columns each hold most of the other's
+    // model gain (temp from atemp and atemp from temp) is one fact:
+    // keep the
+    // direction with the stronger holdout score (the first target in
+    // table order on a tie) and drop its mirror.
+    let mirrored = mirrored_statements(&findings);
+    let n_mirrored = mirrored.len();
+    let findings: Vec<Finding> = findings
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !mirrored.contains(i))
+        .map(|(_, f)| f)
+        .collect();
 
     let mut coverage = format!(
         "{} target columns considered over {} encoded rows / {} features; {} predictable; predictors shortlisted from all features on training rows (max {} predictors / {} fitting rows per target)",
@@ -666,11 +866,52 @@ pub fn screen(
             declared_names.join(", ")
         ));
     }
+    if n_mirrored > 0 {
+        coverage.push_str(&format!(
+            "; {n_mirrored} statement(s) not stated as the mirror of another (each column the other's main driver)"
+        ));
+    }
     ScreenOutcome {
         findings,
         results,
         coverage,
     }
+}
+
+/// Indices of predictive statements that mirror a stronger one: the
+/// target's main driver (at least half the gain) has its own
+/// statement whose main driver is this target.
+fn mirrored_statements(findings: &[Finding]) -> std::collections::BTreeSet<usize> {
+    let main_driver = |f: &Finding| -> Option<(String, String, f64)> {
+        let m = &f.evidence.first()?.metrics;
+        // Only numeric pairs mirror: for categorical columns each
+        // direction carries its own mapping (a level of one column
+        // can fix the other without the converse).
+        if m.get("task").and_then(|v| v.as_str()) != Some("regression") {
+            return None;
+        }
+        let target = m
+            .get("column")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .or_else(|| f.subject.target.clone())?;
+        let driver = m.get("drivers")?.as_array()?.first()?.as_str()?.to_string();
+        let share = m.get("driver_shares")?.as_array()?.first()?.as_f64()?;
+        let metric = m.get("metric")?.as_f64()?;
+        (share >= 0.5).then_some((target, driver, metric))
+    };
+    let mains: Vec<Option<(String, String, f64)>> = findings.iter().map(main_driver).collect();
+    let mut drop = std::collections::BTreeSet::new();
+    for (i, a) in mains.iter().enumerate() {
+        let Some((ta, da, ma)) = a else { continue };
+        for (j, b) in mains.iter().enumerate().skip(i + 1) {
+            let Some((tb, db, mb)) = b else { continue };
+            if ta == db && da == tb {
+                drop.insert(if mb > ma { i } else { j });
+            }
+        }
+    }
+    drop
 }
 
 /// Screen one column as a target. Columns in `excluded_targets`
@@ -722,9 +963,14 @@ pub fn screen_target(
     let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
     let mut selected: Vec<usize> = (0..enc.bins.len())
         .filter(|&f| {
+            // A calendar part of the time axis (hour of day, day of
+            // week) is a predictor of its own, though the axis
+            // column it is read from is excluded.
+            let calendar = enc.calendar_part.get(f).copied().flatten().is_some();
             f != own
-                && !excluded_targets.contains(&enc.feat_cols[f])
-                && !declared_excluded.contains(&enc.feat_cols[f])
+                && (calendar
+                    || (!excluded_targets.contains(&enc.feat_cols[f])
+                        && !declared_excluded.contains(&enc.feat_cols[f])))
         })
         .collect();
     if selected.len() > cfg.max_predictors {

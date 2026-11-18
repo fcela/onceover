@@ -172,6 +172,7 @@ upgrades a statement to an exact constraint.
 | `scale` | `level_contrast` | The level's interquartile range of the measure differs from the rest's. |
 | `location_scale` | `level_contrast` | The level's median and interquartile range of the measure both differ from the rest's. |
 | `constant_multiple` | `level_contrast` | The level's values sit at a near-constant multiple of the rest's distribution. |
+| `across_measures` | `level_contrast` | One level of a grouping sits on the same side of its pooled rest on several measures: stated once, naming each measure with its median shift, the per-measure contrasts in the evidence's measures table. |
 | `profile` | `level_contrast` | Several levels of one grouping differ from their pooled rest on one measure: the measure's profile over the grouping, stated once, with every tested level's median and tests in the evidence's levels table. |
 | `bias` | `model_failure` | The model's residuals in the slice are biased: their mean differs from zero beyond the stated bar. |
 | `accuracy` | `model_failure` | The model's error in the slice exceeds its table-wide error beyond the stated bar. |

@@ -843,6 +843,7 @@ mod tests {
             bins,
             edges: vec![Vec::new(); 3],
             levels,
+            calendar_part: Vec::new(),
         }
     }
     fn cfg() -> AssociationConfig {

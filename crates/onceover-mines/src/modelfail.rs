@@ -1070,6 +1070,7 @@ mod tests {
             n_bins: Vec::new(),
             edges: Vec::new(),
             levels: Vec::new(),
+            calendar_part: Vec::new(),
         }
     }
 

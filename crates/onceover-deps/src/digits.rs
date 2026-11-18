@@ -27,7 +27,9 @@
 //!   against Benford's law, only for eligible columns —
 //!   eligibility is conservative and recorded in coverage:
 //!   at least 500 values, at least 95% of them positive,
-//!   max/min >= 1000 (three orders of magnitude), at least 100
+//!   max/min >= 1000 (three orders of magnitude), the central 90%
+//!   of the values spanning at least two (95th / 5th percentile >=
+//!   100), at least 100
 //!   distinct values, and, for integer-valued columns only, a
 //!   distinct share < 50% (near-unique integer columns are
 //!   identifier-like, not quantities; continuous quantities are
@@ -363,6 +365,10 @@ fn terminal_digit(name: &str, vals: &[f64], out: &mut Vec<Finding>) {
 
 /// Returns true when the column was Benford-eligible (whether
 /// or not a deviation was reported).
+/// The central 90% of a Benford-eligible column's positive values
+/// must span at least this ratio (two orders of magnitude).
+const BENFORD_BULK_SPAN: f64 = 100.0;
+
 fn benford(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
     let positives: Vec<f64> = vals.iter().copied().filter(|&v| v > 0.0).collect();
     if positives.len() < MIN_VALUES || positives.len() as f64 / vals.len() as f64 <= 0.95 {
@@ -379,7 +385,18 @@ fn benford(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
     // identifiers are integer-valued, while genuine continuous
     // quantities are near-unique by nature and stay eligible.
     let integer_valued = positives.iter().all(|v| v.fract() == 0.0);
+    // Benford's law describes quantities spread over several orders
+    // of magnitude. The span is judged on the central 90% of the
+    // values: a bounded bulk with a few extreme values (weights of one
+    // species, prices within one decade) deviates by construction
+    // (issue #421).
+    let mut sorted = positives.clone();
+    sorted.sort_by(f64::total_cmp);
+    let p05 = onceover_core::stats::quantile_sorted(&sorted, 0.05);
+    let p95 = onceover_core::stats::quantile_sorted(&sorted, 0.95);
     if hi / lo < 1000.0
+        || p05 <= 0.0
+        || p95 / p05 < BENFORD_BULK_SPAN
         || distinct.len() < 100
         || (integer_valued && distinct.len() as f64 / positives.len() as f64 >= 0.5)
     {
@@ -431,7 +448,7 @@ fn benford(name: &str, vals: &[f64], out: &mut Vec<Finding>) -> bool {
             ("values".into(), json!(positives.len())),
             (
                 "method".into(),
-                json!("first significant digits of positive values vs Benford proportions; eligibility: >= 500 values, >= 95% positive, max/min >= 1000, >= 100 distinct, distinct share < 50% for integer-valued columns"),
+                json!("first significant digits of positive values vs Benford proportions; eligibility: >= 500 values, >= 95% positive, max/min >= 1000, 95th/5th percentile >= 100, >= 100 distinct, distinct share < 50% for integer-valued columns"),
             ),
         ]),
         Some(

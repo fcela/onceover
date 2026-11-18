@@ -183,18 +183,6 @@
   },
   {
    "metric": "invariance.noise",
-   "scope": "total",
-   "limit": 44,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
-  },
-  {
-   "metric": "invariance.noise",
-   "scope": "adult-census-income",
-   "limit": 9,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2. With the #363 screen cap on this base the count is 8 (one more noise-sensitive predictive statement)."
-  },
-  {
-   "metric": "invariance.noise",
    "scope": "bank-marketing",
    "limit": 4,
    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
@@ -209,12 +197,6 @@
    "metric": "invariance.noise",
    "scope": "thyroid",
    "limit": 5,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
-  },
-  {
-   "metric": "invariance.row_shuffle",
-   "scope": "absenteeism-at-work",
-   "limit": 18,
    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
   },
   {
@@ -290,12 +272,6 @@
    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
   },
   {
-   "metric": "redundancy.finding_permille_default",
-   "scope": "total",
-   "limit": 16629,
-   "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
-  },
-  {
    "metric": "cost.profile_seconds",
    "scope": "total",
    "limit": 56.6,
@@ -306,6 +282,84 @@
    "scope": "adult-census-income",
    "limit": 877,
    "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "total",
+   "limit": 52,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "adult-census-income",
+   "limit": 24,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "adult-census-income",
+   "limit": 26,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "absenteeism-at-work",
+   "limit": 19,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "planted_mix",
+   "limit": 2,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "planted_mix",
+   "limit": 2,
+   "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "total",
+   "limit": 15959,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "adult-census-income",
+   "limit": 888,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "metro-interstate-traffic",
+   "limit": 845,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "planted_mix",
+   "limit": 912,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "dominant_driver",
+   "limit": 878,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "weighted_noise",
+   "limit": 0,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "weighted_large_cell",
+   "limit": 758,
+   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
   }
  ]
 }
