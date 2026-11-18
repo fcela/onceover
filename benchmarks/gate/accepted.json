@@ -70,8 +70,8 @@
   {
    "metric": "invariance.noise",
    "scope": "adult-census-income",
-   "limit": 7,
-   "reason": "Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
+   "limit": 8,
+   "reason": "Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2. With the #363 screen cap on this base the count is 8 (one more noise-sensitive predictive statement)."
   },
   {
    "metric": "invariance.noise",
@@ -114,6 +114,18 @@
    "scope": "total",
    "limit": 35,
    "reason": "One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "adult-census-income",
+   "limit": 877,
+   "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "bike-sharing-hourly",
+   "limit": 841,
+   "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 842 -> 841."
   }
  ]
 }
