@@ -789,10 +789,12 @@ fn profile_inner(
     }
     if !deadline_hit
         && enabled("row_duplicates")
-        && table
-            .cols
-            .iter()
-            .any(|c| !matches!(c, onceover_core::TypedCol::Other { .. }))
+        && table.cols.iter().any(|c| {
+            !matches!(
+                c,
+                onceover_core::TypedCol::Null { .. } | onceover_core::TypedCol::Other { .. }
+            )
+        })
     {
         match if info
             .iter()
@@ -831,7 +833,13 @@ fn profile_inner(
                     .cols
                     .iter()
                     .enumerate()
-                    .filter(|(_, col)| !matches!(col, onceover_core::TypedCol::Other { .. }))
+                    .filter(|(_, col)| {
+                        !matches!(
+                            col,
+                            onceover_core::TypedCol::Null { .. }
+                                | onceover_core::TypedCol::Other { .. }
+                        )
+                    })
                     .map(|(i, _)| i)
                     .collect();
                 let mut groups_json = Vec::new();
@@ -905,7 +913,7 @@ fn profile_inner(
                 } else {
                     findings.push(Finding::new(
                     Pattern::Duplicates,
-                    BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
+                    BTreeMap::from([("columns".into(),json!(table.names.iter().zip(&table.cols).filter(|(_,col)|!matches!(col,onceover_core::TypedCol::Null{..} | onceover_core::TypedCol::Other{..})).map(|(name,_)|name).collect::<Vec<_>>()))]),
                     format!(
                         "{} rows repeat earlier values across the compared columns ({} groups, largest {})",
                         dup.n_redundant, dup.n_groups, dup.max_group_size
@@ -935,10 +943,12 @@ fn profile_inner(
     }
 
     if enabled("row_duplicates")
-        && table
-            .cols
-            .iter()
-            .all(|c| matches!(c, onceover_core::TypedCol::Other { .. }))
+        && table.cols.iter().all(|c| {
+            matches!(
+                c,
+                onceover_core::TypedCol::Null { .. } | onceover_core::TypedCol::Other { .. }
+            )
+        })
     {
         stamp_insert(
             &mut coverage,
@@ -959,12 +969,19 @@ fn profile_inner(
             } else {
                 DepsOutcome::default()
             };
+            let reason = if cfg.budget == Budget::Quick {
+                "quick tier"
+            } else if enabled("keys") {
+                "functional dependencies not enabled; key discovery only"
+            } else {
+                "detector not enabled"
+            };
             stamp_insert(
                 &mut coverage,
                 &mut last_mark,
                 timing_on,
                 "functional_dependencies".into(),
-                PassInfo::skipped("quick tier"),
+                PassInfo::skipped(reason),
             );
             let k = analyze_keys(&info, &d);
             (d, k.findings)
@@ -1249,9 +1266,26 @@ fn profile_inner(
                         Some(wide) => {
                             let mut cfg2 = cfg.clone();
                             cfg2.target = None;
+                            // The recursive profile starts its own clock.
+                            // Carry the remaining budget, not the original
+                            // one, or a wide form can run past the caller's
+                            // deadline after the long form already spent
+                            // most of it.
+                            cfg2.deadline = cfg.deadline.map(|d| d.saturating_sub(start.elapsed()));
                             let wide_report = profile_inner(&wide, &cfg2, extensions, depth + 1);
                             let n_wide =
                                 wide_report.findings.len() + wide_report.grouped_findings.len();
+                            // The wide profile is a second examination of
+                            // the same frame; its pass coverage is part of
+                            // what was checked, and must not disappear when
+                            // only its findings are lifted. Keep it under
+                            // its own names rather than overwriting the
+                            // long form's coverage.
+                            for (pass, info) in &wide_report.coverage {
+                                coverage
+                                    .entry(format!("pivot_profile/{pass}"))
+                                    .or_insert_with(|| info.clone());
+                            }
                             // Grouped statements are lifted too (schema
                             // 0.6): a family inside the wide profile is
                             // still a statement about the data, and the
@@ -1274,7 +1308,7 @@ fn profile_inner(
                             stamp_insert(&mut coverage, &mut last_mark, timing_on,
                                 "pivot_profile".into(),
                                 PassInfo::ran(format!(
-                                    "profiled the pivoted wide form ({} index columns, {} levels of {} -> {} rows x {} columns); {} findings included, tagged source_form in their evidence",
+                                    "profiled the pivoted wide form ({} index columns, {} levels of {} -> {} rows x {} columns); {} findings included, tagged source_form in their evidence; nested pass coverage under pivot_profile/<pass>",
                                     spec.index.len(),
                                     spec.levels.len(),
                                     spec.attribute,
@@ -3258,6 +3292,7 @@ fn profile_inner(
             "predictability" => "predictability_screen",
             "numeric_dependence" => "dependence_screen",
             "identities" => "arithmetic_identities",
+            "covering_rules" => "prism_rules",
             other => other,
         }
         .to_string()
@@ -3270,25 +3305,31 @@ fn profile_inner(
         let (id, pass) = (id.as_str(), pass.as_str());
         if !enabled(id) {
             // A pass that did not run says why. Opt-in detectors are
-            // named as such (an existing entry, e.g. a deadline skip,
-            // is more specific and is kept).
-            if !coverage.contains_key(pass) {
-                let detail = match activations.get(id) {
-                    Some((_, crate::detectors::Trigger::Target)) => {
-                        "runs when a target is designated, or when explicitly selected together with a target".to_string()
-                    }
-                    Some((crate::detectors::Membership::OnRequest, _)) => format!(
-                        "on-request detector; not in the default set — request it with detectors=[\"{id}\"]"
-                    ),
-                    _ => "detector not enabled".to_string(),
-                };
-                stamp_insert(
+            // named as such. A deadline check can stamp a pass before
+            // its enabled check; when the detector was off, being
+            // disabled is the reason it did not run, so replace that
+            // misleading entry.
+            let detail = match activations.get(id) {
+                Some((_, crate::detectors::Trigger::Target)) => {
+                    "runs when a target is designated, or when explicitly selected together with a target".to_string()
+                }
+                Some((crate::detectors::Membership::OnRequest, _)) => format!(
+                    "on-request detector; not in the default set — request it with detectors=[\"{id}\"]"
+                ),
+                _ => "detector not enabled".to_string(),
+            };
+            match coverage.get_mut(pass) {
+                Some(info) if info.status == "skipped" && info.detail == "deadline reached" => {
+                    info.detail = detail;
+                }
+                Some(_) => {}
+                None => stamp_insert(
                     &mut coverage,
                     &mut last_mark,
                     timing_on,
                     pass.into(),
                     PassInfo::skipped(detail),
-                );
+                ),
             }
         } else {
             if !coverage.contains_key(pass) {

@@ -119,10 +119,17 @@ enum Axis {
     Integer,
 }
 
-fn display_time(axis: Axis, t: i64) -> String {
+/// Axis tick. Dates and datetimes stay in their i64 ranges; an
+/// integer axis may be an unsigned Polars column with values above
+/// i64::MAX, so scanning it through i64 would silently drop rows.
+type Tick = i128;
+
+fn display_time(axis: Axis, t: Tick) -> String {
     match axis {
-        Axis::Datetime => onceover_core::dateutil::iso_datetime(t),
-        Axis::Date => onceover_core::dateutil::iso_date(t),
+        // Date/datetime helpers take i64; an i128 tick on either
+        // axis can only have come from an i64 source value.
+        Axis::Datetime => onceover_core::dateutil::iso_datetime(t as i64),
+        Axis::Date => onceover_core::dateutil::iso_date(t as i64),
         Axis::Integer => t.to_string(),
     }
 }
@@ -130,13 +137,14 @@ fn display_time(axis: Axis, t: i64) -> String {
 /// The ordering axis of the table: the hinted column when it is a
 /// date, datetime, or integer column; else the first date/datetime
 /// column; else a year-like integer column (every present value in
-/// 1900..=2100, at least 8 distinct). Mirrors the breaks pass's
-/// axis selection so the two passes read a table the same way.
+/// 1900..=2100, at least 8 distinct); else a strictly increasing
+/// integer sequence column. Mirrors the breaks pass's axis
+/// selection so the two passes read a table the same way.
 fn select_axis(
     table: &TypedTable,
     time_hint: Option<&str>,
     hinted_only: bool,
-) -> Option<(usize, Axis, Vec<Option<i64>>)> {
+) -> Option<(usize, Axis, Vec<Option<Tick>>)> {
     fn axis_of(col: &TypedCol) -> Option<Axis> {
         match col {
             TypedCol::Date { .. } => Some(Axis::Date),
@@ -148,13 +156,13 @@ fn select_axis(
     // Per-row axis ticks, mirroring the breaks pass's `time_at`:
     // datetime ticks are normalized to microseconds because the
     // stored ticks retain the source unit.
-    fn ticks(col: &TypedCol, n: usize) -> Vec<Option<i64>> {
+    fn ticks(col: &TypedCol, n: usize) -> Vec<Option<Tick>> {
         (0..n)
             .map(|r| match col {
-                TypedCol::Date { vals } => vals[r].map(i64::from),
-                TypedCol::Datetime { .. } => col.datetime_micros(r),
-                TypedCol::I64 { vals } => vals.get(r).flatten(),
-                TypedCol::U64 { vals } => vals.at(r).and_then(|v| i64::try_from(v).ok()),
+                TypedCol::Date { vals } => vals[r].map(i128::from),
+                TypedCol::Datetime { .. } => col.datetime_micros(r).map(i128::from),
+                TypedCol::I64 { vals } => vals.get(r).flatten().map(i128::from),
+                TypedCol::U64 { vals } => vals.at(r).map(i128::from),
                 _ => None,
             })
             .collect()
@@ -190,10 +198,34 @@ fn select_axis(
         }
         _ => None,
     });
+    // A strictly increasing integer sequence in row order (#273):
+    // a declared order the rows already follow — a sample index, a
+    // dose step, a reading number. At least 99% of adjacent present
+    // pairs increase and at least 48 distinct values are present.
+    let sequence = table.cols.iter().enumerate().find_map(|(i, c)| {
+        let present: Vec<Tick> = match c {
+            TypedCol::I64 { vals } => vals.iter().flatten().copied().map(i128::from).collect(),
+            TypedCol::U64 { vals } => (0..table.n)
+                .filter_map(|r| vals.at(r))
+                .map(i128::from)
+                .collect(),
+            _ => return None,
+        };
+        if present.len() < 48 {
+            return None;
+        }
+        let pairs = present.len() - 1;
+        let increasing = present.windows(2).filter(|w| w[1] > w[0]).count();
+        let mut distinct = present.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        let is_sequence = distinct.len() >= 48 && increasing as f64 >= 0.99 * pairs as f64;
+        is_sequence.then_some((i, Axis::Integer))
+    });
     let (idx, axis) = if hinted_only {
         hinted?
     } else {
-        hinted.or(auto_date).or(year_like)?
+        hinted.or(auto_date).or(year_like).or(sequence)?
     };
     Some((idx, axis, ticks(&table.cols[idx], table.n)))
 }
@@ -322,7 +354,7 @@ impl Sums {
 /// id per position.
 struct SeriesData {
     t: Vec<f64>,
-    ticks: Vec<i64>,
+    ticks: Vec<Tick>,
     y: Vec<f64>,
     /// (dimension index, level id) per position, one vector per
     /// dimension offered to this response.
@@ -599,7 +631,7 @@ impl TreeBuilder<'_> {
 const PRESCORE_BLOCKS: usize = 16;
 
 /// A response's row: tick, axis position, value, and source row.
-type ResponseRow = (i64, f64, f64, u32);
+type ResponseRow = (Tick, f64, f64, u32);
 
 /// One response's (tick, t, y, table row) rows in t order, with
 /// the systematic row-cap sample applied; `None` when the
@@ -609,11 +641,11 @@ type ResponseRow = (i64, f64, f64, u32);
 /// the same rows.
 fn response_rows(
     col: &TypedCol,
-    ticks: &[Option<i64>],
+    ticks: &[Option<Tick>],
     axis: Axis,
     cfg: &PartitionsConfig,
 ) -> Option<(Vec<ResponseRow>, bool)> {
-    let t_of = |tick: i64| -> f64 {
+    let t_of = |tick: Tick| -> f64 {
         match axis {
             Axis::Date | Axis::Integer => tick as f64,
             Axis::Datetime => tick as f64 / 86_400_000_000.0,
@@ -652,7 +684,7 @@ fn response_rows(
 /// plays no part. Rows missing a dimension count toward the
 /// grand total but toward no level, mirroring the tree's
 /// refusal to split a node on a dimension with missing rows.
-fn prescore(rows: &[(i64, f64, f64, u32)], dims: &[Dimension]) -> f64 {
+fn prescore(rows: &[(Tick, f64, f64, u32)], dims: &[Dimension]) -> f64 {
     let n = rows.len();
     if n == 0 {
         return 0.0;
@@ -724,7 +756,8 @@ pub fn ordered_partitions(
                     None => "no axis named for the partition scan".into(),
                 }
             } else {
-                "no date, datetime, or year-like integer column to order by".into()
+                "no date, datetime, year-like integer, or increasing integer sequence column to order by"
+                    .into()
             }),
         };
     };
@@ -967,7 +1000,7 @@ mod tests {
     fn series_data(ys: &[f64]) -> SeriesData {
         SeriesData {
             t: (0..ys.len()).map(|i| i as f64).collect(),
-            ticks: (0..ys.len()).map(|i| i as i64).collect(),
+            ticks: (0..ys.len()).map(|i| i as Tick).collect(),
             y: ys.to_vec(),
             dim_levels: Vec::new(),
         }
@@ -1057,7 +1090,7 @@ mod tests {
         // series_data built t as row index; here t must repeat
         // per group: rebuild t/ticks so both groups share t.
         data.t = (0..ys.len()).map(|i| (i / 2) as f64).collect();
-        data.ticks = (0..ys.len()).map(|i| (i / 2) as i64).collect();
+        data.ticks = (0..ys.len()).map(|i| (i / 2) as Tick).collect();
         data.dim_levels = vec![grp];
         let dims = vec![Dimension {
             name: "grp".into(),

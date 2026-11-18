@@ -329,3 +329,18 @@ def test_decimal_near_one_does_not_become_an_exact_binary_flag():
     df = pl.DataFrame({"x": [Decimal(0), Decimal("1.000000000000000001")] * 60})
     report = onceover.profile(df, budget="quick")
     assert report.columns["x"]["semantic_role"] != "flag"
+
+
+def test_uint64_axis_past_signed_range_is_scanned():
+    base = 2**63
+    df = pl.DataFrame(
+        {"t": [base + i for i in range(100)], "y": [0.0] * 50 + [5.0] * 50},
+        schema={"t": pl.UInt64, "y": pl.Float64},
+    )
+    report = onceover.profile(
+        df, budget="deep", detectors=["breaks"], hints={"time": "t"}
+    )
+    detail = report.coverage["breaks"]["detail"]
+    assert "over 0 time-ordered rows" not in detail
+    assert "over 100 time-ordered rows" in detail
+    assert report.select(type="level_shift")

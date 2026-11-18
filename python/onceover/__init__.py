@@ -39,6 +39,34 @@ _SCHEMA_VERSION = "0.8"
 _BUDGETS = ("quick", "standard", "deep")
 
 
+def _findings_frame_schema(*, with_detector: bool = False):
+    """The single source of truth for findings_frame()'s schema."""
+    import polars as pl
+
+    schema = {
+        "id": pl.String,
+        "category": pl.String,
+        "type": pl.String,
+        "scope": pl.String,
+        "object": pl.String,
+        "support_kind": pl.String,
+        "conditionality": pl.String,
+        "temporality": pl.String,
+        "quality_dimension": pl.String,
+        "status": pl.String,
+        "columns": pl.List(pl.String),
+        "inputs": pl.List(pl.String),
+        "target": pl.String,
+        "interestingness": pl.Float64,
+        "claim": pl.String,
+        "n_evidence": pl.UInt32,
+        "basis": pl.String,
+    }
+    if with_detector:
+        schema["detector_interestingness"] = pl.Float64
+    return schema
+
+
 def profile(df, budget: str = "standard", deadline_seconds: float | None = None, *,
             sample_rows: int | None = None, max_predictors: int | None = None,
             max_pairs: int | None = None, detectors: list[str] | None = None,
@@ -1233,6 +1261,7 @@ class ProfileReport:
 
         findings = self.findings
         has_detector = any("detector_interestingness" in f for f in findings)
+        schema = _findings_frame_schema(with_detector=has_detector)
         rows = []
         for f in findings:
             subject = f.get("subject") or {}
@@ -1260,30 +1289,7 @@ class ProfileReport:
             if has_detector:
                 row["detector_interestingness"] = f.get("detector_interestingness")
             rows.append(row)
-        if not rows:
-            schema = {
-                "id": pl.String,
-                "category": pl.String,
-                "type": pl.String,
-                "scope": pl.String,
-                "object": pl.String,
-                "support_kind": pl.String,
-                "conditionality": pl.String,
-                "temporality": pl.String,
-                "quality_dimension": pl.String,
-                "status": pl.String,
-                "columns": pl.List(pl.String),
-                "inputs": pl.List(pl.String),
-                "target": pl.String,
-                "interestingness": pl.Float64,
-                "claim": pl.String,
-                "n_evidence": pl.UInt32,
-                "basis": pl.String,
-            }
-            if has_detector:
-                schema["detector_interestingness"] = pl.Float64
-            return pl.DataFrame(schema=schema)
-        return pl.DataFrame(rows)
+        return pl.DataFrame(rows, schema=schema)
 
     def associations(self):
         """Every pair the association screens tested, as a Polars
@@ -1343,10 +1349,9 @@ class ProfileReport:
         import copy
 
         data = copy.deepcopy(self.data)
-        total = len(data["findings"])
-        total_grouped = len(data.get("grouped_findings") or [])
-        index: list[dict] = []
-        grouped_index: list[dict] = []
+        findings = data["findings"]
+        grouped = data.get("grouped_findings") or []
+        total, total_grouped = len(findings), len(grouped)
         state = {"columns": "full", "coverage_detail": "full"}
 
         def index_entry(f: dict) -> dict:
@@ -1360,25 +1365,34 @@ class ProfileReport:
                 "claim": f.get("claim"),
             }
 
-        def render() -> str:
+        def split(removed: int) -> tuple[int, int]:
+            # Selected findings collapse first; grouped statements
+            # collapse only once no selected finding is left in full.
+            if removed <= total:
+                return total - removed, total_grouped
+            return 0, total_grouped - (removed - total)
+
+        def render(removed: int) -> str:
+            full_findings, full_grouped = split(removed)
             view = {
                 "schema_version": data["schema_version"],
+                "frame": data.get("frame"),
                 "overview": data["overview"],
                 "columns": data["columns"],
-                "findings": data["findings"],
-                "finding_index": list(reversed(index)),
-                "grouped_findings": data.get("grouped_findings") or [],
-                "grouped_index": list(reversed(grouped_index)),
+                "findings": findings[:full_findings],
+                "finding_index": [index_entry(f) for f in findings[full_findings:]],
+                "grouped_findings": grouped[:full_grouped],
+                "grouped_index": [index_entry(f) for f in grouped[full_grouped:]],
                 "groups": data["groups"],
                 "selection": data["selection"],
                 "coverage": data["coverage"],
                 "associations": data.get("associations") or [],
                 "budget": {
                     "max_chars": max_chars,
-                    "full_findings": len(data["findings"]),
-                    "indexed_findings": len(index),
-                    "full_grouped_findings": len(data.get("grouped_findings") or []),
-                    "indexed_grouped_findings": len(grouped_index),
+                    "full_findings": full_findings,
+                    "indexed_findings": total - full_findings,
+                    "full_grouped_findings": full_grouped,
+                    "indexed_grouped_findings": total_grouped - full_grouped,
                     "columns": state["columns"],
                     "coverage_detail": state["coverage_detail"],
                 },
@@ -1388,34 +1402,39 @@ class ProfileReport:
                 view["columns"] = {}
             return _json.dumps(view)
 
-        out = render()
-        while len(out) > max_chars and (data["findings"] or data.get("grouped_findings")):
-            # Selected findings collapse first; grouped statements
-            # (full records under grouped_findings) collapse into
-            # their own index once no selected finding is left in
-            # full, so the budget accounting stays exact per list.
-            if data["findings"]:
-                index.append(index_entry(data["findings"].pop()))
-            else:
-                grouped_index.append(index_entry(data["grouped_findings"].pop()))
-            out = render()
+        # Binary-search the number of collapsed statements instead of
+        # re-serializing once per finding (a quadratic rendering cost on
+        # wide reports).
+        ceiling = total + total_grouped
+        if len(render(ceiling)) > max_chars:
+            removed = ceiling
+        else:
+            lo, hi = 0, ceiling
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if len(render(mid)) > max_chars:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            removed = lo
+        out = render(removed)
         if len(out) > max_chars and state["columns"] == "full":
             state["columns"] = "names_only"
-            out = render()
+            out = render(removed)
         if len(out) > max_chars:
             for entry in data["coverage"].values():
                 detail = entry.get("detail") or ""
                 if len(detail) > 160:
                     entry["detail"] = detail[:160] + " [truncated]"
             state["coverage_detail"] = "truncated"
-            out = render()
+            out = render(removed)
         if len(out) > max_chars:
             # Coverage detail strings are the known size sink on wide
             # tables; the statuses alone still say what ran.
             for entry in data["coverage"].values():
                 entry["detail"] = ""
             state["coverage_detail"] = "status_only"
-            out = render()
+            out = render(removed)
         if len(out) > max_chars:
             raise ValueError(
                 f"max_chars={max_chars} is below the minimal budgeted "

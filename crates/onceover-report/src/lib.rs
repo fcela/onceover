@@ -844,12 +844,12 @@ impl ProfileReport {
                 .unwrap_or_else(|| "—".into());
             md.push_str(&format!(
                 "| {} | {} | {} ({:.1}%) | {} | {} |\n",
-                name,
-                c.card_role,
+                md_cell(name),
+                md_cell(&c.card_role),
                 c.null_count,
                 100.0 * c.null_fraction,
                 c.distinct,
-                conc
+                md_cell(&conc)
             ));
         }
         md.push('\n');
@@ -859,11 +859,22 @@ impl ProfileReport {
         for (pass, info) in &self.coverage {
             md.push_str(&format!(
                 "| {} | {} | {} |\n",
-                pass, info.status, info.detail
+                md_cell(pass),
+                md_cell(&info.status),
+                md_cell(&info.detail)
             ));
         }
         md
     }
+}
+
+/// Escape one cell of a Markdown pipe table: a literal pipe would
+/// otherwise create a new column and break the rendered table.
+fn md_cell(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('|', "\\|")
+        .replace('\r', " ")
+        .replace('\n', "<br>")
 }
 
 fn format_equation_number(x: f64) -> String {

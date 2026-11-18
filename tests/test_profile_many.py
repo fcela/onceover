@@ -295,3 +295,41 @@ def test_uint64_past_signed_range_uses_text_keys():
     record = candidate(report, "child", "ref", "parent", "id")
     assert record is not None
     assert record["chance_basis"] == "value_pool"
+
+
+def test_strided_probe_does_not_hide_a_real_overlap():
+    # The probe stride is ceil(100000 / 4096) == 25, so the missing
+    # values below are exactly the probe's values: a probe miss must
+    # trigger an exact count, not discard the pair.
+    k = 100_000
+    keep = [v for i, v in enumerate(range(1, k + 1)) if i % 25 and i != k - 1]
+    report = profile_many({
+        "parent": pl.DataFrame({"id": keep}),
+        "child": pl.DataFrame({"ref": range(1, k + 1)}),
+    })
+    record = overlap(report, "child", "ref", "parent", "id")
+    assert record is not None
+    assert record["shared_distinct"] == len(keep)
+    assert record["orphan_distinct"] == k - len(keep)
+    assert record["orphan_rows"] == k - len(keep)
+    # The reverse direction is a genuine lower-tier candidate: every
+    # parent value is contained in the child's dense key range.
+    assert [c["child_table"] for c in report.candidates] == ["parent"]
+
+
+def test_budgeted_json_is_valid_or_raises():
+    tables = {
+        f"t{i}": pl.DataFrame({
+            f"id_{i}": range(300),
+            "name": [f"v{i}_{j}" for j in range(300)],
+        })
+        for i in range(12)
+    }
+    report = profile_many(tables)
+    with pytest.raises(ValueError, match="minimal budgeted"):
+        report.to_json(max_chars=500)
+    text = report.to_json(max_chars=10_000)
+    assert len(text) <= 10_000
+    view = json.loads(text)
+    assert view["truncation"]["omitted_candidate_records"] > 0
+    assert len(view["candidates"]) == 10

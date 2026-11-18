@@ -1,0 +1,4874 @@
+{
+ "started": "2026-11-18T02:01:22.601766+00:00",
+ "onceover_version": "0.1.6",
+ "datasets": [
+  {
+   "id": "thyroid",
+   "pack": "gritbot",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.32,
+   "rows": 3772,
+   "cols": 32,
+   "findings": 100,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "missingness": 3,
+    "conditional_rules": 8,
+    "dependencies": 32,
+    "associations": 34,
+    "concentration": 13,
+    "anomalies": 9
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "tsh_measured"
+     },
+     "note": "Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-92974f1484fff783"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "columns_any": [
+       "pregnant"
+      ]
+     },
+     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "anomalies-18a7f97277b6106d",
+      "anomalies-3375e3fbe45581ed"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "anomalies",
+      "type": "extreme_value",
+      "columns_any": [
+       "age"
+      ]
+     },
+     "note": "The surprises pass (issue #31) isolates the extreme age value (455, row 1364). Promoted from known-miss tripwire 2026-10-28."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "anomalies-3375e3fbe45581ed"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "anomalies",
+      "type": "extreme_value",
+      "columns_all": [
+       "pregnant",
+       "age"
+      ]
+     },
+     "note": "The surprises pass (issue #31) conditions age on pregnant = true and isolates ages 75 and 73 (rows 2223, 1609). Promoted from known-miss tripwire 2026-10-28."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:1365 (record 861)",
+     "status": "found",
+     "verified": false,
+     "note": "age = 455 where 99.97% of patients are <= 94. The surprises pass (issue #31) isolates it: row 1364 of the bundled file, gap ratio 7.2."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:2224 (record 1088)",
+     "status": "found",
+     "verified": false,
+     "note": "Pregnant patient aged 75; other pregnant patients are <= 42 apart from data:1610. Isolated by the surprises pass within pregnant = true (row 2223, with data:1610 in the same finding)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:1610 (record 4531)",
+     "status": "found",
+     "verified": false,
+     "note": "Pregnant patient aged 73. Isolated by the surprises pass within pregnant = true (row 1609, same finding as data:2224)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot data:2215 / test:373",
+     "status": "missed",
+     "verified": false,
+     "note": "Assay-combination cases (TSH 8.5 in a treated subset; T3 7.6 in a low-TSH subset). GritBot itself marked these as needing expert judgement."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "tt4"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'diagnosis' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'diagnosis' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'diagnosis' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 4 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-1a57654dc389db7a"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "diagnosis"
+     },
+     "note": "The shapes pass does not apply: 'diagnosis' is categorical and shape decomposition needs a numeric target (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "diagnosis"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 30 predictors on complete cases; strongest 'tsh' at 0.676 is below the 0.80 bar (next 'fti' at 0.282), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "diagnosis"
+     },
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'diagnosis' has 4 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "abalone",
+   "pack": "gritbot",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.07,
+   "rows": 4177,
+   "cols": 9,
+   "findings": 68,
+   "grouped_findings": 0,
+   "categories": {
+    "dependencies": 24,
+    "associations": 35,
+    "concentration": 2,
+    "formats": 3,
+    "column_roles": 2,
+    "anomalies": 2
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-ef503acf9c6e0118"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "whole_weight"
+     },
+     "note": "The weight/length measurement web is strongly predictive."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "form": "sum",
+      "columns_any": [
+       "whole_weight"
+      ]
+     },
+     "note": "Known-miss tripwire: no sum identity over the weight parts (whole vs shucked+viscera+shell) is reported, exact or with violations."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot abalone (23 cases)",
+     "status": "partial",
+     "verified": false,
+     "note": "RuleQuest: most of the 23 violate physical constraints (part weight > whole weight; length < diameter). The profiler finds the measurement web as predictive dependencies but isolates none of the violating rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "shucked_weight"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jumps were across diagonal boundaries; the deep budget still scans diagonals."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'rings' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 7 numeric predictors and reports 4 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'rings' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'rings' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 4,177 rows and confirms 1 slice failure."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 3,
+     "matched_ids": [
+      "dependencies-bfbba603f0e05b1c",
+      "dependencies-833f70663850f897",
+      "dependencies-e57e9e0531564db1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "rings"
+     },
+     "note": "The shapes pass reports 4 decisive shapes on 'rings'; 2 reach the report body (both curved_shape), alongside the predictability pass's statement on 'rings'. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "rings"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 8 predictors on complete cases; strongest 'shell_weight' at 0.398 is below the 0.80 bar (next 'height' at 0.324), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-12cd389c4775a5bb"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "rings"
+     },
+     "note": "The model-failure pass confirms 1 slice failure on 'rings' and states it. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "soybean",
+   "pack": "gritbot",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.11,
+   "rows": 683,
+   "cols": 36,
+   "findings": 83,
+   "grouped_findings": 2,
+   "categories": {
+    "duplicates": 4,
+    "missingness": 7,
+    "dependencies": 34,
+    "conditional_rules": 12,
+    "column_roles": 2,
+    "associations": 12,
+    "concentration": 9,
+    "anomalies": 3
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-04fb3d6198fb43c9"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "leafspots_marg",
+       "leafspot_size"
+      ]
+     },
+     "note": "On the bundled 683-row text-label file the profiler reports class + leafspots_marg -> leafspot_size (2 violations in 599 rows) -- the structure GritBot's case 78 breaks. Reselected under the chance-corrected scoring (issue #128) from the violation-tied (class, leafspots_halo) candidate: class 2 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 78",
+     "status": "found",
+     "verified": false,
+     "note": "Row 78 of the bundled file: leafspots_halo = absent with leafspot_size = gt-1/8 -- the combination GritBot flagged (large spots almost always come with halos)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "anomalies",
+      "type": "categorical_outlier",
+      "columns_all": [
+       "seed",
+       "mold_growth",
+       "seed_discolor"
+      ]
+     },
+     "note": "GritBot case 558: seed = abnorm breaking a near-universal seed = norm context (mold_growth = absent and seed_discolor = absent, 474 rows, 99.6% norm; rows 250 and 557 flagged). Re-baselined 2026-11-13 under report selection: the statement was generated and selected when the report cap widened (present at max_findings=300); at the default cap the (intervals, categorical_outlier) group cap of 12 displaced it \u2014 7 statements in that group were turned away on this dataset. Mechanism updated with the #317 phase-3 rarity requirement: a default run no longer generates the statement, because its breaking level seed = abnorm is common in the column overall (115 of 683 rows, 16.8%); naming the outliers detector explicitly generates it again. This expectation now asserts its absence from the default capped report; if selection changes restore it, the tripwire fires and the expectation is promoted back."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "anomalies",
+      "type": "categorical_outlier",
+      "columns_all": [
+       "stem",
+       "stem_cankers"
+      ]
+     },
+     "note": "GritBot case 614: stem = norm breaking the stem_cankers = above-sec-nde context (191 rows, 99.5% abnorm; row 613 flagged). Re-baselined 2026-11-13 under report selection: same displacement as case 558 above \u2014 generated, present at max_findings=300, displaced at the default cap by the (intervals, categorical_outlier) group cap of 12. Mechanism updated with the #317 phase-3 rarity requirement: a default run no longer generates the statement, because its breaking level stem = norm is common in the column overall (296 of 683 rows, 43.3%); naming the outliers detector explicitly generates it again."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 558",
+     "status": "found",
+     "verified": false,
+     "note": "Row 558 of the bundled file (index 557): seed = abnorm. GritBot's published context is fruiting_bodies = absent, mold_growth = absent, seed_discolor = absent (405 cases, 99.8% seed = norm). The categorical surprises pass (issue #68) isolates the row through the pair context mold_growth = absent and seed_discolor = absent. (The earlier note's leaves/leaf_mild description was a garbled paraphrase and has been corrected against the published case list.)"
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot case 614",
+     "status": "found",
+     "verified": false,
+     "note": "Row 614 of the bundled file (index 613): stem = norm within stem_cankers = above-sec-nde, where stem is abnorm in 99.5% of 191 rows -- GritBot's published context exactly. Isolated by the categorical surprises pass (issue #68). (The earlier note's canker_lesion description was a garbled paraphrase and has been corrected against the published case list.)"
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 19 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "class"
+     },
+     "note": "The shapes pass does not apply: 'class' is categorical (its coverage entry states the decline), and no other pass states a predictive relation on 'class'. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "class"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 35 predictors on complete cases; strongest 'fruit_spots' at 0.321 is below the 0.80 bar (next 'canker_lesion' at 0.320), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "class"
+     },
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'class' has 19 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "splice",
+   "pack": "gritbot",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.81,
+   "rows": 3190,
+   "cols": 62,
+   "findings": 74,
+   "grouped_findings": 0,
+   "categories": {
+    "duplicates": 2,
+    "dependencies": 36,
+    "conditional_rules": 10,
+    "associations": 20,
+    "concentration": 4,
+    "formats": 1,
+    "column_roles": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 4,
+     "matched_ids": [
+      "conditional_rules-6c40456e3199e30f",
+      "conditional_rules-0eaf83424e2d5a10",
+      "conditional_rules-39f602a8f7edca36",
+      "conditional_rules-74715455845e0fb3"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "conditional_rules",
+      "columns_any": [
+       "base_30"
+      ]
+     },
+     "note": "Near-universal positional rules at the junction (e.g. base_30 = G in 100% of intron_exon diagnostic rows)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "GritBot cases 550, 839",
+     "status": "partial",
+     "verified": false,
+     "note": "RuleQuest flags single cases breaking ~99.8% positional patterns. The profiler reports the patterns as conditional rules but does not isolate the breaking cases. Position numbering: GritBot's A30/A34 vs this file's base_30/base_34 assumes the same window origin."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'class' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 3 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-8fafea4464d630ec"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "class"
+     },
+     "note": "The shapes pass does not apply: 'class' is categorical (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "class"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 61 predictors on complete cases; strongest 'base_30' at 0.262 is below the 0.80 bar (next 'base_29' at 0.230), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "class"
+     },
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'class' has 3 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "churn",
+   "pack": "gritbot",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "no redistributable source verified (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "crystallography",
+   "pack": "gritbot",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "no public canonical source located (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "online-retail-ii",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data file not present (test-only dataset; run its prepare.py)"
+  },
+  {
+   "id": "bank-marketing",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 1.2,
+   "rows": 45211,
+   "cols": 17,
+   "findings": 100,
+   "grouped_findings": 0,
+   "categories": {
+    "missingness": 8,
+    "dependencies": 42,
+    "associations": 27,
+    "conditional_rules": 9,
+    "concentration": 6,
+    "formats": 6,
+    "anomalies": 2
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "known_miss",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "conditional_rules",
+      "columns_all": [
+       "days_since_previous_campaign_contact",
+       "previous_campaign_outcome"
+      ]
+     },
+     "note": "Never-contacted structure: days_since_previous_campaign_contact = -1 on 36,954 rows, previous_campaign_outcome missing on 36,959, the two sets differing on 5 rows. On the file's original string form (missing marker kept as the literal 'NaN') a conditional rule reported this exactly; on the format-standard file (marker decoded to null) no detector reports it - measured in the standard profile, 2026-11-01. Tripwire: if a missingness-aware pass starts reporting it, this expectation fails and the case is promoted."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 6,
+     "matched_ids": [
+      "formats-51f1da1955c35d7f",
+      "formats-3b471561ecafcc8a",
+      "formats-4834ef3fff24a57e",
+      "formats-9939c0d069e684c5",
+      "formats-c04423cccd99d39b"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats"
+     },
+     "note": "Format findings fire on this file (e.g. previous_campaign_outcome's value-length mix; terminal-digit preference on days_since_previous_campaign_contact from the -1 mass). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Subscription-rate structure (target column)",
+     "status": "found",
+     "verified": false,
+     "note": "Overall subscription rate 11.7%. By previous-campaign outcome: success 64.7% (n = 1,511) vs failure 12.6%, other 16.7%, never-contacted 9.2% (n = 36,959). By month: mar 52.0% (n = 477) and dec 46.7% (n = 214) against may 6.7% (n = 13,766). Rates measured with Polars on the bundled file, 2026-11-01; recorded as documentation because the standard-budget run carries no target."
+    },
+    {
+     "kind": "finding",
+     "expect": "known_miss",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "contacts_before_this_campaign"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'subscribed_term_deposit' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 45,211 rows and states 20 slice failures (its cap)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "subscribed_term_deposit"
+     },
+     "note": "The shapes pass does not apply: 'subscribed_term_deposit' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "subscribed_term_deposit"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 16 predictors on complete cases; strongest 'last_contact_duration_seconds' at 0.207 is below the 0.80 bar (next 'previous_campaign_outcome' at 0.177), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 20,
+     "matched_ids": [
+      "dependencies-1da2d4805c6f3bcf",
+      "dependencies-dfeff3982dbf86a8",
+      "dependencies-5ad9225e09460faa",
+      "dependencies-2d37e589edcdba86",
+      "dependencies-828bdc92b4f60cca"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "subscribed_term_deposit"
+     },
+     "note": "The model-failure pass confirms 212 slice failures on 'subscribed_term_deposit' and states 20 (its cap). Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "taiwanese-bankruptcy",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 1.26,
+   "rows": 6819,
+   "cols": 96,
+   "findings": 100,
+   "grouped_findings": 2,
+   "categories": {
+    "uniqueness": 5,
+    "dependencies": 42,
+    "associations": 21,
+    "concentration": 3,
+    "formats": 17,
+    "anomalies": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-b00da8a9951a1bc6"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "affine",
+      "columns_all": [
+       "Debt ratio %",
+       "Net worth/Assets"
+      ]
+     },
+     "note": "Accounting identity: Net worth/Assets = -1.000000 * Debt ratio % + 1.000000 within tolerance on all 6,819 rows (verified independently: the two columns sum to 1.0 at float precision)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-21d09eefd3566420"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "affine",
+      "columns_all": [
+       "Current Liabilities/Equity",
+       "Current Liability to Equity"
+      ]
+     },
+     "note": "The same ratio carried twice under two names: Current Liability to Equity = 1.000000 * Current Liabilities/Equity on all rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-6bbc53151b7eb1f0"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "affine",
+      "columns_all": [
+       "Current Liabilities/Liability",
+       "Current Liability to Liability"
+      ]
+     },
+     "note": "The same ratio carried twice under two names: Current Liability to Liability = 1.000000 * Current Liabilities/Liability on all rows."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Liability-Assets Flag definition (dataset variable list)",
+     "status": "found",
+     "verified": false,
+     "note": "The flag is documented as 1 when total liability exceeds total assets. It agrees with Debt ratio % >= 1 on 99.90% of rows (7 disagreements in 6,819, measured with Polars); no finding isolates the flag's semantics, so the case is recorded, not expected as a finding."
+    },
+    {
+     "kind": "finding",
+     "expect": "known_miss",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "Current Asset Turnover Rate"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 28 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'bankrupt' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass treats the 0/1 target as numeric, evaluates 94 predictors, and reports 10 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'bankrupt' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'bankrupt' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 6,819 rows and confirms 6 slice failures."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "bankrupt"
+     },
+     "note": "The shapes pass treats the 0/1 target as numeric and reports 10 decisive shapes, but none reaches the report body at the 100-finding cap (neither selected nor grouped), and no other pass states a predictive relation on 'bankrupt'. Cap displacement, measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "bankrupt"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 95 predictors on complete cases; strongest 'Interest Expense Ratio' at 0.259 is below the 0.80 bar (next 'Borrowing dependency' at 0.224), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 6,
+     "matched_ids": [
+      "dependencies-2e8610add4b3d9b6",
+      "dependencies-84b4bc63ab596498",
+      "dependencies-bb9a4d3a551d3edf",
+      "dependencies-ec17d1868216c84a",
+      "dependencies-617b57ac8570d3bf"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "bankrupt"
+     },
+     "note": "The model-failure pass confirms 6 slice failures on 'bankrupt' and states all 6. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "absenteeism-at-work",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.1,
+   "rows": 740,
+   "cols": 21,
+   "findings": 100,
+   "grouped_findings": 2,
+   "categories": {
+    "duplicates": 4,
+    "dependencies": 31,
+    "associations": 31,
+    "conditional_rules": 4,
+    "column_roles": 2,
+    "concentration": 11,
+    "formats": 5,
+    "anomalies": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "education",
+       "employee_id"
+      ]
+     },
+     "note": "One record per absence, person attributes repeated per employee: employee_id -> education holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: the dependency is still generated by the functional pass (see the documented case below), but at the default cap the (dependencies, functional, value_mapping) group cap of 12 displaces it \u2014 199 statements in that group were turned away on this dataset and the 12 admitted are two-input dependencies. This expectation now asserts its absence from the capped report."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "employee_id",
+       "social_drinker"
+      ]
+     },
+     "note": "employee_id -> social_drinker holds on 99.86% of rows (1 violation in 740). Re-baselined 2026-11-13 under report selection: same displacement as the education dependency above \u2014 still generated by the functional pass, displaced at the default cap by the (dependencies, functional, value_mapping) group cap of 12."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-20ad511de977f4c3"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "distance_from_residence_to_work_km",
+       "body_mass_index",
+       "weight"
+      ]
+     },
+     "note": "(body_mass_index, weight) -> distance_from_residence_to_work_km holds on 99.59% of rows (3 violations in 740). Reselected under the chance-corrected scoring (issue #128): the previous winner, employee_id (1 violation in 740), is a per-employee attribute, and RFI ranks the pair's information higher: class 2 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Per-employee attribute constancy (dataset structure)",
+     "status": "found",
+     "verified": false,
+     "note": "740 absence records over 36 employees. The functional pass reports employee_id determining age, body_mass_index, distance, education, height, number_of_children, service_time, social_drinker and weight, each at 99.86% (exactly 1 violating row in 740, measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "finding",
+     "expect": "known_miss",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "distance_from_residence_to_work_km"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 31 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 12 numeric predictors and reports 0 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'absenteeism_time_hours' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 740 rows; no slice failure confirms."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "absenteeism_time_hours"
+     },
+     "note": "The shapes pass evaluates 12 numeric predictors and reports 0 decisive shapes on 'absenteeism_time_hours'; no other pass states a predictive relation on it. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "absenteeism_time_hours"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'reason_for_absence' at 0.265 is below the 0.80 bar (next 'disciplinary_failure' at 0.090), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "absenteeism_time_hours"
+     },
+     "note": "The model-failure pass searches 434 slice x form candidates; 48 clear the search bars and 0 confirm on the held-out half at Benjamini-Hochberg q <= 0.05, so no failure is stated. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "south-german-credit",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.08,
+   "rows": 1000,
+   "cols": 21,
+   "findings": 94,
+   "grouped_findings": 0,
+   "categories": {
+    "associations": 41,
+    "dependencies": 32,
+    "conditional_rules": 1,
+    "concentration": 8,
+    "formats": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-c5581447fb9f0cd1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_all": [
+       "foreign_worker"
+      ]
+     },
+     "note": "96.3% of the sample is foreign_worker = no (measured in the standard profile, 2026-11-01)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Bad-credit rate is the stratified sample composition (dataset page)",
+     "status": "found",
+     "verified": false,
+     "note": "700 good / 300 bad credits: the page states bad credits are heavily oversampled, so the 30% bad rate is the sample design, not a population rate. Counts verified in the bundled file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "personal_status_sex conflates sex and marital status (codetable)",
+     "status": "found",
+     "verified": false,
+     "note": "Code 2 covers both female non-single and male single debtors; sex cannot be recovered from this variable. The prepared file carries the codetable's own conflated label for that level."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'credit_risk' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'credit_risk' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'credit_risk' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 1,000 rows and states 11 slice failures."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "credit_risk"
+     },
+     "note": "The shapes pass does not apply: 'credit_risk' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "credit_risk"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'status' at 0.105 is below the 0.80 bar (next 'credit_history' at 0.046), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 11,
+     "matched_ids": [
+      "dependencies-6e8edbb8941fd0f0",
+      "dependencies-563077b7adedb44d",
+      "dependencies-112a66024e58f010",
+      "dependencies-14c4d16fb6d05c33",
+      "dependencies-577302224cfc575c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "credit_risk"
+     },
+     "note": "The model-failure pass confirms 13 slice failures on 'credit_risk' and states 11. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "incident-event-log",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "prepared file is 44.6 MB, above the API publish limit; commit servicenow-incident-event-log_uci-498.csv from a local clone (prepare.py regenerates it) to make this entry bundled"
+  },
+  {
+   "id": "olist",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "license gate (CC BY-NC-SA 4.0) and Kaggle credentials required"
+  },
+  {
+   "id": "credit-card-fraud",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data file not present (test-only dataset; run its prepare.py)"
+  },
+  {
+   "id": "chinook",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 412,
+   "cols": 9,
+   "findings": 14,
+   "grouped_findings": 31,
+   "categories": {
+    "uniqueness": 2,
+    "missingness": 3,
+    "associations": 3,
+    "column_roles": 2,
+    "dependencies": 1,
+    "formats": 2,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "grouped",
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 2,
+     "grouped_ids": [
+      "dependencies-7f8d8f9ec98398cd",
+      "dependencies-1631fa111277f447"
+     ],
+     "lead_ids": [
+      "column_roles-9565f6ddd46a1cac"
+     ],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "billing_address"
+     },
+     "note": "Address structure is functionally determined (e.g. billing_postal_code -> billing_address, 0 violations; 19 FD findings in the first run). Since the hierarchy-chain consolidation the block's exact dependencies collapse into one hierarchy family (31 grouped statements), so this predicate matches in grouped_findings and the selected count fell from 24 to 10."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "uniqueness-b3b5ca3efd325987"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "uniqueness",
+      "columns_any": [
+       "invoice_id"
+      ]
+     },
+     "note": "invoice_id is the documented primary key and is reported as uniquely identifying rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-9565f6ddd46a1cac"
+     ],
+     "matched_grouped": 9,
+     "grouped_ids": [
+      "column_roles-351493b390f4a56e",
+      "column_roles-c9ddeba7fa8e8195",
+      "column_roles-21888fb15e928715",
+      "column_roles-96f9c1da19978910",
+      "column_roles-4bb09f960383f2a4"
+     ],
+     "lead_ids": [
+      "column_roles-9565f6ddd46a1cac"
+     ],
+     "predicate": {
+      "category": "column_roles",
+      "type": "duplicate_encoding",
+      "columns_any": [
+       "customer_id",
+       "billing_address"
+      ]
+     },
+     "note": "customer_id and the billing-address block encode the same 59-customer grouping one-to-one on all 412 rows. The matching selected statement is now the hierarchy lead over the billing block (billing_address, billing_postal_code and customer_id form its first level; then billing_city, billing_state, billing_country)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "adventureworks",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 1.34,
+   "rows": 31465,
+   "cols": 26,
+   "findings": 100,
+   "grouped_findings": 6,
+   "categories": {
+    "uniqueness": 1,
+    "missingness": 2,
+    "dependencies": 26,
+    "associations": 22,
+    "conditional_rules": 2,
+    "column_roles": 6,
+    "concentration": 14,
+    "formats": 4,
+    "changes": 23
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-1a7aae66b6f6fe83"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "revision_number"
+      ]
+     },
+     "note": "revision_number is 99.9% '10' (30 rows '11') in the first run. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.88) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 120 structure, 72 shape; selected 1/70/29), so all 42 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "uniqueness-538fbbdc73fdddaf"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "uniqueness",
+      "columns_any": [
+       "sales_order_id"
+      ]
+     },
+     "note": "sales_order_id is the documented primary key and is reported as uniquely identifying rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "account_number"
+     },
+     "note": "credit_card_id -> account_number holds with 0 violations (one of the exact dependencies the pass verifies). All four exact determinants of account_number are near-unique identifiers; under the chance-corrected scoring (issue #128) they score at their RFI and the statement falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "total_due = subtotal + tax_amt + freight (exact, all 31,465 rows)",
+     "status": "found",
+     "verified": false,
+     "note": "Found since 2026-11-04: the identity search no longer spends its budget in column order. The finding states total_due = subtotal + tax_amt + freight on all 31,465 rows."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "comment empty on all 31,465 rows",
+     "status": "missed",
+     "verified": false,
+     "note": "A fully empty column; no finding reports the dead column in the first run."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "online_order_flag"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. Pinned to customer_id until 2026-11-04, when whole-number columns named like keys became identifiers and left the screen's targets; the pinned column now carries the top-ranked step. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and it is a two-valued flag, no longer a jump target; the deep budget still scans diagonals."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "northwind",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "canonical distribution is a T-SQL install script - no flat table file (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "sec-edgar-company-facts",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.21,
+   "rows": 11543,
+   "cols": 10,
+   "findings": 100,
+   "grouped_findings": 2,
+   "categories": {
+    "duplicates": 2,
+    "missingness": 3,
+    "dependencies": 13,
+    "associations": 22,
+    "conditional_rules": 5,
+    "column_roles": 3,
+    "formats": 6,
+    "concentration": 7,
+    "changes": 39
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 5,
+     "matched_ids": [
+      "conditional_rules-900c7b5833ca2dcc",
+      "conditional_rules-2d93bb9ae45d696f",
+      "conditional_rules-800d8475d6f3c239",
+      "conditional_rules-11760ab81f0d19c8",
+      "conditional_rules-0b99a5b550be3350"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "conditional_rules",
+      "columns_all": [
+       "form",
+       "fiscal_period"
+      ]
+     },
+     "note": "10-K <-> FY and 10-Q <-> quarterly period correspondence."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "duplicates-4e072a5fc7f31b41",
+      "duplicates-16caed34ca903aaf"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "duplicates"
+     },
+     "note": "Promoted 2026-11-05 from a known-miss tripwire (issue #132): 1,970 rows repeat another row on every column except value, the restatements this table is known for. Demoted back to a known-miss tripwire 2026-11-14 (issue #275): the level_contrasts detector's 20 statements on this frame are admitted ahead of it and the report sits at the 100-finding cap, so the statement is displaced from the report body. The underlying structure is unchanged \u2014 verified 2026-11-14: exactly 1,970 rows repeat another row on every column except value. The tripwire promotes back to found if a selection change returns the statement to the report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Restatements (EDGAR-wide behavior)",
+     "status": "missed",
+     "verified": false,
+     "note": "Found since 2026-11-05: 1,970 rows repeat another row on every column except value. Status changed 2026-11-14 (issue #275): the near-duplicate statement is displaced from the capped report by the level_contrasts statements; the restatement structure itself is unchanged in the data (1,970 rows, verified 2026-11-14)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 20,
+     "matched_ids": [
+      "associations-f2756d6ff9512f9f",
+      "associations-28d5e348c7e6a823",
+      "associations-f4b4246df06d7838",
+      "associations-8c5887237eb9ceb6",
+      "associations-45a8617f74acd9d1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "level_contrast",
+      "columns_any": [
+       "value"
+      ]
+     },
+     "note": "Added 2026-11-14 with the detector's first corpus expectations (issue #275): per-level contrasts on value \u2014 JPMorgan Chase (cik 19617) median 391,154,000,000 against 14,042,000,000 pooled, and December period_end values 16.49x as variable as a typical month \u2014 verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
+    },
+    {
+     "kind": "finding",
+     "expect": "known_miss",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "value"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 3 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Re-baselined 2026-11-16 (issue #317 phase 3): the discontinuities screen is axis-gated in a default run \u2014 it scans only along an axis declared with the ordered_axis hint, and this frame declares none \u2014 so the default run no longer reports it. The screen still reports it when the detector is named explicitly. This expectation now asserts the measured state."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "fred-md",
+   "pack": "business",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "source host returned HTTP 403 from the build environment (see ATTRIBUTION.md)"
+  },
+  {
+   "id": "congressional-voting",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.04,
+   "rows": 435,
+   "cols": 17,
+   "findings": 83,
+   "grouped_findings": 0,
+   "categories": {
+    "duplicates": 1,
+    "dependencies": 32,
+    "conditional_rules": 12,
+    "associations": 12,
+    "formats": 2,
+    "concentration": 12,
+    "changes": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "conditional_rules-a51bf42a7cbe233e",
+      "conditional_rules-194cec6167962068"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "conditional_rules",
+      "target": "party"
+     },
+     "note": "Vote patterns determine party for most members (physician_fee_freeze is the classic near-perfect single vote)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Views runs on the full table (17 columns)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 12,
+     "matched_ids": [
+      "changes-e2bcb0fbd2ad8b0f",
+      "changes-dfd10d1147de68bc",
+      "changes-ec3e21f60ce8645b",
+      "changes-2dbcaa6a25b39192",
+      "changes-c268ccd995c1b917"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "residual_shift"
+     },
+     "note": "Views row clusters: the greedy partition splits members into clusters with different vote levels (party blocs)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'party' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'party' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'party' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 435 rows and states 20 slice failures (its cap)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "dependencies-d12061591968bbf8",
+      "dependencies-14f2b81e223baecc"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "party"
+     },
+     "note": "The shapes pass does not apply: 'party' is categorical (its coverage entry states the decline). The matching statements are the decision-table and predictability passes' on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "party"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 16 predictors on complete cases; strongest 'physician_fee_freeze' at 0.765 is below the 0.80 bar (next 'adoption_of_the_budget_resolution' at 0.446), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 20,
+     "matched_ids": [
+      "dependencies-105e20fb0b872954",
+      "dependencies-2fc9f182d53d46c4",
+      "dependencies-3467657fb6f57c65",
+      "dependencies-d7068adf2d57689f",
+      "dependencies-ff26c9e6fc06ea7c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "party"
+     },
+     "note": "The model-failure pass confirms 66 slice failures on 'party' and states 20 (its cap). Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "hospital-dha",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.52,
+   "rows": 307,
+   "cols": 64,
+   "findings": 57,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "dependencies": 15,
+    "associations": 12,
+    "column_roles": 3,
+    "concentration": 13,
+    "formats": 1,
+    "changes": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 12,
+     "matched_ids": [
+      "dependencies-9c3a56af556263d2",
+      "dependencies-4a727914be58a8b0",
+      "dependencies-f356dcba5a292e56",
+      "dependencies-63fe43f7a50c4008",
+      "dependencies-f033c026b7f1b734"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive"
+     },
+     "note": "The measure web is densely predictive (64 dependency findings in the default-only run)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-88e0030430987cd5"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "form": "sum",
+      "target": "TTL_MDCR_SPND"
+     },
+     "note": "Promoted 2026-11-04 from a known-miss tripwire: TTL_MDCR_SPND equals the sum of its 8 published parts within 2 currency units over 307 rows, rounding in the source per-decedent averages. Found by the greedy sparse fit, reported as a near identity with its measured band."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "capped",
+     "actual_status": "capped",
+     "ok": true,
+     "note": "Issue #365: all 64 columns and 307 rows are scored, but the merge search stops at 256 of the possible pair attempts; coverage must say capped, not ran_exact (measured 2026-11-17)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "RNS_REQ"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 1 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one. Known miss from 2026-11-05 (issue #130): at the standard budget the screen scans single axes over measure targets, and its jump was across a diagonal boundary; the deep budget still scans diagonals."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "state-unemployment",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.71,
+   "rows": 609,
+   "cols": 52,
+   "findings": 100,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "dependencies": 14,
+    "associations": 22,
+    "concentration": 12,
+    "column_roles": 1,
+    "ordering": 1,
+    "changes": 49
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 22,
+     "matched_ids": [
+      "associations-2a5224e917d85d18",
+      "associations-0ea75090ddcfe659",
+      "associations-7b456cbc27374978",
+      "associations-4bd5aabe065e598e",
+      "associations-d9ab6bf5ca29dc48"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations"
+     },
+     "note": "State series move together over national cycles."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "capped",
+     "actual_status": "capped",
+     "ok": true,
+     "note": "Issue #365: all 609 rows are scored and 1,326 pairs screened, but only 256 merge attempts run; coverage must say capped (measured 2026-11-17)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 12,
+     "matched_ids": [
+      "changes-4310641de4d14aff",
+      "changes-7484605ef4c67ab4",
+      "changes-27840eefce9a47ba",
+      "changes-4e1655247e9b6fb3",
+      "changes-1e6d96a94995f64a"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "ordered_partition"
+     },
+     "note": "Ordered partitions fit a level+trend regime tree for the state series (standard-tier pass cap is 25 emitted; the design expectation is a tree for at least 30 of 51 series, pinned exactly in tests/test_partitions_panel.py). Re-baselined 2026-11-13 under report selection: the per-group report cap of 12 bounds per-series partition statements in the capped report (13 turned away on this dataset, 12 selected), so the report-level minimum is the group cap; the pass-level expectation is unchanged."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "The panel's date column orders every series."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "state-unemployment-long",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 31059,
+   "cols": 3,
+   "findings": 1,
+   "grouped_findings": 0,
+   "categories": {
+    "changes": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-320b238f4f9ed900"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "ordered_partition"
+     },
+     "note": "One pooled regime tree for the panel's single response, with time and state splits competing."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "The date column orders the panel; the state column is the partitioning dimension."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "gse15258-expression",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 3.46,
+   "rows": 86,
+   "cols": 5006,
+   "findings": 40,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "associations": 12,
+    "formats": 1,
+    "concentration": 14,
+    "changes": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "capped",
+     "actual_status": "capped",
+     "ok": true,
+     "note": "Issue #365: selects 64 of 5,006 eligible columns (4,942 cap drops), visits 245,638 of 12,527,515 column-screen pairs and reaches the 256-merge limit; coverage must say capped (measured 2026-11-17)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 12,
+     "matched_ids": [
+      "associations-d570e235dfc34cc8",
+      "associations-210f7b3c83442b5a",
+      "associations-66a012332c9f2d4d",
+      "associations-4bedde68d8db4e24",
+      "associations-473e9e06e7213c67"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations"
+     },
+     "note": "Probe-probe associations exist in the default run (20 reported)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Views column cap on wide tables",
+     "status": "partial",
+     "verified": false,
+     "note": "4,942 of 5,006 columns do not reach the views search; since issue #73 the 64 that do are the strongest by a pairwise-dependence pre-screen rather than the first 64 in table order. The cap is reported in coverage with the dropped columns named -- a 63 KB coverage detail string, itself relevant to issue #27 (context-budgeted reporting)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "lace-animals",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.05,
+   "rows": 50,
+   "cols": 86,
+   "findings": 57,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "dependencies": 12,
+    "associations": 12,
+    "concentration": 20,
+    "changes": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-9c2090e5cd0908f1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "water"
+     },
+     "note": "swims -> water and water -> swims hold exactly on all 50 rows in the first run - the aquatic feature pair is recovered by the FD pass."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "capped",
+     "actual_status": "capped",
+     "ok": true,
+     "note": "Issue #365: selects 64 of 86 columns (22 cap drops) and reaches the 256-merge limit; all 50 scoring rows do not make this a complete search. Coverage must say capped (measured 2026-11-17)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "lace-satellites",
+   "pack": "crosscat",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.24,
+   "rows": 1164,
+   "cols": 21,
+   "findings": 98,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "dependencies": 29,
+    "conditional_rules": 1,
+    "associations": 24,
+    "formats": 6,
+    "concentration": 14,
+    "changes": 23
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 4,
+     "matched_ids": [
+      "dependencies-16edf7e5dcab10f3",
+      "dependencies-f9263319aba499e7",
+      "dependencies-d7ee47c54ace983d",
+      "dependencies-8c12330c7b3f2e69"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "Class_of_Orbit"
+     },
+     "note": "Apogee_km -> Class_of_Orbit holds exactly (0 violations in 1,163 rows) in the first run - orbit class is a function of the apogee band."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "row_clusters",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "The views pass runs on all 21 columns: 18 views, 2 multi-column ({Class_of_Orbit, Perigee_km, Period_minutes} and {Inclination_radians, longitude_radians_of_geo}) in the first run. The partition itself is compared against Lace in the head-to-head note, not pinned here - it is a greedy point estimate and may move as the pass improves."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 5,
+     "matched_ids": [
+      "changes-bad1fa6a1b1662eb",
+      "changes-abbe803250179d6b",
+      "changes-407cde66d9891caa",
+      "changes-8c33fe0dcc958b6f",
+      "changes-d91206af61808882"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "step_discontinuity",
+      "columns_any": [
+       "Launch_Mass_kg"
+      ]
+     },
+     "note": "Added 2026-11-02 with the detector's first corpus expectations: the battery had recorded zero expectation hits for discontinuities because none existed. The default run reports 15 selected step_discontinuity findings on this dataset; the pinned column carries the top-ranked one."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-1e56aaeec875ffe7"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "order_constraint",
+      "columns_all": [
+       "Perigee_km",
+       "Apogee_km"
+      ]
+     },
+     "note": "Added 2026-11-08 with the order-constraints recording: Perigee_km <= Apogee_km on all 1,163 rows where both are recorded (0 violations; the two are equal on 17), verified against the bundled file."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-b72d8bac05f92ae7"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "order_constraint",
+      "columns_all": [
+       "Period_minutes",
+       "Apogee_km"
+      ]
+     },
+     "note": "Added 2026-11-08 with the order-constraints recording: Period_minutes <= Apogee_km on all 1,162 rows where both are recorded (0 violations; the tightest margin is 226.39), verified against the bundled file."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-7437904cbedbe887"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "order_constraint",
+      "columns_all": [
+       "Dry_Mass_kg",
+       "Launch_Mass_kg"
+      ]
+     },
+     "note": "Added 2026-11-08 with the order-constraints recording: Dry_Mass_kg <= Launch_Mass_kg on all 480 rows where both are recorded (0 violations; the two are equal on 13), verified against the bundled file."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "order_constraints",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Added 2026-11-08 with the order-constraints recording: the entry's detector list includes order_constraints; the pass screens 23 of 23 eligible column pairs on this table, and the three orders it reports are pinned above."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'Class_of_Orbit' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The target has 4 classes; the pass evaluates numeric and binary targets, so it states the decline in its detail."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "dependencies-6c682b90c43eca3e",
+      "dependencies-4939ad52cc399b06"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "Class_of_Orbit"
+     },
+     "note": "The shapes pass does not apply: 'Class_of_Orbit' is categorical (its coverage entry states the decline). The matching statements are the decision-table and predictability passes' on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "Class_of_Orbit"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 20 predictors on complete cases; strongest 'Type_of_Orbit' at 0.894 clears the 0.80 bar but does not dwarf the field (next 'Inclination_radians' at 0.659; the dominance route requires 1.5x), so no signature is stated. Apogee_km determines 'Class_of_Orbit' exactly (the functional expectation above), but it takes a distinct value on nearly every row, so the determination is vacuous under the screen's average-group-size guard (docs/benchmarks/2026-11-13-leakage-signatures.md)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "Class_of_Orbit"
+     },
+     "note": "The model-failure pass evaluates numeric and binary targets only; 'Class_of_Orbit' has 4 classes, so the pass declines. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "nab-nyc-taxi",
+   "pack": "anomaly",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.04,
+   "rows": 10320,
+   "cols": 2,
+   "findings": 35,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "associations": 20,
+    "column_roles": 1,
+    "ordering": 1,
+    "changes": 12
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "ok": true,
+     "covered": 5,
+     "windows": 5,
+     "events": 10,
+     "min_covered": 5,
+     "note": "Transient events (issue #32): the breaks pass now reports excursions vs a seasonal (same time of week) baseline. Measured 2026-10-28: 5 of 5 labeled points covered by 10 excursion findings; the unlabeled findings are the July 4 and Labor Day demand collapses and a Dec 12 spike."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "breaks",
+     "expected_status": "ran_sampled",
+     "actual_status": "ran_sampled",
+     "ok": true,
+     "note": "Completion pin (issue #115): the anomaly_coverage check reads this pass's excursions, so a decline must fail loudly here instead of surfacing as lost event coverage. Measured ran_sampled 2026-11-04."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "nab-ec2-latency",
+   "pack": "anomaly",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.02,
+   "rows": 4032,
+   "cols": 2,
+   "findings": 16,
+   "grouped_findings": 0,
+   "categories": {
+    "duplicates": 1,
+    "gaps": 7,
+    "column_roles": 1,
+    "ordering": 1,
+    "changes": 5,
+    "anomalies": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "ok": true,
+     "covered": 3,
+     "windows": 3,
+     "events": 4,
+     "min_covered": 3,
+     "note": "Transient events (issue #32): excursions vs a rolling-median baseline. Measured 2026-10-28: 3 of 3 labeled points covered, exactly 3 excursion findings (peak z +31.1, -12.8, -8.0)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "breaks",
+     "expected_status": "ran_sampled",
+     "actual_status": "ran_sampled",
+     "ok": true,
+     "note": "Completion pin (issue #115): the anomaly_coverage check reads this pass's excursions, so a decline must fail loudly here instead of surfacing as lost event coverage. Measured ran_sampled 2026-11-04."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "adbench",
+   "pack": "anomaly",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "odds",
+   "pack": "anomaly",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "macrodata",
+   "pack": "anomaly",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "suite not wired; see ATTRIBUTION.md for status"
+  },
+  {
+   "id": "metro-interstate-traffic",
+   "pack": "anomaly",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 1.0,
+   "rows": 48204,
+   "cols": 9,
+   "findings": 100,
+   "grouped_findings": 1,
+   "categories": {
+    "duplicates": 3,
+    "missingness": 1,
+    "associations": 34,
+    "dependencies": 21,
+    "column_roles": 4,
+    "concentration": 6,
+    "formats": 9,
+    "changes": 20,
+    "anomalies": 2
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "grouped",
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 1,
+     "grouped_ids": [
+      "dependencies-d14dc254ffe729a5"
+     ],
+     "lead_ids": [
+      "column_roles-7d5f880b4c6e3c3e"
+     ],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "weather_main"
+     },
+     "note": "weather_description determines weather_main exactly (38 descriptions onto 11 mains, 0 violations in 48,204 rows). Verified independently in the 2026-11-03 case study."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "dependencies-3f5c2aea28d7b5a7",
+      "dependencies-719c12f23de27e5d"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "snow_1h"
+     },
+     "note": "(temp, weather_main) -> snow_1h holds on 99.91% of rows (44 violations). Violation count verified independently in the case study."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-212ac91369b68806"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "holiday"
+      ]
+     },
+     "note": "holiday is the literal string 'None' on 99.87% of rows (12 labels); the concentration itself is expected."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-858a0d90bdd09325"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "snow_1h"
+      ]
+     },
+     "note": "snow_1h is 0 on 99.87% of rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-9acf91a7c9bbad64"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "rain_1h"
+      ]
+     },
+     "note": "rain_1h is 0 on 92.81% of rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "missingness-40effa1da4f5902e"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "missingness",
+      "type": "sentinel_values",
+      "columns_any": [
+       "rain_1h"
+      ]
+     },
+     "note": "rain_1h = 0.3 on 121 rows reads as a probable sentinel; 97 of the 121 sit inside rows 13039-23670. Reproduced exactly in the case study."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "duplicates-d1b869f9aad31ec6",
+      "duplicates-0e9b914b24fd086c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "duplicates",
+      "type": "duplicate_rows"
+     },
+     "note": "17 exact duplicate rows in the first run (distinct from the duplicate timestamps below, which no finding reports)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 12,
+     "matched_ids": [
+      "dependencies-d8317866363232ce",
+      "dependencies-952de3076220d2e7",
+      "dependencies-2bbec09f199bcdf1",
+      "dependencies-305c83a373870395",
+      "dependencies-f9f0caa017184418"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "outcome_contrast",
+      "columns_any": [
+       "traffic_volume"
+      ]
+     },
+     "note": "Added 2026-11-14 with the level contrasts detector's first corpus expectations (issue #275): hour-of-day contrasts on traffic_volume from the date_time axis (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md. Re-baselined 2026-11-17 (issue #310): traffic_volume is this entry's designated target, so its per-level contrasts are now stated by the outcome screen against the pooled median (03:00 median 362 and 16:00 median 6,167, against the pooled 3,380) and the level contrasts pass withholds the target as a measure; the same verified medians, on the outcome basis. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+    },
+    {
+     "kind": "max_findings",
+     "value": 100,
+     "actual": 100,
+     "ok": true,
+     "note": "Raised to 100 on 2026-11-17 (issue #310): the outcome screen adds its account and 12 hour-of-day contrasts on the designated target, and the report reaches the 100-finding cap. Ballpark guard: 24 findings in the first run (2026-11-03 case study, standard budget). Raised to 43 on 2026-11-04 (issue #119): the boundaries detector adds 5 selected findings on this frame (the temp minimum pile below; rain_1h interior mass points at 0.3, 0.51, 0.76, 1.02 \u2014 the gauge's recording ticks), each verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Raised to 46 on 2026-11-05 (issue #131) by the series detector's statements: the axis gap, the traffic_volume daily cycle, and persistence in temp. Raised to 60 on 2026-11-05 (issue #134): tested associations add 14 statements on this frame. Raised to 63 on 2026-11-05 (issue #132) by the order constraints pass. Raised to 64 on 2026-11-05 (issue #132) by one near-duplicate statement: 217 rows repeat another row on every column except weather_description, the extra weather rows this table carries for one hour. Raised to 70 on 2026-11-06 by six functional statements on date_time (40,575 distinct values in 48,204 rows), which the dependency screen used to dismiss as near-unique on its 2,048-row sample: the hours recorded twice agree exactly on traffic_volume, holiday and snow_1h, and nearly on temp, rain_1h and clouds_all Raised to 89 on 2026-11-14 (issue #275): the level_contrasts detector adds 20 selected statements on this frame \u2014 hour-of-day contrasts on traffic_volume (03:00 median 362 against 3,559 pooled; 16:00 median 6,167 against 3,221), weather scale contrasts on rain_1h, clouds_all and temp, and holiday contrasts \u2014 spot-verified against the raw data in docs/benchmarks/2026-11-14-level-contrasts.md."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Duplicate timestamps (40,575 distinct date_time values in 48,204 rows; 7,629 rows repeat an hour)",
+     "status": "missed",
+     "verified": false,
+     "note": "No finding or coverage entry reports that the timestamp repeats; keys coverage reads '0 single-column unique, 0 composite'. Counts verified on the prepared file. This is the frame-model near-key case (target account, 2026-11-03)."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Hourly grid gaps (11,976 of 52,551 hours in the span, 22.8%, have no row)",
+     "status": "found",
+     "verified": false,
+     "note": "Found since 2026-11-05 by the series detector: the time axis date_time is missing 11976 of 52551 steps of 1 hour (22.79%), the longest gap 7386 steps between 2014-08-08 and 2015-06-11."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "formats-5833ecbc87c42cb1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "boundary_mass",
+      "columns_any": [
+       "temp"
+      ]
+     },
+     "note": "Promoted from a documented missed case (temp = 0.0 K on ten rows, 2014-01-31 to 2014-02-02) by the boundaries detector, issue #119: the finding reports boundary mass at the observed minimum with distribution evidence \u2014 10 rows at 0.0, the nearest higher value 243.39 on 1 row, the bulk spanning 243.39 to 310.07. It asserts no physical impossibility: that judgment needs a declared units/domain constraint, the hints surface has no such field, and the declared-domain leg is recorded as a follow-up on issue #119."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "breaks",
+     "expected_status": "ran_sampled",
+     "actual_status": "ran_sampled",
+     "ok": true,
+     "note": "Completion pin (issue #115): the documented span/completeness cases presuppose the temporal passes ran on the assembled axis rather than declining. Measured ran_sampled 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Completion pin (issue #115): see the breaks pin. Measured ran_exact 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'traffic_volume' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 4 numeric predictors and reports 0 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'traffic_volume' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'traffic_volume' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 48,204 rows; no slice clears its search bars."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "traffic_volume"
+     },
+     "note": "The shapes pass evaluates 4 numeric predictors and reports 0 decisive shapes on 'traffic_volume'; no other pass states a predictive relation on it. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "traffic_volume"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 5 predictors on complete cases; strongest 'temp' at 0.071 is below the 0.80 bar (next 'clouds_all' at 0.021), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "traffic_volume"
+     },
+     "note": "The model-failure pass searches 52 slice x form candidates; 0 clear the search bars, so no failure is stated. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "bike-sharing-hourly",
+   "pack": "anomaly",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.88,
+   "rows": 17379,
+   "cols": 17,
+   "findings": 100,
+   "grouped_findings": 3,
+   "categories": {
+    "uniqueness": 2,
+    "gaps": 6,
+    "missingness": 1,
+    "dependencies": 34,
+    "associations": 18,
+    "concentration": 9,
+    "ordering": 2,
+    "formats": 1,
+    "changes": 25,
+    "anomalies": 2
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "anomalies-e3e235c30b8c4f3d"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "anomalies",
+      "type": "row_inconsistency"
+     },
+     "note": "24 rows sit off the atemp-temp line; all are 2012-08-17, where atemp stays at 0.2424 while temp reaches 0.86. Added 2026-11-05 (issue #132). Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap the report's 100 slots are filled by account, structure, and shape statements before hygiene-class statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "grouped",
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 1,
+     "grouped_ids": [
+      "dependencies-7b16b84401125c97"
+     ],
+     "lead_ids": [
+      "dependencies-0d51b3c203e4083c"
+     ],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "registered"
+     },
+     "note": "(cnt, casual) -> registered holds exactly (0 violations in 17,379 rows), one direction of the cnt = casual + registered identity, verified independently in the 2026-11-03 case study; the identity itself is a documented case below. The (casual, registered) -> cnt direction remains in the report; under the chance-corrected scoring (issue #128) this direction falls out of the capped report, so this expectation asserts its absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md. Re-baselined 2026-11-13 under report selection: the statement is now retained in the report as a grouped member under the verified relationship family led by the (casual, registered) -> cnt direction, rather than displaced entirely, so the expectation is 'found' on the strength of the grouped record; it is still not a standalone finding. The grouped retention then broke silently: the selection walk stopped at the cap, and on this table the cap fills before the walk reaches the family's members, so the lead stood in the report with no grouped members. Repaired 2026-11-14 (issue #294): the walk now continues past a full cap for members of already-selected leads, which spend no selection slot."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-0d51b3c203e4083c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "arithmetic_identity",
+      "target": "cnt"
+     },
+     "note": "(registered, casual) -> cnt holds exactly (0 violations in 17,379 rows). Verified independently in the case study."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "uniqueness-435435b8797ad939"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "uniqueness",
+      "type": "uniqueness",
+      "columns_any": [
+       "instant"
+      ]
+     },
+     "note": "instant is the published row counter, exactly 1..17,379 in row order, and uniquely identifies rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-212ac91369b68806"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "holiday"
+      ]
+     },
+     "note": "holiday is 0 on 97.12% of rows. Share verified independently in the case study. Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap it is a hygiene-class statement and the report's 100 slots are filled before hygiene statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "max_findings",
+     "value": 100,
+     "actual": 100,
+     "ok": true,
+     "note": "The first run (2026-11-03 case study, standard budget) saturates the report cap: 140 candidates, 100 selected. The guard trips if the cap or the selection widens without this entry being re-baselined."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Additive identity cnt = casual + registered on all 17,379 rows (0 exceptions)",
+     "status": "found",
+     "verified": false,
+     "note": "Found since 2026-11-04: the identity search no longer spends its budget in column order. The finding states cnt = casual + registered on all 17,379 rows."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Hourly grid gaps (165 of 17,544 hours in the span, 0.94%, have no row; 2012-10-29 has 1 row and 2012-10-30 has 11)",
+     "status": "missed",
+     "verified": false,
+     "note": "No statement of span, frequency, or completeness; breaks and ordered_partitions decline because dteday loads as a string. The two thinnest days are Hurricane Sandy (36 of October 2012's missing hours). Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Composite key (dteday, hr) unique (17,379 distinct pairs in 17,379 rows)",
+     "status": "missed",
+     "verified": false,
+     "note": "No finding states the natural key; keys coverage reads '1 single-column unique, 0 composite' (the composite screen stands down when a single-column key exists) and the headline names only the row counter instant. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "season changes at a day boundary inside months 3, 6, 9, 12 (season 2 from 2011-03-21, 3 from 2011-06-21, 4 from 2011-09-23, 1 from 2011-12-21; same dates in 2012)",
+     "status": "missed",
+     "verified": false,
+     "note": "season is a function of dteday but not of mnth; no finding states the boundary, and the mnth-based conditional rules cover only the month ranges where the month reading happens to hold. Dates verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "weathersit = 4 on exactly 3 rows (distribution 1: 11,413; 2: 4,544; 3: 1,419; 4: 3)",
+     "status": "missed",
+     "verified": false,
+     "note": "The heaviest documented weather category is nearly absent; no finding isolates it (the concentration pass flags only holiday, the one column passing its top-value bar). Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "windspeed exactly 0 on 12.54% of rows (2,179 of 17,379)",
+     "status": "missed",
+     "verified": false,
+     "note": "A floor pattern in a normalized measure; the sentinels pass scanned all numeric columns and reported nothing. Count verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "dteday -> holiday functional dependency (holds exactly: 731 dates, none with more than one holiday value)",
+     "status": "missed",
+     "verified": false,
+     "note": "Generated by the dependencies pass but not selected: on the frame-model build the report saturates at the 100-finding cap under cap pressure (196 candidates), and the six dteday -> calendar FDs fall out of the selected set. Detection is unchanged \u2014 the same 11 exact FDs are found on both builds. See the case study's frame-build comparison (2026-11-03)."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "breaks",
+     "expected_status": "ran_sampled",
+     "actual_status": "ran_sampled",
+     "ok": true,
+     "note": "Completion pin (issue #115): the documented span/completeness cases presuppose the temporal passes ran on the assembled axis rather than declining. Measured ran_sampled 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_partitions",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Completion pin (issue #115): see the breaks pin. Measured ran_exact 2026-11-04."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'cnt' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The pass evaluates 15 numeric predictors and reports 3 decisive shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'cnt' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'cnt' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 17,379 rows and states 19 slice failures."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 2,
+     "matched_ids": [
+      "dependencies-0d2f73f5a479b1f8",
+      "dependencies-aeb2e1ad21ea777e"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "cnt"
+     },
+     "note": "The shapes pass reports 3 decisive shapes on 'cnt', all displaced at the 100-finding cap; the matching statement is the predictability pass's on 'cnt'. Measured 2026-11-15 (issue #315). Re-baselined 2026-11-16 (issue #317 phase 2): the hygiene floor admits the reserve's hygiene statements ahead of structure and shape; on this table the structure class is squeezed (85 of its candidates capped) and this statement is displaced from the 100-finding report body. It is still generated (present at max_findings=1000). This expectation now asserts the measured state. Promoted 2026-11-16 (issue #317 phase 3): the axis gate removed the gated passes' along-axis findings from this table's capped report, relieving the cap pressure that displaced this statement, and it is selected in the 100-finding report body again."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "cnt"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 15 predictors on complete cases; strongest 'registered' at 0.878 clears the 0.80 bar but does not dwarf the field (next 'instant' at 0.706; the dominance route requires 1.5x), so no signature is stated. No single column determines 'cnt' exactly: 'casual' and 'registered' determine it jointly, which the identity expectation above states; the screen is single-column by design, so the pair does not fire it."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 13,
+     "matched_ids": [
+      "dependencies-725e97936cb5e96b",
+      "dependencies-64fc6399775543b3",
+      "dependencies-fa04cabb1fe0255f",
+      "dependencies-ce3f79899593f60a",
+      "dependencies-844315d0bf99a019"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "cnt"
+     },
+     "note": "The model-failure pass confirms 277 slice failures on 'cnt' and states 19; 10 reach the report body at the 100-finding cap. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "adult-census-income",
+   "pack": "business",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 1.21,
+   "rows": 48842,
+   "cols": 15,
+   "findings": 100,
+   "grouped_findings": 2,
+   "categories": {
+    "duplicates": 4,
+    "missingness": 2,
+    "dependencies": 37,
+    "conditional_rules": 9,
+    "associations": 28,
+    "column_roles": 1,
+    "concentration": 4,
+    "formats": 10,
+    "anomalies": 5
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 3,
+     "matched_ids": [
+      "duplicates-decc95e76ca0ca61",
+      "duplicates-91e89af0ecb65f01",
+      "duplicates-9b15203636de5445"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "duplicates",
+      "type": "near_duplicate_rows"
+     },
+     "note": "6,322 rows repeat another row on every column except final_weight. Added 2026-11-05 (issue #132). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "grouped",
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 1,
+     "grouped_ids": [
+      "dependencies-d15f66b9b41f478d"
+     ],
+     "lead_ids": [
+      "column_roles-d6b4ced52a888d6b"
+     ],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "education_num"
+     },
+     "note": "education -> education_num holds exactly (0 violations in 48,842 rows); the encoding is a bijection over 16 levels, verified independently by group counting in the 2026-11-03 case study."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "grouped",
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 1,
+     "grouped_ids": [
+      "dependencies-30ed602e43104821"
+     ],
+     "lead_ids": [
+      "column_roles-d6b4ced52a888d6b"
+     ],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "target": "education"
+     },
+     "note": "education_num -> education holds exactly (0 violations in 48,842 rows); the reverse direction of the same bijection."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-d6b4ced52a888d6b"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "duplicate_encoding",
+      "columns_all": [
+       "education",
+       "education_num"
+      ]
+     },
+     "note": "The report states the encoding directly: the two columns pair one-to-one over 16 levels on all 48,842 rows. The two functional dependencies above are the same fact in dependency form."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "duplicates-34b9ba5fb00ba261"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "duplicates",
+      "type": "duplicate_rows"
+     },
+     "note": "52 redundant rows in 49 groups, largest group 3, over all 15 compared columns (exact; verified by group counting). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-80d9a61e68673f76"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "capital_loss"
+      ]
+     },
+     "note": "capital_loss is 0 on 95.3% of rows (46,560 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-02a1bd1e87cfdcca"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "capital_gain"
+      ]
+     },
+     "note": "capital_gain is 0 on 91.7% of rows (44,807 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "concentration-f5a8125aa5c9815a"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_any": [
+       "native_country"
+      ]
+     },
+     "note": "native_country is 'United-States' on 91.3% of rows (43,832 of 48,842; verified). Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "keys",
+     "expected_status": "not_applicable",
+     "actual_status": "not_applicable",
+     "ok": true,
+     "note": "No key exists on this frame: no single column is unique and the full 15-column tuple repeats (52 excess rows), so no subset of columns can be a key. The keys pass records not_applicable ('0 single-column unique, 0 composite')."
+    },
+    {
+     "kind": "max_findings",
+     "value": 100,
+     "actual": 100,
+     "ok": true,
+     "note": "The standard-budget run on the main build (2026-11-03, schema 0.4) selects 62 findings, well under the report cap; the guard records the count so a widening selection is re-baselined deliberately. The frame-model step-2 build (schema 0.5) selects the identical 62 with identical claims and scores. Re-baselined to 72 on 2026-11-04 (issue #119): the boundaries detector adds 10 selected findings on this frame (capital_gain maximum and three interior heaps, capital_loss four interior mass points, hours_per_week maximum, age maximum), each stated with its exact count and local baseline and verified in the detector audit (docs/benchmarks/2026-11-04-boundary-mass.md). Re-baselined to 74 on 2026-11-05 (issue #100): the missingness detector adds two statements, the work_class/occupation block and native_country. The schema 0.6 build (verified relationship families, issue #116) grouped the two education FDs under the duplicate-encoding lead, so they spend no selection slot. Re-baselined to 69 on 2026-11-05 when that build merged with the false-alarm change (#148), which removed subset extremes beyond a column's own fence. Raised to 100 on 2026-11-05 (issue #134): tested associations add 31 statements, and the frame now reaches the report cap. The order constraints pass (issue #132) brings the measured count to 98."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Missingness after the '?' marker is decoded: work_class null on 2,799 rows (5.73%), occupation on 2,809 (5.75%), native_country on 857 (1.75%)",
+     "status": "found",
+     "verified": false,
+     "note": "Found since 2026-11-05 by the missingness detector when the ? marker is decoded to null: the digest states work_class, occupation missing together on 2,799 rows (5.7%) and native_country on 857 rows (1.8%)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 4,
+     "matched_ids": [
+      "formats-46e8c4647d65156e",
+      "formats-5a5026d84cd619f3",
+      "formats-d717c6550ca2ec58",
+      "formats-dbbba1fd24062acf"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "boundary_mass",
+      "columns_any": [
+       "capital_gain"
+      ]
+     },
+     "note": "Promoted from a documented missed case (capital_gain top-code: 99,999 on 244 rows, the maximum; 0 on 44,807 rows, 91.74%) by the boundaries detector, issue #119: the finding states the pile at the maximum with its exact count and the local baseline (median count 7 among the 10 nearest lower values). The claim states the pile-up as observed; top-coding is named only as one possible cause in the interpretation. Counts verified on the prepared file; evaluation in docs/benchmarks/2026-11-04-boundary-mass.md. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 4,
+     "matched_ids": [
+      "formats-18213f34a9e1f323",
+      "formats-d20bec8fe2557c8f",
+      "formats-638616c52aa4f177",
+      "formats-150143e498d79e3b"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "boundary_mass",
+      "columns_any": [
+       "capital_loss"
+      ]
+     },
+     "note": "Promoted from a documented missed case (capital_loss mass points after 0: 1902 on 304 rows, 1977 on 253, 1887 on 233; 0 on 46,560 rows, 95.33%; maximum 4,356) by the boundaries detector, issue #119: each spike is reported as an interior mass point against the median counts of its nearest distinct values on each side. Counts verified on the prepared file. Re-baselined 2026-11-15 (issue #315): with the target designated, the statement is still generated (it matches at max_findings=1000) but displaced from the 100-finding report body, neither selected nor grouped, by the target passes' findings; this expectation now asserts the measured state. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Near-duplicates through the sampling weight: 6,374 excess rows repeat a row that differs only in final_weight (42,468 distinct rows ignoring final_weight, of 48,842)",
+     "status": "found",
+     "verified": false,
+     "note": "Found since 2026-11-05 (issue #132): 6,322 rows repeat another row on every column except final_weight, stated by the row_consistency detector. 6,374 excess rows ignoring final_weight, less the 52 that are exact repeats of all 15 columns, is 6,322. Counts verified on the prepared file."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Dominant structure: marital_status explains 33.5% of the variance in age, occupation 31.0% of education_num, relationship 22.5% of age (eta-squared, measured with Polars)",
+     "status": "missed",
+     "verified": false,
+     "note": "Neither build states it. The step-2 account records 'dominant structure: none at the 0.10 variance-share bar' in frame_model coverage, but its search takes measures from columns roled measure, and step 1 roles age, education_num, capital_loss and hours_per_week as dimensions; the two measure-roled numerics (capital_gain, final_weight) peak at shares 0.050 and 0.022. Measured 2026-11-03."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Extreme-value claim misstated (work_class = Federal-gov, hours_per_week): the claim says all other values are <= 80 with a gap of 12",
+     "status": "partial",
+     "verified": false,
+     "note": "The finding fires, and its evidence lists extreme_values [99, 99, 92] over a bulk edge of 80; the subset's true extremes are 92 (1 row) and 99 (2 rows), so 'all other values <= 80' is false and the gap isolating 99 is 7, not 12 (12 is the bulk-edge-to-first-extreme distance). The claim template describes a single isolated value. Verified on the prepared file, 2026-11-03."
+    },
+    {
+     "kind": "documented_case",
+     "ref": "Categorical-outlier enumeration undercounts (education = Some-college, relationship = Husband, 3,658 rows): the claim names 2 breaker rows; the slice has 3 (rows 3787, 39624, 48118, all marital_status = Married-AF-spouse)",
+     "status": "found",
+     "verified": false,
+     "note": "Fixed 2026-11-05 (#111): the finding lists all 3 breaking rows (3787, 39624, 48118), matching its dominant share of 3655/3658."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "target_shapes",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'income' (issue #315): the shapes pass runs under the designation; status measured 2026-11-15. The target is categorical, so the pass states the decline in its detail and reports no shapes."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "leakage",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'income' (issue #315): the leakage screen runs under the designation; status measured 2026-11-15."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "model_failures",
+     "expected_status": "ran_exact",
+     "actual_status": "ran_exact",
+     "ok": true,
+     "note": "Designated target 'income' (issue #315): the model-failure pass runs under the designation; status measured 2026-11-15. The pass cross-fits a GBM on 20,000 of 48,842 rows and states 18 slice failures."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-c14dc872d5f7f1e6"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "target": "income"
+     },
+     "note": "The shapes pass does not apply: 'income' is categorical (its coverage entry states the decline). The matching statement is the predictability pass's on the designated target. Measured 2026-11-15 (issue #315)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "leakage_signature",
+      "target": "income"
+     },
+     "note": "Measured 2026-11-15 (issue #315): the screen evaluates 14 predictors on complete cases; strongest 'relationship' at 0.208 is below the 0.80 bar (next 'marital_status' at 0.198), so no signature is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 18,
+     "matched_ids": [
+      "dependencies-282561c972ae100a",
+      "dependencies-6d66266a9f9242a7",
+      "dependencies-fd248767a6813a76",
+      "dependencies-5ed5666103fa4f1f",
+      "dependencies-7f412639f0ee9204"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "model_failure",
+      "target": "income"
+     },
+     "note": "The model-failure pass confirms 168 slice failures on 'income' and states 18. Measured 2026-11-15 (issue #315)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "column_order_stress",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.04,
+   "rows": 4000,
+   "cols": 15,
+   "findings": 26,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "dependencies": 7,
+    "associations": 16,
+    "column_roles": 1,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-0a64fcdab598d45c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "identifier_role",
+      "columns_all": [
+       "row_id"
+      ]
+     },
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-927b09ccc5429492"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "a1",
+       "a2"
+      ]
+     },
+     "note": "The first near-collinear pair (corr 0.999) is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-b07a687e42713d04"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "b1",
+       "b2"
+      ]
+     },
+     "note": "The second near-collinear pair (corr 0.998) is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-dd1e7a05b441c047"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "a1",
+       "a3"
+      ]
+     },
+     "note": "The negated-factor pair (corr -0.90) is stated as a pair; the sign is in the evidence, not the claim."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-c2b8dd98b617dad8"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "columns_all": [
+       "a1"
+      ],
+      "target": "a2",
+      "claim_contains": "a1"
+     },
+     "note": "The screen names a1 as a2's driver (93% of gain)."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "n1",
+       "n2"
+      ]
+     },
+     "note": "Known miss: no independence statement exists in the vocabulary, so the pure-noise columns' independence is never stated; the pair screen simply stays silent on them. The gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "coverage_status",
+     "detector": "ordered_axis",
+     "expected_status": "skipped",
+     "actual_status": "skipped",
+     "ok": true,
+     "note": "The entry declares no time axis and no ordered_axis hint, so under the axis gate a default run does not run the ordered-axis pass on this frame and records it skipped; the earlier 'capped' expectation was pinned against the pre-gate build, where the scan ran along row_id."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "marginal_ranges",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 3000,
+   "cols": 7,
+   "findings": 6,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "formats": 2,
+    "column_roles": 2,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-0a64fcdab598d45c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "identifier_role",
+      "columns_all": [
+       "row_id"
+      ]
+     },
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-f2baee6c2cddebf6"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "categorical_role",
+      "columns_all": [
+       "level_code"
+      ]
+     },
+     "note": "The five-level code is read as a category."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "low_band",
+       "mid_band"
+      ]
+     },
+     "note": "Correctly silent: the columns are independent by construction, and no row-level relationship is stated. The disjoint-range facts live in the gate's reference file."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "inner_band",
+       "wide_band"
+      ]
+     },
+     "note": "Correctly silent: nested ranges, independent values."
+    },
+    {
+     "kind": "max_findings",
+     "value": 12,
+     "actual": 6,
+     "ok": true,
+     "note": "Restraint pin: 6 findings measured. The table's only true cross-column facts are range facts; a flood of stated relationships here is measurable as false positives."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "planted_mix",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.12,
+   "rows": 6000,
+   "cols": 11,
+   "findings": 43,
+   "grouped_findings": 3,
+   "categories": {
+    "uniqueness": 1,
+    "missingness": 2,
+    "dependencies": 12,
+    "associations": 14,
+    "conditional_rules": 4,
+    "concentration": 2,
+    "formats": 2,
+    "column_roles": 5,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-337ab6953824751d"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "arithmetic_identity",
+      "columns_all": [
+       "labor_cost",
+       "parts_cost",
+       "total_cost"
+      ],
+      "target": "total_cost"
+     },
+     "note": "The planted identity is stated exactly: total_cost = 2*parts_cost + 3*labor_cost + 7 on all rows."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "missingness-a0711fc34628c59c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "missingness",
+      "type": "missing_values",
+      "columns_all": [
+       "followup_days"
+      ]
+     },
+     "note": "The missingness is stated with its concentration: 100% of legacy rows, 0% elsewhere."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "missingness-fdb27c18eedd0654"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "missingness",
+      "type": "predictable_missingness",
+      "columns_all": [
+       "followup_days"
+      ]
+     },
+     "note": "The missingness pattern itself is modeled against the other columns."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-08bccebde2ee075b"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "approved",
+       "channel"
+      ]
+     },
+     "note": "The channel contrast (branch 58.7%, web 41.6%, kiosk 20.2%) is stated as a pair association."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "formats-1262011faee1b38a"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "boundary_mass",
+      "columns_all": [
+       "income_reported"
+      ]
+     },
+     "note": "The sentinel's mass at -999 is stated as boundary mass."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-a8d53cd8f44ab247"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "income_reported",
+       "source_system"
+      ],
+      "target": "source_system"
+     },
+     "note": "The sentinel separates the legacy rows exactly: source_system is a function of income_reported's sentinel value."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "hotspot",
+      "columns_all": [
+       "applicant_age",
+       "channel"
+      ]
+     },
+     "note": "Known miss in this unhinted run: the planted hotspot cell (channel = kiosk, age 18-24; 3.5% of rows holding 24.3% of payout) is not stated. The hotspots pass counts rows over categorical cells; this concentration is measure-weighted over a numeric age band. Since the weighted-concentration change (issue #329) the pass states the cell when payout is declared through the weights hint; the gate's weighted component asserts that in its hinted run, and this expectation keeps asserting the unhinted absence."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "daily_regime_break",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.02,
+   "rows": 1826,
+   "cols": 3,
+   "findings": 35,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "gaps": 10,
+    "dependencies": 3,
+    "associations": 9,
+    "column_roles": 1,
+    "ordering": 1,
+    "anomalies": 2,
+    "changes": 8
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-48054e73d94cf6ae"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "level_shift",
+      "columns_all": [
+       "date",
+       "visits"
+      ]
+     },
+     "note": "The planted 2024-03-01 level shift is found at the exact date (mean 866 before, 1,261 after)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-5b80be8da3db72ca"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "transient_excursion",
+      "columns_all": [
+       "date",
+       "visits"
+      ]
+     },
+     "note": "The planted spike day 2023-06-15 is found at the exact date."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-3aeebfbb76a1d82a"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "series_structure",
+      "columns_all": [
+       "visits"
+      ]
+     },
+     "note": "The weekly cycle is stated (repeats every 7 days, autocorrelation 0.46)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-2480560e91d90ba4"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "signups",
+       "visits"
+      ]
+     },
+     "note": "The companion measure's tracking (corr 0.97) is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "variance_change",
+      "columns_all": [
+       "date",
+       "visits"
+      ]
+     },
+     "note": "Known miss: the planted variance change on 2022-07-01 (generating noise sd 55 -> 150) is not stated by any finding on the current build. Owner-priority family (temporal breaks): the gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "anomaly_coverage",
+     "ok": true,
+     "covered": 2,
+     "windows": 3,
+     "events": 4,
+     "min_covered": 2,
+     "note": "Planted events: variance change 2022-07-01, spike 2023-06-15, level shift 2024-03-01. Measured: the spike and the level shift are covered at their exact dates; the variance change is not covered by any typed event."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "dominant_driver",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.06,
+   "rows": 5000,
+   "cols": 8,
+   "findings": 27,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "missingness": 1,
+    "dependencies": 9,
+    "associations": 10,
+    "concentration": 1,
+    "formats": 1,
+    "column_roles": 3,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-18a8311b925b9f72"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "predictive",
+      "columns_all": [
+       "size_sqft"
+      ],
+      "target": "price",
+      "claim_contains": "size_sqft"
+     },
+     "note": "The target screen names the dominant driver: price is predictable from size_sqft (98% of gain)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-cd8d4e2b91324eca"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "price",
+       "size_sqft"
+      ]
+     },
+     "note": "The dominant pair is stated (corr 0.897)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-06eb0f9642ca2ec1"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "rooms",
+       "size_sqft"
+      ]
+     },
+     "note": "The near-collinearity is stated (maximum measured effect 0.934)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-0c06a92d5cc08350"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "age_years",
+       "price"
+      ]
+     },
+     "note": "The weak negative age effect (-0.098) is stated as a pair."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "missingness-1f5d5273c828f657"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "missingness",
+      "type": "missing_values",
+      "columns_all": [
+       "hoa_fee"
+      ]
+     },
+     "note": "The planted missingness is stated (625 of 5,000 rows, 12%)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-881bca75254e0e30"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "identifier_role",
+      "columns_all": [
+       "listing_id"
+      ]
+     },
+     "note": "The key is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "value_concentration",
+      "columns_all": [
+       "suburb"
+      ]
+     },
+     "note": "Known miss: the suburb concentration (harbor holds 30.2% of listings) is not stated on the current build. The gate's reference file carries the fact as a checked statement."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "messy_intake",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 2500,
+   "cols": 7,
+   "findings": 14,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "missingness": 3,
+    "dependencies": 1,
+    "formats": 4,
+    "concentration": 1,
+    "column_roles": 3,
+    "ordering": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "formats-8a36152458b51fe3"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "format_variation",
+      "columns_all": [
+       "intake_date_raw"
+      ]
+     },
+     "note": "The mixed date formats in one column are stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "formats-9bc5dcfbcf14c906"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "formats",
+      "type": "content_anomaly",
+      "columns_all": [
+       "amount_raw"
+      ]
+     },
+     "note": "The numbers stored as text are stated (all values parse)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "missingness-5be64bcee7f1ff69"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "missingness",
+      "type": "missing_values",
+      "columns_all": [
+       "notes"
+      ]
+     },
+     "note": "The blank notes are stated (732 of 2,500 rows, 29%)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "dependencies-be87170a9bdc14fd"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "dependencies",
+      "type": "functional",
+      "columns_all": [
+       "amount_raw",
+       "fee_raw"
+      ],
+      "target": "fee_raw"
+     },
+     "note": "The fee's exact dependence on the amount is stated (a function of amount_raw, 0 violations); the 2% rate itself is in the gate's reference file."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "column_roles-8fd865f9a672ceda"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "column_roles",
+      "type": "categorical_role",
+      "columns_all": [
+       "status_code"
+      ]
+     },
+     "note": "The two-level code is read as a category."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "impossible_values",
+      "columns_all": [
+       "amount_raw"
+      ]
+     },
+     "note": "Known miss: the -999 sentinel inside the money strings is not flagged as an impossible value on the current build; the column is read as text, so the value screen never sees the number. The gate's reference file carries the fact as a checked statement."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "level_shift",
+      "columns_all": [
+       "intake_date_raw",
+       "status_code"
+      ]
+     },
+     "note": "Known miss: status_code's distribution flip at 2024-01-01 (code 1: 71.2% before, 29.3% after) is not stated; the date column stays an unparsed string, so no time-axis scan runs."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "daily_level_collapse",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 1096,
+   "cols": 3,
+   "findings": 37,
+   "grouped_findings": 0,
+   "categories": {
+    "uniqueness": 1,
+    "gaps": 10,
+    "dependencies": 3,
+    "associations": 13,
+    "formats": 1,
+    "column_roles": 1,
+    "ordering": 1,
+    "changes": 7
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "anomaly_coverage",
+     "ok": true,
+     "covered": 2,
+     "windows": 2,
+     "events": 3,
+     "min_covered": 2,
+     "note": "Issue #332: the planted collapse (2023-03-15) and recovery (2023-08-12) are both covered at their exact dates by typed events -- a trend_change breakpoint at the onset and a variance_change breakpoint at the recovery."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-8c6de61132096e4c"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "trend_change",
+      "columns_all": [
+       "date",
+       "sessions"
+      ]
+     },
+     "note": "A change finding lands on the collapse's exact date (2023-03-15)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-bdc2c99c0f1a9f05"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "ordered_partition",
+      "columns_all": [
+       "date",
+       "sessions"
+      ]
+     },
+     "note": "The series partitions into 3 level+trend regimes with splits at the planted dates (first split 2023-08-12)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "changes-266dd4a54875000f"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "series_structure",
+      "columns_all": [
+       "sessions"
+      ]
+     },
+     "note": "The weekly cycle is stated (repeats every 7 days, autocorrelation 0.91)."
+    },
+    {
+     "kind": "finding",
+     "expect": "found",
+     "ok": true,
+     "outcome": "selected",
+     "matched": 1,
+     "matched_ids": [
+      "associations-308b67e9b0f9633f"
+     ],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "associations",
+      "type": "statistical",
+      "columns_all": [
+       "conversions",
+       "sessions"
+      ]
+     },
+     "note": "The companion measure's tracking (corr 0.967) is stated."
+    },
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "changes",
+      "type": "level_shift",
+      "columns_all": [
+       "date",
+       "sessions"
+      ]
+     },
+     "note": "Known miss: the collapse is not stated as a level_shift finding on the current build; it surfaces as a trend_change at the onset, a variance_change at the recovery, and the ordered partition. The gate's reference file carries the collapse, its duration, and the recovery as checked statements (issue #332)."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "weighted_noise",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.02,
+   "rows": 8000,
+   "cols": 4,
+   "findings": 2,
+   "grouped_findings": 0,
+   "categories": {
+    "associations": 1,
+    "formats": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "hotspot",
+      "columns_all": [
+       "noise_weight",
+       "region",
+       "segment"
+      ]
+     },
+     "note": "Control (issue #329): noise_weight is independent of segment and region by construction, so no weighted hotspot over their cells may be stated. The corpus run profiles with the entry's weights hint, so this expectation fails the run if a weighted finding appears."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "weighted_large_cell",
+   "pack": "synthetic",
+   "mode": "bundled",
+   "sha256_verified": true,
+   "seconds": 0.01,
+   "rows": 8000,
+   "cols": 3,
+   "findings": 3,
+   "grouped_findings": 0,
+   "categories": {
+    "duplicates": 1,
+    "associations": 1,
+    "formats": 1
+   },
+   "coverage_errors": {},
+   "expectations": [
+    {
+     "kind": "finding",
+     "expect": "missed",
+     "ok": true,
+     "outcome": null,
+     "matched": 0,
+     "matched_ids": [],
+     "matched_grouped": 0,
+     "grouped_ids": [],
+     "lead_ids": [],
+     "predicate": {
+      "category": "concentration",
+      "type": "hotspot",
+      "columns_all": [
+       "channel",
+       "plan",
+       "revenue"
+      ]
+     },
+     "note": "Control (issue #329): revenue's distribution is identical in every channel x plan cell by construction, so no weighted hotspot may be stated. The corpus run profiles with the entry's weights hint, so this expectation fails the run if a weighted finding appears."
+    }
+   ],
+   "status": "ok"
+  },
+  {
+   "id": "iris",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "wine-quality",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "air-quality",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "mushroom",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "dry-bean",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "electrical-grid-stability",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "gas-sensor-drift",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "heart-disease",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "spambase",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "magic-gamma",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "letter-recognition",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "concrete",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "communities-and-crime",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  },
+  {
+   "id": "yeast",
+   "pack": "uci",
+   "mode": "test-only",
+   "status": "skipped",
+   "reason": "data.csv is fetched by prepare.py (ucimlrepo) and is not committed yet; see docs/benchmarks/2026-11-17-uci-expansion.md"
+  }
+ ],
+ "summary": {
+  "datasets": {
+   "ok": 32,
+   "skipped": 25
+  },
+  "datasets_total": 57,
+  "machine_verified": {
+   "passed": 220,
+   "total": 220
+  },
+  "documented_cases": {
+   "found": 17,
+   "missed": 11,
+   "partial": 4
+  },
+  "documented_missed_in": [
+   "thyroid",
+   "adventureworks",
+   "sec-edgar-company-facts",
+   "metro-interstate-traffic",
+   "bike-sharing-hourly",
+   "adult-census-income"
+  ],
+  "exit_code": 2
+ }
+}

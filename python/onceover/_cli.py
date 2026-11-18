@@ -102,7 +102,10 @@ def _read_table(path):
     if suffix == ".parquet":
         return pl.read_parquet(path)
     if suffix == ".csv":
-        return pl.read_csv(path)
+        # Match profile(path=...) and the other Python entry points:
+        # Polars' 100-row default can infer a different dtype from the
+        # rest of the file and silently hide a foreign-key family.
+        return pl.read_csv(path, infer_schema_length=None)
     if suffix in (".ipc", ".feather", ".arrow"):
         return pl.read_ipc(path)
     raise ValueError(
@@ -138,8 +141,24 @@ def _render_many(paths, args, fmt):
             f"format {fmt!r} is not available for multiple files; "
             "use digest or json"
         )
+    unsupported = []
     if args.target is not None:
-        raise ValueError("--target applies to a single file only")
+        unsupported.append("--target")
+    if args.budget != "standard":
+        unsupported.append("--budget")
+    if args.deadline_seconds is not None:
+        unsupported.append("--deadline-seconds")
+    if args.source_row_cap is not None:
+        unsupported.append("--source-row-cap")
+    if args.exact:
+        unsupported.append("--exact")
+    if args.sample_seed != 0:
+        unsupported.append("--sample-seed")
+    if unsupported:
+        raise ValueError(
+            f"{', '.join(unsupported)} apply to a single file only; "
+            "profile_many examines every value and takes no sampling controls"
+        )
     tables = {}
     for path in paths:
         name = path.stem

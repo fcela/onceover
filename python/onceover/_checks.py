@@ -54,7 +54,7 @@ def _value_expr(df: pl.DataFrame, col: str, value) -> pl.Expr:
     return pl.col(col) == value
 
 
-def _residual_within(df: pl.DataFrame, m: dict, target: str, predicted: pl.Expr) -> pl.Expr:
+def _residual_within(m: dict, target: str, predicted: pl.Expr) -> pl.Expr:
     absolute = m.get("absolute_tolerance", 1e-9)
     relative = m.get("relative_tolerance", 1e-9)
     y = pl.col(target).cast(pl.Float64)
@@ -147,7 +147,7 @@ def _check_fd(f, m, df) -> list[Triple] | None:
 def _check_identity(f, m, df) -> list[Triple]:
     target, terms, predicted, comparable = _identity_parts(f)
     rows = df.drop_nulls([target, *terms]).filter(comparable)
-    within = rows.select(_residual_within(df, m, target, predicted).sum()).item()
+    within = rows.select(_residual_within(m, target, predicted).sum()).item()
     return [
         ("comparable rows", m["n"], rows.height),
         ("rows within tolerance", m["matching_rows"], within),
@@ -616,7 +616,7 @@ def verify(findings: Iterable[dict], df: pl.DataFrame) -> pl.DataFrame:
             continue
         try:
             triples = checker(f, _metrics(f), df)
-        except (KeyError, ValueError, TypeError, pl.exceptions.PolarsError) as err:
+        except (KeyError, IndexError, ValueError, TypeError, pl.exceptions.PolarsError) as err:
             add(f, "error", note=f"{type(err).__name__}: {err}")
             continue
         if not triples:
@@ -639,7 +639,7 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
         return _violators_fd(f, df)
     if algorithm in ("ols_residual_scan", "multiterm_scan"):
         target, terms, predicted, comparable = _identity_parts(f)
-        within = _residual_within(df, m, target, predicted)
+        within = _residual_within(m, target, predicted)
         return indexed.drop_nulls([target, *terms]).filter(comparable).filter(~within)
     if algorithm == "missing_rate_scan":
         return indexed.filter(pl.col(cols[0]).is_null())

@@ -147,3 +147,34 @@ def test_cli_version(capsys):
         main(["--version"])
     assert excinfo.value.code == 0
     assert onceover.__version__ in capsys.readouterr().out
+
+
+def test_cli_csv_infers_the_whole_file(tmp_path, capsys):
+    csv = tmp_path / "late_decimal.csv"
+    values = [str(i) for i in range(100)]
+    values += ["100.5"]
+    values += [str(i) for i in range(101, 300)]
+    csv.write_text("id\n" + "\n".join(values) + "\n", encoding="utf-8")
+    # Polars' 100-row inference window types this as Int64 and then
+    # fails on the late decimal; the CLI reads the whole column.
+    # UInt64 overflow is left to Polars: 1.28 cannot infer it at all.
+    assert main([str(csv), "--format", "json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["overview"]["n_rows"] == 300
+
+
+@pytest.mark.parametrize("flag", [
+    ["--target", "v"],
+    ["--budget", "quick"],
+    ["--deadline-seconds", "1"],
+    ["--source-row-cap", "10"],
+    ["--exact"],
+    ["--sample-seed", "7"],
+])
+def test_cli_multiple_files_reject_single_table_flags(tmp_path, capsys, flag):
+    first = tmp_path / "first.csv"
+    second = tmp_path / "second.csv"
+    orders_frame().write_csv(first)
+    orders_frame().write_csv(second)
+    assert main([str(first), str(second), *flag]) == 1
+    assert flag[0] in capsys.readouterr().err

@@ -324,6 +324,14 @@ fn sampling_estimation_and_validation_are_independent_fields() {
 }
 
 #[test]
+fn markdown_cells_escape_pipes_backslashes_and_newlines() {
+    assert_eq!(md_cell("a|b"), "a\\|b");
+    assert_eq!(md_cell("a\\b"), "a\\\\b");
+    assert_eq!(md_cell("line\nbreak"), "line<br>break");
+    assert_eq!(md_cell("line\r\nbreak"), "line <br>break");
+}
+
+#[test]
 fn markdown_places_evidence_and_result_tables_beside_findings() {
     let mut finding = rule(
         "detector",
@@ -1357,7 +1365,10 @@ fn default_policy_caps_the_char_heavy_detectors() {
             .get("functional_dependencies"),
         Some(&25)
     );
-    assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
+    assert_eq!(
+        policy.max_findings_per_detector.get("predictability"),
+        Some(&20)
+    );
     // The 2026-11-04 battery added discontinuities at 25: its
     // statements outscore every other change detector on panels and
     // took 81 of 100 slots on state-unemployment.
@@ -1370,7 +1381,7 @@ fn default_policy_caps_the_char_heavy_detectors() {
         Some(&20)
     );
     assert_eq!(policy.max_findings_per_detector.get("series"), Some(&20));
-    // Issue #271 caps breaks and views too, but only under cap
+    // Issue #271 caps breaks and row clusters too, but only under cap
     // pressure: they live in `pressure_detector_caps`, not in
     // this standing map (see
     // `default_policy_carries_the_group_cap_reserve_and_extended_detector_caps`).
@@ -1709,9 +1720,9 @@ fn default_policy_carries_the_group_cap_reserve_and_extended_detector_caps() {
     assert_eq!(policy.max_findings_per_group, 12);
     assert_eq!(policy.hygiene_reserve, 20);
     // The extended detector caps bind only under cap pressure:
-    // breaks and views at 25 each, in the pressure map.
+    // breaks and row clusters at 25 each, in the pressure map.
     assert_eq!(policy.pressure_detector_caps.get("breaks"), Some(&25));
-    assert_eq!(policy.pressure_detector_caps.get("views"), Some(&25));
+    assert_eq!(policy.pressure_detector_caps.get("row_clusters"), Some(&25));
     assert_eq!(policy.pressure_detector_caps.len(), 2);
     // The six standing per-detector caps are unchanged, and
     // neither new detector joins them.
@@ -1721,9 +1732,14 @@ fn default_policy_carries_the_group_cap_reserve_and_extended_detector_caps() {
             .get("functional_dependencies"),
         Some(&25)
     );
-    assert_eq!(policy.max_findings_per_detector.get("gbm"), Some(&20));
+    assert_eq!(
+        policy.max_findings_per_detector.get("predictability"),
+        Some(&20)
+    );
     assert!(!policy.max_findings_per_detector.contains_key("breaks"));
-    assert!(!policy.max_findings_per_detector.contains_key("views"));
+    assert!(!policy
+        .max_findings_per_detector
+        .contains_key("row_clusters"));
 }
 
 fn break_on(col: &str, score: f64) -> Finding {

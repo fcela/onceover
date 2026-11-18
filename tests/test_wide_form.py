@@ -33,6 +33,13 @@ def test_wide_form_findings_are_tagged_and_present():
     report = onceover.profile(_panel(), detectors=default_plus("pivot"))
     cov = report.data["coverage"]["pivot_profile"]
     assert cov["status"] == "ran_exact"
+    # The recursive profile is a full pass over the wide frame, not
+    # just its lifted findings: its pass coverage stays visible under
+    # its own namespace instead of overwriting the long form's.
+    nested = [name for name in report.coverage if name.startswith("pivot_profile/")]
+    assert nested
+    assert "pivot_profile/column_cards" in nested
+    assert report.coverage["column_cards"]["status"] == "ran_exact"
     # The planted gdp/life association exists only in the wide form.
     assert any(
         _tagged(f) and "gdp" in f["subject"]["columns"] and "life" in f["subject"]["columns"]

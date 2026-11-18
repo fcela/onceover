@@ -552,7 +552,7 @@ fn lgamma(x: f64) -> f64 {
         24.01409824083091,
         -1.231739572450155,
         0.001208650973866179,
-        -0.0005395239384953,
+        -0.000005395239384953,
     ];
     let mut ser = 1.000000000190015;
     let mut y = x;
@@ -1252,6 +1252,22 @@ pub fn profile_surprises(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lgamma_matches_known_values() {
+        // The last Lanczos coefficient is small; a 100x typo still
+        // leaves small arguments approximately right and biases the
+        // tail ranking at the values this pass actually scores.
+        for (x, expected) in [
+            (1.0, 0.0),
+            (2.0, 0.0),
+            (5.0, 24.0_f64.ln()),
+            (10.0, 362_880.0_f64.ln()),
+            (0.5, std::f64::consts::PI.sqrt().ln()),
+        ] {
+            assert!((lgamma(x) - expected).abs() < 1e-10, "lgamma({x})");
+        }
+    }
 
     #[test]
     fn past_deadline_scans_no_target_and_says_so() {

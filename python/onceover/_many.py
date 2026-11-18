@@ -24,11 +24,11 @@ Partial containment is reported separately as value overlap: pairs into
 a unique parent whose shared distinct-value share clears a threshold,
 with the orphan rows (child values with no parent match) counted
 exactly.  Pairs are screened with a strided probe of up to 4,096 of the
-child's distinct values, tested against a cached set of the parent's:
-a probe miss proves non-containment, pairs whose probe share falls
-more than 0.05 under the overlap threshold are screened out, and the
-survivors get an exact count, so reported shares and orphan counts are
-always exact.
+child's distinct values, tested against a cached set of the parent's.
+The probe is only allowed to rule a pair out when even treating every
+unprobed value as a match cannot reach the threshold; survivors get an
+exact count, so reported shares and orphan counts are always exact and
+a strided miss can never hide a real overlap.
 
 The chance score reuses the hypergeometric form of the functional
 dependency chance correction in the native dependency pass (a ratio of
@@ -58,7 +58,6 @@ _INTEGER_TYPES = (
 _FLOAT_TYPES = (pl.Float32, pl.Float64)
 _INT64_MAX = 2**63 - 1
 _PROBE_LIMIT = 4096
-_PROBE_MARGIN = 0.05
 _ORPHAN_EXAMPLES = 10
 _REPORT_VERSION = "1"
 
@@ -129,9 +128,9 @@ class _Column:
     """One examined column, canonicalised for cross-table set algebra."""
 
     __slots__ = (
-        "table", "name", "family", "values", "distinct", "distinct_count",
-        "nonnull_rows", "rows", "unique", "span_min", "span_max", "text_keys",
-        "_keyset",
+        "table", "name", "family", "values", "distinct", "distinct_values",
+        "distinct_count", "nonnull_rows", "rows", "unique", "span_min",
+        "span_max", "text_keys", "_keyset",
     )
 
     def __init__(self, table, name, frame, int_text_keys=False):
@@ -179,6 +178,7 @@ class _Column:
         self.values = values
         self.nonnull_rows = values.height
         self.distinct = values.unique().sort("v")
+        self.distinct_values = self.distinct.get_column("v").to_list()
         self.distinct_count = self.distinct.height
         self.unique = self.distinct_count == self.nonnull_rows and self.distinct_count > 0
         self._keyset = None
@@ -264,10 +264,20 @@ class MultiTableReport:
         return pl.DataFrame(rows)
 
     def to_json(self, max_chars=None):
-        """Return the multi-table report as JSON text."""
-        text = json.dumps(
-            self.data, ensure_ascii=False, indent=2, sort_keys=True, default=str
-        )
+        """Return the multi-table report as JSON text.
+
+        With ``max_chars``, candidate and overlap records collapse to
+        their first ten entries and a ``truncation`` record states what
+        was omitted.  The result is always complete, valid JSON; a
+        budget too small for that reduced view raises ``ValueError``
+        rather than slicing a JSON document in half.
+        """
+        def dumps(value):
+            return json.dumps(
+                value, ensure_ascii=False, indent=2, sort_keys=True, default=str
+            )
+
+        text = dumps(self.data)
         if max_chars is None or len(text) <= max_chars:
             return text
         body = dict(self.data)
@@ -276,13 +286,16 @@ class MultiTableReport:
         body["truncation"] = {
             "full_json_chars": len(text),
             "returned_candidate_records": len(body["candidates"]),
+            "omitted_candidate_records": len(self.candidates) - len(body["candidates"]),
             "returned_overlap_records": len(body["overlaps"]),
+            "omitted_overlap_records": len(self.overlaps) - len(body["overlaps"]),
         }
-        text = json.dumps(
-            body, ensure_ascii=False, indent=2, sort_keys=True, default=str
-        )
-        if max_chars is not None and len(text) > max_chars >= 0:
-            return text[:max_chars]
+        text = dumps(body)
+        if len(text) > max_chars:
+            raise ValueError(
+                f"max_chars={max_chars} is below the minimal budgeted "
+                f"multi-table report skeleton ({len(text)} chars)"
+            )
         return text
 
     def to_digest(self, budget_chars=4000):
@@ -443,6 +456,10 @@ def profile_many(tables, *, overlap_threshold=0.9):
     for child in columns:
         if child.distinct_count == 0:
             continue
+        # The probe depends only on the child, not on the parent loop.
+        probe = probe_exact = None
+        probe_values = ()
+        unprobed = 0
         for parent in columns:
             if parent.table == child.table:
                 continue
@@ -460,22 +477,24 @@ def profile_many(tables, *, overlap_threshold=0.9):
                 funnel["size_pruned_pairs"] += 1
                 continue
             funnel["probe_checked_pairs"] += 1
-            probe, probe_exact = _probe(child.distinct)
+            if probe is None:
+                probe, probe_exact = _probe(child.distinct)
+                probe_values = probe.get_column("v").to_list()
+                unprobed = child.distinct_count - probe.height
             parent_keys = parent.keyset()
-            probe_values = probe.get_column("v").to_list()
             probe_shared = sum(1 for v in probe_values if v in parent_keys)
             if probe_exact:
                 shared = probe_shared
                 missing = None  # built only if an overlap is reported
             else:
-                # Screen: the exact count is worth computing only when
-                # the probe share stays within the margin of the
-                # overlap threshold (a contained pair probes at 1.0).
-                if probe_shared / probe.height < overlap_threshold - _PROBE_MARGIN:
+                # A strided probe can miss periodic matches. Rule a pair
+                # out only when even matching every unprobed value cannot
+                # reach the threshold; otherwise pay for the exact count.
+                if probe_shared + unprobed < overlap_threshold * child.distinct_count:
                     continue
                 funnel["exact_checked_pairs"] += 1
-                missing = child.distinct.join(parent.distinct, on="v", how="anti")
-                shared = child.distinct_count - missing.height
+                shared = sum(1 for v in child.distinct_values if v in parent_keys)
+                missing = None  # built only if an overlap is reported
             identity = {
                 "child_table": child.table,
                 "child_column": child.name,

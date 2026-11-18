@@ -147,3 +147,25 @@ def test_discontinuities_cap_is_disclosed_with_counts():
     entry = report.coverage["selection"]
     assert entry["status"] == "capped"
     assert "discontinuities" in entry["detail"]
+
+
+def test_disabled_passes_use_the_registry_pass_names():
+    report = onceover.profile(pl.DataFrame({"x": [1, 2, 3, 4]}),
+                              budget="standard", detectors=["missingness"])
+    coverage = report.coverage
+    # The detector id is `covering_rules`, but its coverage has always
+    # been named `prism_rules`; do not emit a second stale entry. It
+    # runs here as a required resource of the selected detector.
+    assert "covering_rules" not in coverage
+    assert coverage["prism_rules"]["status"] in ("ran", "ran_exact", "ran_sampled")
+    assert coverage["functional_dependencies"]["detail"] == "detector not enabled"
+
+    # A deadline stamp applied before the enabled check must be
+    # replaced: a detector that was never enabled did not skip because
+    # of the deadline.
+    fast = onceover.profile(pl.DataFrame({"x": [1, 2, 3, 4]}),
+                            budget="standard", detectors=["missingness"],
+                            deadline_seconds=0.0)
+    for name in ("functional_dependencies", "prism_rules", "row_clusters"):
+        detail = fast.coverage[name]["detail"]
+        assert "deadline" not in detail, (name, detail)
