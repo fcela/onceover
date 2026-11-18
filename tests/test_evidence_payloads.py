@@ -67,18 +67,21 @@ def test_duplicate_groups_render_values():
 
 
 def test_breaks_segments_table():
-    # The issue #6 panel shape (40 entities x 15 years, South +4 from
-    # 2008, integer years): the level-shift finding's segments
-    # payload carries the two segments with their means.
-    regions = ["North", "South", "East", "West"]
+    # A panel (60 entities x 15 years, South +4 from 2008, integer
+    # years) whose break is confined to one region: the grouped
+    # level-shift finding's segments payload carries the two segments
+    # with their means. With 6 regions, the whole-panel mean shift is
+    # below the calibrated global bar, so the subgroup finding is the
+    # stated level shift.
+    regions = ["South", "North", "East", "West", "Midwest", "Coastal"]
     entity, region, year, life = [], [], [], []
     i = 0
-    for e in range(40):
+    for e in range(60):
         for yi in range(15):
             entity.append(f"E{e:02d}")
-            region.append(regions[e // 10])
+            region.append(regions[e % len(regions)])
             year.append(2000 + yi)
-            shift = 4.0 if regions[e // 10] == "South" and yi >= 8 else 0.0
+            shift = 4.0 if regions[e % len(regions)] == "South" and yi >= 8 else 0.0
             life.append(70.0 + (((i * 37) % 11) - 5) * 0.3 + shift)
             i += 1
     df = pl.DataFrame(
