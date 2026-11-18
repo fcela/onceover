@@ -61,8 +61,8 @@ pub use drift::{profile_drift, DriftConfig};
 pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
 pub use gbm::{
-    screen as screen_predictability, screen_missing_indicator, IndicatorScreen, ScreenConfig,
-    ScreenOutcome, TargetResult,
+    screen as screen_predictability, screen_missing_indicator, IndicatorScreen, ModelBasis,
+    ScreenConfig, ScreenOutcome, TargetResult,
 };
 pub use hotspots::{hotspots, HotspotConfig, HotspotsOutcome, WeightSeries};
 pub use hstat::{profile_interactions, HConfig};

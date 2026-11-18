@@ -36,7 +36,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 
 use crate::encode::EncodedMatrix;
-use crate::gbm::{fit_gbm_model, FittedGbm, ScreenConfig, TargetResult};
+use crate::gbm::{fit_gbm_model_restricted, FittedGbm, ScreenConfig, TargetResult};
 
 #[derive(Clone, Debug)]
 pub struct HConfig {
@@ -191,6 +191,8 @@ pub fn profile_interactions(
     results: &[TargetResult],
     screen_cfg: &ScreenConfig,
     cfg: &HConfig,
+    basis: &crate::gbm::ModelBasis,
+    designated: Option<usize>,
 ) -> (Vec<Finding>, String) {
     if !cfg.is_enabled() {
         return (Vec::new(), "disabled at this budget".into());
@@ -199,7 +201,13 @@ pub fn profile_interactions(
         .iter()
         .filter(|r| !r.is_categorical && r.metric >= cfg.min_holdout_r2)
         .collect();
-    targets.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
+    // The designated target leads; the rest follow by holdout score.
+    targets.sort_by(|a, b| {
+        (Some(b.col) == designated)
+            .cmp(&(Some(a.col) == designated))
+            .then(b.metric.total_cmp(&a.metric))
+            .then(a.name.cmp(&b.name))
+    });
     let n_eligible = targets.len();
     targets.truncate(cfg.max_targets);
 
@@ -208,7 +216,12 @@ pub fn profile_interactions(
     let mut n_gated = 0usize;
     let mut n_pairs = 0usize;
     for target in targets {
-        let Some(model) = fit_gbm_model(table, enc, target.col, screen_cfg) else {
+        // The same inputs the screen used: no scaffolding, no
+        // recoding or indicator, no identity partner of the target.
+        let exclude = basis.excluded_for(target.col);
+        let Some(model) =
+            fit_gbm_model_restricted(table, enc, target.col, screen_cfg, None, &exclude)
+        else {
             continue;
         };
         n_fitted += 1;
@@ -249,9 +262,10 @@ pub fn profile_interactions(
         let mut add_cfg = screen_cfg.clone();
         add_cfg.max_depth = 1;
         add_cfg.max_rounds = screen_cfg.max_rounds.saturating_mul(10);
-        let additive_r2 = fit_gbm_model(table, enc, target.col, &add_cfg)
-            .map(|m| m.holdout_r2)
-            .unwrap_or(0.0);
+        let additive_r2 =
+            fit_gbm_model_restricted(table, enc, target.col, &add_cfg, None, &exclude)
+                .map(|m| m.holdout_r2)
+                .unwrap_or(0.0);
         if model.holdout_r2 - additive_r2 < cfg.additive_gain_min {
             continue;
         }

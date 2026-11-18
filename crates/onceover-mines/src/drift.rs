@@ -307,6 +307,7 @@ pub fn profile_drift(
     excluded: &[usize],
     screen_cfg: &ScreenConfig,
     cfg: &DriftConfig,
+    basis: &crate::gbm::ModelBasis,
 ) -> (Vec<Finding>, String) {
     if !cfg.is_enabled() {
         return (Vec::new(), "disabled at this budget".into());
@@ -361,6 +362,11 @@ pub fn profile_drift(
         };
         let mut exclude: Vec<usize> = excluded.to_vec();
         exclude.push(time_ci);
+        for c in basis.excluded_for(ci) {
+            if !exclude.contains(&c) {
+                exclude.push(c);
+            }
+        }
         let Some(model) =
             fit_gbm_model_restricted(table, enc, ci, screen_cfg, Some(&reference_rows), &exclude)
         else {
@@ -517,6 +523,7 @@ mod tests {
             &[],
             &ScreenConfig::default(),
             &DriftConfig::default(),
+            &crate::gbm::ModelBasis::default(),
         )
     }
 
@@ -587,6 +594,7 @@ mod tests {
             &[],
             &ScreenConfig::default(),
             &DriftConfig::default(),
+            &crate::gbm::ModelBasis::default(),
         );
         assert!(findings.is_empty());
         assert_eq!(note, "no time axis declared");

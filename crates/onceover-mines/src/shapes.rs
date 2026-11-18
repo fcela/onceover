@@ -197,6 +197,7 @@ pub fn profile_target_shapes(
     table: &TypedTable,
     target_name: &str,
     cfg: &ShapesConfig,
+    basis: &crate::gbm::ModelBasis,
 ) -> (Vec<Finding>, String) {
     let Some(tci) = table.names.iter().position(|n| n == target_name) else {
         return (
@@ -214,8 +215,12 @@ pub fn profile_target_shapes(
     let mut scored: Vec<(f64, Finding)> = Vec::new();
     let mut n_predictors = 0usize;
     let mut n_evaluated = 0usize;
+    let excluded = basis.excluded_for(tci);
     for ci in 0..table.cols.len() {
-        if ci == tci {
+        // A scaffolding column, a recoding or indicator, or an
+        // identity partner of the target is not a predictor whose
+        // shape informs (issue #446).
+        if ci == tci || excluded.contains(&ci) {
             continue;
         }
         let Some(pred_vals) = column_f64(table, ci) else {
