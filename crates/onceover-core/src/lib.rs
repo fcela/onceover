@@ -7,6 +7,7 @@ pub mod counts;
 pub mod dateutil;
 pub mod dup;
 pub mod sampling;
+pub mod stats;
 pub mod typed;
 pub use sampling::sample_rows;
 

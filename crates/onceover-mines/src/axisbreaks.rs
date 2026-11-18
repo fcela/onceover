@@ -139,43 +139,14 @@ pub fn iqr(v: &[f64]) -> f64 {
 }
 
 fn ranks(v: &[f64]) -> Vec<f64> {
-    let mut order: Vec<usize> = (0..v.len()).collect();
-    order.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
-    let mut out = vec![0.0; v.len()];
-    let mut i = 0;
-    while i < order.len() {
-        let mut j = i;
-        while j + 1 < order.len() && v[order[j + 1]] == v[order[i]] {
-            j += 1;
-        }
-        let avg = (i + j) as f64 / 2.0 + 1.0;
-        for k in i..=j {
-            out[order[k]] = avg;
-        }
-        i = j + 1;
-    }
-    out
+    onceover_core::stats::midranks(v)
 }
 
 fn pearson(x: &[f64], y: &[f64]) -> f64 {
-    let n = x.len() as f64;
-    if n < 3.0 {
+    if x.len() < 3 {
         return 0.0;
     }
-    let mx = mean(x);
-    let my = mean(y);
-    let mut sxy = 0.0;
-    let mut sxx = 0.0;
-    let mut syy = 0.0;
-    for i in 0..x.len() {
-        sxy += (x[i] - mx) * (y[i] - my);
-        sxx += (x[i] - mx) * (x[i] - mx);
-        syy += (y[i] - my) * (y[i] - my);
-    }
-    if sxx <= 0.0 || syy <= 0.0 {
-        return 0.0;
-    }
-    sxy / (sxx * syy).sqrt()
+    onceover_core::stats::pearson(x, y).unwrap_or(0.0)
 }
 
 /// Spearman rank correlation.

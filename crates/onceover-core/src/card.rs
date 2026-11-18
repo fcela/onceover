@@ -69,18 +69,7 @@ fn pct(x: f64) -> String {
 }
 
 fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
-    if sorted.is_empty() {
-        return None;
-    }
-    let pos = q * (sorted.len() - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = pos.ceil() as usize;
-    if lo == hi {
-        Some(sorted[lo])
-    } else {
-        let w = pos - lo as f64;
-        Some(sorted[lo] * (1.0 - w) + sorted[hi] * w)
-    }
+    (!sorted.is_empty()).then(|| crate::stats::quantile_sorted(sorted, q))
 }
 
 fn numeric_stats_f64(vals: Vec<f64>, integral_forced: bool) -> NumericStats {
