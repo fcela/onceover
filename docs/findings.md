@@ -1504,8 +1504,26 @@ The default set has 31 of the 46 registered detectors; the other 15 run only whe
 | `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
 | `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
 | `row_clusters` | `associations`, `changes`, `concentration`, `gaps` | `on_request` | `always` | — | Experimental shared row partitions, cluster differences, and density findings |
-| `entity_fingerprints` | `associations`, `anomalies`, `concentration` | `on_request` | `always` | — | Each entity's mix over each dimension, compared across entities: groups of entities with a similar mix, a continuum, entities that match no group, and specialists |
+| `entity_fingerprints` | `associations`, `anomalies`, `concentration`, `changes` | `on_request` | `always` | — | Each entity's mix over each dimension: groups, a continuum, misfits, specialists, and changes along a resolved axis |
 <!-- /generated:detectors -->
+
+### Changes in entity fingerprints
+
+The on-request `entity_fingerprints` detector also compares row shares
+over a resolved time or ordered axis. It uses the same entity and
+dimension roles as the static scan. Coverage gives the period starts,
+the number of entities with enough rows for comparisons, and any
+windows excluded because they overlap a shared change.
+
+A change is reported as `joint_distribution_change` with evidence
+method `entity_mix_change`. Read `population_shift` for an entity-weighted
+shared change, and `entity_shifts` for individual examples with their
+before and after shares, the matched peers' shares, window bounds, and
+test sizes. `n_entity_shifts` counts every detected entity on the
+dimension, with up to 100 examples in the evidence. The individual test
+uses a conditional period-label permutation null. Its calibration
+assumes that rows are exchangeable within an entity under that null.
+
 
 The 2026-11-02 detector battery measured five of the on-request
 detectors producing no findings in 40 runs over 20 datasets, so a

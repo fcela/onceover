@@ -38,8 +38,7 @@
 //!    under multinomial sampling from the pooled shares, at each
 //!    entity's own support, is at most a third of it.
 //!
-//! Rows are counted (the measure-weighted form, the joint dimensions
-//! and the drift questions are later steps of #448).
+//! Row counts also support a scan for changes in mix when an axis is resolved.
 
 use std::collections::BTreeMap;
 
@@ -48,7 +47,9 @@ use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
 
 use crate::dep::chi2_sf;
+use crate::fingerprints_drift::{self, DriftInput, FingerprintPeriods};
 use crate::slices::splitmix64;
+use crate::Deadline;
 
 /// Smallest excess Cramér's V stated (the association passes' floor).
 pub const MIN_EXCESS_V: f64 = 0.1;
@@ -56,12 +57,14 @@ const MAX_K: usize = 8;
 const GAP_REFERENCES: usize = 10;
 const MAX_LEVELS: usize = 30;
 const MAX_ENTITIES: usize = 5000;
-const MIN_ENTITIES: usize = 20;
+pub(crate) const MIN_ENTITIES: usize = 20;
 
 /// The resolved inputs: the entity column and the dimensions.
 pub struct FingerprintInput {
     pub entity: usize,
     pub dimensions: Vec<usize>,
+    pub periods: Option<FingerprintPeriods>,
+    pub deadline: Deadline,
 }
 
 struct Rng(u64);
@@ -226,7 +229,7 @@ fn eff_levels(shares: &[f64]) -> f64 {
     .exp()
 }
 
-fn pct(x: f64) -> String {
+pub(crate) fn pct(x: f64) -> String {
     format!("{:.0}%", 100.0 * x)
 }
 
@@ -264,20 +267,37 @@ fn distinguishing(
 }
 
 /// Run the pass. Returns findings and the coverage detail.
-pub fn entity_fingerprints(table: &TypedTable, input: &FingerprintInput) -> (Vec<Finding>, String) {
+pub fn entity_fingerprints(
+    table: &TypedTable,
+    input: &FingerprintInput,
+) -> (Vec<Finding>, String, bool) {
     let ename = table.names[input.entity].clone();
     let Ok((ecodes, n_ent, elabels)) = crate::panels::entity_index(table, input.entity) else {
-        return (vec![], format!("entity column {ename} cannot key entities"));
+        return (
+            vec![],
+            format!("entity column {ename} cannot key entities"),
+            false,
+        );
     };
     if n_ent < MIN_ENTITIES {
         return (
             vec![],
             format!("{n_ent} entities in {ename}; the pass needs at least {MIN_ENTITIES}"),
+            false,
         );
     }
     let mut findings = Vec::new();
     let mut notes: Vec<String> = Vec::new();
-    for &d in &input.dimensions {
+    let mut limited = false;
+    for (dimension_index, &d) in input.dimensions.iter().enumerate() {
+        if input.deadline.exceeded() {
+            notes.push(format!(
+                "deadline after {dimension_index} of {} dimensions",
+                input.dimensions.len()
+            ));
+            limited = true;
+            break;
+        }
         if d == input.entity {
             continue;
         }
@@ -307,15 +327,42 @@ pub fn entity_fingerprints(table: &TypedTable, input: &FingerprintInput) -> (Vec
                 .iter()
                 .sum::<f64>()
                 .total_cmp(&counts[a].iter().sum::<f64>())
-                .then(a.cmp(&b))
+                .then_with(|| elabels[a].cmp(&elabels[b]))
         });
         let capped = ents.len() > MAX_ENTITIES;
+        if capped {
+            limited = true;
+            notes.push(format!(
+                "{dname}: {MAX_ENTITIES} of {} entities with values examined",
+                ents.len()
+            ));
+        }
         ents.truncate(MAX_ENTITIES);
         ents.sort_unstable();
         let e_n = ents.len();
         if e_n < MIN_ENTITIES {
             notes.push(format!("{dname}: {e_n} entities with values"));
             continue;
+        }
+        if let Some(periods) = &input.periods {
+            let (mut changes, detail, stopped) = fingerprints_drift::scan(DriftInput {
+                periods,
+                entity: &ename,
+                dimension: &dname,
+                entity_labels: &elabels,
+                level_labels: &dlabels,
+                entities: &ents,
+                entity_codes: &ecodes,
+                level_codes: &dcodes,
+                dimension_count: input.dimensions.len(),
+                deadline: input.deadline,
+            });
+            notes.push(format!("{dname}: {detail}"));
+            findings.append(&mut changes);
+            if stopped {
+                limited = true;
+                break;
+            }
         }
         let rows: Vec<&Vec<f64>> = ents.iter().map(|&e| &counts[e]).collect();
         let (v, x2, df) = excess_v(&rows);
@@ -670,6 +717,14 @@ pub fn entity_fingerprints(table: &TypedTable, input: &FingerprintInput) -> (Vec
     }
     (
         findings,
-        format!("entity {ename}; dimensions: {}", notes.join("; ")),
+        format!(
+            "entity {ename}; weight: row count; {}; dimensions: {}",
+            input.periods.as_ref().map_or_else(
+                || "drift skipped: no resolved axis with per-row keys".into(),
+                FingerprintPeriods::detail,
+            ),
+            notes.join("; "),
+        ),
+        limited,
     )
 }

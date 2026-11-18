@@ -18,6 +18,7 @@ pub mod dtable;
 pub mod encode;
 pub mod expectations;
 pub mod fingerprints;
+mod fingerprints_drift;
 pub mod gbm;
 pub mod hotspots;
 pub mod hstat;
@@ -63,6 +64,7 @@ pub use drift::{profile_drift, DriftConfig};
 pub use dtable::{decision_tables, DtableConfig};
 pub use encode::{encode, EncodeConfig, EncodedMatrix};
 pub use fingerprints::{entity_fingerprints, FingerprintInput};
+pub use fingerprints_drift::FingerprintPeriods;
 pub use gbm::{
     screen as screen_predictability, screen_missing_indicator, IndicatorScreen, ModelBasis,
     ScreenConfig, ScreenOutcome, TargetResult,

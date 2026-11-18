@@ -680,7 +680,7 @@ const MAX_PERIOD_SERIES: usize = 200;
 
 /// A period label for a tick, as the series pass states it: a
 /// date for whole-day ticks, a datetime otherwise.
-fn tick_label(micros: i64) -> String {
+pub fn tick_label(micros: i64) -> String {
     if micros.rem_euclid(MICROS_PER_DAY) == 0 {
         onceover_core::dateutil::iso_date(micros.div_euclid(MICROS_PER_DAY))
     } else {
