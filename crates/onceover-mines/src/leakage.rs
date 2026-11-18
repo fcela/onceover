@@ -29,6 +29,11 @@
 //! leakage is a column out of line with the field, not a strong
 //! field. The bars are frozen in
 //! `docs/benchmarks/2026-11-13-leakage-signatures.md`.
+//!
+//! A target with fewer than two distinct evaluated values cannot
+//! support a signature at all: every predictor determines a
+//! constant target vacuously, whatever its own values are
+//! (issue #442).
 
 use std::collections::BTreeMap;
 
@@ -54,6 +59,9 @@ pub const CATEGORICAL_MAX_DISTINCT: usize = 20;
 const MAX_FD_DISTINCT: usize = 50_000;
 /// At most this many exactly-determining columns are stated.
 const MAX_DETERMINATION_FINDINGS: usize = 3;
+/// Distinct evaluated target values required before any signature
+/// can be stated: with one or fewer, determination is vacuous.
+pub const MIN_TARGET_DISTINCT: usize = 2;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Measure {
@@ -79,6 +87,11 @@ struct Strength {
     n_used: usize,
     violations: Option<usize>,
     determines: bool,
+}
+
+enum EvaluationError {
+    UnsupportedTarget,
+    DegenerateTarget(usize),
 }
 
 fn numeric_values(table: &TypedTable, ci: usize) -> Option<Vec<Option<f64>>> {
@@ -127,6 +140,51 @@ fn is_categorical_col(table: &TypedTable, ci: usize) -> bool {
         TypedCol::Null { .. } | TypedCol::Other { .. } => false,
         _ => distinct_count(table, ci) <= CATEGORICAL_MAX_DISTINCT,
     }
+}
+
+/// Distinct target values available anywhere in the frame, counted
+/// on the same basis the strength measures use: non-null level
+/// keys for a categorical target, finite numbers otherwise. Stops
+/// at the bar, since only "at least two" matters.
+fn evaluated_target_distinct(
+    table: &TypedTable,
+    tci: usize,
+    target_vals: Option<&[Option<f64>]>,
+) -> usize {
+    let mut seen = std::collections::HashSet::new();
+    for r in 0..table.n {
+        let key = match target_vals {
+            Some(vals) => vals[r].filter(|v| v.is_finite()).map(|v| v.to_string()),
+            None => level_key(table, tci, r),
+        };
+        if let Some(k) = key {
+            seen.insert(k);
+            if seen.len() >= MIN_TARGET_DISTINCT {
+                break;
+            }
+        }
+    }
+    seen.len()
+}
+
+/// Distinct target values on the complete cases of one predictor:
+/// the rows the FD statistic actually used. A target that varies
+/// elsewhere in the frame can still be constant on this
+/// predictor's rows, which would make determination vacuous.
+fn target_distinct_complete_cases(table: &TypedTable, pred: usize, tci: usize) -> usize {
+    let mut seen = std::collections::HashSet::new();
+    for r in 0..table.n {
+        if table.cols[pred].is_null_at(r) || table.cols[tci].is_null_at(r) {
+            continue;
+        }
+        if let Some(k) = level_key(table, tci, r) {
+            seen.insert(k);
+            if seen.len() >= MIN_TARGET_DISTINCT {
+                break;
+            }
+        }
+    }
+    seen.len()
 }
 
 /// Adjusted eta-squared of a numeric target across a categorical
@@ -190,13 +248,19 @@ struct Evaluation {
 }
 
 /// Evaluate every predictor column against the target at index
-/// `tci`. Returns None when the target's type is not evaluated
-/// (neither categorical nor numeric).
-fn evaluate_strengths(table: &TypedTable, tci: usize) -> Option<Evaluation> {
+/// `tci`. Refuses targets whose type is not evaluated (neither
+/// categorical nor numeric) and targets with fewer than two
+/// distinct evaluated values, which no predictor can meaningfully
+/// determine.
+fn evaluate_strengths(table: &TypedTable, tci: usize) -> Result<Evaluation, EvaluationError> {
     let target_categorical = is_categorical_col(table, tci);
     let target_vals = numeric_values(table, tci);
     if !target_categorical && target_vals.is_none() {
-        return None;
+        return Err(EvaluationError::UnsupportedTarget);
+    }
+    let target_distinct = evaluated_target_distinct(table, tci, target_vals.as_deref());
+    if target_distinct < MIN_TARGET_DISTINCT {
+        return Err(EvaluationError::DegenerateTarget(target_distinct));
     }
     let rows: Vec<u32> = (0..table.n as u32).collect();
     let mut strengths: Vec<Strength> = Vec::new();
@@ -222,11 +286,15 @@ fn evaluate_strengths(table: &TypedTable, tci: usize) -> Option<Evaluation> {
             }
             evaluated += 1;
             // Exact determination is only a statement when the
-            // predictor's values repeat: a near-unique column
-            // pairs every one of its singleton groups with a
-            // single target value vacuously, on any target. The
-            // average group must hold at least four rows.
-            let determines = stats.violations == 0 && distinct * 4 <= stats.n_used;
+            // predictor's values repeat and the target varies on
+            // the rows used: a near-unique column pairs every one
+            // of its singleton groups with a single target value
+            // vacuously, and a constant target is vacuous for
+            // every predictor. The average group must hold at
+            // least four rows.
+            let determines = target_distinct_complete_cases(table, ci, tci) >= MIN_TARGET_DISTINCT
+                && stats.violations == 0
+                && distinct * 4 <= stats.n_used;
             strengths.push(Strength {
                 ci,
                 value: stats.rfi.clamp(0.0, 1.0),
@@ -278,7 +346,7 @@ fn evaluate_strengths(table: &TypedTable, tci: usize) -> Option<Evaluation> {
             }
         }
     }
-    Some(Evaluation {
+    Ok(Evaluation {
         strengths,
         evaluated,
         target_categorical,
@@ -292,7 +360,9 @@ fn evaluate_strengths(table: &TypedTable, tci: usize) -> Option<Evaluation> {
 /// column does not determine vacuously), a target constant within
 /// every level of a categorical predictor for a numeric target,
 /// or Chatterjee's xi at 0.999 or above for a numeric predictor.
-/// Returned in column order. The model-failure screen excludes
+/// A target without two distinct evaluated values determines
+/// nothing, so no column is returned. Returned in column order.
+/// The model-failure screen excludes
 /// these columns from its model inputs and its slice variables
 /// before fitting (issue #306): a column that restates the target
 /// would otherwise hand the cross-fit a perfect score and spend
@@ -301,7 +371,7 @@ pub fn determining_columns(table: &TypedTable, target_name: &str) -> Vec<usize> 
     let Some(tci) = table.names.iter().position(|n| n == target_name) else {
         return Vec::new();
     };
-    let Some(evaluation) = evaluate_strengths(table, tci) else {
+    let Ok(evaluation) = evaluate_strengths(table, tci) else {
         return Vec::new();
     };
     let mut cols: Vec<usize> = evaluation
@@ -325,13 +395,24 @@ pub fn screen_leakage(
             format!("designated target '{target_name}' is not a column of the frame"),
         );
     };
-    let Some(evaluation) = evaluate_strengths(table, tci) else {
-        return (
-            Vec::new(),
-            format!(
-                "designated target '{target_name}' has a type the leakage screen does not evaluate"
-            ),
-        );
+    let evaluation = match evaluate_strengths(table, tci) {
+        Ok(evaluation) => evaluation,
+        Err(EvaluationError::UnsupportedTarget) => {
+            return (
+                Vec::new(),
+                format!(
+                    "designated target '{target_name}' has a type the leakage screen does not evaluate"
+                ),
+            );
+        }
+        Err(EvaluationError::DegenerateTarget(distinct)) => {
+            return (
+                Vec::new(),
+                format!(
+                    "designated target '{target_name}' has only {distinct} distinct evaluated target value(s); at least {MIN_TARGET_DISTINCT} are required before a leakage signature can be stated"
+                ),
+            );
+        }
     };
     let Evaluation {
         mut strengths,
@@ -656,4 +737,44 @@ fn make_finding(
 
 fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use onceover_core::typed::NumericValues;
+
+    /// Issue #442: the reported frame. Both predictors are
+    /// independent noise, but with y constant every predictor
+    /// determines it vacuously unless the target-variation guard
+    /// refuses the signature.
+    #[test]
+    fn constant_target_refuses_signatures_and_determination() {
+        let n = 500;
+        let y = vec![Some(1.0); n];
+        let a: Vec<Option<f64>> = (0..n).map(|i| Some((i % 11) as f64)).collect();
+        let b = (0..n).map(|i| Some(format!("g{}", i % 4))).collect();
+        let table = TypedTable {
+            n,
+            names: vec!["y".into(), "a".into(), "b".into()],
+            dtypes: vec!["float64".into(), "float64".into(), "string".into()],
+            cols: vec![
+                TypedCol::F64 {
+                    vals: NumericValues::from(y),
+                },
+                TypedCol::F64 {
+                    vals: NumericValues::from(a),
+                },
+                TypedCol::StrOwned { vals: b },
+            ],
+        };
+
+        let (findings, coverage) = screen_leakage(&table, "y", &[]);
+        assert!(findings.is_empty(), "{findings:?}");
+        assert!(
+            coverage.contains("distinct evaluated target value(s)"),
+            "{coverage}"
+        );
+        assert!(determining_columns(&table, "y").is_empty());
+    }
 }

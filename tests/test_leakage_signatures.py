@@ -133,6 +133,25 @@ def test_no_target_no_screen():
     assert cov["status"] == "skipped"
 
 
+def test_constant_target_does_not_accuse_noise_columns():
+    # Issue #442: the reported frame. With y constant, both
+    # independent noise columns "determine" it vacuously; the
+    # screen must refuse the signature instead of accusing them.
+    n = 500
+    df = pl.DataFrame(
+        {
+            "y": [1] * n,
+            "a": [float(i % 11) for i in range(n)],
+            "b": [f"g{i % 4}" for i in range(n)],
+        }
+    )
+    report = onceover.profile(df, target="y", budget="standard")
+    assert _leakage(report) == [], [f["claim"] for f in report.findings]
+    cov = _coverage(report, "leakage")
+    assert "distinct evaluated target value(s)" in cov["detail"]
+    assert "at least 2" in cov["detail"]
+
+
 def test_near_unique_column_does_not_determine_vacuously():
     # An imbalanced target and a near-unique continuous column:
     # every singleton group pairs with a single target value, but
