@@ -125,6 +125,7 @@ fn profile_inner(
         tier.regimes.row_cap = rows.max(1);
     }
     tier.views.row_cap = tier.encode.row_cap;
+    tier.views.search_rows = tier.encode.row_cap;
     tier.slices.row_cap = tier.encode.row_cap;
     tier.modelfail.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
@@ -2548,7 +2549,7 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "row_clusters".into(),
-                    if vout.budget_hit {
+                    if vout.capped {
                         PassInfo::capped(detail)
                     } else if table.n > tier.views.row_cap {
                         PassInfo::sampled(detail)

@@ -316,6 +316,7 @@ impl TierConfig {
                 },
                 views: ViewsConfig {
                     row_cap: 50_000,
+                    search_rows: 50_000,
                     ..Default::default()
                 },
                 changeforest: ChangeforestConfig {
