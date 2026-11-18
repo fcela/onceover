@@ -1,83 +1,119 @@
 {
-  "doc": "Regressions accepted on purpose. compare.py does not fail on a worse metric listed here while the head value stays within the limit. Fields: metric (component.metric), scope (\"total\" or a dataset id; default total), limit (the worst head value accepted), reason. An accepted total also accepts that metric's per-dataset rows. Remove an entry once the change is on main: the base then contains it and the entry accepts nothing.",
-  "accepted": [
-    {
-      "metric": "planted.found_full",
-      "scope": "absenteeism-at-work",
-      "limit": 3,
-      "reason": "Issue #310: the outcome account and contrasts on the planted target joined a report already saturated at the 100-finding cap (191 functional statements past their group cap alone); the target_driver shape statement (interestingness 0.6289) falls just below the head selection cut (0.6387). found_4k total improves 55 -> 56 across the gate. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "planted.found_full",
-      "scope": "total",
-      "limit": 58,
-      "reason": "Issue #310: the single absenteeism-at-work displacement above; every other dataset's found_full is unchanged or improved, and found_4k total improves. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "planted.found_4k",
-      "scope": "absenteeism-at-work",
-      "limit": 2,
-      "reason": "Issue #310: same displacement as planted.found_full on this dataset; the shape statement is the digest's marginal line at the 4,000-character budget. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "bank-marketing",
-      "limit": 873,
-      "reason": "Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "metro-interstate-traffic",
-      "limit": 832,
-      "reason": "Issue #310: same composition change as bank-marketing; 846 -> 832 (1.7%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "thyroid",
-      "limit": 871,
-      "reason": "Issue #310: same composition change; 874 -> 871 (0.3%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "absenteeism-at-work",
-      "limit": 891,
-      "reason": "Issue #310: same composition change; 902 -> 891 (1.2%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "planted_mix",
-      "limit": 906,
-      "reason": "Issue #310: same composition change; 913 -> 906 (0.8%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "redundancy.finding_permille_target",
-      "scope": "dominant_driver",
-      "limit": 882,
-      "reason": "Issue #310: same composition change; 891 -> 882 (1.0%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-    },
-    {
-      "metric": "cost.profile_seconds",
-      "scope": "total",
-      "limit": 56.6,
-      "reason": "Standard-tier profiles pay for the screen's raised fitting-row cap (5,000 to 50,000 rows per target, issue #363): the gate total rises 41.5s to 56.5s on this base, concentrated in the datasets over 5,000 rows. The trade is measured and priced in docs/benchmarks/2026-11-17-sample-caps.md."
-    },
-    {
-      "metric": "invariance.noise",
-      "scope": "adult-census-income",
-      "limit": 7,
-      "reason": "One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
-    },
-    {
-      "metric": "invariance.noise",
-      "scope": "bank-marketing",
-      "limit": 2,
-      "reason": "One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
-    },
-    {
-      "metric": "reference.should_8k_default",
-      "scope": "total",
-      "limit": 35,
-      "reason": "One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
-    }
-  ]
+ "doc": "Regressions accepted on purpose. compare.py does not fail on a worse metric listed here while the head value stays within the limit. Fields: metric (component.metric), scope (\"total\" or a dataset id; default total), limit (the worst head value accepted), reason. An accepted total also accepts that metric's per-dataset rows. Remove an entry once the change is on main: the base then contains it and the entry accepts nothing.",
+ "accepted": [
+  {
+   "metric": "planted.found_full",
+   "scope": "absenteeism-at-work",
+   "limit": 3,
+   "reason": "Issue #310: the outcome account and contrasts on the planted target joined a report already saturated at the 100-finding cap (191 functional statements past their group cap alone); the target_driver shape statement (interestingness 0.6289) falls just below the head selection cut (0.6387). found_4k total improves 55 -> 56 across the gate. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "planted.found_full",
+   "scope": "total",
+   "limit": 58,
+   "reason": "Issue #310: the single absenteeism-at-work displacement above; every other dataset's found_full is unchanged or improved, and found_4k total improves. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "planted.found_4k",
+   "scope": "absenteeism-at-work",
+   "limit": 2,
+   "reason": "Issue #310: same displacement as planted.found_full on this dataset; the shape statement is the digest's marginal line at the 4,000-character budget. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "bank-marketing",
+   "limit": 873,
+   "reason": "Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "metro-interstate-traffic",
+   "limit": 832,
+   "reason": "Issue #310: same composition change as bank-marketing; 846 -> 832 (1.7%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "thyroid",
+   "limit": 871,
+   "reason": "Issue #310: same composition change; 874 -> 871 (0.3%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "absenteeism-at-work",
+   "limit": 891,
+   "reason": "Issue #310: same composition change; 902 -> 891 (1.2%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "planted_mix",
+   "limit": 906,
+   "reason": "Issue #310: same composition change; 913 -> 906 (0.8%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "dominant_driver",
+   "limit": 882,
+   "reason": "Issue #310: same composition change; 891 -> 882 (1.0%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "invariance.reverse",
+   "scope": "bike-sharing-hourly",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the derived-column basis changes which columns are predictability targets; under column reversal the drivers named for hum move among near-collinear inputs (temp/atemp, mnth/season), whose holdout split is seeded by column position. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "bike-sharing-hourly",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the invariance.reverse change on this dataset. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "adult-census-income",
+   "limit": 7,
+   "reason": "Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "total",
+   "limit": 30,
+   "reason": "Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "bank-marketing",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the base credited subscription-housing-loan through a text-pattern match on a rolled-up 8k digest line that no finding in the full report supports (full default: not matched in base or head). Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "total",
+   "limit": 16629,
+   "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "total",
+   "limit": 9405,
+   "reason": "Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "cost.profile_seconds",
+   "scope": "total",
+   "limit": 56.6,
+   "reason": "Standard-tier profiles pay for the screen's raised fitting-row cap (5,000 to 50,000 rows per target, issue #363): the gate total rises 41.5s to 56.5s on this base, concentrated in the datasets over 5,000 rows. The trade is measured and priced in docs/benchmarks/2026-11-17-sample-caps.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "bank-marketing",
+   "limit": 2,
+   "reason": "One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "total",
+   "limit": 35,
+   "reason": "One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
+  }
+ ]
 }

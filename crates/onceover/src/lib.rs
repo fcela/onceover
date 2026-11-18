@@ -7,6 +7,7 @@
 //! - All profiling computation runs in Rust.
 
 pub mod account;
+pub mod basis;
 pub mod config;
 pub mod detectors;
 pub mod frame;

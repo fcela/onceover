@@ -69,6 +69,10 @@ pub struct PartitionsConfig {
     pub max_dimensions: usize,
     /// Maximum levels a dimension may hold to be offered.
     pub max_levels: usize,
+    /// Columns never screened as responses (flags, category codes,
+    /// columns the axis determines); they may still be offered as
+    /// dimensions.
+    pub exclude_responses: Vec<usize>,
 }
 
 impl Default for PartitionsConfig {
@@ -85,6 +89,7 @@ impl Default for PartitionsConfig {
             max_findings: 25,
             max_dimensions: 4,
             max_levels: 32,
+            exclude_responses: Vec::new(),
         }
     }
 }
@@ -766,7 +771,12 @@ pub fn ordered_partitions(
     let slope_unit_days = matches!(axis, Axis::Date | Axis::Datetime);
 
     let responses: Vec<usize> = (0..table.cols.len())
-        .filter(|&i| i != axis_idx && !excluded.contains(&i) && table.cols[i].is_numeric())
+        .filter(|&i| {
+            i != axis_idx
+                && !excluded.contains(&i)
+                && !cfg.exclude_responses.contains(&i)
+                && table.cols[i].is_numeric()
+        })
         .collect();
     let mut findings: Vec<Finding> = Vec::new();
     let mut screened = 0usize;

@@ -1379,109 +1379,12 @@ pub fn dominant_structure(
 // restatement demotion
 // ---------------------------------------------------------------------
 
-/// The calendar family: the axis's own columns (its parts, or its
-/// source column), plus every column the axis determines exactly
-/// (measured directly — see the seed in the body), closed under
-/// the exact functional dependencies. Every column the calendar
-/// determines exactly is a calendar restatement waiting to happen.
-/// Returns (family, base): the base is the axis's own columns;
-/// family \ base are the derived columns.
-pub fn calendar_family(
-    table: &TypedTable,
-    frame: &FrameModel,
-    deps: &DepsOutcome,
-) -> (BTreeSet<usize>, BTreeSet<usize>) {
-    let mut base: BTreeSet<usize> = BTreeSet::new();
-    if let Some(axis) = &frame.info.axis {
-        let names: Vec<&str> = if !axis.parts.is_empty() {
-            axis.parts.iter().map(|s| s.as_str()).collect()
-        } else if let Some(src) = &axis.source_column {
-            vec![src.as_str()]
-        } else {
-            vec![]
-        };
-        for name in names {
-            if let Some(i) = table.names.iter().position(|n| n == name) {
-                base.insert(i);
-            }
-        }
-    }
-    let mut family = base.clone();
-    // The seed cannot come from the mined dependencies alone:
-    // where the timestamp is itself unique, the dependency pass
-    // reports no dependency from it, so the closure would have
-    // nothing to start from. Measure the seed directly instead:
-    // a column the axis determines exactly —
-    // every axis value co-occurs with exactly one value of the
-    // column — is a calendar derivation by construction (month
-    // from date, holiday from date, season from date). Measures
-    // are not tested: a measure that happens to be an exact
-    // function of the axis is a time pattern, not a derivation.
-    if let Some(ticks) = axis_ticks_micros(table, frame) {
-        let mut tested = 0usize;
-        for (i, role) in frame.roles.iter().enumerate() {
-            if family.contains(&i) || role.as_deref() == Some("measure") {
-                continue;
-            }
-            if tested >= 128 {
-                break;
-            }
-            tested += 1;
-            if axis_determines(table, &ticks, i) {
-                family.insert(i);
-            }
-        }
-    }
-    loop {
-        let mut grew = false;
-        for (lhs, rhs) in &deps.exact_fds {
-            if !family.contains(rhs) && lhs.iter().all(|c| family.contains(c)) {
-                family.insert(*rhs);
-                grew = true;
-            }
-        }
-        if !grew {
-            break;
-        }
-    }
-    (family, base)
-}
-
-/// Whether the axis value determines column `col` exactly: over
-/// the rows that carry a tick, each distinct tick co-occurs with
-/// exactly one value of the column (a null counts as a value).
-fn axis_determines(table: &TypedTable, ticks: &[Option<i64>], col: usize) -> bool {
-    let mut seen: std::collections::HashMap<i64, Vec<u8>> = std::collections::HashMap::new();
-    let mut buf: Vec<u8> = Vec::new();
-    for (r, tick) in ticks.iter().enumerate() {
-        let Some(t) = *tick else { continue };
-        buf.clear();
-        if table.cols[col].is_null_at(r) {
-            buf.push(0xFE);
-        } else {
-            buf.push(0x01);
-            hashutil::encode_value(&table.cols[col], r, &mut buf);
-        }
-        match seen.get(&t) {
-            Some(prev) => {
-                if *prev != buf {
-                    return false;
-                }
-            }
-            None => {
-                seen.insert(t, buf.clone());
-            }
-        }
-    }
-    !seen.is_empty()
-}
-
 /// Demote restatements in place, ahead of the ledger: a finding is
-/// a restatement when every column of its subject is inside the
-/// calendar family and at least one is a derived column
-/// (`calendar_derivation`), or when its whole subject is
-/// scaffolding (`scaffolding_subject`). The demotion is declared
-/// in the evidence metrics (`triviality`, `triviality_factor`
+/// a restatement when its whole subject is scaffolding
+/// (`scaffolding_subject`). Columns the time axis determines are
+/// found before the detectors run (`basis`) and are no pass's
+/// subject, so their restatements are never produced. The demotion
+/// is declared in the evidence metrics (`triviality`, `triviality_factor`
 /// 0.6), the mechanism the ledger already applies and records;
 /// nothing is removed. Key statements and frame-scope findings
 /// are the account itself and are never demoted here, and a
@@ -1491,10 +1394,7 @@ pub fn demote_restatements(
     findings: &mut [Finding],
     table: &TypedTable,
     frame: &FrameModel,
-    deps: &DepsOutcome,
 ) -> BTreeMap<String, usize> {
-    let (family, base) = calendar_family(table, frame, deps);
-    let derived: BTreeSet<usize> = family.difference(&base).copied().collect();
     let scaffold: BTreeSet<usize> = frame
         .roles
         .iter()
@@ -1514,7 +1414,7 @@ pub fn demote_restatements(
         .map(|(i, n)| (n.as_str(), i))
         .collect();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    if derived.is_empty() && scaffold.is_empty() {
+    if scaffold.is_empty() {
         return counts;
     }
     for f in findings.iter_mut() {
@@ -1543,28 +1443,10 @@ pub fn demote_restatements(
         if cols.is_empty() {
             continue;
         }
-        // The calendar rule targets relation findings — a stated
-        // dependency, association, or rule between calendar
-        // columns restates the derivation. A finding about a
-        // derived column's own content (its concentration, its
-        // format) is not a restatement and keeps its rank.
-        let relation = matches!(
-            f.category,
-            onceover_report::Category::Dependencies
-                | onceover_report::Category::Associations
-                | onceover_report::Category::ConditionalRules
-        );
-        let reason = if relation
-            && !derived.is_empty()
-            && cols.iter().all(|c| family.contains(c))
-            && cols.iter().any(|c| derived.contains(c))
-        {
-            Some("calendar_derivation")
-        } else if cols.iter().all(|c| scaffold.contains(c)) {
-            Some("scaffolding_subject")
-        } else {
-            None
-        };
+        let reason = cols
+            .iter()
+            .all(|c| scaffold.contains(c))
+            .then_some("scaffolding_subject");
         if let Some(reason) = reason {
             for e in &mut f.evidence {
                 e.metrics.insert("triviality".to_string(), json!(reason));
@@ -1742,82 +1624,6 @@ mod tests {
         assert_eq!(peak.label, "July");
     }
 
-    #[test]
-    fn calendar_family_closes_under_exact_fds() {
-        // dteday -> mnth -> season: both derived columns join the
-        // family; a finding over them is a calendar restatement.
-        let mut dteday = Vec::new();
-        let mut mnth = Vec::new();
-        let mut season = Vec::new();
-        let mut cnt = Vec::new();
-        let start = dateutil::days_from_civil(2024, 1, 1);
-        // Two rows per day, with cnt differing between them: on a
-        // one-row-per-day frame every column is trivially a
-        // function of the date, and the fixture needs cnt to be a
-        // genuine measure the axis does not determine.
-        for k in 0..120 {
-            let days = start + k;
-            let (_, m, _) = dateutil::civil_from_days(days);
-            for rep in 0..2 {
-                dteday.push(dateutil::iso_date(days));
-                mnth.push(m as i64);
-                season.push(((m - 1) / 3 + 1) as i64);
-                cnt.push(((k + 3 * rep) % 9) as f64);
-            }
-        }
-        let df = DataFrame::new_infer_height(vec![
-            Series::new("dteday".into(), dteday).into(),
-            Series::new("mnth".into(), mnth).into(),
-            Series::new("season".into(), season).into(),
-            Series::new("cnt".into(), cnt).into(),
-        ])
-        .unwrap();
-        let (table, facts) = facts_for(&df);
-        let frame = analyze_frame(&table, &facts, None);
-        let idx = |name: &str| table.names.iter().position(|n| n == name).unwrap();
-        let mut deps = empty_deps();
-        deps.exact_fds = vec![
-            (vec![idx("dteday")], idx("mnth")),
-            (vec![idx("mnth")], idx("season")),
-        ];
-        let (family, base) = calendar_family(&table, &frame, &deps);
-        assert!(base.contains(&idx("dteday")));
-        assert!(family.contains(&idx("season")), "closure reaches season");
-
-        let fd = |lhs: &str, rhs: &str, detector: &str| {
-            Finding::new(
-                Pattern::FunctionalDependency,
-                BTreeMap::from([
-                    ("lhs".to_string(), json!([lhs])),
-                    ("rhs".to_string(), json!(rhs)),
-                ]),
-                format!("{lhs} determines {rhs}"),
-                EvidenceBasis::Measured,
-                0.9,
-                BTreeMap::from([("violations".to_string(), json!(0))]),
-                None,
-                Method::new(detector, "value_mapping", "test"),
-            )
-        };
-        let mut findings = vec![
-            fd("mnth", "season", "functional_dependencies"),
-            fd("cnt", "season", "functional_dependencies"),
-        ];
-        let counts = demote_restatements(&mut findings, &table, &frame, &deps);
-        assert_eq!(counts.get("calendar_derivation"), Some(&1));
-        assert_eq!(
-            findings[0].evidence[0]
-                .metrics
-                .get("triviality")
-                .and_then(|v| v.as_str()),
-            Some("calendar_derivation")
-        );
-        // The measure-involving dependency is not a restatement.
-        assert!(!findings[1]
-            .evidence
-            .iter()
-            .any(|e| e.metrics.contains_key("triviality")));
-    }
     #[test]
     fn binary_response_is_stated_as_a_rate() {
         // A two-level outcome organised by a dimension: the

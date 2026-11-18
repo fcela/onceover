@@ -60,6 +60,12 @@ pub struct HotspotConfig {
     pub min_share: f64,
     pub max_per_combination: usize,
     pub max_findings: usize,
+    /// Groups of table columns that derive from one another (the
+    /// calendar columns a time axis determines). A combination
+    /// whose columns all lie in one group is not examined: its
+    /// cells restate how the columns derive, not how rows
+    /// concentrate.
+    pub related_columns: Vec<Vec<usize>>,
     /// Cooperative deadline (issue #117, stage 2): polled
     /// once per combination during pair evaluation and once
     /// per triple during triple evaluation — the pass's work
@@ -84,6 +90,7 @@ impl Default for HotspotConfig {
             min_share: 0.005,
             max_per_combination: 3,
             max_findings: 15,
+            related_columns: Vec::new(),
             deadline: Deadline::none(),
         }
     }
@@ -173,6 +180,12 @@ fn hotspots_impl(
     let eligible: Vec<usize> = (0..enc.feat_names.len())
         .filter(|&f| enc.n_bins[f] >= 2 && enc.n_bins[f] <= cfg.max_levels)
         .collect();
+    // Each feature's related-column group, by its table column.
+    let groups: Vec<Option<usize>> = enc
+        .feat_cols
+        .iter()
+        .map(|c| cfg.related_columns.iter().position(|g| g.contains(c)))
+        .collect();
     // The weighted judgment's eligibility is wider than the
     // count scan's: any feature the encoder produced, up to
     // its own bin cap. It applies only when weights were
@@ -225,7 +238,7 @@ fn hotspots_impl(
     // are enumerated once to total their cells and once to
     // evaluate, holding only the current combination: O(1)
     // combination state in place of the O(combinations) list.
-    let (n_pairs, pair_cells) = enumerate_pairs(&enc.n_bins, cfg, &eligible, |_| true);
+    let (n_pairs, pair_cells) = enumerate_pairs(&enc.n_bins, cfg, &eligible, &groups, |_| true);
 
     // Complete rows of a combination are a subset of any one
     // feature's non-missing rows, so a feature with fewer than
@@ -265,7 +278,7 @@ fn hotspots_impl(
     let mut pair_cells_evaluated = 0usize;
     let mut stopped_in_pairs = false;
     if n_pairs > 0 {
-        enumerate_pairs(&enc.n_bins, cfg, &eligible, |combo| {
+        enumerate_pairs(&enc.n_bins, cfg, &eligible, &groups, |combo| {
             if stopped_in_pairs {
                 return false;
             }
@@ -304,7 +317,7 @@ fn hotspots_impl(
     // computed by the shared evaluation and discarded — the
     // row-count scan's cell set does not widen.
     if !active.is_empty() && !stopped_in_pairs {
-        enumerate_pairs(&enc.n_bins, cfg, &eligible_w, |combo| {
+        enumerate_pairs(&enc.n_bins, cfg, &eligible_w, &groups, |combo| {
             if stopped_in_pairs {
                 return false;
             }
@@ -335,7 +348,7 @@ fn hotspots_impl(
     // triples are examined (issue #126). A pair-phase stop
     // skips selection, for the reason stated above.
     let (selected_triples, triple_universe, triple_cells) = if cfg.triples && !stopped_in_pairs {
-        select_triples(&enc.n_bins, cfg, &small, |a, b| {
+        select_triples(&enc.n_bins, cfg, &small, &groups, |a, b| {
             let key = if a < b { (a, b) } else { (b, a) };
             pair_scores.get(&key).copied().unwrap_or(0.0)
         })
@@ -602,6 +615,7 @@ fn enumerate_pairs(
     n_bins: &[usize],
     cfg: &HotspotConfig,
     eligible: &[usize],
+    groups: &[Option<usize>],
     mut visit: impl FnMut(&[usize]) -> bool,
 ) -> (usize, usize) {
     let mut n_pairs = 0usize;
@@ -609,6 +623,9 @@ fn enumerate_pairs(
     for a in 0..eligible.len() {
         for b in (a + 1)..eligible.len() {
             let (fa, fb) = (eligible[a], eligible[b]);
+            if one_group(groups, &[fa, fb]) {
+                continue;
+            }
             let pair_cells = n_bins[fa] * n_bins[fb];
             if pair_cells <= cfg.max_cells_pair {
                 if !visit(&[fa, fb]) {
@@ -632,12 +649,16 @@ fn enumerate_triples(
     n_bins: &[usize],
     cfg: &HotspotConfig,
     small: &[usize],
+    groups: &[Option<usize>],
     mut visit: impl FnMut(&[usize]),
 ) {
     for a in 0..small.len() {
         for b in (a + 1)..small.len() {
             for c in (b + 1)..small.len() {
                 let (fa, fb, fc) = (small[a], small[b], small[c]);
+                if one_group(groups, &[fa, fb, fc]) {
+                    continue;
+                }
                 let triple_cells = n_bins[fa] * n_bins[fb] * n_bins[fc];
                 if triple_cells <= cfg.max_cells_triple {
                     visit(&[fa, fb, fc]);
@@ -645,6 +666,16 @@ fn enumerate_triples(
             }
         }
     }
+}
+
+/// Whether every feature of a combination lies in one
+/// related-column group (see `HotspotConfig::related_columns`).
+fn one_group(groups: &[Option<usize>], combo: &[usize]) -> bool {
+    let first = groups.get(combo[0]).copied().flatten();
+    first.is_some()
+        && combo[1..]
+            .iter()
+            .all(|&f| groups.get(f).copied().flatten() == first)
 }
 
 /// One candidate triple in the selection heap: its pre-score
@@ -689,11 +720,12 @@ fn select_triples(
     n_bins: &[usize],
     cfg: &HotspotConfig,
     small: &[usize],
+    groups: &[Option<usize>],
     pair_score: impl Fn(usize, usize) -> f64,
 ) -> (Vec<[usize; 3]>, usize, usize) {
     let mut heap: BinaryHeap<Reverse<ScoredTriple>> = BinaryHeap::new();
     let mut universe = 0usize;
-    enumerate_triples(n_bins, cfg, small, |combo| {
+    enumerate_triples(n_bins, cfg, small, groups, |combo| {
         let score = pair_score(combo[0], combo[1])
             .max(pair_score(combo[1], combo[2]))
             .max(pair_score(combo[0], combo[2]));
@@ -1237,7 +1269,7 @@ mod tests {
             .map(|c| c.iter().map(|&f| n_bins[f]).product::<usize>())
             .sum();
         let mut seen: Vec<Vec<usize>> = Vec::new();
-        let (n, cells) = enumerate_pairs(&n_bins, &cfg, &eligible, |c| {
+        let (n, cells) = enumerate_pairs(&n_bins, &cfg, &eligible, &[], |c| {
             seen.push(c.to_vec());
             true
         });
@@ -1267,7 +1299,7 @@ mod tests {
             .collect();
         // The materialized universe, in enumeration order.
         let mut universe_list: Vec<[usize; 3]> = Vec::new();
-        enumerate_triples(&n_bins, &cfg, &small, |c| {
+        enumerate_triples(&n_bins, &cfg, &small, &[], |c| {
             universe_list.push([c[0], c[1], c[2]]);
         });
         assert!(universe_list.len() > cfg.max_triples);
@@ -1279,7 +1311,7 @@ mod tests {
         // the triples holding pairs (6, 7) — both of them —
         // and, among the two holding pair (2, 7), the earlier.
         let (selected, universe, cells) =
-            select_triples(&n_bins, &cfg, &small, |a, b| (a * 100 + b) as f64);
+            select_triples(&n_bins, &cfg, &small, &[], |a, b| (a * 100 + b) as f64);
         assert_eq!(universe, universe_list.len());
         assert_eq!(selected, vec![[0, 2, 7], [0, 6, 7], [1, 6, 7]]);
         let expect_cells: usize = selected
@@ -1289,7 +1321,7 @@ mod tests {
         assert_eq!(cells, expect_cells);
         // With no signal anywhere, selection falls back to
         // enumeration order — the old behavior as tie-break.
-        let (selected, _, _) = select_triples(&n_bins, &cfg, &small, |_, _| 0.0);
+        let (selected, _, _) = select_triples(&n_bins, &cfg, &small, &[], |_, _| 0.0);
         assert_eq!(selected, universe_list[..cfg.max_triples]);
     }
 
