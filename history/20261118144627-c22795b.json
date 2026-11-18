@@ -1,0 +1,3472 @@
+{
+ "meta": {
+  "commit": "c22795b69200b71013a029027ceaea57e9a8c30a",
+  "date": "2026-11-18T14:46:27-05:00",
+  "subject": "Merge pull request #456 from fcela/feat/448-entity-fixtures",
+  "accepted": [
+   {
+    "metric": "planted.found_full",
+    "scope": "absenteeism-at-work",
+    "limit": 3,
+    "reason": "Issue #310: the outcome account and contrasts on the planted target joined a report already saturated at the 100-finding cap (191 functional statements past their group cap alone); the target_driver shape statement (interestingness 0.6289) falls just below the head selection cut (0.6387). found_4k total improves 55 -> 56 across the gate. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "planted.found_4k",
+    "scope": "absenteeism-at-work",
+    "limit": 2,
+    "reason": "Issue #310: same displacement as planted.found_full on this dataset; the shape statement is the digest's marginal line at the 4,000-character budget. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "bank-marketing",
+    "limit": 873,
+    "reason": "Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "metro-interstate-traffic",
+    "limit": 832,
+    "reason": "Issue #310: same composition change as bank-marketing; 846 -> 832 (1.7%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "thyroid",
+    "limit": 871,
+    "reason": "Issue #310: same composition change; 874 -> 871 (0.3%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "absenteeism-at-work",
+    "limit": 891,
+    "reason": "Issue #310: same composition change; 902 -> 891 (1.2%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "planted_mix",
+    "limit": 906,
+    "reason": "Issue #310: same composition change; 913 -> 906 (0.8%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "dominant_driver",
+    "limit": 882,
+    "reason": "Issue #310: same composition change; 891 -> 882 (1.0%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "invariance.reverse",
+    "scope": "bike-sharing-hourly",
+    "limit": 3,
+    "reason": "Issue #374 step 2: the derived-column basis changes which columns are predictability targets; under column reversal the drivers named for hum move among near-collinear inputs (temp/atemp, mnth/season), whose holdout split is seeded by column position. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   },
+   {
+    "metric": "invariance.total",
+    "scope": "bike-sharing-hourly",
+    "limit": 3,
+    "reason": "Issue #374 step 2: the invariance.reverse change on this dataset. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   },
+   {
+    "metric": "reference.should_8k_default",
+    "scope": "bank-marketing",
+    "limit": 3,
+    "reason": "Issue #374 step 2: the base credited subscription-housing-loan through a text-pattern match on a rolled-up 8k digest line that no finding in the full report supports (full default: not matched in base or head). Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   },
+   {
+    "metric": "reference.must_4k_default",
+    "scope": "bank-marketing",
+    "limit": 1,
+    "reason": "Issue #374 step 3: subscription-duration is stated (8k digest and full report) by a level contrast that now ranks just below the 4k cut: consolidating per-level contrasts into one profile per (grouping, measure) frees the pass's 20-statement cap for more distinct pairs, which score above it under the hand-set level-contrast score (step 6 of #374 replaces that score). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.must_4k_default",
+    "scope": "total",
+    "limit": 15,
+    "reason": "Issue #374 step 3: the bank-marketing entry above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_4k_default",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: age-weak (price vs age_years, r = -0.098) falls below the 0.1 minimum effect a stated association now needs; the pair stays in report.associations() with tier none. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_8k_default",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_full_default",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_4k_target",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_8k_target",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_full_target",
+    "scope": "dominant_driver",
+    "limit": 2,
+    "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_4k_default",
+    "scope": "total",
+    "limit": 30,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_8k_default",
+    "scope": "total",
+    "limit": 35,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. Also: One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
+   },
+   {
+    "metric": "reference.should_full_default",
+    "scope": "total",
+    "limit": 37,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_4k_target",
+    "scope": "total",
+    "limit": 18,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_8k_target",
+    "scope": "total",
+    "limit": 22,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "reference.should_full_target",
+    "scope": "total",
+    "limit": 23,
+    "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "planted.found_4k",
+    "scope": "adventureworks",
+    "limit": 0,
+    "reason": "Issue #374 step 3: the base credited the planted customer_id sentinel through a text match on a 4k digest line; the full report never stated it (in_full_report false in base and head). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "invariance.total",
+    "scope": "absenteeism-at-work",
+    "limit": 66,
+    "reason": "Issue #374 step 3: the row_shuffle change above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "total",
+    "limit": 9381,
+    "reason": "Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "total",
+    "limit": 106,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "bank-marketing",
+    "limit": 4,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "abalone",
+    "limit": 5,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "thyroid",
+    "limit": 5,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "hospital-dha",
+    "limit": 10,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "hospital-dha",
+    "limit": 1,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "congressional-voting",
+    "limit": 32,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "congressional-voting",
+    "limit": 14,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "column_order_stress",
+    "limit": 7,
+    "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "weighted.must_8k",
+    "scope": "bike-sharing-hourly",
+    "limit": 0,
+    "reason": "Issue #374 step 4: in the weights-hinted run the rush-hour concentration (still stated in the full report) falls out of the 8k digest: cnt, registered and casual are now explained by hr, temp and workingday instead of by their own sum's parts, and those statements take the digest space. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "weighted.must_8k",
+    "scope": "total",
+    "limit": 3,
+    "reason": "Issue #374 step 4: the bike-sharing-hourly entry above. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "bank-marketing",
+    "limit": 887,
+    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "abalone",
+    "limit": 925,
+    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "bike-sharing-hourly",
+    "limit": 838,
+    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). Also: Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 842 -> 841."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "adventureworks",
+    "limit": 835,
+    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "column_order_stress",
+    "limit": 944,
+    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+   },
+   {
+    "metric": "cost.profile_seconds",
+    "scope": "total",
+    "limit": 56.6,
+    "reason": "Standard-tier profiles pay for the screen's raised fitting-row cap (5,000 to 50,000 rows per target, issue #363): the gate total rises 41.5s to 56.5s on this base, concentrated in the datasets over 5,000 rows. The trade is measured and priced in docs/benchmarks/2026-11-17-sample-caps.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "adult-census-income",
+    "limit": 877,
+    "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "total",
+    "limit": 52,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "adult-census-income",
+    "limit": 24,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "invariance.total",
+    "scope": "adult-census-income",
+    "limit": 26,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "absenteeism-at-work",
+    "limit": 19,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "invariance.row_shuffle",
+    "scope": "planted_mix",
+    "limit": 2,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "invariance.total",
+    "scope": "planted_mix",
+    "limit": 2,
+    "reason": "Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "adult-census-income",
+    "limit": 888,
+    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "dominant_driver",
+    "limit": 878,
+    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "weighted_noise",
+    "limit": 0,
+    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "weighted_large_cell",
+    "limit": 758,
+    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+   },
+   {
+    "metric": "planted.found_full",
+    "scope": "adventureworks",
+    "limit": 1,
+    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+   },
+   {
+    "metric": "planted.found_full",
+    "scope": "total",
+    "limit": 59,
+    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "total",
+    "limit": 15947,
+    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "metro-interstate-traffic",
+    "limit": 838,
+    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "planted_mix",
+    "limit": 907,
+    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "thyroid",
+    "limit": 877,
+    "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 878 -> 877 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "hospital-dha",
+    "limit": 893,
+    "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 895 -> 893 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_default",
+    "scope": "dominant_driver",
+    "limit": 877,
+    "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 878 -> 877 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "abalone",
+    "limit": 924,
+    "reason": "Issue #435: the target-mode digest finding-character share moves 925 -> 924 per mille when content keys replace positional splits. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "congressional-voting",
+    "limit": 903,
+    "reason": "Issue #435: the target-mode digest finding-character share moves 904 -> 903 per mille when content keys replace positional splits. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   },
+   {
+    "metric": "invariance.noise",
+    "scope": "column_order_stress",
+    "limit": 2,
+    "reason": "Issue #435: adding an independent noise column changes two model-selected facts (0 -> 2), while row-shuffle differences on this table fall 7 -> 5 and its invariance total stays 7. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+   }
+  ]
+ },
+ "scorecard": {
+  "schema": 1,
+  "provenance": {
+   "onceover_version": "0.1.6",
+   "commit": "c22795b69200b71013a029027ceaea57e9a8c30a",
+   "python": "3.13.18",
+   "polars": "2.1.0",
+   "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+   "numpy": "2.5.5",
+   "seeds": [
+    0
+   ],
+   "components": [
+    "planted",
+    "permuted",
+    "invariance",
+    "reference",
+    "weighted",
+    "redundancy",
+    "truth",
+    "cost"
+   ],
+   "fast": false,
+   "only": null
+  },
+  "metric_specs": {
+   "planted.planted": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "planted.found_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "planted.found_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "planted.line_sum_4k": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "permuted.false_full": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_4k": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_full_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_4k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.findings_full": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "invariance.reverse": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.row_shuffle": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.rename": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.noise": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.scale": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.total": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.check_failed": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "reference.must_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.must_4k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_8k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_full_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_4k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_8k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_full_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.should_4k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_8k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_full_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_4k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_8k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_full_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_not_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.must_not_4k_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_8k_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_full_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_4k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_8k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_full_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "weighted.must_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "weighted.must_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.must_8k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.must_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "weighted.should_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_8k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.weighted_findings": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.repeated_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.finding_lines_default": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.finding_permille_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "redundancy.long_decimals_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.repeated_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.finding_lines_target": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.finding_permille_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "redundancy.long_decimals_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "truth.mismatch": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "truth.error": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "truth.ok": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "truth.not_checkable": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "cost.profile_seconds": {
+    "direction": "lower",
+    "kind": "time"
+   },
+   "cost.json_chars": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "cost.findings": {
+    "direction": "info",
+    "kind": "count"
+   }
+  },
+  "totals": {
+   "planted": {
+    "planted": 76,
+    "found_full": 60,
+    "found_4k": 59,
+    "line_sum_4k": 606
+   },
+   "permuted": {
+    "false_full": 38,
+    "false_4k": 21,
+    "false_full_target": 16,
+    "false_4k_target": 9,
+    "findings_full": 223
+   },
+   "invariance": {
+    "reverse": 87,
+    "row_shuffle": 11,
+    "rename": 0,
+    "noise": 31,
+    "scale": 1,
+    "total": 130
+   },
+   "reference": {
+    "check_failed": 0,
+    "must_total": 19,
+    "must_4k_default": 15,
+    "must_8k_default": 16,
+    "must_full_default": 17,
+    "must_4k_target": 17,
+    "must_8k_target": 17,
+    "must_full_target": 17,
+    "should_total": 45,
+    "should_4k_default": 32,
+    "should_8k_default": 35,
+    "should_full_default": 37,
+    "should_4k_target": 20,
+    "should_8k_target": 22,
+    "should_full_target": 23,
+    "must_not_total": 9,
+    "must_not_4k_default": 0,
+    "must_not_8k_default": 0,
+    "must_not_full_default": 0,
+    "must_not_4k_target": 0,
+    "must_not_8k_target": 0,
+    "must_not_full_target": 0
+   },
+   "redundancy": {
+    "repeated_default": 0,
+    "finding_lines_default": 248,
+    "finding_permille_default": 15952,
+    "long_decimals_default": 0,
+    "repeated_target": 0,
+    "finding_lines_target": 179,
+    "finding_permille_target": 9391,
+    "long_decimals_target": 0
+   },
+   "truth": {
+    "mismatch": 0,
+    "error": 0,
+    "ok": 870,
+    "not_checkable": 1359
+   },
+   "cost": {
+    "profile_seconds": 16.876,
+    "json_chars": 3637758,
+    "findings": 1074
+   },
+   "weighted": {
+    "must_total": 4,
+    "must_4k": 3,
+    "must_8k": 3,
+    "must_full": 4,
+    "should_total": 0,
+    "should_4k": 0,
+    "should_8k": 0,
+    "should_full": 0,
+    "weighted_findings": 19
+   }
+  },
+  "held_out_totals": {
+   "planted": {
+    "planted": 12,
+    "found_full": 9,
+    "found_4k": 9,
+    "line_sum_4k": 141
+   },
+   "permuted": {
+    "false_full": 19,
+    "false_4k": 10,
+    "false_full_target": 12,
+    "false_4k_target": 3,
+    "findings_full": 142
+   },
+   "invariance": {
+    "reverse": 59,
+    "row_shuffle": 2,
+    "rename": 0,
+    "noise": 26,
+    "scale": 0,
+    "total": 87
+   },
+   "reference": {
+    "check_failed": 0,
+    "must_total": 9,
+    "must_4k_default": 4,
+    "must_8k_default": 4,
+    "must_full_default": 4,
+    "must_4k_target": 3,
+    "must_8k_target": 3,
+    "must_full_target": 3,
+    "should_total": 16,
+    "should_4k_default": 4,
+    "should_8k_default": 5,
+    "should_full_default": 5,
+    "should_4k_target": 2,
+    "should_8k_target": 2,
+    "should_full_target": 2,
+    "must_not_total": 0,
+    "must_not_4k_default": 0,
+    "must_not_8k_default": 0,
+    "must_not_full_default": 0,
+    "must_not_4k_target": 0,
+    "must_not_8k_target": 0,
+    "must_not_full_target": 0
+   },
+   "redundancy": {
+    "repeated_default": 0,
+    "finding_lines_default": 81,
+    "finding_permille_default": 4879,
+    "long_decimals_default": 0,
+    "repeated_target": 0,
+    "finding_lines_target": 40,
+    "finding_permille_target": 1771,
+    "long_decimals_target": 0
+   },
+   "truth": {
+    "mismatch": 0,
+    "error": 0,
+    "ok": 242,
+    "not_checkable": 388
+   },
+   "cost": {
+    "profile_seconds": 1.299,
+    "json_chars": 1049428,
+    "findings": 343
+   }
+  },
+  "seconds": 281.7,
+  "datasets": {
+   "adult-census-income": {
+    "held_out": false,
+    "kind": "tabular, mixed types",
+    "target": "income",
+    "status": "ok",
+    "rows": 48842,
+    "cols": 15,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 5,
+       "line_sum_4k": 59
+      },
+      "status": "ok",
+      "wall_seconds": 18.03
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 24
+      },
+      "status": "ok",
+      "wall_seconds": 5.47
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 4,
+       "scale": 0,
+       "total": 4
+      },
+      "status": "ok",
+      "wall_seconds": 16.62
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 4,
+       "must_4k_default": 4,
+       "must_8k_default": 4,
+       "must_full_default": 4,
+       "must_4k_target": 4,
+       "must_8k_target": 4,
+       "must_full_target": 4,
+       "should_total": 4,
+       "should_4k_default": 3,
+       "should_8k_default": 4,
+       "should_full_default": 4,
+       "should_4k_target": 3,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 2,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 3.42
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 15,
+       "finding_permille_default": 890,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 17,
+       "finding_permille_target": 880,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 87,
+       "not_checkable": 146
+      },
+      "status": "ok",
+      "wall_seconds": 0.1
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 2.762,
+       "json_chars": 256805,
+       "findings": 95
+      },
+      "status": "ok",
+      "wall_seconds": 5.53
+     }
+    }
+   },
+   "bank-marketing": {
+    "held_out": false,
+    "kind": "tabular, mixed types",
+    "target": "subscribed_term_deposit",
+    "status": "ok",
+    "rows": 45211,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 3,
+       "line_sum_4k": 36
+      },
+      "status": "ok",
+      "wall_seconds": 16.43
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 11
+      },
+      "status": "ok",
+      "wall_seconds": 5.23
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 4,
+       "row_shuffle": 2,
+       "rename": 0,
+       "noise": 4,
+       "scale": 0,
+       "total": 10
+      },
+      "status": "ok",
+      "wall_seconds": 17.99
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 1,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 4,
+       "should_4k_default": 1,
+       "should_8k_default": 3,
+       "should_full_default": 3,
+       "should_4k_target": 2,
+       "should_8k_target": 3,
+       "should_full_target": 4,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 3.67
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 15,
+       "finding_permille_default": 887,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 19,
+       "finding_permille_target": 876,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 41,
+       "not_checkable": 158
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 2.936,
+       "json_chars": 245231,
+       "findings": 79
+      },
+      "status": "ok",
+      "wall_seconds": 5.88
+     }
+    }
+   },
+   "abalone": {
+    "held_out": false,
+    "kind": "tabular, correlated measures",
+    "target": "rings",
+    "status": "ok",
+    "rows": 4177,
+    "cols": 9,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 5,
+       "line_sum_4k": 48
+      },
+      "status": "ok",
+      "wall_seconds": 1.15
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.23
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.99
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 3,
+       "must_8k_default": 3,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 2,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 2,
+       "should_8k_target": 2,
+       "should_full_target": 2,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.22
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 934,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 17,
+       "finding_permille_target": 924,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 54,
+       "not_checkable": 62
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.159,
+       "json_chars": 143902,
+       "findings": 50
+      },
+      "status": "ok",
+      "wall_seconds": 0.32
+     }
+    }
+   },
+   "bike-sharing-hourly": {
+    "held_out": false,
+    "kind": "hourly series with calendar columns",
+    "target": "cnt",
+    "status": "ok",
+    "rows": 17379,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 3,
+       "found_4k": 4,
+       "line_sum_4k": 47
+      },
+      "status": "ok",
+      "wall_seconds": 5.99
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 3,
+       "false_4k": 2,
+       "false_full_target": 3,
+       "false_4k_target": 2,
+       "findings_full": 21
+      },
+      "status": "ok",
+      "wall_seconds": 2.92
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 6.71
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 5,
+       "should_4k_default": 4,
+       "should_8k_default": 4,
+       "should_full_default": 4,
+       "should_4k_target": 4,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 7,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 1.66
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 0,
+       "must_8k": 0,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 12
+      },
+      "status": "ok",
+      "wall_seconds": 1.34
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 839,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 20,
+       "finding_permille_target": 834,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 54,
+       "not_checkable": 150
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.303,
+       "json_chars": 312182,
+       "findings": 92
+      },
+      "status": "ok",
+      "wall_seconds": 2.61
+     }
+    }
+   },
+   "metro-interstate-traffic": {
+    "held_out": false,
+    "kind": "hourly time series",
+    "target": "traffic_volume",
+    "status": "ok",
+    "rows": 48204,
+    "cols": 9,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 5,
+       "line_sum_4k": 79
+      },
+      "status": "ok",
+      "wall_seconds": 14.66
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 3,
+       "false_4k": 2,
+       "false_full_target": 3,
+       "false_4k_target": 2,
+       "findings_full": 24
+      },
+      "status": "ok",
+      "wall_seconds": 4.11
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 4,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 2,
+       "scale": 0,
+       "total": 6
+      },
+      "status": "ok",
+      "wall_seconds": 11.48
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 16,
+       "finding_permille_default": 838,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 18,
+       "finding_permille_target": 833,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 2.51
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 58,
+       "not_checkable": 138
+      },
+      "status": "ok",
+      "wall_seconds": 0.08
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 2.186,
+       "json_chars": 212674,
+       "findings": 81
+      },
+      "status": "ok",
+      "wall_seconds": 4.37
+     }
+    }
+   },
+   "thyroid": {
+    "held_out": false,
+    "kind": "clinical, many flags and missing values",
+    "target": "diagnosis",
+    "status": "ok",
+    "rows": 3772,
+    "cols": 32,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 15
+      },
+      "status": "ok",
+      "wall_seconds": 0.53
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 18
+      },
+      "status": "ok",
+      "wall_seconds": 1.16
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 1,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 1,
+       "scale": 0,
+       "total": 2
+      },
+      "status": "ok",
+      "wall_seconds": 3.2
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 877,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 21,
+       "finding_permille_target": 868,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.56
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 72,
+       "not_checkable": 119
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.53,
+       "json_chars": 250021,
+       "findings": 81
+      },
+      "status": "ok",
+      "wall_seconds": 1.05
+     }
+    }
+   },
+   "absenteeism-at-work": {
+    "held_out": false,
+    "kind": "small business table",
+    "target": "absenteeism_time_hours",
+    "status": "ok",
+    "rows": 740,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 3,
+       "line_sum_4k": 48
+      },
+      "status": "ok",
+      "wall_seconds": 1.12
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 5,
+       "false_4k": 2,
+       "false_full_target": 5,
+       "false_4k_target": 2,
+       "findings_full": 17
+      },
+      "status": "ok",
+      "wall_seconds": 0.27
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 26,
+       "row_shuffle": 2,
+       "rename": 0,
+       "noise": 6,
+       "scale": 0,
+       "total": 34
+      },
+      "status": "ok",
+      "wall_seconds": 1.06
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 905,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 20,
+       "finding_permille_target": 891,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.19
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 170,
+       "not_checkable": 112
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.17,
+       "json_chars": 311222,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 0.34
+     }
+    }
+   },
+   "hospital-dha": {
+    "held_out": false,
+    "kind": "wide numeric, 64 columns",
+    "target": null,
+    "status": "ok",
+    "rows": 307,
+    "cols": 64,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 43
+      },
+      "status": "ok",
+      "wall_seconds": 2.89
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 9
+      },
+      "status": "ok",
+      "wall_seconds": 0.26
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 5,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 1,
+       "total": 6
+      },
+      "status": "ok",
+      "wall_seconds": 4.08
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 20,
+       "finding_permille_default": 893,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 39,
+       "not_checkable": 24
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.676,
+       "json_chars": 312085,
+       "findings": 50
+      },
+      "status": "ok",
+      "wall_seconds": 1.35
+     }
+    }
+   },
+   "congressional-voting": {
+    "held_out": false,
+    "kind": "categorical votes",
+    "target": "party",
+    "status": "ok",
+    "rows": 435,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 14
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 1,
+       "false_4k_target": 1,
+       "findings_full": 17
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 2,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 11,
+       "scale": 0,
+       "total": 13
+      },
+      "status": "ok",
+      "wall_seconds": 0.28
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 910,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 21,
+       "finding_permille_target": 903,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.07
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 70,
+       "not_checkable": 133
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.052,
+       "json_chars": 208744,
+       "findings": 83
+      },
+      "status": "ok",
+      "wall_seconds": 0.1
+     }
+    }
+   },
+   "adventureworks": {
+    "held_out": false,
+    "kind": "sales orders",
+    "target": null,
+    "status": "ok",
+    "rows": 31465,
+    "cols": 26,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 1,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 15.69
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 14,
+       "false_4k": 6,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 40
+      },
+      "status": "ok",
+      "wall_seconds": 2.92
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 39,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 39
+      },
+      "status": "ok",
+      "wall_seconds": 18.62
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 834,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 107,
+       "not_checkable": 71
+      },
+      "status": "ok",
+      "wall_seconds": 0.12
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 3.649,
+       "json_chars": 313441,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 7.3
+     }
+    }
+   },
+   "nab-nyc-taxi": {
+    "held_out": false,
+    "kind": "single time series",
+    "target": null,
+    "status": "ok",
+    "rows": 10320,
+    "cols": 2,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 3,
+       "found_full": 3,
+       "found_4k": 3,
+       "line_sum_4k": 20
+      },
+      "status": "ok",
+      "wall_seconds": 0.42
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.1
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.61
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 3,
+       "finding_permille_default": 644,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 3,
+       "not_checkable": 14
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.11,
+       "json_chars": 46204,
+       "findings": 17
+      },
+      "status": "ok",
+      "wall_seconds": 0.22
+     }
+    }
+   },
+   "state-unemployment": {
+    "held_out": false,
+    "kind": "wide time series, one column per state",
+    "target": null,
+    "status": "ok",
+    "rows": 609,
+    "cols": 52,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 6,
+       "false_4k": 4,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 8
+      },
+      "status": "ok",
+      "wall_seconds": 0.5
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 6,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 6
+      },
+      "status": "ok",
+      "wall_seconds": 5.23
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 14,
+       "finding_permille_default": 846,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 25,
+       "not_checkable": 80
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.313,
+       "json_chars": 474737,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 2.62
+     }
+    }
+   },
+   "state-unemployment-long": {
+    "held_out": false,
+    "kind": "panel, long form",
+    "target": "unemployment_rate",
+    "status": "ok",
+    "rows": 31059,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 4,
+       "false_4k": 2,
+       "false_full_target": 4,
+       "false_4k_target": 2,
+       "findings_full": 5
+      },
+      "status": "ok",
+      "wall_seconds": 0.53
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 1.06
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 1,
+       "must_8k_default": 1,
+       "must_full_default": 1,
+       "must_4k_target": 1,
+       "must_8k_target": 1,
+       "must_full_target": 1,
+       "should_total": 4,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 4,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.3
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 4,
+       "finding_permille_default": 559,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 5,
+       "finding_permille_target": 611,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 49
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.245,
+       "json_chars": 75577,
+       "findings": 20
+      },
+      "status": "ok",
+      "wall_seconds": 0.5
+     }
+    }
+   },
+   "south-german-credit": {
+    "held_out": true,
+    "kind": "credit table",
+    "target": "credit_risk",
+    "status": "ok",
+    "rows": 1000,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 5,
+       "line_sum_4k": 77
+      },
+      "status": "ok",
+      "wall_seconds": 1.02
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 1,
+       "false_4k_target": 1,
+       "findings_full": 14
+      },
+      "status": "ok",
+      "wall_seconds": 0.29
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 6,
+       "scale": 0,
+       "total": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.94
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 1,
+       "should_4k_default": 0,
+       "should_8k_default": 0,
+       "should_full_default": 0,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.18
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 20,
+       "finding_permille_default": 918,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 21,
+       "finding_permille_target": 908,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 24,
+       "not_checkable": 134
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.15,
+       "json_chars": 217117,
+       "findings": 68
+      },
+      "status": "ok",
+      "wall_seconds": 0.3
+     }
+    }
+   },
+   "soybean": {
+    "held_out": true,
+    "kind": "categorical agronomy table",
+    "target": null,
+    "status": "ok",
+    "rows": 683,
+    "cols": 36,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 2,
+       "false_4k": 2,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 38
+      },
+      "status": "ok",
+      "wall_seconds": 0.22
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 12,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 11,
+       "scale": 0,
+       "total": 23
+      },
+      "status": "ok",
+      "wall_seconds": 1.16
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 886,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 52,
+       "not_checkable": 44
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.222,
+       "json_chars": 272698,
+       "findings": 68
+      },
+      "status": "ok",
+      "wall_seconds": 0.44
+     }
+    }
+   },
+   "lace-satellites": {
+    "held_out": true,
+    "kind": "satellite catalogue",
+    "target": null,
+    "status": "ok",
+    "rows": 1164,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 13
+      },
+      "status": "ok",
+      "wall_seconds": 0.25
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 4,
+       "false_4k": 4,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 32
+      },
+      "status": "ok",
+      "wall_seconds": 0.17
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 16,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 8,
+       "scale": 0,
+       "total": 24
+      },
+      "status": "ok",
+      "wall_seconds": 1.17
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 880,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 93,
+       "not_checkable": 50
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.228,
+       "json_chars": 267593,
+       "findings": 98
+      },
+      "status": "ok",
+      "wall_seconds": 0.46
+     }
+    }
+   },
+   "sec-edgar-company-facts": {
+    "held_out": true,
+    "kind": "event log, filing events",
+    "target": "value",
+    "status": "ok",
+    "rows": 11543,
+    "cols": 10,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 3,
+       "found_4k": 2,
+       "line_sum_4k": 41
+      },
+      "status": "ok",
+      "wall_seconds": 2.64
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 12,
+       "false_4k": 3,
+       "false_full_target": 11,
+       "false_4k_target": 2,
+       "findings_full": 43
+      },
+      "status": "ok",
+      "wall_seconds": 0.95
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 31,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 1,
+       "scale": 0,
+       "total": 32
+      },
+      "status": "ok",
+      "wall_seconds": 3.18
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 3,
+       "must_8k_default": 3,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 2,
+       "should_4k_default": 0,
+       "should_8k_default": 1,
+       "should_full_default": 1,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.75
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 16,
+       "finding_permille_default": 872,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 19,
+       "finding_permille_target": 863,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 55,
+       "not_checkable": 159
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.614,
+       "json_chars": 234376,
+       "findings": 92
+      },
+      "status": "ok",
+      "wall_seconds": 1.23
+     }
+    }
+   },
+   "gse15258-expression": {
+    "held_out": true,
+    "kind": "wide table, 86 samples x 5,006 columns",
+    "target": "response_to_therapy",
+    "status": "ok",
+    "rows": 86,
+    "cols": 5006,
+    "components": {
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 4,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 2,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 2,
+       "should_8k_target": 2,
+       "should_full_target": 2,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 13.84
+     }
+    }
+   },
+   "column_order_stress": {
+    "held_out": false,
+    "kind": "generated numeric battery, latent factors",
+    "target": null,
+    "status": "ok",
+    "rows": 4000,
+    "cols": 15,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.13
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 5,
+       "rename": 0,
+       "noise": 2,
+       "scale": 0,
+       "total": 7
+      },
+      "status": "ok",
+      "wall_seconds": 1.21
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 5,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 17,
+       "finding_permille_default": 953,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 17,
+       "not_checkable": 5
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.199,
+       "json_chars": 93003,
+       "findings": 22
+      },
+      "status": "ok",
+      "wall_seconds": 0.4
+     }
+    }
+   },
+   "planted_mix": {
+    "held_out": false,
+    "kind": "generated application records with plants",
+    "target": "approved",
+    "status": "ok",
+    "rows": 6000,
+    "cols": 11,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 49
+      },
+      "status": "ok",
+      "wall_seconds": 1.5
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 7
+      },
+      "status": "ok",
+      "wall_seconds": 0.52
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 1.49
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 4,
+       "should_4k_default": 3,
+       "should_8k_default": 3,
+       "should_full_default": 3,
+       "should_4k_target": 3,
+       "should_8k_target": 3,
+       "should_full_target": 3,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.32
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 7
+      },
+      "status": "ok",
+      "wall_seconds": 0.25
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 11,
+       "finding_permille_default": 907,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 12,
+       "finding_permille_target": 901,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 36,
+       "not_checkable": 26
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.246,
+       "json_chars": 82343,
+       "findings": 23
+      },
+      "status": "ok",
+      "wall_seconds": 0.49
+     }
+    }
+   },
+   "daily_regime_break": {
+    "held_out": false,
+    "kind": "generated daily series, planted breaks",
+    "target": null,
+    "status": "ok",
+    "rows": 1826,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.21
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 2,
+       "false_4k": 2,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.22
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 6,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 6,
+       "finding_permille_default": 814,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 10,
+       "not_checkable": 27
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.04,
+       "json_chars": 103072,
+       "findings": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.08
+     }
+    }
+   },
+   "dominant_driver": {
+    "held_out": false,
+    "kind": "generated listings, numeric target",
+    "target": "price",
+    "status": "ok",
+    "rows": 5000,
+    "cols": 8,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 5,
+       "line_sum_4k": 46
+      },
+      "status": "ok",
+      "wall_seconds": 0.98
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 5
+      },
+      "status": "ok",
+      "wall_seconds": 0.27
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.81
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 4,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 2,
+       "should_8k_target": 2,
+       "should_full_target": 2,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.18
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 8,
+       "finding_permille_default": 877,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 9,
+       "finding_permille_target": 870,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 18,
+       "not_checkable": 15
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.134,
+       "json_chars": 52552,
+       "findings": 13
+      },
+      "status": "ok",
+      "wall_seconds": 0.26
+     }
+    }
+   },
+   "daily_level_collapse": {
+    "held_out": false,
+    "kind": "generated daily series, planted sustained collapse",
+    "target": null,
+    "status": "ok",
+    "rows": 1096,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 38
+      },
+      "status": "ok",
+      "wall_seconds": 0.14
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 3
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.13
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 6,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 6,
+       "finding_permille_default": 787,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 29
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.024,
+       "json_chars": 113626,
+       "findings": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     }
+    }
+   },
+   "marginal_ranges": {
+    "held_out": true,
+    "kind": "generated range battery",
+    "target": null,
+    "status": "ok",
+    "rows": 3000,
+    "cols": 7,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 3
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.27
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 7,
+       "should_4k_default": 1,
+       "should_8k_default": 1,
+       "should_full_default": 1,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 2,
+       "finding_permille_default": 591,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.044,
+       "json_chars": 26065,
+       "findings": 4
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     }
+    }
+   },
+   "messy_intake": {
+    "held_out": true,
+    "kind": "generated messy intake records",
+    "target": null,
+    "status": "ok",
+    "rows": 2500,
+    "cols": 7,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 10
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 12
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.26
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 1,
+       "must_8k_default": 1,
+       "must_full_default": 1,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 4,
+       "should_4k_default": 1,
+       "should_8k_default": 1,
+       "should_full_default": 1,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 6,
+       "finding_permille_default": 732,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 14,
+       "not_checkable": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.041,
+       "json_chars": 31579,
+       "findings": 13
+      },
+      "status": "ok",
+      "wall_seconds": 0.08
+     }
+    }
+   },
+   "weighted_noise": {
+    "held_out": false,
+    "kind": "generated control: independent noise weight",
+    "target": null,
+    "status": "ok",
+    "rows": 8000,
+    "cols": 4,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 10
+      },
+      "status": "ok",
+      "wall_seconds": 0.72
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.52
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.08
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 0,
+       "finding_permille_default": 0,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 0,
+       "not_checkable": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.083,
+       "json_chars": 13955,
+       "findings": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.17
+     }
+    }
+   },
+   "weighted_large_cell": {
+    "held_out": false,
+    "kind": "generated control: merely large cell",
+    "target": null,
+    "status": "ok",
+    "rows": 8000,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 21
+      },
+      "status": "ok",
+      "wall_seconds": 0.41
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 1,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.39
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 2,
+       "finding_permille_default": 758,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 1,
+       "not_checkable": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.059,
+       "json_chars": 16382,
+       "findings": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.12
+     }
+    }
+   }
+  }
+ }
+}
