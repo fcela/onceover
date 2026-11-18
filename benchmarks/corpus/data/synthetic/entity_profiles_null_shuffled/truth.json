@@ -1,0 +1,4 @@
+{
+ "expect": "no groups, no misfits, no drift, no specialists",
+ "source": "entity_profiles with category and location permuted independently across rows"
+}
