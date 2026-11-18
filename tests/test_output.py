@@ -52,13 +52,15 @@ def test_findings_frame_matches_the_ledger():
     assert frame["id"].to_list() == [
         f["id"] for f in report.data["findings"]
     ]
-    fd = frame.filter(
-        (pl.col("category") == "dependencies") & (pl.col("target") == "region")
-    )
-    assert fd.height >= 1
-    row = fd.row(0, named=True)
-    assert row["inputs"] == ["region_id"]
+    # region_id <-> region is one recoding, stated once by the
+    # duplicate-encoding finding; the frame carries no prediction of
+    # one side from the other (issue #374).
+    enc = frame.filter(pl.col("type") == "duplicate_encoding")
+    assert enc.height == 1
+    row = enc.row(0, named=True)
+    assert sorted(row["columns"]) == ["region", "region_id"]
     assert row["n_evidence"] >= 1
+    assert frame.filter(pl.col("category") == "dependencies").height == 0
 
 
 def test_markdown_table_cells_escape_pipes_and_newlines():

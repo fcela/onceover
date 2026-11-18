@@ -85,6 +85,7 @@ const METHOD_TEXT: &str = "per-level quantile contrast: each level of a low-card
 /// The calendar axis the pipeline identified, when it did:
 /// the axis column's name and its per-row ticks in
 /// microseconds since the epoch.
+#[derive(Default)]
 pub struct LevelContrastInput<'a> {
     pub axis_name: Option<&'a str>,
     pub axis_ticks: Option<&'a [Option<i64>]>,
@@ -93,6 +94,18 @@ pub struct LevelContrastInput<'a> {
     /// screen owns when a target is designated (issue #310), so
     /// the same pair is not stated twice in two vocabularies.
     pub exclude_measures: &'a [&'a str],
+    /// Columns that are neither a grouping nor a measure: the
+    /// scaffolding (row numbers, identifiers, the axis) and the
+    /// redundant side of a one-to-one recoding.
+    pub exclude_columns: &'a [usize],
+    /// Columns that are not measures (flags, dimensions, columns
+    /// the axis determines); they may still group.
+    pub non_measures: &'a [usize],
+    /// Columns the axis determines. Such a column is dropped as a
+    /// grouping when it partitions the rows exactly as a calendar
+    /// part the pass derives from the axis (month of year, day of
+    /// week, hour of day): the two groupings are one, stated once.
+    pub axis_derived: &'a [usize],
 }
 
 /// The pass's result: findings plus the coverage detail.
@@ -289,6 +302,29 @@ pub(crate) fn calendar_groupings(input: &LevelContrastInput) -> Vec<Grouping> {
     out
 }
 
+/// Whether two groupings put the rows into the same classes:
+/// a one-to-one map between their codes on the rows where both
+/// are known, and the same rows known.
+fn same_partition(a: &[Option<u32>], b: &[Option<u32>]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut ab: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut ba: BTreeMap<u32, u32> = BTreeMap::new();
+    for (x, y) in a.iter().zip(b) {
+        match (x, y) {
+            (Some(x), Some(y)) => {
+                if *ab.entry(*x).or_insert(*y) != *y || *ba.entry(*y).or_insert(*x) != *x {
+                    return false;
+                }
+            }
+            (None, None) => {}
+            _ => return false,
+        }
+    }
+    !ab.is_empty()
+}
+
 /// Whether a candidate's constant-multiple evidence holds as
 /// a rescaling: the decile quotients concentrate at one
 /// quotient AND the level's IQR ratio moves with that
@@ -367,7 +403,11 @@ struct Candidate {
 pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -> LevelsOutcome {
     // ---------- groupings ----------
     let mut groupings: Vec<Grouping> = Vec::new();
+    let mut grouping_cols: Vec<usize> = Vec::new();
     for ci in 0..table.cols.len() {
+        if input.exclude_columns.contains(&ci) {
+            continue;
+        }
         if let Some((codes, labels)) = code_levels(table, ci) {
             groupings.push(Grouping {
                 column: table.names[ci].clone(),
@@ -377,16 +417,35 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 calendar_part: None,
                 cycles: Vec::new(),
             });
+            grouping_cols.push(ci);
         }
     }
+    let calendar = calendar_groupings(input);
+    // A column the axis determines that partitions the rows as a
+    // derived calendar part is the same grouping: keep the
+    // calendar part, which names its source.
+    let mut merged_into_calendar: Vec<String> = Vec::new();
+    let mut kept: Vec<Grouping> = Vec::new();
+    for (g, ci) in groupings.into_iter().zip(grouping_cols) {
+        if input.axis_derived.contains(&ci)
+            && calendar.iter().any(|c| same_partition(&g.codes, &c.codes))
+        {
+            merged_into_calendar.push(g.column);
+        } else {
+            kept.push(g);
+        }
+    }
+    let mut groupings = kept;
     let n_column_groupings = groupings.len();
-    groupings.extend(calendar_groupings(input));
+    groupings.extend(calendar);
 
     // ---------- measures ----------
     let measures: Vec<usize> = (0..table.cols.len())
         .filter(|&ci| {
             table.cols[ci].is_numeric()
                 && !input.exclude_measures.contains(&table.names[ci].as_str())
+                && !input.exclude_columns.contains(&ci)
+                && !input.non_measures.contains(&ci)
         })
         .collect();
 
@@ -952,6 +1011,12 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             input.exclude_measures.join(", ")
         ));
     }
+    if !merged_into_calendar.is_empty() {
+        detail.push_str(&format!(
+            "; column(s) grouping the rows exactly as a calendar part of the axis, examined once as that part: {}",
+            merged_into_calendar.join(", ")
+        ));
+    }
     if groupings.is_empty() || measures.is_empty() {
         detail.push_str("; no eligible grouping x measure pair exists on this table");
     }
@@ -1085,6 +1150,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         let hits: Vec<_> = out
@@ -1133,6 +1199,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         let hits: Vec<_> = out
@@ -1170,6 +1237,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         // Only the multiple is stated: A and B look narrow
@@ -1222,6 +1290,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         assert_eq!(
@@ -1276,6 +1345,7 @@ mod tests {
                 axis_name: Some("day"),
                 axis_ticks: Some(&ticks),
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         let hits: Vec<_> = out
@@ -1315,6 +1385,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         assert!(
@@ -1342,6 +1413,7 @@ mod tests {
                 axis_name: None,
                 axis_ticks: None,
                 exclude_measures: &[],
+                ..Default::default()
             },
         );
         assert!(

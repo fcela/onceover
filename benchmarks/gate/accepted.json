@@ -54,6 +54,48 @@
    "scope": "dominant_driver",
    "limit": 882,
    "reason": "Issue #310: same composition change; 891 -> 882 (1.0%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+  },
+  {
+   "metric": "invariance.reverse",
+   "scope": "bike-sharing-hourly",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the derived-column basis changes which columns are predictability targets; under column reversal the drivers named for hum move among near-collinear inputs (temp/atemp, mnth/season), whose holdout split is seeded by column position. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "bike-sharing-hourly",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the invariance.reverse change on this dataset. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "adult-census-income",
+   "limit": 7,
+   "reason": "Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "total",
+   "limit": 30,
+   "reason": "Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "bank-marketing",
+   "limit": 3,
+   "reason": "Issue #374 step 2: the base credited subscription-housing-loan through a text-pattern match on a rolled-up 8k digest line that no finding in the full report supports (full default: not matched in base or head). Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "total",
+   "limit": 16629,
+   "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "total",
+   "limit": 9405,
+   "reason": "Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
   }
  ]
 }

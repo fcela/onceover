@@ -629,7 +629,7 @@ pub fn outcome_contrasts(
         let input = crate::levels::LevelContrastInput {
             axis_name: Some(axis_name),
             axis_ticks: Some(axis_ticks),
-            exclude_measures: &[],
+            ..Default::default()
         };
         for cg in crate::levels::calendar_groupings(&input) {
             if cg.calendar_part == Some("day_of_week")

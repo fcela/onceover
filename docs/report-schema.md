@@ -53,7 +53,13 @@ distinct label per row (for whole numbers: packed close together, or
 named like a key) or is a whole-number column named like a key
 (`customer_id`, `orderKey`), a `timestamp` is a native date or datetime
 column, a `timestamp_part` is a member of a set of integer columns
-(year and month at minimum) that jointly form a timestamp, a
+(year and month at minimum) that jointly form a timestamp, or a
+column the time axis determines (one value per axis value where the
+axis repeats, or a function of a repeating calendar key — year,
+quarter, month, week, day of month, day of week, hour — on a
+one-row-per-period table; measures are never re-roled), or a grain
+factor that subdivides the axis's period (an hour beside a date); its
+`evidence` says which, a
 `dimension` is a low-cardinality grouping column (a numeric column
 qualifies only with at most 32 whole-number values, or 12 fractional
 ones), a `flag` is a two-valued column — a boolean with both states
@@ -159,17 +165,15 @@ body, not the budget. A verified relationship family's lead
 (schema 0.6) presents at the earliest band among itself and its
 grouped members, because the lead stands for the family's
 strongest content; a duplicate-encoding lead whose members are
-dependencies therefore presents with the relations. Relation findings whose subject lies
-inside the calendar family (the axis's own columns, every column
-the axis determines exactly — measured directly, since a
-timestamp that is itself unique has no mined dependency from it
-to seed the family — and the closure of those under the exact
-functional dependencies) are demoted in ranking, as is any
-finding whose whole subject is scaffolding columns — never
-removed — with the reason (`calendar_derivation` or
-`scaffolding_subject`) and a 0.6 factor recorded in their
-evidence metrics; the demotion counts are stated in the
-`frame_model` coverage entry.
+dependencies therefore presents with the relations. A column the
+time axis determines is a `timestamp_part` before any pass runs
+(see the `frame` roles above): it is no pass's subject, so the
+report never states its level shifts, spikes, ordering, or its
+dependencies on other calendar columns. A finding whose whole
+subject is scaffolding columns is demoted in ranking — never
+removed — with the reason `scaffolding_subject` and a 0.6 factor
+recorded in its evidence metrics; the demotion counts are stated in
+the `frame_model` coverage entry.
 
 ## Finding object
 

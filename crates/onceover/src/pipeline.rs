@@ -40,7 +40,9 @@ pub fn profile_with_detectors(
 /// Entity columns of the frame's entity × time grain, in priority
 /// order: the grain's single non-axis factor when the account found
 /// one, then identifier-role columns, then dimension-role columns.
-/// Flag columns carry their own role and never enter this list. An
+/// Flag columns carry their own role and never enter this list, and
+/// neither does a timestamp part (an hour beside a date subdivides
+/// the period; it is not an entity followed through time). An
 /// entity axis also needs at least 10 distinct values — the panel
 /// checks' own floor for the entities they follow. At most three
 /// columns are returned.
@@ -66,7 +68,12 @@ fn entity_columns(
             .collect();
         if non_axis.len() == 1 && non_axis[0].1 >= 10 {
             if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
-                if !entities.contains(&i) {
+                if !entities.contains(&i)
+                    && !matches!(
+                        frame.roles[i].as_deref(),
+                        Some("timestamp_part" | "row_number")
+                    )
+                {
                     entities.push(i);
                 }
             }
@@ -77,7 +84,7 @@ fn entity_columns(
             if r.as_deref() == Some(role)
                 && card_facts[i].distinct >= 10
                 && !entities.contains(&i)
-                && Some(&table.names[i]) != frame.info.axis.as_ref().map(|a| &a.name)
+                && table.names[i] != axis_name
             {
                 entities.push(i);
             }
@@ -646,14 +653,19 @@ fn profile_inner(
         .hints
         .as_ref()
         .and_then(onceover_report::DeclaredMetadata::from_hints);
-    for (i, name) in table.names.iter().enumerate() {
-        if let Some(card) = columns.get_mut(name) {
-            card.semantic_role = frame.roles[i].clone();
-            if frame.roles[i].is_some() {
-                card.semantic_role_evidence = Some(frame.info.roles[i].evidence.clone());
-            }
-        }
+    // ---------- derived-column basis, phase A (issue #374) ----------
+    // Columns the axis determines are calendar parts: they get the
+    // timestamp_part role here, before any detector runs, so no pass
+    // restates the calendar (see `basis`).
+    let mut basis = crate::basis::Basis::default();
+    {
+        let (axis_cols, derived) =
+            crate::basis::axis_derived(&table, &frame, &card_facts, cfg.hints.as_ref());
+        basis.axis_cols = axis_cols;
+        assign_timestamp_parts(&mut frame.roles, &mut frame.info.roles, &derived);
+        basis.axis_derived = derived;
     }
+    sync_card_roles(&mut columns, &table, &frame);
     let temporal_df = build_temporal_df(df, &frame);
     let temporal_table = temporal_df.as_ref().map(|d| extract(d));
     let ttable: &TypedTable = temporal_table.as_ref().unwrap_or(&table);
@@ -663,7 +675,10 @@ fn profile_inner(
             matches!(info[i].card_role.as_str(), "constant" | "all_null")
                 || matches!(
                     frame.roles[i].as_deref(),
-                    Some("row_number") | Some("identifier") | Some("timestamp")
+                    Some("row_number")
+                        | Some("identifier")
+                        | Some("timestamp")
+                        | Some("timestamp_part")
                 )
                 || (frame.axis_source.as_deref() == Some("timestamp_parts")
                     && frame.axis_parts.contains(&table.names[i]))
@@ -705,36 +720,14 @@ fn profile_inner(
     let mut scaffold_excluded = role_excluded;
     scaffold_excluded.extend(axis_excluded.iter().copied());
     scaffold_excluded.sort_unstable();
-    let exclusion_note = if scaffold_excluded.is_empty() {
-        String::new()
-    } else {
-        let parts: Vec<String> = scaffold_excluded
-            .iter()
-            .map(|&i| {
-                format!(
-                    "{} ({})",
-                    table.names[i],
-                    frame.roles[i]
-                        .as_deref()
-                        .unwrap_or(info[i].card_role.as_str())
-                )
-            })
-            .collect();
-        let mut note = format!("; frame-role target exclusions: {}", parts.join(", "));
-        if !axis_excluded.is_empty() {
-            let names: Vec<String> = axis_excluded
-                .iter()
-                .map(|&i| table.names[i].clone())
-                .collect();
-            note.push_str(&format!(
-                "; of these, {} excluded as the report's time axis (structural, \
-                 regardless of assigned role; a hints.roles entry for the column \
-                 overrides it)",
-                names.join(", ")
-            ));
-        }
-        note
-    };
+    let mut exclusion_note = scaffold_note(
+        &table,
+        &frame,
+        &info,
+        &scaffold_excluded,
+        &axis_excluded,
+        &basis,
+    );
 
     // ---------- along-axis gate (issue #317, phase 3) ----------
     // In a default run the along-axis passes (breaks,
@@ -1082,7 +1075,7 @@ fn profile_inner(
             detail.push_str(&format!("; dominant structure: {}", labels.join(", ")));
         }
         detail.push_str(
-            "; findings that restate the calendar derivation or the scaffolding columns are demoted in ranking, never removed; the demotion counts are appended to this entry",
+            "; columns the time axis determines are timestamp parts before the passes run and are no pass's subject; findings whose whole subject is scaffolding columns are demoted in ranking, never removed; the demotion counts are appended to this entry",
         );
         frame.info.grain = account.grain;
         frame.info.dominant = account.dominant;
@@ -1093,6 +1086,65 @@ fn profile_inner(
             "frame_model".into(),
             PassInfo::ran(detail),
         );
+    }
+
+    // ---------- derived-column basis, phase B (issue #374) ----------
+    // With the exact dependencies and the grain in hand: columns the
+    // derived ones determine, and a grain factor that subdivides the
+    // axis's period (an hour beside a date). Dependency statements
+    // entirely inside the calendar family restate the derivation the
+    // roles now carry, and are dropped.
+    {
+        crate::basis::close_and_sub_period(
+            &mut basis,
+            &table,
+            &frame,
+            &card_facts,
+            &deps.exact_fds,
+            cfg.hints.as_ref(),
+        );
+        assign_timestamp_parts(&mut frame.roles, &mut frame.info.roles, &basis.axis_derived);
+        assign_timestamp_parts(&mut frame.roles, &mut frame.info.roles, &basis.sub_period);
+        sync_card_roles(&mut columns, &table, &frame);
+        let family: BTreeSet<String> = basis
+            .calendar_family()
+            .into_iter()
+            .map(|i| table.names[i].clone())
+            .collect();
+        if family.len() > basis.axis_cols.len() {
+            // A calendar part's "behaves like a category" card
+            // statement is superseded by its role.
+            findings.retain(|f| {
+                !((f.evidence
+                    .iter()
+                    .any(|e| e.method.detector == "functional_dependencies")
+                    || f.finding_type.as_deref() == Some("categorical_role"))
+                    && f.subject.columns.iter().all(|c| family.contains(c)))
+            });
+        }
+        for i in basis.not_subject() {
+            if !scaffold_excluded.contains(&i) {
+                scaffold_excluded.push(i);
+            }
+        }
+        scaffold_excluded.sort_unstable();
+        exclusion_note = scaffold_note(
+            &table,
+            &frame,
+            &info,
+            &scaffold_excluded,
+            &axis_excluded,
+            &basis,
+        );
+        // Cells over the axis and the columns it determines restate
+        // the calendar. A sub-period is not determined by the axis
+        // (an hour beside a date), so its cells with a derived flag
+        // (hour x working day) are real concentrations and stay in.
+        if !basis.axis_derived.is_empty() {
+            let mut related = basis.axis_cols.clone();
+            related.extend(basis.axis_derived.iter().map(|d| d.col));
+            tier.hotspots.related_columns = vec![related];
+        }
     }
 
     // ---------- per-period coverage ----------
@@ -1143,6 +1195,85 @@ fn profile_inner(
         );
         findings.extend(f);
     }
+
+    // ---------- derived-column basis, phase C (issue #374) ----------
+    // A verified one-to-one recoding is stated once, by the
+    // duplicate-encoding finding (the ledger groups the dependency
+    // statements between the two sides under it); the redundant side
+    // is no later pass's subject or input.
+    // Encodings and rollups among calendar parts (month rolls up to
+    // season) restate the calendar.
+    {
+        let family: BTreeSet<String> = basis
+            .calendar_family()
+            .into_iter()
+            .map(|i| table.names[i].clone())
+            .collect();
+        if family.len() > basis.axis_cols.len() {
+            findings.retain(|f| {
+                !(f.finding_type.as_deref() == Some("duplicate_encoding")
+                    && f.subject.columns.iter().all(|c| family.contains(c)))
+            });
+        }
+    }
+    basis.recodings = crate::basis::recodings(&table, &findings);
+    if !basis.recodings.is_empty() {
+        let named: Vec<String> = basis
+            .recodings
+            .iter()
+            .map(|(d, k)| format!("{} (recoding of {})", table.names[*d], table.names[*k]))
+            .collect();
+        if let Some(entry) = coverage.get_mut("duplicate_encodings") {
+            entry.detail.push_str(&format!(
+                "; excluded from later passes as redundant: {}",
+                named.join(", ")
+            ));
+        }
+        for i in basis.not_subject() {
+            if !scaffold_excluded.contains(&i) {
+                scaffold_excluded.push(i);
+            }
+        }
+        scaffold_excluded.sort_unstable();
+        tier.encode.skip_columns = basis.not_input();
+        exclusion_note = scaffold_note(
+            &table,
+            &frame,
+            &info,
+            &scaffold_excluded,
+            &axis_excluded,
+            &basis,
+        );
+    }
+
+    // Derived calendar columns and a sub-period are no pass's
+    // subject but remain inputs: predictors, groupings, slice and
+    // contrast variables (an hour or a working-day flag explains a
+    // measure).
+    let calendar_inputs: Vec<usize> = basis
+        .axis_derived
+        .iter()
+        .chain(basis.sub_period.iter())
+        .map(|d| d.col)
+        .collect();
+    let grouping_excluded: Vec<usize> = scaffold_excluded
+        .iter()
+        .copied()
+        .filter(|i| !calendar_inputs.contains(i))
+        .collect();
+    // Along-axis series passes scan measures only: a flag or a
+    // category code changes level whenever its value changes, so a
+    // "level shift" or "spike" in one restates its values.
+    let measure_excluded: Vec<usize> = {
+        let mut v = scaffold_excluded.clone();
+        for (i, r) in frame.roles.iter().enumerate() {
+            if matches!(r.as_deref(), Some("flag" | "dimension")) && !v.contains(&i) {
+                v.push(i);
+            }
+        }
+        v.sort_unstable();
+        v
+    };
 
     // ---------- pivot (long format) ----------
     let mut pivot_spec: Option<onceover_deps::PivotSpec> = None;
@@ -1338,7 +1469,19 @@ fn profile_inner(
         deadline_hit = true;
     }
     if !deadline_hit && enabled("sortedness") {
-        let sorted = sortedness(&table);
+        // A derived calendar column follows the axis's order by
+        // construction (a month column cycles with the dates), and a
+        // redundant recoding follows its label: neither ordering is
+        // a fact about how the rows were written.
+        let derived: BTreeSet<String> = basis
+            .not_subject()
+            .into_iter()
+            .map(|i| table.names[i].clone())
+            .collect();
+        let sorted: Vec<Finding> = sortedness(&table)
+            .into_iter()
+            .filter(|f| !f.subject.columns.iter().any(|c| derived.contains(c)))
+            .collect();
         stamp_insert(
             &mut coverage,
             &mut last_mark,
@@ -1634,10 +1777,11 @@ fn profile_inner(
                 let input = onceover_mines::PanelInput {
                     axis_name,
                     ticks,
-                    entities: panel_entity_columns(
+                    entities: entity_columns(
                         &table,
                         &frame,
                         &card_facts,
+                        frame.info.axis.as_ref().map_or("", |a| a.name.as_str()),
                         declared_entity_idx,
                     ),
                     measures: frame
@@ -1978,10 +2122,15 @@ fn profile_inner(
             }
             _ => Vec::new(),
         };
+        let axis_derived: Vec<usize> = basis.axis_derived.iter().map(|d| d.col).collect();
+        let level_excluded = &grouping_excluded;
         let input = onceover_mines::LevelContrastInput {
             axis_name,
             axis_ticks: axis_ticks.as_deref(),
             exclude_measures: &target_exclusion,
+            exclude_columns: level_excluded,
+            non_measures: &measure_excluded,
+            axis_derived: &axis_derived,
         };
         let out = onceover_mines::profile_level_contrasts(&table, &input);
         stamp_insert(
@@ -2015,6 +2164,7 @@ fn profile_inner(
                     &enc,
                     &tier.screen,
                     &scaffold_excluded,
+                    &calendar_inputs,
                     &recorded_after_idx,
                 )
             } else {
@@ -2158,9 +2308,9 @@ fn profile_inner(
             }
             if !deadline_hit && enabled("breaks") {
                 // The frame model's axis (assembled where needed) is
-                // the pass's time hint; scaffolding columns are
-                // excluded as series.
-                let excluded: &[usize] = &scaffold_excluded;
+                // the pass's time hint; scaffolding columns and
+                // non-measures are excluded as series.
+                let excluded: &[usize] = &measure_excluded;
                 if !axis_explicit("breaks") && !axis_gate_open {
                     stamp_insert(
                         &mut coverage,
@@ -2200,7 +2350,10 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("ordered_partitions") {
-                let excluded: &[usize] = &scaffold_excluded;
+                // Non-measures may split the tree as dimensions; only
+                // measures are partitioned as responses.
+                let excluded: &[usize] = &grouping_excluded;
+                tier.partitions.exclude_responses = measure_excluded.clone();
                 if !axis_explicit("ordered_partitions") && !axis_gate_open {
                     stamp_insert(
                         &mut coverage,
@@ -3043,7 +3196,7 @@ fn profile_inner(
                         }
                     }
                 }
-                outcome_decl.excluded = scaffold_excluded.clone();
+                outcome_decl.excluded = grouping_excluded.clone();
                 for &idx in &recorded_after_idx {
                     if !outcome_decl.excluded.contains(&idx) {
                         outcome_decl.excluded.push(idx);
@@ -3173,7 +3326,7 @@ fn profile_inner(
                         &local_enc
                     }
                 };
-                let mut mf_excluded = scaffold_excluded.clone();
+                let mut mf_excluded = grouping_excluded.clone();
                 for &idx in &recorded_after_idx {
                     if !mf_excluded.contains(&idx) {
                         mf_excluded.push(idx);
@@ -3367,7 +3520,7 @@ fn profile_inner(
     // entry appears when a cap binds or when verified relationship
     // families grouped statements (schema 0.6), so both mechanisms
     // are disclosed, never silent.
-    let demotions = crate::account::demote_restatements(&mut findings, &table, &frame, &deps);
+    let demotions = crate::account::demote_restatements(&mut findings, &table, &frame);
     let demotion_note = if demotions.is_empty() {
         None
     } else {
@@ -3903,55 +4056,6 @@ fn build_overview(
     }
 }
 
-/// Entity columns for the panel passes, in priority order: the
-/// grain's single non-axis factor when the account found one,
-/// then identifier-role columns, then dimension-role columns.
-/// Flag columns carry their own role and never enter this list.
-/// An entity axis also needs at least 10 distinct values — the
-/// passes' own floor for the entities they follow.
-fn panel_entity_columns(
-    table: &TypedTable,
-    frame: &crate::frame::FrameModel,
-    card_facts: &[CardFacts],
-    declared: Option<usize>,
-) -> Vec<usize> {
-    let axis_name = frame.info.axis.as_ref().map(|a| a.name.as_str());
-    let mut entities: Vec<usize> = Vec::new();
-    // A declared entity (issue #310) takes precedence, as in
-    // `entity_columns`.
-    if let Some(idx) = declared {
-        entities.push(idx);
-    }
-    if let Some(grain) = &frame.info.grain {
-        let non_axis: Vec<(&str, usize)> = grain
-            .factorization
-            .iter()
-            .map(|f| (f.column.as_str(), f.distinct))
-            .filter(|(c, _)| Some(*c) != axis_name)
-            .collect();
-        if non_axis.len() == 1 && non_axis[0].1 >= 10 {
-            if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
-                if !entities.contains(&i) {
-                    entities.push(i);
-                }
-            }
-        }
-    }
-    for role in ["identifier", "dimension"] {
-        for (i, r) in frame.roles.iter().enumerate() {
-            if r.as_deref() == Some(role)
-                && card_facts[i].distinct >= 10
-                && !entities.contains(&i)
-                && Some(table.names[i].as_str()) != axis_name
-            {
-                entities.push(i);
-            }
-        }
-    }
-    entities.truncate(3);
-    entities
-}
-
 /// Record a pass's coverage entry with its attributed wall time:
 /// the interval since the previous entry was recorded. The
 /// pipeline runs passes sequentially and records each entry when
@@ -3972,4 +4076,79 @@ fn stamp_insert(
     }
     *mark = now;
     coverage.insert(key, info);
+}
+
+/// Give the derived columns the `timestamp_part` role, with their
+/// evidence, in the frame model's role vectors (the fields, so the
+/// rest of the frame model can stay borrowed).
+fn assign_timestamp_parts(
+    roles: &mut [Option<String>],
+    info_roles: &mut [onceover_report::FrameColumnRole],
+    derived: &[crate::basis::Derived],
+) {
+    for d in derived {
+        roles[d.col] = Some("timestamp_part".to_string());
+        if let Some(r) = info_roles.get_mut(d.col) {
+            r.role = Some("timestamp_part".to_string());
+            r.evidence = d.evidence.clone();
+        }
+    }
+}
+
+/// Copy the frame model's roles onto the column cards.
+fn sync_card_roles(
+    columns: &mut BTreeMap<String, ColumnCard>,
+    table: &TypedTable,
+    frame: &crate::frame::FrameModel,
+) {
+    for (i, name) in table.names.iter().enumerate() {
+        if let Some(card) = columns.get_mut(name) {
+            card.semantic_role = frame.roles[i].clone();
+            card.semantic_role_evidence = frame.roles[i]
+                .is_some()
+                .then(|| frame.info.roles[i].evidence.clone());
+        }
+    }
+}
+
+/// The coverage suffix naming the columns excluded as targets, with
+/// the reason for each: its frame role, or the column it recodes.
+fn scaffold_note(
+    table: &TypedTable,
+    frame: &crate::frame::FrameModel,
+    info: &[ColInfo],
+    excluded: &[usize],
+    axis_excluded: &[usize],
+    basis: &crate::basis::Basis,
+) -> String {
+    if excluded.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<String> = excluded
+        .iter()
+        .map(|&i| {
+            let why = match basis.recodings.iter().find(|(d, _)| *d == i) {
+                Some((_, keep)) => format!("recoding of {}", table.names[*keep]),
+                None => frame.roles[i]
+                    .as_deref()
+                    .unwrap_or(info[i].card_role.as_str())
+                    .to_string(),
+            };
+            format!("{} ({why})", table.names[i])
+        })
+        .collect();
+    let mut note = format!("; frame-role target exclusions: {}", parts.join(", "));
+    if !axis_excluded.is_empty() {
+        let names: Vec<String> = axis_excluded
+            .iter()
+            .map(|&i| table.names[i].clone())
+            .collect();
+        note.push_str(&format!(
+            "; of these, {} excluded as the report's time axis (structural, \
+             regardless of assigned role; a hints.roles entry for the column \
+             overrides it)",
+            names.join(", ")
+        ));
+    }
+    note
 }

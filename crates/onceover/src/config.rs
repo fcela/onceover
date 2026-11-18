@@ -149,6 +149,7 @@ impl TierConfig {
                     row_cap: 10_000,
                     feature_cap: 32,
                     nominal_max_levels: 32,
+                    skip_columns: Vec::new(),
                 },
                 screen: ScreenConfig::default(),
                 dtable: DtableConfig::default(),
@@ -193,6 +194,7 @@ impl TierConfig {
                     row_cap: 20_000,
                     feature_cap: 48,
                     nominal_max_levels: 32,
+                    skip_columns: Vec::new(),
                 },
                 screen: ScreenConfig::default(),
                 dtable: DtableConfig::default(),
@@ -257,6 +259,7 @@ impl TierConfig {
                     row_cap: 50_000,
                     feature_cap: 64,
                     nominal_max_levels: 32,
+                    skip_columns: Vec::new(),
                 },
                 screen: ScreenConfig {
                     max_rounds: 40,
