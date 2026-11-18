@@ -2,9 +2,9 @@
 
 ## TL;DR
 
-Latest change `df24a40` (2026-11-18), Merge pull request #447 from fcela/docs/381-capability-map: compared with `79208eb`, 0 total metrics better, 0 worse, 0 worse and accepted.
+Latest change `3e45788` (2026-11-18), Merge pull request #451 from fcela/fix/446-shared-basis: compared with `df24a40`, 0 total metrics better, 0 worse, 1 worse and accepted.
 
-| measure | latest (`df24a40`) | previous (`79208eb`) | first recorded (`1618886`) |
+| measure | latest (`3e45788`) | previous (`df24a40`) | first recorded (`1618886`) |
 |---|---:|---:|---:|
 | Must-tier reference facts stated in the 4,000-character digest | 15 of 19 (unchanged) | 15 of 19 | 7 of 11 |
 | Must-tier reference facts stated in the 4,000-character digest, target mode | 17 of 19 (unchanged) | 17 of 19 | 7 of 11 |
@@ -18,11 +18,11 @@ Latest change `df24a40` (2026-11-18), Merge pull request #447 from fcela/docs/38
 
 Biggest improvements: none.
 Biggest regressions: none.
-Accepted regressions: none.
+Accepted regressions: redundancy finding permille target 9388 → 9387 (Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md.)
 
 Hard lines: none breached — no statement failed or errored in verification, and no must-tier reference fact was lost from the 4,000-character digest.
 
-33 change(s) recorded. Latest: `df24a40` (2026-11-18), onceover 0.1.6, seeds [0].
+34 change(s) recorded. Latest: `3e45788` (2026-11-18), onceover 0.1.6, seeds [0].
 
 Each row is one change on main, newest first. A value is followed, in parentheses, by its movement against the change before it, with `better` or `worse` when the metric has a direction. Seconds are compared only between rows produced on the same platform.
 
@@ -40,6 +40,7 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-18 | `3e45788` | Merge pull request #451 from fcela/fix/446-shared-basis | 58 | 15 | 17 | 0 | 22 | 240 | 0 | 0 | 10.79 (-0.093) |
 | 2026-11-18 | `df24a40` | Merge pull request #447 from fcela/docs/381-capability-map | 58 | 15 | 17 | 0 | 22 | 240 | 0 | 0 | 10.883 (+0.037) |
 | 2026-11-18 | `79208eb` | State how targets move, give models the calendar, drop vacuous and mi… | 58 (+1, better) | 15 (-1, worse) | 17 | 0 | 22 | 240 (+10, worse) | 0 | 0 | 10.846 (+0.026) |
 | 2026-11-18 | `e3a2c9c` | Merge pull request #444 from fcela/fix/374-steps-3-5 | 57 (+1, better) | 16 | 17 | 0 (-22, better) | 22 (-24, better) | 230 (-85, better) | 0 | 0 | 10.82 |
@@ -74,9 +75,9 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 13.385 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 6.859 |
 
-## Latest change: `df24a40` Merge pull request #447 from fcela/docs/381-capability-map
+## Latest change: `3e45788` Merge pull request #451 from fcela/fix/446-shared-basis
 
-Compared with `79208eb`: 0 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
+Compared with `df24a40`: 0 total metrics better, 0 worse, 1 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
 
 ### Better
 
@@ -88,105 +89,108 @@ None.
 
 ### Worse and accepted
 
-None.
+| metric | where | before | after | change | reason |
+|---|---|---:|---:|---:|---|
+| redundancy.finding_permille_target | total | 9388 | 9387 | -1 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
+| redundancy.finding_permille_target | bike-sharing-hourly | 835 | 834 | -1 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
 
 ## Every total metric, last 8 changes
 
 Oldest on the left. A value in a column is followed by its movement against the column before it.
 
-| metric | reading | `11dfa8e` | `114fff6` | `de041e2` | `7cc00d4` | `4a18255` | `e3a2c9c` | `79208eb` | `df24a40` |
+| metric | reading | `114fff6` | `de041e2` | `7cc00d4` | `4a18255` | `e3a2c9c` | `79208eb` | `df24a40` | `3e45788` |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | planted.planted | information only | 76 | 76 | 76 | 76 | 76 | 76 | 76 | 76 |
-| planted.found_full | higher is better | 58 | 58 | 58 | 58 | 58 | 59 (+1, better) | 60 (+1, better) | 60 |
-| planted.found_4k | higher is better | 56 | 56 | 56 | 56 | 56 | 57 (+1, better) | 58 (+1, better) | 58 |
-| planted.line_sum_4k | information only | 630 | 630 | 630 | 628 (-2) | 628 | 635 (+7) | 593 (-42) | 593 |
-| permuted.false_full | lower is better | 100 | 100 | 100 | 86 (-14, better) | 86 | 39 (-47, better) | 39 | 39 |
-| permuted.false_4k | lower is better | 48 | 48 | 48 | 46 (-2, better) | 46 | 22 (-24, better) | 22 | 22 |
-| permuted.false_full_target | lower is better | 51 | 51 | 51 | 47 (-4, better) | 47 | 17 (-30, better) | 17 | 17 |
-| permuted.false_4k_target | lower is better | 30 | 30 | 30 | 28 (-2, better) | 28 | 10 (-18, better) | 10 | 10 |
-| permuted.findings_full | information only | 318 | 318 | 318 | 304 (-14) | 304 | 257 (-47) | 215 (-42) | 215 |
-| invariance.reverse | lower is better | 199 | 200 (+1, worse) | 200 | 197 (-3, better) | 185 (-12, better) | 87 (-98, better) | 91 (+4, worse) | 91 |
-| invariance.row_shuffle | lower is better | 106 | 106 | 106 | 105 (-1, better) | 98 (-7, better) | 102 (+4, worse) | 96 (-6, better) | 96 |
+| planted.found_full | higher is better | 58 | 58 | 58 | 58 | 59 (+1, better) | 60 (+1, better) | 60 | 60 |
+| planted.found_4k | higher is better | 56 | 56 | 56 | 56 | 57 (+1, better) | 58 (+1, better) | 58 | 58 |
+| planted.line_sum_4k | information only | 630 | 630 | 628 (-2) | 628 | 635 (+7) | 593 (-42) | 593 | 592 (-1) |
+| permuted.false_full | lower is better | 100 | 100 | 86 (-14, better) | 86 | 39 (-47, better) | 39 | 39 | 39 |
+| permuted.false_4k | lower is better | 48 | 48 | 46 (-2, better) | 46 | 22 (-24, better) | 22 | 22 | 22 |
+| permuted.false_full_target | lower is better | 51 | 51 | 47 (-4, better) | 47 | 17 (-30, better) | 17 | 17 | 17 |
+| permuted.false_4k_target | lower is better | 30 | 30 | 28 (-2, better) | 28 | 10 (-18, better) | 10 | 10 | 10 |
+| permuted.findings_full | information only | 318 | 318 | 304 (-14) | 304 | 257 (-47) | 215 (-42) | 215 | 215 |
+| invariance.reverse | lower is better | 200 (+1, worse) | 200 | 197 (-3, better) | 185 (-12, better) | 87 (-98, better) | 91 (+4, worse) | 91 | 91 |
+| invariance.row_shuffle | lower is better | 106 | 106 | 105 (-1, better) | 98 (-7, better) | 102 (+4, worse) | 96 (-6, better) | 96 | 96 |
 | invariance.rename | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| invariance.noise | lower is better | 29 | 29 | 29 | 30 (+1, worse) | 30 | 40 (+10, worse) | 52 (+12, worse) | 52 |
-| invariance.scale | lower is better | 2 | 2 | 2 | 2 | 2 | 1 (-1, better) | 1 | 1 |
-| invariance.total | lower is better | 336 | 337 (+1, worse) | 337 | 334 (-3, better) | 315 (-19, better) | 230 (-85, better) | 240 (+10, worse) | 240 |
+| invariance.noise | lower is better | 29 | 29 | 30 (+1, worse) | 30 | 40 (+10, worse) | 52 (+12, worse) | 52 | 52 |
+| invariance.scale | lower is better | 2 | 2 | 2 | 2 | 1 (-1, better) | 1 | 1 | 1 |
+| invariance.total | lower is better | 337 (+1, worse) | 337 | 334 (-3, better) | 315 (-19, better) | 230 (-85, better) | 240 (+10, worse) | 240 | 240 |
 | reference.check_failed | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | reference.must_total | information only | 19 | 19 | 19 | 19 | 19 | 19 | 19 | 19 |
-| reference.must_4k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 15 (-1, worse) | 15 |
+| reference.must_4k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 15 (-1, worse) | 15 | 15 |
 | reference.must_8k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 16 | 16 |
 | reference.must_full_default | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_4k_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_8k_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_full_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.should_total | information only | 45 | 45 | 45 | 45 | 45 | 45 | 45 | 45 |
-| reference.should_4k_default | higher is better | 29 | 29 | 29 | 31 (+2, better) | 31 | 32 (+1, better) | 33 (+1, better) | 33 |
-| reference.should_8k_default | higher is better | 36 | 36 | 36 | 36 | 36 | 35 (-1, worse) | 35 | 35 |
-| reference.should_full_default | higher is better | 37 | 37 | 37 | 38 (+1, better) | 38 | 37 (-1, worse) | 37 | 37 |
-| reference.should_4k_target | higher is better | 18 | 18 | 18 | 19 (+1, better) | 20 (+1, better) | 20 | 21 (+1, better) | 21 |
-| reference.should_8k_target | higher is better | 23 | 23 | 23 | 23 | 24 (+1, better) | 23 (-1, worse) | 23 | 23 |
-| reference.should_full_target | higher is better | 24 | 24 | 24 | 24 | 24 | 23 (-1, worse) | 23 | 23 |
+| reference.should_4k_default | higher is better | 29 | 29 | 31 (+2, better) | 31 | 32 (+1, better) | 33 (+1, better) | 33 | 33 |
+| reference.should_8k_default | higher is better | 36 | 36 | 36 | 36 | 35 (-1, worse) | 35 | 35 | 35 |
+| reference.should_full_default | higher is better | 37 | 37 | 38 (+1, better) | 38 | 37 (-1, worse) | 37 | 37 | 37 |
+| reference.should_4k_target | higher is better | 18 | 18 | 19 (+1, better) | 20 (+1, better) | 20 | 21 (+1, better) | 21 | 21 |
+| reference.should_8k_target | higher is better | 23 | 23 | 23 | 24 (+1, better) | 23 (-1, worse) | 23 | 23 | 23 |
+| reference.should_full_target | higher is better | 24 | 24 | 24 | 24 | 23 (-1, worse) | 23 | 23 | 23 |
 | reference.must_not_total | information only | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
-| reference.must_not_4k_default | lower is better | 8 | 8 | 8 | 0 (-8, better) | 0 | 0 | 0 | 0 |
-| reference.must_not_8k_default | lower is better | 18 | 18 | 18 | 1 (-17, better) | 1 | 0 (-1, better) | 0 | 0 |
-| reference.must_not_full_default | lower is better | 81 | 81 | 81 | 22 (-59, better) | 22 | 0 (-22, better) | 0 | 0 |
-| reference.must_not_4k_target | lower is better | 3 | 3 | 3 | 0 (-3, better) | 0 | 0 | 0 | 0 |
-| reference.must_not_8k_target | lower is better | 16 | 16 | 16 | 1 (-15, better) | 1 | 0 (-1, better) | 0 | 0 |
-| reference.must_not_full_target | lower is better | 60 | 60 | 60 | 14 (-46, better) | 14 | 0 (-14, better) | 0 | 0 |
+| reference.must_not_4k_default | lower is better | 8 | 8 | 0 (-8, better) | 0 | 0 | 0 | 0 | 0 |
+| reference.must_not_8k_default | lower is better | 18 | 18 | 1 (-17, better) | 1 | 0 (-1, better) | 0 | 0 | 0 |
+| reference.must_not_full_default | lower is better | 81 | 81 | 22 (-59, better) | 22 | 0 (-22, better) | 0 | 0 | 0 |
+| reference.must_not_4k_target | lower is better | 3 | 3 | 0 (-3, better) | 0 | 0 | 0 | 0 | 0 |
+| reference.must_not_8k_target | lower is better | 16 | 16 | 1 (-15, better) | 1 | 0 (-1, better) | 0 | 0 | 0 |
+| reference.must_not_full_target | lower is better | 60 | 60 | 14 (-46, better) | 14 | 0 (-14, better) | 0 | 0 | 0 |
 | redundancy.repeated_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_default | information only | 272 | 272 | 272 | 271 (-1) | 272 (+1) | 269 (-3) | 249 (-20) | 249 |
-| redundancy.finding_permille_default | higher is better | 16636 | 16636 | 16636 | 16631 (-5, worse) | 16632 (+1, better) | 16518 (-114, worse) | 15959 (-559, worse) | 15959 |
+| redundancy.finding_lines_default | information only | 272 | 272 | 271 (-1) | 272 (+1) | 269 (-3) | 249 (-20) | 249 | 249 |
+| redundancy.finding_permille_default | higher is better | 16636 | 16636 | 16631 (-5, worse) | 16632 (+1, better) | 16518 (-114, worse) | 15959 (-559, worse) | 15959 | 15959 |
 | redundancy.long_decimals_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.repeated_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_target | information only | 193 | 193 | 193 | 195 (+2) | 193 (-2) | 191 (-2) | 180 (-11) | 180 |
-| redundancy.finding_permille_target | higher is better | 9406 | 9406 | 9406 | 9405 (-1, worse) | 9405 | 9386 (-19, worse) | 9388 (+2, better) | 9388 |
+| redundancy.finding_lines_target | information only | 193 | 193 | 195 (+2) | 193 (-2) | 191 (-2) | 180 (-11) | 180 | 180 |
+| redundancy.finding_permille_target | higher is better | 9406 | 9406 | 9405 (-1, worse) | 9405 | 9386 (-19, worse) | 9388 (+2, better) | 9388 | 9387 (-1, worse) |
 | redundancy.long_decimals_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.mismatch | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.error | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| truth.ok | information only | 907 | 907 | 907 | 902 (-5) | 902 | 868 (-34) | 860 (-8) | 860 |
-| truth.not_checkable | information only | 1524 | 1537 (+13) | 1537 | 1508 (-29) | 1505 (-3) | 1388 (-117) | 1329 (-59) | 1329 |
-| cost.profile_seconds | lower is better | 11.688 (+0.186) | 10.95 | 10.752 (-0.198) | 9.663 (-1.089) | 10.53 | 10.82 | 10.846 (+0.026) | 10.883 (+0.037) |
-| cost.json_chars | information only | 3877987 | 3905682 (+27695) | 3905682 | 3856558 (-49124) | 3845449 (-11109) | 3587335 (-258114) | 3611452 (+24117) | 3611452 |
-| cost.findings | information only | 1203 | 1215 (+12) | 1215 | 1204 (-11) | 1201 (-3) | 1097 (-104) | 1050 (-47) | 1050 |
+| truth.ok | information only | 907 | 907 | 902 (-5) | 902 | 868 (-34) | 860 (-8) | 860 | 860 |
+| truth.not_checkable | information only | 1537 (+13) | 1537 | 1508 (-29) | 1505 (-3) | 1388 (-117) | 1329 (-59) | 1329 | 1329 |
+| cost.profile_seconds | lower is better | 10.95 | 10.752 (-0.198) | 9.663 (-1.089) | 10.53 | 10.82 | 10.846 (+0.026) | 10.883 (+0.037) | 10.79 (-0.093) |
+| cost.json_chars | information only | 3905682 (+27695) | 3905682 | 3856558 (-49124) | 3845449 (-11109) | 3587335 (-258114) | 3611452 (+24117) | 3611452 | 3611452 |
+| cost.findings | information only | 1215 (+12) | 1215 | 1204 (-11) | 1201 (-3) | 1097 (-104) | 1050 (-47) | 1050 | 1050 |
 | weighted.must_total | information only | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.must_4k | higher is better | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
-| weighted.must_8k | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 3 (-1, worse) | 3 |
+| weighted.must_8k | higher is better | 4 | 4 | 4 | 4 | 4 | 3 (-1, worse) | 3 | 3 |
 | weighted.must_full | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.should_total | information only | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_4k | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_8k | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_full | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| weighted.weighted_findings | information only | 15 | 15 | 15 | 19 (+4) | 19 | 19 | 20 (+1) | 20 |
+| weighted.weighted_findings | information only | 15 | 15 | 19 (+4) | 19 | 19 | 20 (+1) | 20 | 20 |
 
 ## Latest scorecard per dataset
 
 | dataset | kind | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 26 | 0 | 0 | 1.648 |
-| bank-marketing | tabular, mixed types | 3 | 1 | 2 | 0 | 0 | 18 | 0 | 0 | 1.832 |
+| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 26 | 0 | 0 | 1.634 |
+| bank-marketing | tabular, mixed types | 3 | 1 | 2 | 0 | 0 | 18 | 0 | 0 | 1.824 |
 | abalone | tabular, correlated measures | 5 | 3 | 3 | 0 | 0 | 5 | 0 | 0 | 0.101 |
-| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 2 | 0 | 0 | 0 | 0.819 |
-| metro-interstate-traffic | hourly time series | 5 | - | - | - | 2 | 6 | 0 | 0 | 1.439 |
-| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 10 | 0 | 0 | 0.458 |
-| absenteeism-at-work | small business table | 2 | - | - | - | 2 | 54 | 0 | 0 | 0.156 |
-| hospital-dha | wide numeric, 64 columns | 4 | - | - | - | 0 | 16 | 0 | 0 | 0.596 |
-| congressional-voting | categorical votes | 1 | - | - | - | 2 | 49 | 0 | 0 | 0.046 |
-| adventureworks | sales orders | 0 | - | - | - | 6 | 39 | 0 | 0 | 2.057 |
-| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.07 |
-| state-unemployment | wide time series, one column per state | 0 | - | - | - | 4 | 6 | 0 | 0 | 1.121 |
-| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0.105 |
-| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 10 | 0 | 0 | 0.131 |
-| soybean (held out) | categorical agronomy table | 0 | - | - | - | 0 | 37 | 0 | 0 | 0.188 |
-| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 53 | 0 | 0 | 0.185 |
-| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 3 | 37 | 0 | 0 | 0.384 |
+| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 2 | 0 | 0 | 0 | 0.817 |
+| metro-interstate-traffic | hourly time series | 5 | - | - | - | 2 | 6 | 0 | 0 | 1.409 |
+| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 10 | 0 | 0 | 0.463 |
+| absenteeism-at-work | small business table | 2 | - | - | - | 2 | 54 | 0 | 0 | 0.155 |
+| hospital-dha | wide numeric, 64 columns | 4 | - | - | - | 0 | 16 | 0 | 0 | 0.592 |
+| congressional-voting | categorical votes | 1 | - | - | - | 2 | 49 | 0 | 0 | 0.045 |
+| adventureworks | sales orders | 0 | - | - | - | 6 | 39 | 0 | 0 | 2.048 |
+| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.069 |
+| state-unemployment | wide time series, one column per state | 0 | - | - | - | 4 | 6 | 0 | 0 | 1.105 |
+| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0.101 |
+| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 10 | 0 | 0 | 0.129 |
+| soybean (held out) | categorical agronomy table | 0 | - | - | - | 0 | 37 | 0 | 0 | 0.192 |
+| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 53 | 0 | 0 | 0.181 |
+| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 3 | 37 | 0 | 0 | 0.378 |
 | gse15258-expression (held out) | wide table, 86 samples x 5,006 columns | - | 0 | 0 | 0 | - | - | - | - | - |
-| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.139 |
-| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 2 | 0 | 0 | 0.107 |
-| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0.029 |
-| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.077 |
-| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.019 |
-| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.025 |
-| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0.011 |
+| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.137 |
+| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 2 | 0 | 0 | 0.105 |
+| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0.028 |
+| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.075 |
+| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.018 |
+| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.024 |
+| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0.01 |
 | weighted_noise | generated control: independent noise weight | 4 | - | - | - | 0 | 0 | 0 | 0 | 0.039 |
 | weighted_large_cell | generated control: merely large cell | 4 | - | - | - | 0 | 1 | 0 | 0 | 0.025 |
 
@@ -196,6 +200,7 @@ These datasets are scored and left out of the pass/fail comparison. A gain on th
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-18 | `3e45788` | Merge pull request #451 from fcela/fix/446-shared-basis | 9 | 4 | 3 | 0 | 8 | 139 | 0 | 0 | 0.914 (-0.01) |
 | 2026-11-18 | `df24a40` | Merge pull request #447 from fcela/docs/381-capability-map | 9 | 4 | 3 | 0 | 8 | 139 | 0 | 0 | 0.924 (+0.008) |
 | 2026-11-18 | `79208eb` | State how targets move, give models the calendar, drop vacuous and mi… | 9 | 4 | 3 | 0 | 8 (+1, worse) | 139 (+19, worse) | 0 | 0 | 0.916 (+0.017) |
 | 2026-11-18 | `e3a2c9c` | Merge pull request #444 from fcela/fix/374-steps-3-5 | 9 (+2, better) | 4 | 3 | 0 | 7 (-9, better) | 120 (-31, better) | 0 | 0 | 0.899 |
