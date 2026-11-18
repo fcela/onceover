@@ -22,8 +22,18 @@ pub struct BreaksConfig {
     /// Minimum number of observations in each segment around a break.
     pub min_segment: usize,
     /// Minimum gain on training data to accept a candidate break.
+    /// Calibrated with `min_holdout_gain` on planted breaks and
+    /// break-free controls (docs/benchmarks/2026-11-17-breaks-calibration.md):
+    /// the detection frontier is set by the holdout bar, and the
+    /// train bar's measured role is limiting recursion into noise
+    /// splits on short series.
     pub min_train_gain: f64,
     /// Minimum gain on holdout data to accept a candidate break.
+    /// The binding acceptance bar: at the previous 0.15, planted
+    /// level shifts of 0.75 sigma and variance doublings on
+    /// 2,000-point series were almost never stated; 0.10 states
+    /// them while break-free iid, seasonal, and AR(0.5) series
+    /// stay silent (same calibration record).
     pub min_holdout_gain: f64,
     /// Maximum number of grouping columns considered.
     pub max_groups: usize,
@@ -48,8 +58,8 @@ impl Default for BreaksConfig {
             series_cap: 16,
             max_breaks: 3,
             min_segment: 30,
-            min_train_gain: 0.10,
-            min_holdout_gain: 0.15,
+            min_train_gain: 0.075,
+            min_holdout_gain: 0.10,
             max_groups: 2,
             max_group_levels: 8,
             min_group_rows: 60,
@@ -1576,6 +1586,163 @@ mod tests {
         assert!(level_breaks(&[1.0, 2.0, 3.0], &cfg).is_empty());
         assert!(variance_break(&[1.0, 2.0], &cfg).is_none());
         assert!(trend_break(&[1.0, 2.0], &[0.0], &cfg).is_none());
+    }
+
+    // -------------------------------------------------------------
+    // Calibration regression tests (issue #361; record:
+    // docs/benchmarks/2026-11-17-breaks-calibration.md). The
+    // default bars (train 0.075, holdout 0.10, segment 30) were
+    // set from a planted-break sweep at 16-64 series per cell.
+    // These tests pin the two ends of that sweep at the shipped
+    // defaults: planted breaks the previous bars (0.10 / 0.15)
+    // almost never stated, and break-free shapes that stayed
+    // silent at every swept cell.
+
+    fn single_series_table(values: &[f64]) -> TypedTable<'static> {
+        let n = values.len();
+        TypedTable {
+            n,
+            names: vec!["day".to_string(), "value".to_string()],
+            dtypes: vec!["float64".to_string(); 2],
+            cols: vec![
+                TypedCol::Date {
+                    vals: (0..n).map(|d| Some(d as i32)).collect(),
+                },
+                TypedCol::F64 {
+                    vals: values.iter().map(|v| Some(*v)).collect::<Vec<_>>().into(),
+                },
+            ],
+        }
+    }
+
+    fn stated_breaks(values: &[f64]) -> Vec<(String, i64)> {
+        let table = single_series_table(values);
+        let (findings, _coverage) =
+            profile_breaks(&table, &[], &BreaksConfig::default(), None, false);
+        findings
+            .iter()
+            .filter_map(|f| {
+                let kind = f.finding_type.as_deref()?;
+                if !matches!(kind, "level_shift" | "trend_change" | "variance_change") {
+                    return None;
+                }
+                let bp = f
+                    .evidence
+                    .first()
+                    .and_then(|e| e.metrics.get("breakpoint_raw"))
+                    .and_then(|v| v.as_i64())?;
+                Some((kind.to_string(), bp))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn default_bars_keep_break_free_shapes_silent() {
+        // iid noise at panel length.
+        let mut rng = Lcg(4242);
+        let iid: Vec<f64> = (0..609).map(|_| rng.noise(2.0)).collect();
+        assert!(
+            stated_breaks(&iid).is_empty(),
+            "iid: {:?}",
+            stated_breaks(&iid)
+        );
+        // A period-12 seasonal of amplitude 1 sigma over noise.
+        let mut rng = Lcg(777);
+        let seasonal: Vec<f64> = (0..609)
+            .map(|i| (2.0 * std::f64::consts::PI * (i % 12) as f64 / 12.0).sin() + rng.noise(2.0))
+            .collect();
+        assert!(
+            stated_breaks(&seasonal).is_empty(),
+            "seasonal: {:?}",
+            stated_breaks(&seasonal)
+        );
+        // AR(1) with rho = 0.5.
+        let mut rng = Lcg(31337);
+        let mut x = 0.0;
+        let ar: Vec<f64> = (0..609)
+            .map(|_| {
+                x = 0.5 * x + rng.noise(2.0);
+                x
+            })
+            .collect();
+        assert!(
+            stated_breaks(&ar).is_empty(),
+            "ar(0.5): {:?}",
+            stated_breaks(&ar)
+        );
+    }
+
+    #[test]
+    fn default_bars_state_variance_doubling_on_long_series() {
+        // Sigma doubles at the midpoint of a 2,000-point series.
+        // At the previous bars this was stated in 0 of 16 sweep
+        // series; at the calibrated bars in 13 of 16.
+        let mut rng = Lcg(2027);
+        let values: Vec<f64> = (0..2000)
+            .map(|i| {
+                if i < 1000 {
+                    rng.noise(2.0)
+                } else {
+                    rng.noise(4.0)
+                }
+            })
+            .collect();
+        let stated = stated_breaks(&values);
+        assert!(
+            stated
+                .iter()
+                .any(|(kind, bp)| kind == "variance_change" && (*bp - 1000).abs() <= 100),
+            "stated: {stated:?}"
+        );
+    }
+
+    #[test]
+    fn default_bars_state_three_quarter_sigma_level_shift_on_long_series() {
+        // A 0.75-sigma level shift at the midpoint of a
+        // 2,000-point series. At the previous bars this was
+        // stated in 1 of 16 sweep series; at the calibrated bars
+        // in 10 of 16.
+        let mut rng = Lcg(909);
+        let values: Vec<f64> = (0..2000)
+            .map(|i| {
+                if i < 1000 {
+                    rng.noise(2.0)
+                } else {
+                    0.75 + rng.noise(2.0)
+                }
+            })
+            .collect();
+        let stated = stated_breaks(&values);
+        assert!(
+            stated
+                .iter()
+                .any(|(kind, bp)| kind == "level_shift" && (*bp - 1000).abs() <= 100),
+            "stated: {stated:?}"
+        );
+    }
+
+    #[test]
+    fn default_bars_do_not_break_ar09_long_series() {
+        // AR(1) with rho = 0.9 and no planted break, 2,000
+        // points. The previous bars stated a level shift on
+        // about a third of such series in the sweep; the
+        // calibrated bars on about 1 in 32. (Stronger
+        // autocorrelation still defeats the interleaved holdout
+        // at any bar setting; the sweep record carries the
+        // rates.)
+        let mut rng = Lcg(5150);
+        let mut x = 0.0;
+        let values: Vec<f64> = (0..2000)
+            .map(|_| {
+                x = 0.9 * x + rng.noise(2.0);
+                x
+            })
+            .collect();
+        let stated = stated_breaks(&values);
+        assert!(
+            !stated.iter().any(|(kind, _)| kind == "level_shift"),
+            "stated: {stated:?}"
+        );
     }
 }
 
