@@ -389,11 +389,23 @@ struct ColumnScreen {
     total_pairs: usize,
 }
 
+/// What the cap pre-screen computed for one column, when a caller
+/// asks for it (benchmark attribution): the column's strongest
+/// pairwise normalized mutual information, the partner that produced
+/// it, and whether the column survived the cap.
+#[allow(dead_code)]
+struct ScreenTrace {
+    scores: Vec<f64>,
+    partners: Vec<usize>,
+    kept: Vec<bool>,
+}
+
 fn select_columns(
     cols: Vec<ViewCol>,
     search_pos: &[usize],
     cfg: &ViewsConfig,
     work: &mut WorkBudget,
+    screen: Option<&mut ScreenTrace>,
 ) -> (Vec<ViewCol>, Vec<String>, Option<ColumnScreen>) {
     if cols.len() <= cfg.max_columns {
         return (cols, Vec::new(), None);
@@ -431,6 +443,7 @@ fn select_columns(
     let total_pairs = (c * (c - 1) / 2) as u64;
     let stride = total_pairs.div_ceil(SCREEN_PAIR_LIMIT).max(1);
     let mut best = vec![0.0f64; c];
+    let mut partner = vec![usize::MAX; c];
     let mut pair_idx = 0u64;
     let mut pairs_visited = 0;
     'outer: for i in 0..c {
@@ -451,9 +464,11 @@ fn select_columns(
             let mi = mutual_information(&codes[i], &codes[j]);
             if mi > best[i] {
                 best[i] = mi;
+                partner[i] = j;
             }
             if mi > best[j] {
                 best[j] = mi;
+                partner[j] = i;
             }
         }
     }
@@ -476,6 +491,11 @@ fn select_columns(
     let mut keep = vec![false; c];
     for &i in order.iter().take(cfg.max_columns) {
         keep[i] = true;
+    }
+    if let Some(t) = screen {
+        t.scores = best.clone();
+        t.partners = partner;
+        t.kept = keep.clone();
     }
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
@@ -961,6 +981,64 @@ struct SearchStats {
     merge_cap_hit: bool,
 }
 
+/// Why the merge loop stopped.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StopReason {
+    /// Every screened pair was visited.
+    Exhausted,
+    /// The merge-attempt cap was reached.
+    AttemptsCap,
+    /// The shared work budget was hit.
+    WorkBudget,
+}
+
+/// What happened to one screened column pair in the merge loop.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PairOutcome {
+    /// The loop ended before this pair was visited.
+    NotVisited,
+    /// The pair was visited with both columns already in one view.
+    AlreadySameView,
+    /// The merge was evaluated and accepted.
+    Merged,
+    /// The merge was evaluated; the joint clustering had one group.
+    RefusedSingleCluster,
+    /// The merge was evaluated; the score delta was not positive.
+    RefusedScore,
+    /// The merge evaluation was cut short by the work budget.
+    BudgetDuringEval,
+}
+
+/// One screened pair's trace, recorded when a caller asks for it
+/// (benchmark attribution): the pair's pre-screen gain, its rank in
+/// the merge order, and what the merge loop did with it. For refused
+/// merges, `delta` is the score delta the merge failed to push past
+/// zero and `merged_groups` the joint clustering's group count.
+#[allow(dead_code)]
+struct PairTrace {
+    i: usize,
+    j: usize,
+    screen_gain: f64,
+    rank: usize,
+    outcome: PairOutcome,
+    merged_groups: Option<usize>,
+    delta: Option<f64>,
+}
+
+/// The search's trace: singleton cluster counts, every screened
+/// pair's outcome, and why the merge loop stopped.
+#[allow(dead_code)]
+struct SearchTrace {
+    single_groups: Vec<usize>,
+    screened_pairs: usize,
+    total_pairs: usize,
+    pairs: Vec<PairTrace>,
+    attempts: usize,
+    stop: StopReason,
+}
+
 /// Greedy view discovery: singleton clusterings, pair pre-screen by
 /// shared-clustering gain, then merges in pre-screen order.
 fn views_search(
@@ -968,6 +1046,16 @@ fn views_search(
     search_rows: &[usize],
     cfg: &ViewsConfig,
     work: &mut WorkBudget,
+) -> (Vec<ViewState>, SearchStats) {
+    views_search_traced(cols, search_rows, cfg, work, None)
+}
+
+fn views_search_traced(
+    cols: &[ViewCol],
+    search_rows: &[usize],
+    cfg: &ViewsConfig,
+    work: &mut WorkBudget,
+    mut trace: Option<&mut SearchTrace>,
 ) -> (Vec<ViewState>, SearchStats) {
     let n_search = search_rows.len();
     let c = cols.len();
@@ -987,6 +1075,10 @@ fn views_search(
             break;
         }
     }
+    if let Some(t) = trace.as_deref_mut() {
+        t.single_groups = single_groups.iter().map(|g| g.len()).collect();
+        t.total_pairs = c * c.saturating_sub(1) / 2;
+    }
     let mut views: Vec<ViewState> = (0..single_groups.len())
         .map(|i| ViewState {
             cols: vec![i],
@@ -996,6 +1088,13 @@ fn views_search(
         })
         .collect();
     if work.hit || c < 2 {
+        if let Some(t) = trace {
+            t.stop = if work.hit {
+                StopReason::WorkBudget
+            } else {
+                StopReason::Exhausted
+            };
+        }
         return (views, stats);
     }
     // Pair pre-screen.
@@ -1018,20 +1117,42 @@ fn views_search(
             .then_with(|| a.1.cmp(&b.1))
             .then_with(|| a.2.cmp(&b.2))
     });
+    if let Some(t) = trace.as_deref_mut() {
+        t.screened_pairs = pairs.len();
+        t.pairs = pairs
+            .iter()
+            .enumerate()
+            .map(|(rank, &(g, i, j))| PairTrace {
+                i,
+                j,
+                screen_gain: g,
+                rank,
+                outcome: PairOutcome::NotVisited,
+                merged_groups: None,
+                delta: None,
+            })
+            .collect();
+    }
     // Merge loop.
     let mut col_to_view: Vec<usize> = (0..c).collect();
     let mut attempts = 0usize;
-    for (_, i, j) in pairs {
+    let mut stop = StopReason::Exhausted;
+    for (rank, &(_, i, j)) in pairs.iter().enumerate() {
         if work.hit {
+            stop = StopReason::WorkBudget;
             break;
         }
         let vi = col_to_view[i];
         let vj = col_to_view[j];
         if vi == vj {
+            if let Some(t) = trace.as_deref_mut() {
+                t.pairs[rank].outcome = PairOutcome::AlreadySameView;
+            }
             continue;
         }
         if attempts >= cfg.tried_merges_cap {
             stats.merge_cap_hit = true;
+            stop = StopReason::AttemptsCap;
             break;
         }
         attempts += 1;
@@ -1040,6 +1161,11 @@ fn views_search(
         combined.sort_unstable();
         let (mgroups, mscore) = phase_b(cols, &combined, search_rows, cfg, work);
         if work.hit {
+            if let Some(t) = trace.as_deref_mut() {
+                t.pairs[rank].outcome = PairOutcome::BudgetDuringEval;
+                t.pairs[rank].merged_groups = Some(mgroups.len());
+            }
+            stop = StopReason::WorkBudget;
             break;
         }
         // A merged view with a single cluster carries no partition
@@ -1047,10 +1173,21 @@ fn views_search(
         // pure penalty savings (2 * gamma * ln n) and report a vacuous
         // dependence block. Merges must earn a real clustering.
         if mgroups.len() < 2 {
+            if let Some(t) = trace.as_deref_mut() {
+                t.pairs[rank].outcome = PairOutcome::RefusedSingleCluster;
+                t.pairs[rank].merged_groups = Some(mgroups.len());
+            }
             continue;
         }
         let delta = mscore - views[vi].score - views[vj].score + penalty;
+        if let Some(t) = trace.as_deref_mut() {
+            t.pairs[rank].merged_groups = Some(mgroups.len());
+            t.pairs[rank].delta = Some(delta);
+        }
         if delta > 0.0 {
+            if let Some(t) = trace.as_deref_mut() {
+                t.pairs[rank].outcome = PairOutcome::Merged;
+            }
             let gain = views[vi].merge_gain + views[vj].merge_gain + delta;
             let (lo, hi) = if vi < vj { (vi, vj) } else { (vj, vi) };
             views[lo] = ViewState {
@@ -1066,9 +1203,15 @@ fn views_search(
                     col_to_view[col] = vidx;
                 }
             }
+        } else if let Some(t) = trace.as_deref_mut() {
+            t.pairs[rank].outcome = PairOutcome::RefusedScore;
         }
     }
     stats.merge_attempts = attempts;
+    if let Some(t) = trace {
+        t.attempts = attempts;
+        t.stop = stop;
+    }
     (views, stats)
 }
 
@@ -1222,7 +1365,8 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         hit: false,
     };
     let n_eligible = all_cols.len();
-    let (cols, cap_dropped, prescreened) = select_columns(all_cols, &search_pos, cfg, &mut work);
+    let (cols, cap_dropped, prescreened) =
+        select_columns(all_cols, &search_pos, cfg, &mut work, None);
     let cap_dropped_names = cap_dropped.clone();
     dropped.extend(cap_dropped);
     let (views, search_stats) = views_search(&cols, &search_pos, cfg, &mut work);
@@ -2821,3 +2965,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod views_lab;

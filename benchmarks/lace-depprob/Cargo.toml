@@ -1,0 +1,16 @@
+[package]
+name = "lace-depprob"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+lace = "=0.9.1"
+rand = "0.9"
+rand_xoshiro = "0.7"
+serde_json = "1"
+
+[workspace]
+
+[profile.release]
+debug = false
