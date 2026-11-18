@@ -100,8 +100,11 @@ def test_notebook_selection_produces_the_findings_the_notebook_reads():
             inputs=["quantity"], target="double_quantity")
     ex.find(report, "dependencies", subtype="predictive", target="churn",
             inputs=["tenure_months"])
-    ex.find(report, "dependencies", subtype="predictive", form="piecewise_linear",
-            target="line_total")
+    ex.find(report, "dependencies", subtype="arithmetic_identity", target="line_total")
+    # line_total is the product of quantity and unit_price: no model
+    # restates it from its factors (issue #374).
+    assert not any(f["type"] == "predictive" and f["subject"].get("target") == "line_total"
+                   for f in report.findings)
     ex.find(report, "formats", column="phone")
 
     # The regression assertion: the date-gap finding the notebook's

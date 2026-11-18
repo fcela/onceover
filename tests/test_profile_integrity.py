@@ -116,7 +116,10 @@ def test_pivot_rules_keep_their_wide_population_and_validation():
     wide = pl.DataFrame({
         "entity": [f"E{i}" for i in range(n)],
         "a": [float(i % 2) for i in range(n)],
-        "b": [float(i % 2) for i in range(n)],
+        # b follows a except on every 20th row: two identical columns
+        # are one affine identity, whose rules would restate it and
+        # are not stated (issue #374).
+        "b": [float(i % 2) if i % 20 else float(1 - i % 2) for i in range(n)],
         "c": [100.0 + (i * 37 % 251) * 0.31 for i in range(n)],
     })
     long = wide.unpivot(index="entity", variable_name="indicator", value_name="value")

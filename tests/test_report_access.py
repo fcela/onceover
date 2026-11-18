@@ -81,16 +81,16 @@ def test_to_json_budgeted():
     report = _panel_report()
     total = len(report.findings)
     assert total > 3
-    # Full JSON for this report is ~19k chars; 9000 forces findings
+    # Full JSON for this report is ~34k chars; 10,000 forces findings
     # to collapse into the index and column cards to names.
-    out = report.to_json(max_chars=9000)
-    assert len(out) <= 9000
+    out = report.to_json(max_chars=10_000)
+    assert len(out) <= 10_000
     view = json.loads(out)
     # The frame model is part of the report record, not an optional
     # rendering extra: a budgeted view must keep it.
     assert view["frame"] == report.data["frame"]
     budget = view["budget"]
-    assert budget["max_chars"] == 9000
+    assert budget["max_chars"] == 10_000
     assert budget["columns"] == "names_only"
     assert view["columns"] == {}
     assert view["column_names"] == list(report.columns.keys())
