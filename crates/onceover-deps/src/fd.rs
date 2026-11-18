@@ -57,6 +57,8 @@ pub struct FdConfig {
     /// Smaller pool for level-3 LHS triples (deep tier).
     pub lhs3_cap: usize,
     /// Row cap for FD verification (stratified sampling beyond it).
+    /// When it binds, a zero-violation mapping is a sample-scoped
+    /// candidate, not a full-table FD; the claim says so.
     pub row_cap: usize,
     /// Max LHS set size: 2 (standard) or 3 (deep).
     pub max_lhs_size: usize,
@@ -610,7 +612,11 @@ fn fd_finding(
     };
     evidence.insert(
         "method".to_string(),
-        json!(if sampled { "sampled_exact" } else { "exact" }),
+        json!(if sampled {
+            "sampled_candidate"
+        } else {
+            "exact"
+        }),
     );
     // The mapping itself, sampled (see collect_mapping for the caps).
     match collect_mapping(table, rows, lhs, rhs) {
@@ -628,10 +634,20 @@ fn fd_finding(
             );
         }
     }
+    // Full-table exact wording is reserved for full-data verification.
+    // Zero violations on a stratified sample only support a candidate:
+    // the claim names the sample and the population, and the evidence
+    // below carries `sampled` and `population_rows` for the same basis.
     if violations == 0 {
-        Finding::new(
-            Pattern::FunctionalDependency,
-            subject,
+        let claim = if sampled {
+            format!(
+                "On {} sampled rows out of {} rows: {} → {} (candidate: 0 violations in the sample; not verified on the full table)",
+                n_used,
+                table.n,
+                lhs_names.join(", "),
+                rhs_name
+            )
+        } else {
             format!(
                 "{} → {} ({} is a function of {}; 0 violations in {} rows)",
                 lhs_names.join(", "),
@@ -639,7 +655,12 @@ fn fd_finding(
                 rhs_name,
                 lhs_names.join(", "),
                 n_used
-            ),
+            )
+        };
+        Finding::new(
+            Pattern::FunctionalDependency,
+            subject,
+            claim,
             conf,
             // The lower of the breadth score and the reliable
             // fraction of information: where breadth already gives
@@ -662,9 +683,17 @@ fn fd_finding(
     } else {
         let g1 = violations as f64 / n_used as f64;
         evidence.insert("g1".to_string(), json!(g1));
-        Finding::new(
-            Pattern::FunctionalDependency,
-            subject,
+        let claim = if sampled {
+            format!(
+                "On {} sampled rows out of {} rows: {} → {} holds on {:.2}% of the sample ({} violations; not verified on the full table)",
+                n_used,
+                table.n,
+                lhs_names.join(", "),
+                rhs_name,
+                100.0 * (1.0 - g1),
+                violations
+            )
+        } else {
             format!(
                 "{} → {} holds on {:.2}% of rows ({} violations in {} rows)",
                 lhs_names.join(", "),
@@ -672,7 +701,12 @@ fn fd_finding(
                 100.0 * (1.0 - g1),
                 violations,
                 n_used
-            ),
+            )
+        };
+        Finding::new(
+            Pattern::FunctionalDependency,
+            subject,
+            claim,
             conf,
             // Capped by the reliable fraction of information, like
             // the exact score: an approximate dependency whose
@@ -967,6 +1001,12 @@ pub fn discover(
         n_eligible_lhs, n_eligible_rhs, screened_pairs, screen_rows.len(), cfg.lhs_cap.min(62), cfg.max_lhs_size,
         rows.len(), if sampled { "stratified sample" } else { "full" },
     );
+    if sampled {
+        cov.push_str(&format!(
+            " of {} rows; sample-verified zero-violation mappings are candidates, not full-table facts",
+            n
+        ));
+    }
     cov.push_str(&format!("; {} exact FDs, {} AFDs{}; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, if out.n_afd_chance + out.n_exact_chance > 0 { format!(" ({} exact more not stated: random pairing would break them fewer than {MIN_CHANCE_VIOLATIONS} times; {} approximate more not stated: reliable fraction of information below {MIN_RFI}, or the same chance bar)", out.n_exact_chance, out.n_afd_chance) } else { String::new() }, cfg.key_pair_cap));
     if triple_targets > 0 {
         cov.push_str(&format!(
@@ -1477,6 +1517,92 @@ mod tests {
         assert!(afd
             .iter()
             .any(|f| f.metrics()["violations"].as_u64() == Some(2)));
+    }
+
+    #[test]
+    fn rare_unsampled_violation_is_not_a_full_table_fd() {
+        // A single determinant group outside the verification sample
+        // breaks key -> code on the full table. The sample sees no
+        // violation, so the claim must be a sample-scoped candidate.
+        let n = 600usize;
+        let cap = 60usize;
+        let sampled = subsample_rows(n, cap);
+        let violation_row = (0..n as u32)
+            .find(|r| !sampled.contains(r))
+            .expect("a 60-row sample of 600 rows leaves unsampled rows")
+            as usize;
+        let key: Vec<i64> = (0..n as i64).map(|i| i % 50).collect();
+        let mut code = key.clone();
+        code[violation_row] = (key[violation_row] + 1) % 50;
+        let df = df! {
+            "key" => key,
+            "code" => code,
+        }
+        .unwrap();
+        let table = extract(&df);
+        let info = info_for(&table);
+        let all_rows: Vec<u32> = (0..n as u32).collect();
+        assert_eq!(verify_fd(&table, &sampled, &[0], 1).1, 0);
+        assert_eq!(verify_fd(&table, &all_rows, &[0], 1).1, 1);
+
+        let cfg = FdConfig {
+            row_cap: cap,
+            ..FdConfig::default()
+        };
+        let out = discover(&table, &info, &cfg, &[]);
+        assert!(out.sampled);
+        let f = out
+            .findings
+            .iter()
+            .find(|f| f.claim.contains("key → code"))
+            .expect("sample-zero FD must be reported");
+        assert!(f.claim.contains("sampled"), "{}", f.claim);
+        assert!(f.claim.contains(&format!("of {n} rows:")), "{}", f.claim);
+        assert!(!f.claim.contains("is a function of"), "{}", f.claim);
+        assert!(
+            f.claim.contains("not verified on the full table"),
+            "{}",
+            f.claim
+        );
+        let m = f.metrics();
+        assert_eq!(m.get("sampled").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            m.get("population_rows").and_then(|v| v.as_u64()),
+            Some(n as u64)
+        );
+        assert_eq!(
+            m.get("method").and_then(|v| v.as_str()),
+            Some("sampled_candidate")
+        );
+        assert_eq!(
+            f.evidence[0].scope.sampling,
+            onceover_report::Sampling::Sample
+        );
+        assert_eq!(f.evidence[0].scope.population_rows, Some(n));
+        assert!(
+            out.coverage.contains("candidates, not full-table facts"),
+            "{}",
+            out.coverage
+        );
+
+        // With the whole table verified, the rare violation is counted.
+        let full_cfg = FdConfig {
+            row_cap: n,
+            ..FdConfig::default()
+        };
+        let full = discover(&table, &info, &full_cfg, &[]);
+        assert!(!full.sampled);
+        let full_f = full
+            .findings
+            .iter()
+            .find(|f| f.claim.contains("key → code"))
+            .expect("the one violation still qualifies as an AFD");
+        assert!(
+            full_f.claim.contains("1 violations in 600 rows"),
+            "{}",
+            full_f.claim
+        );
+        assert!(!full_f.claim.contains("sampled"), "{}", full_f.claim);
     }
 
     #[test]

@@ -474,6 +474,11 @@ results were used during selection. These dimensions replace `confidence`.
 
 An exact comparison on sampled rows is not a full-population guarantee. Inferred
 roles remain inferences even when the supporting counts cover the full dataset.
+When the functional-dependency or duplicate-encodings pass verifies a
+zero-violation mapping on a row sample, the claim calls it a sample-scoped
+candidate, names the sampled and population row counts, and avoids full-table
+exact wording; the evidence carries `sampled: true` and `population_rows` on
+the same basis. Full-data verification keeps the exact wording.
 
 Some finding types carry a bespoke evidence payload in `metrics`: a table
 whose columns are specific to that type, so the claim can be inspected
@@ -1607,11 +1612,14 @@ column's level count, counted on rows where both columns are present (at most
 100,000 rows at standard, 250,000 at deep); candidates are verified on exact
 canonical encodings before a finding is emitted. When the smaller level count
 is at least 0.9 of the larger, the form is `duplicate_encoding` and the
-evidence field `exact` says whether the pairing is one-to-one on every row;
-below that share the form is `rollup`, the subject lists the finer column
-first, and `exceptions` counts the rows breaking the finer-to-coarser mapping
-(for a duplicate encoding, the rows breaking the majority pairing in either
-direction). The advisory's scores (0.62 exact, 0.56 partial, 0.5 rollup) sit
+evidence field `exact` says whether the pairing is one-to-one on every
+verified row; below that share the form is `rollup`, the subject lists the
+finer column first, and `exceptions` counts the rows breaking the
+finer-to-coarser mapping (for a duplicate encoding, the rows breaking the
+majority pairing in either direction). Above the row cap the verified rows
+are a sample: the claim scopes its counts to that sample and names the
+population, with `sampled: true` and `population_rows` in the evidence, so
+"one-to-one on all rows" is stated only after a full-data check. The advisory's scores (0.62 exact, 0.56 partial, 0.5 rollup) sit
 below an exact functional dependency's, so when both describe one pair the
 dependency finding ranks first. The verifier recounts the full correspondence
 for both forms — the levels on each side, the distinct pairs, the rows
