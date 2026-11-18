@@ -22,6 +22,13 @@ Rules:
     present only in the head are listed and not compared.
   - Held-out datasets are listed in their own section and excluded
     from the verdict unless --include-held-out is given.
+  - A metric listed in the ceilings file (default: ceilings.json
+    next to this script) fails whenever the head value is above the
+    entry's limit, whatever the base holds: a ceiling is an absolute
+    target, not a comparison. An entry names a metric, a scope
+    ("total" or a dataset id), a limit and a reason. A ceiling whose
+    metric the head did not measure is listed and does not fail; a
+    head value below the limit is listed so the limit can be lowered.
   - A worse metric listed in the accepted file (default:
     accepted.json next to this script) does not fail the comparison
     while the head value stays within the entry's limit. An entry
@@ -39,6 +46,7 @@ from pathlib import Path
 
 EPS = 1e-6
 ACCEPTED = Path(__file__).parent / "accepted.json"
+CEILINGS = Path(__file__).parent / "ceilings.json"
 DEFAULT_TIME_REL = 0.20
 DEFAULT_TIME_FLOOR = 1.0
 
@@ -147,6 +155,55 @@ def load_accepted(path) -> list[dict]:
     return entries
 
 
+def load_ceilings(path) -> list[dict]:
+    """Entries of the ceilings file; an absent file means none."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    entries = doc.get("ceilings", [])
+    for e in entries:
+        missing = {"metric", "limit", "reason"} - set(e)
+        if missing:
+            raise ValueError(f"ceiling entry {e} lacks {sorted(missing)}")
+        e.setdefault("scope", "total")
+    return entries
+
+
+def head_value(head: dict, metric: str, scope: str, include_held_out: bool):
+    """The head scorecard's value of `component.metric` in a scope, or
+    None when the head did not measure it."""
+    comp, _, name = metric.partition(".")
+    if scope == "total":
+        totals = _merge(head) if include_held_out else head.get("totals", {})
+        return totals.get(comp, {}).get(name)
+    ds = head.get("datasets", {}).get(scope)
+    if not ds or ds.get("status") != "ok":
+        return None
+    res = ds.get("components", {}).get(comp)
+    if not res or res.get("status") != "ok":
+        return None
+    return res.get("metrics", {}).get(name)
+
+
+def check_ceilings(head: dict, entries: list[dict], include_held_out: bool):
+    """(entry, head value, status) per ceiling: status is "above",
+    "at", "below" or "unmeasured"."""
+    out = []
+    for e in entries:
+        v = head_value(head, e["metric"], e["scope"], include_held_out)
+        if v is None:
+            status = "unmeasured"
+        elif v > e["limit"] + EPS:
+            status = "above"
+        elif v < e["limit"] - EPS:
+            status = "below"
+        else:
+            status = "at"
+        out.append((e, v, status))
+    return out
+
+
 def within(spec: dict, head: float, limit: float) -> bool:
     if spec.get("direction") == "higher":
         return head >= limit - EPS
@@ -234,6 +291,8 @@ def main() -> int:
                     help="absolute tolerance in seconds on total time (default 1.0)")
     ap.add_argument("--accepted", default=str(ACCEPTED),
                     help="file of accepted regressions (default: accepted.json next to this script)")
+    ap.add_argument("--ceilings", default=str(CEILINGS),
+                    help="file of absolute ceilings (default: ceilings.json next to this script)")
     ap.add_argument("--include-held-out", action="store_true")
     ap.add_argument("--out", help="also write the markdown here")
     args = ap.parse_args()
@@ -241,8 +300,10 @@ def main() -> int:
         base, head = load(args.base), load(args.head)
         specs = {**base.get("metric_specs", {}), **head.get("metric_specs", {})}
         entries = load_accepted(args.accepted)
+        ceilings = load_ceilings(args.ceilings)
     except (OSError, ValueError, KeyError) as exc:
-        print(f"cannot read scorecards or the accepted file: {exc}", file=sys.stderr)
+        print(f"cannot read scorecards, the accepted file or the ceilings file: {exc}",
+              file=sys.stderr)
         return 2
 
     notes: list[str] = []
@@ -254,11 +315,20 @@ def main() -> int:
     worse = [r for r in rows if r[0] == "worse"]
     improved = [r for r in rows if r[0] == "improved"]
     totals = [r for r in rows if r[1] == "total"]
-    failed = bool(worse or problems)
+    ceiling_rows = check_ceilings(head, ceilings, args.include_held_out)
+    above = [c for c in ceiling_rows if c[2] == "above"]
+    for e, v, status in ceiling_rows:
+        if status == "unmeasured":
+            notes.append(f"ceiling on {e['metric']} ({e['scope']}) not measured by the head scorecard")
+        elif status == "below":
+            notes.append(f"ceiling on {e['metric']} ({e['scope']}): head {fmt(v)} is below the "
+                         f"limit {fmt(e['limit'])}; lower the limit")
+    failed = bool(worse or problems or above)
 
     bp, hp = base.get("provenance", {}), head.get("provenance", {})
     md = ["# Gate comparison", "",
           f"**{'FAIL' if failed else 'PASS'}**: {len(worse) + len(problems)} worse, "
+          f"{len(above)} above ceiling, "
           f"{len(accepted)} worse and accepted, "
           f"{len(improved)} improved, {sum(1 for r in totals if r[0] == 'same')} unchanged totals.", "",
           f"- base: onceover {bp.get('onceover_version')} at {bp.get('commit')}",
@@ -271,6 +341,12 @@ def main() -> int:
         md += ["", "## Failed or missing", ""] + [f"- {p}" for p in problems]
     if worse:
         md += ["", "## Worse", ""] + table(worse)
+    if ceiling_rows:
+        md += ["", "## Ceilings", "",
+               "| metric | scope | head | limit | status | reason |", "|---|---|---:|---:|---|---|"]
+        for e, v, status in ceiling_rows:
+            md.append(f"| {e['metric']} | {e['scope']} | {fmt(v)} | {fmt(e['limit'])} | "
+                      f"{status} | {e['reason']} |")
     if accepted:
         md += ["", "## Worse and accepted", "",
                "| metric | scope | base | head | limit | reason |", "|---|---|---:|---:|---:|---|"]

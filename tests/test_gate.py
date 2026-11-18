@@ -211,3 +211,86 @@ def test_reference_completeness_kind_credits_gaps_not_missingness():
     # the missingness kind requires the missingness category and does
     # not credit a gaps finding
     assert not reference.finding_fits(period, {**st, "kind": "missingness"})
+
+
+def test_must_not_matches_columns_within_and_excluded_types():
+    reference = _reference_module()
+    st = {"columns_within": ["dteday", "yr", "mnth"], "exclude_types": ["value_concentration"]}
+    assert reference.violates(_finding("changes", "level_shift", ["yr", "dteday"]), st)
+    # a column outside the set: not a restatement of the set
+    assert not reference.violates(_finding("changes", "level_shift", ["cnt", "dteday"]), st)
+    # an excluded type is not counted
+    assert not reference.violates(_finding("concentration", "value_concentration", ["yr"]), st)
+    # min_columns
+    assert not reference.violates(_finding("changes", "level_shift", ["yr"]),
+                                  {**st, "min_columns": 2})
+
+
+def test_must_not_effect_below_reads_the_evidence():
+    reference = _reference_module()
+    weak = {**_finding("associations", "statistical", ["a", "b"]),
+            "evidence": [{"metrics": {"pearson": -0.05, "spearman": 0.04, "xi_ab": 0.01}}]}
+    strong = {**weak, "evidence": [{"metrics": {"pearson": 0.05, "cramers_v": 0.3}}]}
+    no_effect = _finding("associations", "statistical", ["a", "b"])
+    st = {"types": ["statistical"], "effect_below": 0.1}
+    assert reference.violates(weak, st)
+    assert not reference.violates(strong, st)
+    assert not reference.violates(no_effect, st)
+
+
+def test_must_not_max_matches_counts_only_the_excess():
+    reference = _reference_module()
+
+    class Prof:
+        findings = [_finding("associations", "level_contrast", ["cnt", "hr"]) for _ in range(5)]
+
+    st = {"columns": ["cnt", "hr"], "types": ["level_contrast"], "max_matches": 1}
+    assert reference.violations_in_full(Prof(), st) == 4
+    assert reference.violations_in_full(Prof(), {**st, "max_matches": 9}) == 0
+
+
+def _ceilings(tmp_path, entries):
+    path = tmp_path / "ceilings.json"
+    path.write_text(json.dumps({"ceilings": entries}))
+    return path
+
+
+def test_ceiling_fails_above_the_limit_even_when_base_is_equal(tmp_path):
+    ceil = _ceilings(tmp_path, [{"metric": "planted.found_4k", "limit": 4, "reason": "target"}])
+    r = compare(card(count=5), card(count=5), tmp_path, "--ceilings", str(ceil))
+    assert r.returncode == 1, r.stdout
+    assert "## Ceilings" in r.stdout and "above" in r.stdout
+
+
+def test_ceiling_passes_at_the_limit_and_notes_a_lower_head(tmp_path):
+    ceil = _ceilings(tmp_path, [{"metric": "planted.found_4k", "limit": 5, "reason": "target"}])
+    assert compare(card(count=5), card(count=5), tmp_path, "--ceilings", str(ceil)).returncode == 0
+    ceil = _ceilings(tmp_path, [{"metric": "truth.mismatch", "limit": 3, "reason": "target"}])
+    r = compare(card(), card(), tmp_path, "--ceilings", str(ceil))
+    assert r.returncode == 0 and "lower the limit" in r.stdout
+
+
+def test_ceiling_on_a_dataset_scope_and_on_an_unmeasured_metric(tmp_path):
+    ceil = _ceilings(tmp_path, [
+        {"metric": "planted.found_4k", "scope": "a", "limit": 4, "reason": "per dataset"}])
+    assert compare(card(count=5), card(count=5), tmp_path, "--ceilings", str(ceil)).returncode == 1
+    ceil = _ceilings(tmp_path, [{"metric": "permuted.false_full", "limit": 0, "reason": "r"}])
+    r = compare(card(), card(), tmp_path, "--ceilings", str(ceil))
+    assert r.returncode == 0 and "not measured" in r.stdout
+
+
+def test_ceiling_entry_without_a_reason_is_rejected(tmp_path):
+    ceil = _ceilings(tmp_path, [{"metric": "planted.found_4k", "limit": 4}])
+    assert compare(card(), card(), tmp_path, "--ceilings", str(ceil)).returncode == 2
+
+
+def test_committed_ceilings_name_measured_metrics():
+    doc = json.loads((GATE / "ceilings.json").read_text(encoding="utf-8"))
+    if str(GATE) not in sys.path:
+        sys.path.insert(0, str(GATE))
+    from components import permuted, reference
+    known = {f"reference.{m}" for m in reference.METRICS} | {f"permuted.{m}" for m in permuted.METRICS}
+    assert doc["ceilings"]
+    for e in doc["ceilings"]:
+        assert e["metric"] in known, e["metric"]
+        assert e["reason"]
