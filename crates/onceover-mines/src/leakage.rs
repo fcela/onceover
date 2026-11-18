@@ -314,7 +314,11 @@ pub fn determining_columns(table: &TypedTable, target_name: &str) -> Vec<usize> 
     cols
 }
 
-pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, String) {
+pub fn screen_leakage(
+    table: &TypedTable,
+    target_name: &str,
+    declared_after: &[String],
+) -> (Vec<Finding>, String) {
     let Some(tci) = table.names.iter().position(|n| n == target_name) else {
         return (
             Vec::new(),
@@ -361,9 +365,103 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
         |r| format!("next strongest '{}' at {:.3}", table.names[r.ci], r.value),
     );
 
+    // Declared suspects first (issue #310): the columns the
+    // caller declared recorded after the outcome are checked
+    // before the field, and one that determines the target or
+    // clears the strength bar is stated as a declared suspect,
+    // ahead of determiners found on strength alone. Every
+    // declared column's measured strength is stated in coverage,
+    // whether or not it is stated as a finding.
+    let determiners: Vec<&Strength> = strengths.iter().filter(|s| s.determines).collect();
+    let mut declared_clause = String::new();
+    if !declared_after.is_empty() {
+        let mut checks: Vec<String> = Vec::new();
+        let mut declared_findings: Vec<Finding> = Vec::new();
+        for name in declared_after {
+            match strengths.iter().find(|s| table.names[s.ci] == *name) {
+                Some(s) if s.determines => {
+                    checks.push(format!("'{name}' determines the target exactly"));
+                    declared_findings.push(make_finding(
+                        table,
+                        s,
+                        runner,
+                        target_name,
+                        target_categorical,
+                        true,
+                        determiners.len(),
+                        true,
+                    ));
+                }
+                Some(s) if s.value >= STRENGTH_BAR => {
+                    checks.push(format!(
+                        "'{name}' at {:.3}, over the {STRENGTH_BAR:.2} bar",
+                        s.value
+                    ));
+                    declared_findings.push(make_finding(
+                        table,
+                        s,
+                        runner,
+                        target_name,
+                        target_categorical,
+                        false,
+                        0,
+                        true,
+                    ));
+                }
+                Some(s) => {
+                    checks.push(format!(
+                        "'{name}' at {:.3}, below the {STRENGTH_BAR:.2} bar",
+                        s.value
+                    ));
+                }
+                None => {
+                    checks.push(format!("'{name}' could not be evaluated"));
+                }
+            }
+        }
+        declared_clause = format!("; declared suspects checked first: {}", checks.join(", "));
+        if !declared_findings.is_empty() {
+            let n_declared = declared_findings.len();
+            let declared_cols: Vec<usize> = declared_after
+                .iter()
+                .filter_map(|n| table.names.iter().position(|t| t == n))
+                .collect();
+            let mut findings = declared_findings;
+            let rest: Vec<Finding> = determiners
+                .iter()
+                .filter(|s| !declared_cols.contains(&s.ci))
+                .take(MAX_DETERMINATION_FINDINGS)
+                .map(|s| {
+                    make_finding(
+                        table,
+                        s,
+                        runner,
+                        target_name,
+                        target_categorical,
+                        true,
+                        determiners.len(),
+                        false,
+                    )
+                })
+                .collect();
+            let n_rest = rest.len();
+            findings.extend(rest);
+            return (
+                findings,
+                format!(
+                    "{head}{declared_clause}; {n_declared} stated as declared suspect(s){}",
+                    if n_rest > 0 {
+                        format!("; {n_rest} further column(s) determine the target exactly and are stated")
+                    } else {
+                        String::new()
+                    }
+                ),
+            );
+        }
+    }
+
     // Determination path: every exactly-determining column is
     // stated (capped), whatever the rest of the field looks like.
-    let determiners: Vec<&Strength> = strengths.iter().filter(|s| s.determines).collect();
     if !determiners.is_empty() {
         let findings: Vec<Finding> = determiners
             .iter()
@@ -377,6 +475,7 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
                     target_categorical,
                     true,
                     determiners.len(),
+                    false,
                 )
             })
             .collect();
@@ -384,7 +483,7 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
         return (
             findings,
             format!(
-                "{head}; {} column(s) determine the target exactly on the evaluated rows ({}); {} stated",
+                "{head}{declared_clause}; {} column(s) determine the target exactly on the evaluated rows ({}); {} stated",
                 determiners.len(),
                 runner_txt,
                 n_stated
@@ -403,11 +502,12 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
             target_categorical,
             false,
             0,
+            false,
         );
         return (
             vec![f],
             format!(
-                "{head}; strongest '{}' at {:.3} clears the {STRENGTH_BAR:.2} bar and dwarfs the field ({runner_txt}); 1 stated",
+                "{head}{declared_clause}; strongest '{}' at {:.3} clears the {STRENGTH_BAR:.2} bar and dwarfs the field ({runner_txt}); 1 stated",
                 table.names[top.ci], top.value
             ),
         );
@@ -425,10 +525,11 @@ pub fn screen_leakage(table: &TypedTable, target_name: &str) -> (Vec<Finding>, S
     };
     (
         Vec::new(),
-        format!("{head}; no leakage signature: {reason}"),
+        format!("{head}{declared_clause}; no leakage signature: {reason}"),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_finding(
     table: &TypedTable,
     s: &Strength,
@@ -437,6 +538,7 @@ fn make_finding(
     target_categorical: bool,
     determination: bool,
     n_determiners: usize,
+    declared: bool,
 ) -> Finding {
     let pred = &table.names[s.ci];
     let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -450,6 +552,9 @@ fn make_finding(
     metrics.insert("strength_measure".into(), json!(s.measure.label()));
     metrics.insert("n_used".into(), json!(s.n_used));
     metrics.insert("determination".into(), json!(determination));
+    if declared {
+        metrics.insert("declared_suspect".into(), json!(true));
+    }
     if let Some(v) = s.violations {
         metrics.insert("violations".into(), json!(v));
     }
@@ -501,11 +606,27 @@ fn make_finding(
         } else {
             String::new()
         };
+        if declared {
+            (
+                format!(
+                    "'{pred}' — declared by the caller as recorded after the outcome — determines the target '{target_name}' exactly: {exact_clause}. The declaration names the mechanism and the measurement confirms it: check it before modelling.{co}"
+                ),
+                0.97,
+            )
+        } else {
+            (
+                format!(
+                    "'{pred}' determines the target '{target_name}' exactly: {exact_clause}. A column that restates the target this way is usually derived from the outcome or recorded after it — check it before modelling.{co}"
+                ),
+                0.95,
+            )
+        }
+    } else if declared {
         (
             format!(
-                "'{pred}' determines the target '{target_name}' exactly: {exact_clause}. A column that restates the target this way is usually derived from the outcome or recorded after it — check it before modelling.{co}"
+                "'{pred}' — declared by the caller as recorded after the outcome — nearly determines the target '{target_name}': {strength_clause} ({runner_clause}). The declaration names the mechanism and the measurement confirms the strength: check it before modelling."
             ),
-            0.95,
+            0.9,
         )
     } else {
         (

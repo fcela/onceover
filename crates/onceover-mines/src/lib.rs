@@ -25,6 +25,7 @@ pub mod leakage;
 pub mod levels;
 pub mod missingness;
 pub mod modelfail;
+pub mod outcome;
 pub mod panels;
 pub mod partitions;
 pub mod periods;
@@ -71,6 +72,9 @@ pub use leakage::{determining_columns, screen_leakage};
 pub use levels::{profile_level_contrasts, LevelContrastInput, LevelsOutcome};
 pub use missingness::{profile_missingness, MissingnessAxis};
 pub use modelfail::{screen_model_failures, ModelFailureConfig};
+pub use outcome::{
+    event_label_of, outcome_account, outcome_contrasts, target_event_label, OutcomeDecl,
+};
 pub use panels::{panel_concentration, panel_dynamics, panel_flags, PanelInput};
 pub use partitions::{ordered_partitions, PartitionsConfig, PartitionsOutcome, PartitionsStatus};
 pub use periods::{period_associations, PeriodsOutcome, PeriodsStatus};

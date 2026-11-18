@@ -1239,6 +1239,9 @@ pub fn analyze_frame(
         // dependency outcome; they are filled in there.
         grain: None,
         dominant: Vec::new(),
+        // The declared metadata is the caller's, not the frame
+        // model's: the pipeline fills it in from the hints.
+        declarations: None,
     };
     FrameModel {
         info,

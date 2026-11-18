@@ -88,6 +88,11 @@ const METHOD_TEXT: &str = "per-level quantile contrast: each level of a low-card
 pub struct LevelContrastInput<'a> {
     pub axis_name: Option<&'a str>,
     pub axis_ticks: Option<&'a [Option<i64>]>,
+    /// Measures the pass must not state contrasts on: the
+    /// designated target, whose per-level contrasts the outcome
+    /// screen owns when a target is designated (issue #310), so
+    /// the same pair is not stated twice in two vocabularies.
+    pub exclude_measures: &'a [&'a str],
 }
 
 /// The pass's result: findings plus the coverage detail.
@@ -97,25 +102,28 @@ pub struct LevelsOutcome {
 }
 
 /// One grouping of the rows: per-row level codes and labels.
-struct Grouping {
+pub(crate) struct Grouping {
     /// The column named in the subject (the axis column for
     /// calendar parts).
-    column: String,
+    pub(crate) column: String,
     /// How the grouping reads in claims: the column name, or
     /// "day of week of {axis}" for a calendar part.
-    describe: String,
-    codes: Vec<Option<u32>>,
-    labels: Vec<String>,
-    calendar_part: Option<&'static str>,
+    pub(crate) describe: String,
+    pub(crate) codes: Vec<Option<u32>>,
+    pub(crate) labels: Vec<String>,
+    pub(crate) calendar_part: Option<&'static str>,
     /// Calendar only: per level, how many distinct cycles its
     /// rows span.
-    cycles: Vec<usize>,
+    pub(crate) cycles: Vec<usize>,
 }
 
 /// Level codes for one column, when it is a low-cardinality
 /// categorical: strings, booleans, and integer columns with
 /// 2..=MAX_LEVELS distinct non-null values.
-fn code_levels(table: &TypedTable, ci: usize) -> Option<(Vec<Option<u32>>, Vec<String>)> {
+pub(crate) fn code_levels(
+    table: &TypedTable,
+    ci: usize,
+) -> Option<(Vec<Option<u32>>, Vec<String>)> {
     let mut index: BTreeMap<String, u32> = BTreeMap::new();
     let mut labels: Vec<String> = Vec::new();
     let push = |index: &mut BTreeMap<String, u32>, labels: &mut Vec<String>, s: String| {
@@ -160,7 +168,7 @@ fn code_levels(table: &TypedTable, ci: usize) -> Option<(Vec<Option<u32>>, Vec<S
 /// index) to (level code, cycle key).
 type CalendarPartSpec = (&'static str, Vec<&'static str>, fn(i64) -> (u32, i64));
 
-fn calendar_groupings(input: &LevelContrastInput) -> Vec<Grouping> {
+pub(crate) fn calendar_groupings(input: &LevelContrastInput) -> Vec<Grouping> {
     let (Some(axis), Some(ticks)) = (input.axis_name, input.axis_ticks) else {
         return Vec::new();
     };
@@ -377,13 +385,8 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
     // ---------- measures ----------
     let measures: Vec<usize> = (0..table.cols.len())
         .filter(|&ci| {
-            matches!(
-                table.cols[ci],
-                TypedCol::I64 { .. }
-                    | TypedCol::U64 { .. }
-                    | TypedCol::F64 { .. }
-                    | TypedCol::Decimal { .. }
-            )
+            table.cols[ci].is_numeric()
+                && !input.exclude_measures.contains(&table.names[ci].as_str())
         })
         .collect();
 
@@ -943,6 +946,12 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             "; pair cap {MAX_PAIRS} reached — later grouping x measure pairs were not examined"
         ));
     }
+    if !input.exclude_measures.is_empty() {
+        detail.push_str(&format!(
+            "; measure(s) withheld because the outcome screen owns their per-level contrasts: {}",
+            input.exclude_measures.join(", ")
+        ));
+    }
     if groupings.is_empty() || measures.is_empty() {
         detail.push_str("; no eligible grouping x measure pair exists on this table");
     }
@@ -1075,6 +1084,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         let hits: Vec<_> = out
@@ -1122,6 +1132,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         let hits: Vec<_> = out
@@ -1158,6 +1169,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         // Only the multiple is stated: A and B look narrow
@@ -1209,6 +1221,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         assert_eq!(
@@ -1262,6 +1275,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: Some("day"),
                 axis_ticks: Some(&ticks),
+                exclude_measures: &[],
             },
         );
         let hits: Vec<_> = out
@@ -1300,6 +1314,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         assert!(
@@ -1326,6 +1341,7 @@ mod tests {
             &LevelContrastInput {
                 axis_name: None,
                 axis_ticks: None,
+                exclude_measures: &[],
             },
         );
         assert!(

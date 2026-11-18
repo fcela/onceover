@@ -49,8 +49,14 @@ fn entity_columns(
     frame: &crate::frame::FrameModel,
     card_facts: &[CardFacts],
     axis_name: &str,
+    declared: Option<usize>,
 ) -> Vec<usize> {
     let mut entities: Vec<usize> = Vec::new();
+    // A declared entity (issue #310) is the caller's grain and
+    // takes precedence over every inferred candidate.
+    if let Some(idx) = declared {
+        entities.push(idx);
+    }
     if let Some(grain) = &frame.info.grain {
         let non_axis: Vec<(&str, usize)> = grain
             .factorization
@@ -60,7 +66,9 @@ fn entity_columns(
             .collect();
         if non_axis.len() == 1 && non_axis[0].1 >= 10 {
             if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
-                entities.push(i);
+                if !entities.contains(&i) {
+                    entities.push(i);
+                }
             }
         }
     }
@@ -104,6 +112,8 @@ fn profile_inner(
     // Designating a target activates the target-aware pass when the
     // caller did not explicitly restrict the detector set.
     if cfg.target.is_some() && cfg.detectors.is_none() {
+        active.insert("outcome_account".into());
+        active.insert("outcome_contrasts".into());
         active.insert("target_shapes".into());
         active.insert("leakage".into());
         active.insert("model_failures".into());
@@ -358,6 +368,137 @@ fn profile_inner(
         format!("; {}", weight_notes.join("; "))
     };
 
+    // ---------- declared metadata (issue #310) ----------
+    // Resolve the metadata keys against the extracted table:
+    // what can be checked is checked here (the entity and the
+    // recorded-after columns exist; the declared event names a
+    // level of the target — checked at the outcome dispatch,
+    // which codes the target), and the rest is carried unchecked
+    // into the frame account. Every declaration is accounted for
+    // in `decl_notes`, stated in the report's `declarations`
+    // coverage entry at assembly; nothing is silently dropped
+    // and nothing raises.
+    let mut decl_notes: Vec<String> = Vec::new();
+    let mut declared_entity_idx: Option<usize> = None;
+    let mut recorded_after_idx: Vec<usize> = Vec::new();
+    let mut recorded_after_names: Vec<String> = Vec::new();
+    let mut outcome_decl = onceover_mines::OutcomeDecl::default();
+    if let Some(hints) = &cfg.hints {
+        if onceover_report::DeclaredMetadata::from_hints(hints).is_some() {
+            let col_exists = |name: &str| table.names.iter().position(|n| n == name);
+            if !hints.gloss.is_empty() {
+                let (mut applied, mut refused) = (0usize, 0usize);
+                for name in hints.gloss.keys() {
+                    if col_exists(name).is_some() {
+                        applied += 1;
+                    } else {
+                        refused += 1;
+                        decl_notes.push(format!(
+                            "gloss for '{name}' not carried: not a column of the table"
+                        ));
+                    }
+                }
+                decl_notes.push(format!(
+                    "gloss: {applied} column meaning(s) carried unchecked into the frame account and stated in the pointed findings' prose{}",
+                    if refused > 0 {
+                        format!("; {refused} refused")
+                    } else {
+                        String::new()
+                    }
+                ));
+            }
+            if !hints.units.is_empty() {
+                let (mut applied, mut refused) = (0usize, 0usize);
+                for name in hints.units.keys() {
+                    if col_exists(name).is_some() {
+                        applied += 1;
+                    } else {
+                        refused += 1;
+                        decl_notes.push(format!(
+                            "unit for '{name}' not carried: not a column of the table"
+                        ));
+                    }
+                }
+                decl_notes.push(format!(
+                    "units: {applied} declared unit(s) carried unchecked and stated through the pointed findings' subject unit field{}",
+                    if refused > 0 {
+                        format!("; {refused} refused")
+                    } else {
+                        String::new()
+                    }
+                ));
+            }
+            if let Some(entity) = &hints.entity {
+                match col_exists(entity) {
+                    Some(idx) => {
+                        declared_entity_idx = Some(idx);
+                        decl_notes.push(format!(
+                            "entity: '{entity}' checked — it is a column of the table; the panel passes use it instead of the inferred entity"
+                        ));
+                    }
+                    None => {
+                        decl_notes.push(format!(
+                            "entity: '{entity}' refused — not a column of the table; the inferred entity is used"
+                        ));
+                    }
+                }
+            }
+            if !hints.recorded_after.is_empty() {
+                let mut seen: BTreeSet<&str> = BTreeSet::new();
+                for name in &hints.recorded_after {
+                    if !seen.insert(name.as_str()) {
+                        decl_notes.push(format!(
+                            "recorded_after: '{name}' declared twice; applied once"
+                        ));
+                        continue;
+                    }
+                    match col_exists(name) {
+                        Some(idx) => {
+                            recorded_after_idx.push(idx);
+                            recorded_after_names.push(name.clone());
+                        }
+                        None => {
+                            decl_notes.push(format!(
+                                "recorded_after: '{name}' refused — not a column of the table"
+                            ));
+                        }
+                    }
+                }
+                if !recorded_after_names.is_empty() {
+                    decl_notes.push(format!(
+                        "recorded_after: {} checked — column(s) of the table: {}; the leakage screen checks them first as declared suspects, and they are excluded from the predictor pools of the model-failure and predictability screens",
+                        recorded_after_names.len(),
+                        recorded_after_names.join(", ")
+                    ));
+                }
+            }
+            if let Some(purpose) = &hints.purpose {
+                decl_notes.push(format!(
+                    "purpose carried unchecked into the frame account: \"{purpose}\""
+                ));
+            }
+            if !hints.questions.is_empty() {
+                decl_notes.push(format!(
+                    "{} declared question(s) carried unchecked into the frame account; the questions coverage entry states how many findings answer each",
+                    hints.questions.len()
+                ));
+            }
+            // The outcome screen's declaration bundle.
+            outcome_decl.event = hints.event.clone();
+            outcome_decl.nulls = true;
+            if let Some(target) = &cfg.target {
+                outcome_decl.unit = hints.units.get(target).cloned();
+            }
+            for (column, gloss) in &hints.gloss {
+                if let onceover_report::Gloss::Levels(levels) = gloss {
+                    outcome_decl
+                        .level_gloss
+                        .insert(column.clone(), levels.clone());
+                }
+            }
+        }
+    }
+
     if let Some(detail) = &exclusion_detail {
         stamp_insert(
             &mut coverage,
@@ -498,6 +639,13 @@ fn profile_inner(
     // finds it. Column indices are preserved by the materialization
     // (the axis replaces its source column in place).
     let mut frame = analyze_frame(&table, &card_facts, cfg.hints.as_ref());
+    // The declared metadata (issue #310) rides the frame account
+    // as declared; the declarations resolution below accounts for
+    // what was checked and what was carried unchecked.
+    frame.info.declarations = cfg
+        .hints
+        .as_ref()
+        .and_then(onceover_report::DeclaredMetadata::from_hints);
     for (i, name) in table.names.iter().enumerate() {
         if let Some(card) = columns.get_mut(name) {
             card.semantic_role = frame.roles[i].clone();
@@ -1285,7 +1433,13 @@ fn profile_inner(
                     ticks,
                     measures,
                     dimensions: columns_with_role("dimension"),
-                    entities: entity_columns(&table, &frame, &card_facts, axis_name),
+                    entities: entity_columns(
+                        &table,
+                        &frame,
+                        &card_facts,
+                        axis_name,
+                        declared_entity_idx,
+                    ),
                 };
                 let (mut f, mut detail) = onceover_mines::profile_series(&table, &input);
                 if !axis_measures.is_empty() {
@@ -1334,7 +1488,8 @@ fn profile_inner(
         let axis_name = frame.info.axis.as_ref().map(|a| a.name.clone());
         match (&ticks, &axis_name) {
             (Some(ticks), Some(axis_name)) => {
-                let entities = entity_columns(&table, &frame, &card_facts, axis_name);
+                let entities =
+                    entity_columns(&table, &frame, &card_facts, axis_name, declared_entity_idx);
                 let input = onceover_mines::PanelInput {
                     axis_name,
                     ticks,
@@ -1388,7 +1543,13 @@ fn profile_inner(
                 let input = onceover_mines::PanelInput {
                     axis_name,
                     ticks,
-                    entities: entity_columns(&table, &frame, &card_facts, axis_name),
+                    entities: entity_columns(
+                        &table,
+                        &frame,
+                        &card_facts,
+                        axis_name,
+                        declared_entity_idx,
+                    ),
                     measures: frame
                         .roles
                         .iter()
@@ -1439,7 +1600,12 @@ fn profile_inner(
                 let input = onceover_mines::PanelInput {
                     axis_name,
                     ticks,
-                    entities: panel_entity_columns(&table, &frame, &card_facts),
+                    entities: panel_entity_columns(
+                        &table,
+                        &frame,
+                        &card_facts,
+                        declared_entity_idx,
+                    ),
                     measures: frame
                         .roles
                         .iter()
@@ -1763,9 +1929,25 @@ fn profile_inner(
     if !deadline_hit && enabled("level_contrasts") {
         let axis_ticks = crate::frame::axis_ticks_micros(&table, &frame);
         let axis_name = frame.info.axis.as_ref().map(|a| a.name.as_str());
+        // A designated numeric target's per-level contrasts are
+        // the outcome screen's (issue #310); the level contrasts
+        // pass does not restate them in its own vocabulary.
+        let target_exclusion: Vec<&str> = match &cfg.target {
+            Some(target)
+                if table
+                    .names
+                    .iter()
+                    .position(|n| n == target)
+                    .is_some_and(|i| table.cols[i].is_numeric()) =>
+            {
+                vec![target.as_str()]
+            }
+            _ => Vec::new(),
+        };
         let input = onceover_mines::LevelContrastInput {
             axis_name,
             axis_ticks: axis_ticks.as_deref(),
+            exclude_measures: &target_exclusion,
         };
         let out = onceover_mines::profile_level_contrasts(&table, &input);
         stamp_insert(
@@ -1794,7 +1976,13 @@ fn profile_inner(
             );
 
             let mut screen = if enabled("predictability") {
-                screen_predictability(&table, &enc, &tier.screen, &scaffold_excluded)
+                screen_predictability(
+                    &table,
+                    &enc,
+                    &tier.screen,
+                    &scaffold_excluded,
+                    &recorded_after_idx,
+                )
             } else {
                 onceover_mines::ScreenOutcome {
                     findings: Vec::new(),
@@ -2109,7 +2297,7 @@ fn profile_inner(
                             .as_ref()
                             .map(|a| a.name.clone())
                             .unwrap_or_default();
-                        entity_columns(&table, &frame, &card_facts, &axis_name)
+                        entity_columns(&table, &frame, &card_facts, &axis_name, declared_entity_idx)
                             .iter()
                             .map(|&i| table.names[i].clone())
                             .collect()
@@ -2794,6 +2982,86 @@ fn profile_inner(
             }
         }
     }
+    // ---------- the outcome account and contrasts (issue #310) ----------
+    // The pointed pass's first statements: the designated
+    // outcome's own distribution, then its per-level contrasts
+    // with stated nulls. The declared event is resolved against
+    // the target's levels here, once, and the resolution is
+    // accounted for in the declarations entry.
+    if check_deadline(&mut coverage, "outcome_account") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && (enabled("outcome_account") || enabled("outcome_contrasts")) {
+        match &cfg.target {
+            Some(target) => {
+                if let Some(event) = &outcome_decl.event {
+                    match onceover_mines::target_event_label(&table, target, event) {
+                        Some(label) => {
+                            outcome_decl.event_label = Some(label.clone());
+                            decl_notes.push(format!(
+                                "event: '{label}' checked — it is a level of the target '{target}'; the outcome contrasts state event rates against it"
+                            ));
+                        }
+                        None => {
+                            decl_notes.push(format!(
+                                "event: {event} refused — it does not name a level of the target '{target}' (a numeric target has no levels); the outcome contrasts take the per-level form and no event rate is stated"
+                            ));
+                        }
+                    }
+                }
+                outcome_decl.excluded = scaffold_excluded.clone();
+                for &idx in &recorded_after_idx {
+                    if !outcome_decl.excluded.contains(&idx) {
+                        outcome_decl.excluded.push(idx);
+                    }
+                }
+                if enabled("outcome_account") {
+                    let (f, cov) = onceover_mines::outcome_account(&table, target, &outcome_decl);
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "outcome_account".into(),
+                        PassInfo::ran(cov),
+                    );
+                    findings.extend(f);
+                }
+                if enabled("outcome_contrasts") {
+                    let axis_ticks = crate::frame::axis_ticks_micros(&table, &frame);
+                    let axis = frame
+                        .info
+                        .axis
+                        .as_ref()
+                        .map(|a| a.name.as_str())
+                        .zip(axis_ticks.as_deref());
+                    let (f, cov) =
+                        onceover_mines::outcome_contrasts(&table, target, &outcome_decl, axis);
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "outcome_contrasts".into(),
+                        PassInfo::ran(cov),
+                    );
+                    findings.extend(f);
+                }
+            }
+            None => {
+                for id in ["outcome_account", "outcome_contrasts"] {
+                    if enabled(id) {
+                        stamp_insert(
+                            &mut coverage,
+                            &mut last_mark,
+                            timing_on,
+                            id.into(),
+                            PassInfo::skipped("no target designated".to_string()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // ---------- target-aware shapes (opt-in via a designated target) ----------
     if check_deadline(&mut coverage, "target_shapes") {
         deadline_hit = true;
@@ -2830,7 +3098,7 @@ fn profile_inner(
     if !deadline_hit && enabled("leakage") {
         match &cfg.target {
             Some(target) => {
-                let (f, cov) = screen_leakage(&table, target);
+                let (f, cov) = screen_leakage(&table, target, &recorded_after_names);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
@@ -2871,14 +3139,28 @@ fn profile_inner(
                         &local_enc
                     }
                 };
+                let mut mf_excluded = scaffold_excluded.clone();
+                for &idx in &recorded_after_idx {
+                    if !mf_excluded.contains(&idx) {
+                        mf_excluded.push(idx);
+                    }
+                }
                 let (f, cov) = screen_model_failures(
                     &table,
                     enc,
                     target,
                     &tier.screen,
                     &tier.modelfail,
-                    &scaffold_excluded,
+                    &mf_excluded,
                 );
+                let cov = if recorded_after_names.is_empty() {
+                    cov
+                } else {
+                    format!(
+                        "{cov}; declared recorded-after column(s) excluded from the model inputs: {}",
+                        recorded_after_names.join(", ")
+                    )
+                };
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
@@ -2911,6 +3193,8 @@ fn profile_inner(
                 "predictability"|"decision_tables"|"regimes"|"interactions"=>"missing targets excluded; predictor handling follows the recorded model",
                 "drift"=>"rows missing the target or the time value excluded; period comparisons use equal row counts on both sides",
                 "target_shapes"=>"complete cases per predictor: rows missing the predictor or the target excluded",
+                "outcome_account"=>"rows missing the outcome are excluded and counted in the statement",
+                "outcome_contrasts"=>"rows missing the grouping value or the outcome are excluded from that grouping's comparison",
                 "leakage"=>"complete cases per predictor: rows missing the predictor or the target excluded from that predictor's evaluation",
                 "model_failures"=>"rows missing the target are excluded from fitting and from the search; rows missing a condition value are outside the slice",
                 "group_contrast"=>"rows missing the group column are excluded from both populations; rows missing the contrasted column are excluded from its comparison",
@@ -2928,7 +3212,8 @@ fn profile_inner(
             if evidence.scope.sampling == Sampling::Unspecified {
                 evidence.scope.sampling = match evidence.method.detector.as_str() {
                     "column_profile" | "keys" | "row_duplicates" | "sortedness" | "date_gaps"
-                    | "identities" | "missingness" | "content_anomalies" => Sampling::Full,
+                    | "identities" | "missingness" | "content_anomalies" | "outcome_account"
+                    | "outcome_contrasts" => Sampling::Full,
                     "association_rules" | "covering_rules" => {
                         if shared_encoding.as_ref().is_some_and(|enc| enc.n < table.n) {
                             Sampling::Sample
@@ -3061,6 +3346,51 @@ fn profile_inner(
             info.detail.push_str(note);
         }
     }
+    // Declared questions (issue #310): a finding answers a
+    // declared question when the question names one of the
+    // finding's subject columns (the outcome included, for
+    // target-relative findings). The match is marked in the
+    // finding's evidence, where the ledger's selection order
+    // reads it: a marked finding is admitted ahead of an
+    // unmatched finding of equal score. The questions coverage
+    // entry, stamped after selection, states per question how
+    // many selected findings answer it.
+    let declared_questions: Vec<String> = cfg
+        .hints
+        .as_ref()
+        .map(|h| h.questions.clone())
+        .unwrap_or_default();
+    if !declared_questions.is_empty() {
+        let lowered: Vec<String> = declared_questions
+            .iter()
+            .map(|q| q.to_lowercase())
+            .collect();
+        for finding in findings.iter_mut() {
+            let mut matched: Vec<usize> = Vec::new();
+            let mut columns: Vec<&str> =
+                finding.subject.columns.iter().map(String::as_str).collect();
+            if let Some(t) = &finding.subject.target {
+                if !columns.contains(&t.as_str()) {
+                    columns.push(t.as_str());
+                }
+            }
+            for (qi, q) in lowered.iter().enumerate() {
+                if columns
+                    .iter()
+                    .any(|c| !c.is_empty() && q.contains(&c.to_lowercase()))
+                {
+                    matched.push(qi);
+                }
+            }
+            if !matched.is_empty() {
+                for evidence in &mut finding.evidence {
+                    evidence
+                        .metrics
+                        .insert("declared_questions".into(), serde_json::json!(matched));
+                }
+            }
+        }
+    }
     let outcome = select_findings_counted(findings, &cfg.selection);
     let mut findings = outcome.selected;
     let mut grouped = outcome.grouped;
@@ -3135,6 +3465,88 @@ fn profile_inner(
             timing_on,
             "labels".into(),
             PassInfo::ran(detail),
+        );
+    }
+    // Declared gloss (issue #310): the caller's meaning of a
+    // column, stated in the prose of findings whose subject is
+    // that column — appended as a sentence naming the column, so
+    // no measured claim is rewritten. Applied after selection,
+    // like the labels; subjects and evidence keep the raw names.
+    if let Some(hints) = &cfg.hints {
+        if !hints.gloss.is_empty() {
+            let mut applied = 0usize;
+            for finding in findings.iter_mut().chain(grouped.iter_mut()) {
+                let mut sentences: Vec<String> = Vec::new();
+                for column in &finding.subject.columns {
+                    if let Some(onceover_report::Gloss::Text(text)) = hints.gloss.get(column) {
+                        sentences.push(format!(" The caller declares '{column}' to mean: {text}."));
+                    }
+                }
+                if !sentences.is_empty() {
+                    applied += 1;
+                    for s in sentences {
+                        finding.claim.push_str(&s);
+                    }
+                }
+            }
+            if applied > 0 {
+                decl_notes.push(format!(
+                    "gloss stated in the prose of {applied} selected finding(s) whose subject is a glossed column"
+                ));
+            }
+        }
+    }
+    // The declarations account: everything the caller declared
+    // under the metadata keys, what was checked, and what was
+    // carried unchecked — one entry, never silent.
+    if frame.info.declarations.is_some() {
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "declarations".into(),
+            PassInfo::ran(decl_notes.join("; ")),
+        );
+    }
+    // Per declared question, how many selected findings answer
+    // it — including zero, which is a stated result.
+    if !declared_questions.is_empty() {
+        let mut counts = vec![0usize; declared_questions.len()];
+        for finding in findings.iter().chain(grouped.iter()) {
+            let mut seen: BTreeSet<usize> = BTreeSet::new();
+            for evidence in &finding.evidence {
+                if let Some(list) = evidence
+                    .metrics
+                    .get("declared_questions")
+                    .and_then(|v| v.as_array())
+                {
+                    for v in list {
+                        if let Some(qi) = v.as_u64() {
+                            seen.insert(qi as usize);
+                        }
+                    }
+                }
+            }
+            for qi in seen {
+                if qi < counts.len() {
+                    counts[qi] += 1;
+                }
+            }
+        }
+        let parts: Vec<String> = declared_questions
+            .iter()
+            .zip(counts.iter())
+            .map(|(q, n)| format!("\"{q}\": {n} finding(s)"))
+            .collect();
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "questions".into(),
+            PassInfo::ran(format!(
+                "findings answering each declared question, matched by the columns the question names: {}",
+                parts.join("; ")
+            )),
         );
     }
     let capped = outcome.capped;
@@ -3460,9 +3872,15 @@ fn panel_entity_columns(
     table: &TypedTable,
     frame: &crate::frame::FrameModel,
     card_facts: &[CardFacts],
+    declared: Option<usize>,
 ) -> Vec<usize> {
     let axis_name = frame.info.axis.as_ref().map(|a| a.name.as_str());
     let mut entities: Vec<usize> = Vec::new();
+    // A declared entity (issue #310) takes precedence, as in
+    // `entity_columns`.
+    if let Some(idx) = declared {
+        entities.push(idx);
+    }
     if let Some(grain) = &frame.info.grain {
         let non_axis: Vec<(&str, usize)> = grain
             .factorization
@@ -3472,7 +3890,9 @@ fn panel_entity_columns(
             .collect();
         if non_axis.len() == 1 && non_axis[0].1 >= 10 {
             if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
-                entities.push(i);
+                if !entities.contains(&i) {
+                    entities.push(i);
+                }
             }
         }
     }

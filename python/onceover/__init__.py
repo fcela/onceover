@@ -85,14 +85,15 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
 
     detectors : list[str], optional
         Detector IDs to select; None selects the default set (30 of the
-        43 registered detectors). Excluded unless requested: the
+        45 registered detectors). Excluded unless requested: the
         on-request detectors "row_clusters" (experimental),
         "date_gaps", "pivot", "period_associations", "drift",
         "granularity", "distribution_change", "slice_shifts",
         "decision_tables" and "interactions" \u2014 each
         records a skipped coverage entry in default runs \u2014 and the
-        target-triggered "target_shapes", "leakage", and
-        "model_failures", which run when a target is designated.
+        target-triggered "outcome_account", "outcome_contrasts",
+        "target_shapes", "leakage", and "model_failures", which
+        run when a target is designated.
         "expectations" and "group_contrast" are in the default set
         but engage only when `hints` declare what they check.
         Required detectors can run as resources without contributing
@@ -104,7 +105,35 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         Report-wide selection limits, applied across all contributing methods.
     hints : dict, optional
         Declared knowledge about the table that the profiler cannot
-        infer. The keys fall in three classes. Structure to verify
+        infer. The keys fall in four classes. Metadata \u2014 what the
+        columns mean and what the data is for, carried into the
+        report's frame account and accounted for in the
+        ``declarations`` coverage entry (what was checked, what was
+        carried unchecked; nothing is silently dropped):
+        ``gloss`` (per-column meanings in the caller's words \u2014 a
+        text per column, or a map of level label to text for a
+        categorical column's levels; carried unchecked and stated
+        in the prose of findings whose subject is the column),
+        ``units`` (per-column units, stated through the findings'
+        subject ``unit`` field), ``event`` (the level of the
+        designated target that counts as the event: with it, the
+        outcome contrasts state event rates against the pooled
+        event rate and measured absences as nulls; the named level
+        is checked against the target's levels), ``entity`` (the
+        frame's entity column for the panel passes, used instead
+        of the inferred entity; checked to exist),
+        ``recorded_after`` (columns recorded after the outcome or
+        derived from it: the leakage screen's declared suspects,
+        checked first and stated as such, and excluded from the
+        predictor pools of the model-failure and predictability
+        screens), ``purpose`` (what the data is for, one string;
+        carried unchecked), and ``questions`` (the questions the
+        data serves: findings matched to a question by the columns
+        it names are admitted ahead of unmatched findings of equal
+        score, and the ``questions`` coverage entry states how
+        many findings answer each question, including zero).
+        Declaring any metadata key engages the pointed mode's
+        stated nulls. Structure to verify
         \u2014 the "expectations" pass checks these exactly (evidence
         tagged ``reference_source="declared"``): ``order_by``
         (columns rows are ordered by), ``no_gaps`` (columns expected
@@ -168,15 +197,23 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
     target : str, optional
         Designate a response column; part of the same declaration
         surface as `hints`. Engages the target-triggered passes:
-        ``target_shapes`` (the shape of each numeric predictor's
-        relationship to the target \u2014 linear / binned-curve /
-        single-step R\u00b2 shares \u2014 where a shape is decisive),
-        ``leakage`` (a column that determines the target, or relates
-        to it far more strongly than any other), and
-        ``model_failures`` (slices where a cross-fitted model of the
-        target fails). When ``detectors`` is given explicitly, the
-        target-triggered passes run only if listed. An unknown
-        target is reported in the passes' coverage, not raised.
+        ``outcome_account`` (the outcome's own distribution \u2014
+        center, spread, and range for a numeric outcome; the share
+        of each level, and the declared event's rate, for a
+        categorical one), ``outcome_contrasts`` (per-level outcome
+        contrasts: each categorical level's event rate \u2014 or
+        median, for a numeric outcome \u2014 against the pooled
+        outcome, with measured absences stated as nulls when
+        metadata is declared), ``target_shapes`` (the shape of each
+        numeric predictor's relationship to the target \u2014 linear /
+        binned-curve / single-step R\u00b2 shares \u2014 where a shape
+        is decisive), ``leakage`` (a column that determines the
+        target, or relates to it far more strongly than any other),
+        and ``model_failures`` (slices where a cross-fitted model
+        of the target fails). When ``detectors`` is given
+        explicitly, the target-triggered passes run only if listed.
+        An unknown target is reported in the passes' coverage, not
+        raised.
     timing : bool, optional
         Record per-pass wall time as ``elapsed_ms`` in each coverage
         entry: the interval between the previous entry being recorded
@@ -578,8 +615,11 @@ def _digest_line_text(finding: dict) -> str:
 
 def _fact_precedence(finding: dict) -> int:
     """Which finding speaks for a fact: leak columns first, then
-    the exact forms, then order constraints, then rules, then the
-    statistical forms."""
+    the exact forms, then order constraints, then rules and the
+    outcome screen's statements, then the statistical forms. The
+    outcome account and contrasts sit with the rules: they state
+    the outcome's own numbers, which a statistical restatement of
+    the same columns would only blur."""
     typ = finding.get("type")
     if typ == "leakage_signature":
         return 0
@@ -587,7 +627,7 @@ def _fact_precedence(finding: dict) -> int:
         return 1
     if typ in ("order_constraint", "order_violation"):
         return 2
-    if typ == "if_then":
+    if typ in ("if_then", "outcome_distribution", "outcome_contrast"):
         return 3
     return 4
 
@@ -618,6 +658,18 @@ def _digest_facts(findings: list, grouped: list) -> tuple[list, list]:
             weak.append((f, cols))
             continue
         key = tuple(sorted(cols)) if cols else ("", f["id"])
+        if f.get("type") == "outcome_contrast":
+            # A calendar-part contrast (its grouping is a part of
+            # the axis, named in the metrics, not a column) is a
+            # different fact from the axis statements on the same
+            # columns — the breaks along the axis and the outcome
+            # by calendar part answer different questions, and
+            # merging them lets one speak for the other.
+            for ev in f.get("evidence") or []:
+                grouping = (ev.get("metrics") or {}).get("grouping_column")
+                if isinstance(grouping, str) and grouping and grouping not in cols:
+                    key = key + ("calendar:" + grouping,)
+                break
         fact = by_key.get(key)
         if fact is None:
             fact = {"columns": set(cols), "members": [], "rep": f}
@@ -650,10 +702,15 @@ def _designated_target(findings: list) -> str | None:
     """The designated target, when the report carries one. The
     report records no target field; the target-gated screens are
     the record — their findings name the target they ran against.
-    A designated target neither screen stated a finding for
-    cannot be told apart from an ordinary column here."""
+    A designated target no screen stated a finding for cannot be
+    told apart from an ordinary column here."""
     for f in findings:
-        if f.get("type") in ("leakage_signature", "model_failure"):
+        if f.get("type") in (
+            "leakage_signature",
+            "model_failure",
+            "outcome_distribution",
+            "outcome_contrast",
+        ):
             target = (f.get("subject") or {}).get("target")
             if target:
                 return target
@@ -670,10 +727,10 @@ def _fact_section(rep: dict, columns: set, designated: str | None) -> str:
         return "wrong"
     if typ in ("sentinel_values", "boundary_mass"):
         return "wrong"
-    if cat == "concentration" and len(columns) <= 1:
-        return "wrong"
     if designated and target == designated:
         return "target"
+    if cat == "concentration" and len(columns) <= 1:
+        return "wrong"
     if typ in _DIGEST_EXACT_TYPES:
         return "redundant"
     if (
@@ -699,7 +756,8 @@ def _fact_section(rep: dict, columns: set, designated: str | None) -> str:
 
 def _row_lines(frame: dict) -> list[str]:
     """What a row is: the grain statement and the time axis, from
-    the report's `frame` section. The dominant-structure account
+    the report's `frame` section, and the caller's declared
+    purpose when one was declared. The dominant-structure account
     lines are not part of the briefing (issue #317 phase 2)."""
     lines: list[str] = []
     grain = frame.get("grain") or {}
@@ -715,7 +773,10 @@ def _row_lines(frame: dict) -> list[str]:
             if axis.get("distinct_values"):
                 line += f" ({axis['distinct_values']} distinct values)"
         lines.append(line)
-    return lines[:2]
+    declarations = frame.get("declarations") or {}
+    if declarations.get("purpose"):
+        lines.append(f"declared purpose \u2014 {declarations['purpose']}")
+    return lines[:3]
 
 
 def _not_examined_line(data: dict) -> str | None:
@@ -1488,6 +1549,8 @@ class ProfileReport:
                 # every measure is offered before any measure's
                 # second contrast, as the strongest line of every
                 # kind is offered before any kind's second line.
+                # An outcome contrast is keyed the same way, once
+                # per grouping it states.
                 if rep.get("type") == "level_contrast":
                     for ev in rep.get("evidence") or []:
                         measure = (ev.get("metrics") or {}).get(
@@ -1499,11 +1562,26 @@ class ProfileReport:
                                 rep.get("type"),
                                 measure,
                             )
+                if rep.get("type") == "outcome_contrast":
+                    for ev in rep.get("evidence") or []:
+                        grouping = (ev.get("metrics") or {}).get(
+                            "grouping_column"
+                        )
+                        if isinstance(grouping, str) and grouping:
+                            return (
+                                rep.get("category"),
+                                rep.get("type"),
+                                grouping,
+                            )
                 return (rep.get("category"), rep.get("type"))
 
             buckets: dict[tuple, list] = {}
             for e in entries:
-                if e[1].get("type") in ("leakage_signature", "predictive"):
+                if e[1].get("type") in (
+                    "leakage_signature",
+                    "predictive",
+                    "outcome_distribution",
+                ):
                     continue
                 buckets.setdefault(bucket_key(e[1]), []).append(e)
             for bucket in buckets.values():
@@ -1538,6 +1616,24 @@ class ProfileReport:
                 )
             )
             first_ids = {id(e) for e in firsts}
+            # The outcome account and the outcome contrasts, in a
+            # target section: the account is the base every
+            # contrast compares against, so it leads the section
+            # after any leak; each grouping's strongest outcome
+            # contrast joins the lead families like a measure's
+            # strongest level statement.
+            outcome_account = sorted(
+                (e for e in entries if e[1].get("type") == "outcome_distribution"),
+                key=score,
+            )
+            oc_keys = {
+                k
+                for k, b in buckets.items()
+                if b and b[0][1].get("type") == "outcome_contrast"
+            }
+            outcome_firsts = [buckets[k][0] for k in oc_keys]
+            outcome_firsts.sort(key=score)
+            outcome_first_ids = {id(e) for e in outcome_firsts}
 
             def round_lead(e):
                 # The lead order inside a round. Break and regime
@@ -1545,11 +1641,18 @@ class ProfileReport:
                 # the table's shape over its axis, the statements
                 # a reader acts on first after the directory. The
                 # measures' strongest level statements follow
-                # them. Everything else competes on score.
+                # them, with each grouping's strongest outcome
+                # contrast and the strongest model-failure slice:
+                # the pointed classes of a target section.
+                # Everything else competes on score.
                 rep = e[1]
                 if rep.get("category") == "changes":
                     return 0
-                if id(e) in first_ids:
+                if (
+                    id(e) in first_ids
+                    or id(e) in outcome_first_ids
+                    or rep.get("type") == "model_failure"
+                ):
                     return 1
                 return 2
 
@@ -1612,13 +1715,40 @@ class ProfileReport:
                     if b and b[0][1].get("type") == "hotspot"
                 ]
                 hotspot_lead = buckets[hotspot_keys[0]][0] if hotspot_keys else None
+                # The exchange leads with two lines of each
+                # per-grouping family, not every grouping's head:
+                # a wide table has a dozen groupings, and a lead
+                # that admits all of them leaves no room in the
+                # section for its other families (the model-failure
+                # slices, the shapes). The remaining heads join
+                # the breadth rounds below at depth 0, so every
+                # grouping is still heard before any family's
+                # second line.
+                lead_outcome = outcome_firsts[:2]
+                # In a target section (outcome contrasts present),
+                # one level statement leads: the level statements
+                # name the target only as their grouping, and two
+                # of them in the lead crowd out the section's
+                # other pointed families. Elsewhere two lead.
+                lead_firsts = firsts[:1] if outcome_firsts else firsts[:2]
+                lead_ids = {id(e) for e in lead_outcome + lead_firsts}
                 lead = []
                 hotspot_placed = False
-                for i in range(max(len(changes_queue), len(firsts))):
+                for i in range(
+                    max(len(changes_queue), len(lead_firsts), len(lead_outcome))
+                ):
                     if i < len(changes_queue):
                         lead.append(changes_queue[i])
-                    if i < len(firsts):
-                        lead.append(firsts[i])
+                    # The outcome contrasts precede the level
+                    # statements in the exchange: they state the
+                    # designated outcome against its groupings,
+                    # which is the section's subject, where a level
+                    # statement names the target only as its
+                    # grouping.
+                    if i < len(lead_outcome):
+                        lead.append(lead_outcome[i])
+                    if i < len(lead_firsts):
+                        lead.append(lead_firsts[i])
                     if i == 1 and hotspot_lead is not None:
                         lead.append(hotspot_lead)
                         hotspot_placed = True
@@ -1630,13 +1760,17 @@ class ProfileReport:
                     {
                         k: (
                             1
-                            if k in lc_keys or k in hotspot_keys
+                            if (
+                                (k in lc_keys or k in oc_keys)
+                                and id(buckets[k][0]) in lead_ids
+                            )
+                            or k in hotspot_keys
                             else 0
                         )
                         for k in rest_keys
                     },
                 )
-                return leakage + directory + lead + rest
+                return leakage + outcome_account + directory + lead + rest
             # The directory does not fit, so it does not
             # monopolise the section: one breadth round across
             # kinds (the strongest line of every kind, the
@@ -1648,15 +1782,20 @@ class ProfileReport:
             # remaining contrasts by score), so a crowded
             # directory cannot push them out of the rounds
             # entirely, and they cannot fill the first round.
-            contrast_queue = firsts + sorted(
-                (
-                    e
-                    for k in lc_keys
-                    for e in buckets[k]
-                    if id(e) not in first_ids
-                ),
-                key=score,
-            )
+            contrast_rest = [
+                e
+                for k in lc_keys
+                for e in buckets[k]
+                if id(e) not in first_ids
+            ]
+            contrast_queue = firsts + sorted(contrast_rest, key=score)
+            # The outcome contrasts keep their own buckets, as in
+            # the directory path: each grouping's strongest
+            # outcome contrast is a head in the first round, not a
+            # follower in the level contrasts' queue — the outcome
+            # contrasts are the section's subject when a target is
+            # designated, and folding them behind the level
+            # statements starved them out of crowded sections.
             tail = {
                 k: b for k, b in buckets.items() if k not in lc_keys
             }
@@ -1674,7 +1813,7 @@ class ProfileReport:
                 )
             finally:
                 buckets = saved
-            return leakage + first_round + directory[1:] + rest
+            return leakage + outcome_account + first_round + directory[1:] + rest
 
         for name, entries in sections.items():
             entries.sort(

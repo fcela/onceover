@@ -75,7 +75,7 @@ documented misses. No known-miss expectation was removed or weakened.
 ## Other checks
 
 - **797 Python tests passed**, including 15 new public-API regressions.
-- **577 Rust tests passed**, including a new search/work accounting test.
+- **477 Rust tests passed**, including a new search/work accounting test.
 - Strict Clippy and formatting passed.
 - Both changed methodology notebooks were re-executed and saved
   (four code cells in the walkthrough, one in the reference).

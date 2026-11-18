@@ -433,11 +433,15 @@ pub fn screen(
     enc: &EncodedMatrix,
     cfg: &ScreenConfig,
     excluded_targets: &[usize],
+    declared_excluded: &[usize],
 ) -> ScreenOutcome {
     // Frame-role exclusions remove scaffolding columns (index,
     // identifier, timestamp parts) from the target set and from
     // every target's predictor pool, and the exclusion is stated
-    // in coverage.
+    // in coverage. Declared exclusions (issue #310: columns the
+    // caller declared recorded after the outcome) are withheld
+    // from the predictor pools only — they remain targets of the
+    // screen — and are likewise stated in coverage.
     let eligible_targets: Vec<usize> = enc
         .feat_cols
         .iter()
@@ -447,7 +451,7 @@ pub fn screen(
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
-        .filter_map(|&ci| screen_target(table, enc, ci, cfg, excluded_targets))
+        .filter_map(|&ci| screen_target(table, enc, ci, cfg, excluded_targets, declared_excluded))
         .collect();
 
     let mut findings = Vec::new();
@@ -601,6 +605,18 @@ pub fn screen(
             excluded_names.join(", ")
         ));
     }
+    let declared_names: Vec<&str> = declared_excluded
+        .iter()
+        .filter(|i| enc.feat_cols.contains(i))
+        .map(|&i| table.names[i].as_str())
+        .collect();
+    if !declared_names.is_empty() {
+        coverage.push_str(&format!(
+            "; {} column(s) excluded from predictor pools by declaration (recorded after the outcome): {}",
+            declared_names.len(),
+            declared_names.join(", ")
+        ));
+    }
     ScreenOutcome {
         findings,
         results,
@@ -610,13 +626,16 @@ pub fn screen(
 
 /// Screen one column as a target. Columns in `excluded_targets`
 /// (frame-role scaffolding) are withheld from the predictor pool as
-/// well as from the target set.
+/// well as from the target set; columns in `declared_excluded`
+/// (declared recorded after the outcome) are withheld from the
+/// predictor pool only.
 pub fn screen_target(
     table: &TypedTable,
     enc: &EncodedMatrix,
     ci: usize,
     cfg: &ScreenConfig,
     excluded_targets: &[usize],
+    declared_excluded: &[usize],
 ) -> Option<TargetResult> {
     let target = prepare_target(table, enc, ci, cfg)?;
     let present: Vec<u32> = match &target {
@@ -653,7 +672,11 @@ pub fn screen_target(
     let own = enc.feat_cols.iter().position(|&c| c == ci)?;
     let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
     let mut selected: Vec<usize> = (0..enc.bins.len())
-        .filter(|&f| f != own && !excluded_targets.contains(&enc.feat_cols[f]))
+        .filter(|&f| {
+            f != own
+                && !excluded_targets.contains(&enc.feat_cols[f])
+                && !declared_excluded.contains(&enc.feat_cols[f])
+        })
         .collect();
     if selected.len() > cfg.max_predictors {
         // Pair each feature with its information score before
@@ -1922,7 +1945,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
         let y_res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert!(y_res.metric > 0.9, "r2 = {}", y_res.metric);
         assert!(out.findings.iter().any(|f| (f
@@ -1951,7 +1974,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
         let res = out.results.iter().find(|r| r.name == "class").unwrap();
         assert!(res.metric > 0.85, "acc = {}", res.metric);
         assert!(res.metric > res.baseline + 0.2);
@@ -2036,7 +2059,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
         assert!(out
             .results
             .iter()
@@ -2099,7 +2122,7 @@ mod tests {
         let df = driver_frame();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
         assert_eq!(res.drivers[0].0, "x");
@@ -2133,7 +2156,7 @@ mod tests {
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let x_col = table.names.iter().position(|n| n == "x").unwrap();
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col], &[]);
         for r in &out.results {
             assert!(
                 !r.inputs.iter().any(|i| i == "x"),
@@ -2180,7 +2203,7 @@ mod tests {
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let excluded = table.names.iter().position(|nm| nm == "n0").unwrap();
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[excluded]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[excluded], &[]);
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
         assert_eq!(res.drivers[0].0, "x");
