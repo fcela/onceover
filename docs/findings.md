@@ -1048,9 +1048,9 @@ statements are admitted in full. Structure and shape statements are admitted
 in selection-score order, with at most 12 selected statements sharing one
 (category, type, form) group, and two further per-detector caps binding only
 under this pressure — at most 25 selected statements attributed to `breaks`
-and 25 to `views`. The 2026-11-13 selection study
+and 25 to `row_clusters`. The 2026-11-13 selection study
 (docs/benchmarks/2026-11-13-report-selection.md) measured `breaks` taking 53
-of one capped report's 100 slots; it also measured `views` producing 42
+of one capped report's 100 slots; it also measured `row_clusters` producing 42
 statements on a report whose candidates fit under the cap, which is why
 these two caps bind only under pressure: an uncapped report's membership is
 unchanged. Hygiene statements are admitted last, in score

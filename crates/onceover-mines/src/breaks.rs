@@ -358,12 +358,12 @@ use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
 use std::collections::BTreeMap;
 
-fn time_at(col: &TypedCol, row: usize) -> Option<i64> {
+fn time_at(col: &TypedCol, row: usize) -> Option<Tick> {
     match col {
-        TypedCol::Date { vals } => vals[row].map(i64::from),
-        TypedCol::Datetime { .. } => col.datetime_micros(row),
-        TypedCol::I64 { vals } => vals.get(row).flatten(),
-        TypedCol::U64 { vals } => vals.at(row).and_then(|v| i64::try_from(v).ok()),
+        TypedCol::Date { vals } => vals[row].map(i128::from),
+        TypedCol::Datetime { .. } => col.datetime_micros(row).map(i128::from),
+        TypedCol::I64 { vals } => vals.get(row).flatten().map(i128::from),
+        TypedCol::U64 { vals } => vals.at(row).map(i128::from),
         _ => None,
     }
 }
@@ -433,11 +433,27 @@ enum Axis {
     Integer,
 }
 
-fn display_time(axis: Axis, t: i64) -> String {
+/// Axis tick. Dates and datetimes stay in their i64 ranges; an
+/// integer axis may be an unsigned Polars column with values above
+/// i64::MAX, so scanning it through i64 would silently drop rows.
+type Tick = i128;
+
+fn display_time(axis: Axis, t: Tick) -> String {
     match axis {
-        Axis::Datetime => onceover_core::dateutil::iso_datetime(t),
-        Axis::Date => onceover_core::dateutil::iso_date(t),
+        // Date/datetime helpers take i64; an i128 tick on either
+        // axis can only have come from an i64 source value.
+        Axis::Datetime => onceover_core::dateutil::iso_datetime(t as i64),
+        Axis::Date => onceover_core::dateutil::iso_date(t as i64),
         Axis::Integer => t.to_string(),
+    }
+}
+
+/// JSON raw tick without narrowing a U64 axis through i64 or f64.
+fn tick_json(t: Tick) -> serde_json::Value {
+    if t >= 0 && t <= u64::MAX as Tick {
+        json!(t as u64)
+    } else {
+        json!(t as i64)
     }
 }
 
@@ -474,8 +490,8 @@ fn level_findings(
     column: &str,
     time_column: &str,
     axis: Axis,
-    train: &[(i64, f64)],
-    holdout: &[(i64, f64)],
+    train: &[(Tick, f64)],
+    holdout: &[(Tick, f64)],
     cfg: &BreaksConfig,
 ) -> Vec<Finding> {
     level_findings_grouped(column, time_column, axis, train, holdout, cfg, None)
@@ -485,8 +501,8 @@ fn level_findings_grouped(
     column: &str,
     time_column: &str,
     axis: Axis,
-    train: &[(i64, f64)],
-    holdout: &[(i64, f64)],
+    train: &[(Tick, f64)],
+    holdout: &[(Tick, f64)],
     cfg: &BreaksConfig,
     group: Option<(&str, &str)>,
 ) -> Vec<Finding> {
@@ -496,7 +512,7 @@ fn level_findings_grouped(
         return Vec::new();
     }
 
-    let boundaries: Vec<i64> = breaks.iter().map(|b| train[b.index].0).collect();
+    let boundaries: Vec<Tick> = breaks.iter().map(|b| train[b.index].0).collect();
 
     let n_segments = breaks.len() + 1;
     let mut seg_means: Vec<f64> = Vec::with_capacity(n_segments);
@@ -602,11 +618,11 @@ fn level_findings_grouped(
         };
         let mut metrics = BTreeMap::from([
             ("breakpoint".into(), json!(display)),
-            ("breakpoint_raw".into(), json!(boundaries[j])),
+            ("breakpoint_raw".into(), tick_json(boundaries[j])),
             ("breakpoint_range_start".into(), json!(range_start_display)),
-            ("breakpoint_range_start_raw".into(), json!(range_start)),
+            ("breakpoint_range_start_raw".into(), tick_json(range_start)),
             ("breakpoint_range_end".into(), json!(range_end_display)),
-            ("breakpoint_range_end_raw".into(), json!(range_end)),
+            ("breakpoint_range_end_raw".into(), tick_json(range_end)),
             ("mean_before".into(), json!(seg_means[j])),
             ("mean_after".into(), json!(seg_means[j + 1])),
             ("train_gain".into(), json!(breaks[j].train_gain)),
@@ -642,8 +658,8 @@ fn trend_finding(
     column: &str,
     time_column: &str,
     axis: Axis,
-    train: &[(i64, f64)],
-    holdout: &[(i64, f64)],
+    train: &[(Tick, f64)],
+    holdout: &[(Tick, f64)],
     cfg: &BreaksConfig,
 ) -> Option<Finding> {
     let train_values: Vec<f64> = train.iter().map(|(_, v)| *v).collect();
@@ -714,11 +730,11 @@ fn trend_finding(
 
     let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
-        ("breakpoint_raw".into(), json!(boundary)),
+        ("breakpoint_raw".into(), tick_json(boundary)),
         ("breakpoint_range_start".into(), json!(range_start_display)),
-        ("breakpoint_range_start_raw".into(), json!(range_start)),
+        ("breakpoint_range_start_raw".into(), tick_json(range_start)),
         ("breakpoint_range_end".into(), json!(range_end_display)),
-        ("breakpoint_range_end_raw".into(), json!(range_end)),
+        ("breakpoint_range_end_raw".into(), tick_json(range_end)),
         ("slope_before".into(), json!(slope_l)),
         ("slope_after".into(), json!(slope_r)),
         ("train_gain".into(), json!(tb.train_gain)),
@@ -767,8 +783,8 @@ fn variance_finding(
     column: &str,
     time_column: &str,
     axis: Axis,
-    train: &[(i64, f64)],
-    holdout: &[(i64, f64)],
+    train: &[(Tick, f64)],
+    holdout: &[(Tick, f64)],
     cfg: &BreaksConfig,
 ) -> Option<Finding> {
     let train_values: Vec<f64> = train.iter().map(|&(_, v)| v).collect();
@@ -846,11 +862,11 @@ fn variance_finding(
 
     let mut metrics = BTreeMap::from([
         ("breakpoint".into(), json!(display)),
-        ("breakpoint_raw".into(), json!(boundary)),
+        ("breakpoint_raw".into(), tick_json(boundary)),
         ("breakpoint_range_start".into(), json!(range_start_display)),
-        ("breakpoint_range_start_raw".into(), json!(range_start)),
+        ("breakpoint_range_start_raw".into(), tick_json(range_start)),
         ("breakpoint_range_end".into(), json!(range_end_display)),
-        ("breakpoint_range_end_raw".into(), json!(range_end)),
+        ("breakpoint_range_end_raw".into(), tick_json(range_end)),
         ("variance_before".into(), json!(v_l)),
         ("variance_after".into(), json!(v_r)),
         ("train_gain".into(), json!(vb.train_gain)),
@@ -1034,10 +1050,11 @@ pub fn profile_breaks(
     // dose step, a reading number. At least 99% of adjacent present
     // pairs increase and at least 48 distinct values are present.
     let sequence = table.cols.iter().enumerate().find_map(|(i, c)| {
-        let present: Vec<i64> = match c {
-            TypedCol::I64 { vals } => vals.iter().flatten().copied().collect(),
+        let present: Vec<Tick> = match c {
+            TypedCol::I64 { vals } => vals.iter().flatten().copied().map(i128::from).collect(),
             TypedCol::U64 { vals } => (0..table.n)
-                .filter_map(|r| vals.at(r).and_then(|v| i64::try_from(v).ok()))
+                .filter_map(|r| vals.at(r))
+                .map(i128::from)
                 .collect(),
             _ => return None,
         };
@@ -1079,7 +1096,7 @@ pub fn profile_breaks(
     };
     let time_name = table.names[time_col].as_str();
 
-    let mut timed: Vec<(i64, u32)> = (0..table.n)
+    let mut timed: Vec<(Tick, u32)> = (0..table.n)
         .filter_map(|r| time_at(&table.cols[time_col], r).map(|t| (t, r as u32)))
         .collect();
     timed.sort_by_key(|&(t, _)| t);
@@ -1131,7 +1148,7 @@ pub fn profile_breaks(
 
     for col in &chosen {
         let name = table.names[*col].as_str();
-        let points: Vec<(i64, u32, f64)> = timed
+        let points: Vec<(Tick, u32, f64)> = timed
             .iter()
             .filter_map(|&(t, r)| numeric_at(&table.cols[*col], r as usize).map(|v| (t, r, v)))
             .collect();
@@ -1140,12 +1157,12 @@ pub fn profile_breaks(
             continue;
         }
         findings.extend(excursion_findings(name, time_name, axis, &points, cfg));
-        let train: Vec<(i64, f64)> = points
+        let train: Vec<(Tick, f64)> = points
             .iter()
             .filter(|&&(_, r, _)| !is_holdout(r))
             .map(|&(t, _, v)| (t, v))
             .collect();
-        let holdout: Vec<(i64, f64)> = points
+        let holdout: Vec<(Tick, f64)> = points
             .iter()
             .filter(|&&(_, r, _)| is_holdout(r))
             .map(|&(t, _, v)| (t, v))
@@ -1223,7 +1240,7 @@ fn subgroup_findings(
     time_column: &str,
     axis: Axis,
     series_name: &str,
-    points: &[(i64, u32, f64)],
+    points: &[(Tick, u32, f64)],
     had_global_level: bool,
     cfg: &BreaksConfig,
 ) -> Vec<Finding> {
@@ -1254,13 +1271,13 @@ fn subgroup_findings(
             if positions.len() < cfg.min_group_rows {
                 continue;
             }
-            let gtrain: Vec<(i64, f64)> = positions
+            let gtrain: Vec<(Tick, f64)> = positions
                 .iter()
                 .copied()
                 .filter(|&p| !is_holdout(points[p].1))
                 .map(|p| (points[p].0, points[p].2))
                 .collect();
-            let ghost: Vec<(i64, f64)> = positions
+            let ghost: Vec<(Tick, f64)> = positions
                 .iter()
                 .copied()
                 .filter(|&p| is_holdout(points[p].1))
@@ -1580,7 +1597,7 @@ fn median_of(vals: &[f64]) -> f64 {
 
 /// Points per week implied by the median interval between
 /// consecutive timestamps, when the cadence divides a week evenly.
-fn weekly_period(points: &[(i64, u32, f64)], axis: Axis) -> Option<usize> {
+fn weekly_period(points: &[(Tick, u32, f64)], axis: Axis) -> Option<usize> {
     if points.len() < 3 || axis == Axis::Integer {
         // No calendar week exists on an abstract integer axis.
         return None;
@@ -1678,7 +1695,7 @@ fn event_is_temporal(
     ln_binomial_tail(span, in_run, rate) + (n as f64).ln() < EVENT_ALPHA.ln()
 }
 
-fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) -> Vec<Excursion> {
+fn excursion_scan(points: &[(Tick, u32, f64)], axis: Axis, cfg: &BreaksConfig) -> Vec<Excursion> {
     let n = points.len();
     if n < 50 {
         return Vec::new();
@@ -1693,18 +1710,18 @@ fn excursion_scan(points: &[(i64, u32, f64)], axis: Axis, cfg: &BreaksConfig) ->
     let period = weekly_period(points, axis).filter(|&p| (n as f64) >= 2.5 * p as f64);
     let residuals: Vec<f64> = match period {
         Some(p) => {
-            let times: Vec<i64> = points.iter().map(|pt| pt.0).collect();
-            let week: i64 = if axis == Axis::Datetime {
+            let times: Vec<Tick> = points.iter().map(|pt| pt.0).collect();
+            let week: Tick = if axis == Axis::Datetime {
                 7 * 86_400 * 1_000_000
             } else {
                 7
             };
-            let step = week / p as i64;
+            let step = week / p as Tick;
             (0..n)
                 .map(|i| {
                     let mut neigh: Vec<f64> = Vec::new();
-                    for k in 1..=3i64 {
-                        for sgn in [1i64, -1] {
+                    for k in 1..=3i128 {
+                        for sgn in [1i128, -1] {
                             let target = times[i] + sgn * k * week;
                             let idx = times.partition_point(|&t| t < target);
                             for cand in [idx.saturating_sub(1), idx.min(n - 1)] {
@@ -1819,7 +1836,7 @@ fn excursion_findings(
     column: &str,
     time_column: &str,
     axis: Axis,
-    points: &[(i64, u32, f64)],
+    points: &[(Tick, u32, f64)],
     cfg: &BreaksConfig,
 ) -> Vec<Finding> {
     excursion_scan(points, axis, cfg)
@@ -1884,10 +1901,10 @@ mod excursion_tests {
         BreaksConfig::default()
     }
 
-    fn series(ys: &[f64]) -> Vec<(i64, u32, f64)> {
+    fn series(ys: &[f64]) -> Vec<(Tick, u32, f64)> {
         ys.iter()
             .enumerate()
-            .map(|(i, &v)| (i as i64 * 300_000_000, i as u32, v))
+            .map(|(i, &v)| (i as Tick * 300_000_000, i as u32, v))
             .collect()
     }
 
@@ -2121,10 +2138,10 @@ mod excursion_debug_tests {
         for v in ys.iter_mut().skip(336 * 20 + 100).take(48) {
             *v *= 0.3;
         }
-        let pts: Vec<(i64, u32, f64)> = ys
+        let pts: Vec<(Tick, u32, f64)> = ys
             .iter()
             .enumerate()
-            .map(|(i, &v)| (i as i64 * 1_800_000_000, i as u32, v))
+            .map(|(i, &v)| (i as Tick * 1_800_000_000, i as u32, v))
             .collect();
         let ev = excursion_scan(&pts, Axis::Datetime, &BreaksConfig::default());
         assert!(!ev.is_empty(), "expected the planted collapse to be found");

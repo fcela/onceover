@@ -44,7 +44,7 @@
 //! pressure (distinct statements beyond `max_findings`): account
 //! statements are admitted in full, structure and shape statements
 //! in score order under a per-(category, type, form) group cap
-//! and pressure-only per-detector caps for `breaks` and `views`,
+//! and pressure-only per-detector caps for `breaks` and `row_clusters`,
 //! and hygiene statements last, up to a reserve — so a report
 //! under pressure rations statement kinds instead of letting
 //! cross-category score comparisons and uncapped detectors fill
@@ -250,14 +250,14 @@ pub struct SelectionPolicy {
     /// Per-detector caps on selected statements, attributed by the
     /// detector of a statement's first evidence record. The first two
     /// defaults bound the report's context cost where the 2026-11-02
-    /// battery measured it: functional_dependencies and gbm together
+    /// battery measured it: functional_dependencies and predictability together
     /// produced ~41% of all report characters (550,443 and 467,098 of
     /// 2,479,798). The discontinuities cap (25) follows the 2026-11-04
     /// battery (docs/benchmarks/2026-11-04-detector-battery-step2.md):
     /// its statements score in a narrow high band (0.83–0.93), so the
     /// score ranking cannot ration them against other detectors, and
     /// on the state-unemployment panel they took 81 of the 100 slots,
-    /// crowding out every gbm and numeric_dependence statement. A
+    /// crowding out every predictability and numeric_dependence statement. A
     /// statement past its detector's cap is not selected; the counts
     /// of capped statements are returned by
     /// `select_findings_counted` and reported in coverage, so a cap
@@ -267,10 +267,10 @@ pub struct SelectionPolicy {
     /// (issue #271): when the distinct statement count exceeds
     /// `max_findings`, at most this many selected statements may
     /// be attributed to each named detector. `breaks` and
-    /// `views` are rationed here rather than in the standing map
+    /// `row_clusters` are rationed here rather than in the standing map
     /// above: the selection study measured their floods on
     /// capped reports (53 breaks statements of 100 selected),
-    /// but also measured `views` producing 42 statements on a
+    /// but also measured `row_clusters` producing 42 statements on a
     /// report whose candidates fit under the cap — a standing
     /// cap would change that uncapped report's membership,
     /// which the design forbids: without pressure, admission is
@@ -309,7 +309,7 @@ impl Default for SelectionPolicy {
             predictive_findings_per_target: 3,
             max_findings_per_detector: BTreeMap::from([
                 ("functional_dependencies".to_string(), 25),
-                ("gbm".to_string(), 20),
+                ("predictability".to_string(), 20),
                 ("discontinuities".to_string(), 25),
                 ("missingness".to_string(), 20),
                 ("row_consistency".to_string(), 20),
@@ -322,7 +322,7 @@ impl Default for SelectionPolicy {
             // only under cap pressure — see the field doc.
             pressure_detector_caps: BTreeMap::from([
                 ("breaks".to_string(), 25),
-                ("views".to_string(), 25),
+                ("row_clusters".to_string(), 25),
             ]),
             max_findings_per_group: 12,
             hygiene_reserve: 20,

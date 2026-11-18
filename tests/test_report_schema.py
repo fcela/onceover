@@ -30,6 +30,15 @@ def test_schema_is_well_formed():
     assert "type" in SCHEMA["$defs"]["finding"]["required"]
 
 
+def test_schema_uses_the_live_category_vocabulary():
+    categories = SCHEMA["$defs"]["finding"]["properties"]["category"]["enum"]
+    assert "anomalies" in categories
+    assert "intervals" not in categories
+    type_description = SCHEMA["$defs"]["finding"]["properties"]["type"]["description"]
+    assert "anomalies: interval_variation" in type_description
+    assert "intervals:" not in type_description
+
+
 def test_every_finding_carries_a_type():
     # The type field is regular: no finding serializes without one,
     # so consumers (and DataFrame outputs) never special-case it.

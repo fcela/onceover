@@ -79,6 +79,8 @@ project:
         - file: appendix/foundation_models.ipynb
         - file: appendix/release_notes.ipynb
 site:
-  template: book-theme
+  # Pin the theme: the moving `book-theme` alias now points at a
+  # release newer than the installed MyST CLI can render.
+  template: https://github.com/jupyter-book/myst-theme/releases/download/myst-to-react%401.4.1/book-theme.zip
   options:
     hide_search: false

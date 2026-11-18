@@ -86,6 +86,9 @@ def test_to_json_budgeted():
     out = report.to_json(max_chars=9000)
     assert len(out) <= 9000
     view = json.loads(out)
+    # The frame model is part of the report record, not an optional
+    # rendering extra: a budgeted view must keep it.
+    assert view["frame"] == report.data["frame"]
     budget = view["budget"]
     assert budget["max_chars"] == 9000
     assert budget["columns"] == "names_only"

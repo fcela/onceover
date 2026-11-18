@@ -173,6 +173,7 @@ def test_bijection_verifies_and_its_edits_are_flagged():
     assert "rows breaking the code → label mapping" in quantities
     assert "rows breaking the label → code mapping" in quantities
 
+
     edited = onceover.profile(df)
     _corrupt(edited, hit["id"], "exact", False)
     result = edited.verify(df).filter(pl.col("id") == hit["id"])
@@ -189,6 +190,24 @@ def test_bijection_verifies_and_its_edits_are_flagged():
             f["subject"]["columns"] = ["code", "shade"]
     result = edited.verify(df).filter(pl.col("id") == hit["id"])
     assert "mismatch" in result["status"].to_list()
+
+
+def test_verify_reports_a_malformed_identity_as_an_error():
+    from onceover._checks import verify
+
+    finding = {
+        "id": "test/identity",
+        "type": "arithmetic_identity",
+        "subject": {"target": "v", "inputs": [], "columns": ["v"]},
+        "evidence": [{
+            "metrics": {"a": 1.0, "b": 0.0},
+            "method": {"algorithm": "ols_residual_scan"},
+        }],
+    }
+    result = verify([finding], pl.DataFrame({"v": [1.0, 2.0, 3.0]}))
+    assert result.height == 1
+    assert result["status"].item() == "error"
+    assert "IndexError" in result["note"].item()
 
 
 def test_rollup_verifies_and_a_swapped_direction_is_flagged():

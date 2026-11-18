@@ -131,6 +131,7 @@ _PASS_OF = {
     "predictability": "predictability_screen",
     "numeric_dependence": "dependence_screen",
     "identities": "arithmetic_identities",
+    "covering_rules": "prism_rules",
 }
 
 
@@ -151,3 +152,9 @@ def test_every_registered_detector_has_a_coverage_entry(kwargs):
     missing = [d["id"] for d in onceover.available_detectors()
                if _PASS_OF.get(d["id"], d["id"]) not in coverage]
     assert not missing, (kwargs, missing)
+
+
+def test_unrepresentable_deadline_is_a_value_error_not_a_panic():
+    with pytest.raises(ValueError, match="representable as a duration"):
+        onceover.profile(pl.DataFrame({"x": [1, 2, 3]}),
+                         budget="quick", deadline_seconds=1e30)

@@ -47,12 +47,15 @@ def test_typed_predicates_keep_numeric_strings_and_boolean_outcomes():
 
 
 def test_duplicate_statement_records_fields_equality_and_missing_policy():
-    report=onceover.profile(pl.DataFrame({'a':[None,None,None]}),budget='quick')
+    # A null-only column is not comparable, so it is excluded from the
+    # statement; `b` supplies the actual repeated rows.
+    report=onceover.profile(pl.DataFrame({'a':[None,None,None],'b':[1,1,1]}),budget='quick')
     f=select(report,'duplicates')[0]
-    assert f['subject']=={'columns':['a'],'unit':'rows'}
+    assert f['subject']=={'columns':['b'],'unit':'rows'}
     assert f['specification']['definition']['comparison']=='exact_equality'
     assert f['specification']['definition']['missing_values_equal'] is True
     assert metrics(f,contains='n_redundant')['n_redundant']==2
+    assert not select(onceover.profile(pl.DataFrame({'a':[None,None,None]}),budget='quick'),'duplicates')
 
 
 def test_gap_statement_records_the_reference():

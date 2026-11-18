@@ -127,7 +127,9 @@ fn profile_py(
                 "deadline_seconds must be finite and >= 0",
             ))
         }
-        Some(s) => Some(Duration::from_secs_f64(s)),
+        Some(s) => Some(Duration::try_from_secs_f64(s).map_err(|_| {
+            PyValueError::new_err("deadline_seconds must be representable as a duration")
+        })?),
         None => None,
     };
     let hints = match hints {

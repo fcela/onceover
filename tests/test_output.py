@@ -59,3 +59,15 @@ def test_findings_frame_matches_the_ledger():
     row = fd.row(0, named=True)
     assert row["inputs"] == ["region_id"]
     assert row["n_evidence"] >= 1
+
+
+def test_markdown_table_cells_escape_pipes_and_newlines():
+    md = onceover.profile(
+        pl.DataFrame({"a|b": [1, 2, 3], "line\nbreak": [1, 2, 3]}),
+        budget="quick",
+    ).to_markdown()
+    columns = md.split("## Columns")[1].split("## Coverage")[0]
+    assert r"a\|b" in columns
+    assert "line<br>break" in columns
+    assert "| a|b |" not in columns
+    assert "\nbreak" not in columns

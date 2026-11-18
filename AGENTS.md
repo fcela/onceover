@@ -72,7 +72,10 @@ counts (nulls are never orphans). The result is a
 the single-table report: `profile_many` does not profile the
 individual tables, and same-table pairs are not examined. Coverage
 states how many pairs were considered at each stage and which
-columns were not examined.
+columns were not examined. `MultiTableReport.to_json(max_chars=...)`
+collapses candidate and overlap records into a truncation summary;
+below the reduced skeleton's size it raises `ValueError` rather than
+emitting invalid JSON.
 
 ## Getting findings back out
 
@@ -123,7 +126,9 @@ onceover orders.parquet customers.parquet   # several files: the
 The flags mirror the renderings plus the file-input controls
 (`--budget`, `--deadline-seconds`, `--source-row-cap`, `--exact`,
 `--sample-seed`, `--target`). The HTML format needs the `html`
-extra, like `report.to_html()`.
+extra, like `report.to_html()`. With several files, the single-table
+controls are rejected: `profile_many` examines every value and takes
+no sampling controls, and `--target` applies to one file only.
 
 ## Detectors and targeting
 

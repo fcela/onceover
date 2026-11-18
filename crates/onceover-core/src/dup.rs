@@ -120,7 +120,10 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
 /// Find exact duplicate rows. Returns None when the table has no
 /// comparable columns.
 pub fn find_duplicate_rows(t: &TypedTable) -> Option<DupInfo> {
-    let comparable = t.cols.iter().any(|c| !matches!(c, TypedCol::Other { .. }));
+    let comparable = t
+        .cols
+        .iter()
+        .any(|c| !matches!(c, TypedCol::Null { .. } | TypedCol::Other { .. }));
     if !comparable || t.n == 0 {
         return None;
     }
@@ -200,6 +203,17 @@ mod tests {
         }
         .unwrap();
         let t = crate::typed::extract(&df);
+        assert!(find_duplicate_rows(&t).is_none());
+    }
+
+    #[test]
+    fn null_only_columns_are_not_comparable() {
+        let t = TypedTable {
+            n: 4,
+            names: vec!["x".into()],
+            dtypes: vec!["null".into()],
+            cols: vec![TypedCol::Null { n: 4 }],
+        };
         assert!(find_duplicate_rows(&t).is_none());
     }
 }
