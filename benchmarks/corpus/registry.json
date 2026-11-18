@@ -18,8 +18,8 @@
      "category": "dependencies",
      "type": "functional",
      "target": "tsh_measured",
-     "expect": "found",
-     "note": "Promoted from known-miss tripwire 2026-11-18 (issue #374 step 3): with chance-level approximate dependencies, categorical contexts and order violations no longer stated, the tsh -> tsh_measured statement fits within the report cap. Earlier note: Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+     "expect": "missed",
+     "note": "Changed 2026-11-18: tsh_measured is a missingness indicator of tsh (false exactly where tsh is missing); since issue #445 the relation is stated once by the missingness pass and the indicator is no other pass's subject. Earlier note: Promoted from known-miss tripwire 2026-11-18 (issue #374 step 3): with chance-level approximate dependencies, categorical contexts and order violations no longer stated, the tsh -> tsh_measured statement fits within the report cap. Earlier note: Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "finding",
@@ -27,8 +27,8 @@
      "columns_any": [
       "pregnant"
      ],
-     "expect": "found",
-     "note": "pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+     "expect": "missed",
+     "note": "Changed 2026-11-18: pregnant is a two-valued flag; since issue #445 a flag's 'highly concentrated' statement is not made (its rate is a property, not a defect, and is in the column card); 'nearly constant' at 99% is still stated. Earlier note: pregnant is 98.6% false; the concentration itself is expected. Re-baselined 2026-11-14 (issue #294): the statement is still generated \u2014 it appears when the cap widens (present at max_findings=5000, interestingness 0.83) \u2014 but concentration is a hygiene-class statement, and under cap pressure hygiene is admitted after account, structure, and shape; on this table those classes fill all 100 slots (candidates 1 account, 97 structure, 17 shape; selected 1/82/17), so all 43 hygiene candidates are turned away. The hygiene reserve caps hygiene admissions at 20 but guarantees none; whether it should also guarantee a floor is the open design question in issue #280. This expectation now asserts the statement's absence from the capped report; if hygiene admission changes, the assertion fails and the expectation is promoted back to found. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "finding",
@@ -838,8 +838,8 @@
      "columns_all": [
       "foreign_worker"
      ],
-     "expect": "found",
-     "note": "96.3% of the sample is foreign_worker = no (measured in the standard profile, 2026-11-01)."
+     "expect": "missed",
+     "note": "Changed 2026-11-18: foreign_worker is a two-valued column; since issue #445 its 'highly concentrated' statement is not made (the rate is in the column card). Earlier note: 96.3% of the sample is foreign_worker = no (measured in the standard profile, 2026-11-01)."
     },
     {
      "kind": "documented_case",
@@ -1968,7 +1968,8 @@
      "columns_any": [
       "holiday"
      ],
-     "note": "holiday is the literal string 'None' on 99.87% of rows (12 labels); the concentration itself is expected."
+     "note": "holiday is the literal string 'None' on 99.87% of rows (12 labels); the concentration itself is expected.",
+     "expect": "found"
     },
     {
      "kind": "finding",
@@ -2150,8 +2151,8 @@
      "columns_any": [
       "holiday"
      ],
-     "expect": "found",
-     "note": "holiday is 0 on 97.12% of rows. Share verified independently in the case study. Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap it is a hygiene-class statement and the report's 100 slots are filled before hygiene statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
+     "expect": "missed",
+     "note": "Changed 2026-11-18: holiday is a two-valued flag; since issue #445 its 'highly concentrated' statement is not made (the rate is in the column card). Earlier note: holiday is 0 on 97.12% of rows. Share verified independently in the case study. Re-baselined 2026-11-13 under report selection: the statement is still generated and is selected when the report cap widens (present at max_findings=300); at the default cap it is a hygiene-class statement and the report's 100 slots are filled before hygiene statements are admitted (35 hygiene candidates turned away on this dataset). This expectation now asserts its absence from the capped report. Promoted back to found 2026-11-16 (issue #317 phase 2): the hygiene reserve is a floor as well as a ceiling, so hygiene statements are admitted ahead of structure and shape under cap pressure, and this statement is selected in the capped report again."
     },
     {
      "kind": "max_findings",
@@ -2933,8 +2934,8 @@
       "fee_raw"
      ],
      "target": "fee_raw",
-     "expect": "found",
-     "note": "The fee's exact dependence on the amount is stated (a function of amount_raw, 0 violations); the 2% rate itself is in the gate's reference file."
+     "expect": "missed",
+     "note": "Changed 2026-11-18: Since issue #445 an exact FD needs at least 10 expected violations under random pairing. On the rows where both are present amount_raw is unique (2311 values on 2311 rows), so 'fee_raw is a function of amount_raw' holds trivially; the 2% rate relation needs the text numbers parsed before the identity scans, a documented miss. Earlier note: The fee's exact dependence on the amount is stated (a function of amount_raw, 0 violations); the 2% rate itself is in the gate's reference file."
     },
     {
      "kind": "finding",

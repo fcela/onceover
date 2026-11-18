@@ -18,7 +18,6 @@ import onceover
 
 ON_REQUEST = [
     "row_clusters",
-    "date_gaps",
     "pivot",
     "period_associations",
     "drift",
@@ -81,7 +80,7 @@ def test_registry_membership_trigger_partition():
         for d in registry.values()
         if d["membership"] == "default_set" and d["trigger"] == "always"
     ]
-    assert len(default_always) == 28
+    assert len(default_always) == 29
 
 
 def test_default_run_discloses_on_request_passes_as_skipped():

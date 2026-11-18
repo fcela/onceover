@@ -439,13 +439,14 @@ fn level_code(table: &TypedTable, col: usize) -> bool {
 /// Most two-valued columns tested as missingness indicators.
 const MAX_INDICATOR_CANDIDATES: usize = 64;
 
-/// Phase A: missingness indicators. A two-valued column with no
+/// Phase A: missingness indicators. A flag column with no
 /// missing values of its own, one of whose levels occurs on exactly
 /// the rows where another column is missing (a `t3_measured` flag
 /// beside `t3`), restates that column's missingness. Returns
 /// (indicator, column, evidence).
 pub fn missingness_indicators(
     table: &TypedTable,
+    frame: &FrameModel,
     facts: &[CardFacts],
     hints: Option<&ProfileHints>,
 ) -> Vec<(usize, usize, String)> {
@@ -457,7 +458,12 @@ pub fn missingness_indicators(
     }
     let candidates: Vec<usize> = (0..table.cols.len())
         .filter(|&c| {
+            // Flags only (a boolean or a 0/1 column): a two-level
+            // category (legacy / current) that coincides with another
+            // column's missing rows is a dimension with relations of
+            // its own, not a recording of the missingness.
             facts[c].distinct == 2
+                && frame.roles[c].as_deref() == Some("flag")
                 && facts[c].null_count == 0
                 && !declared_role(hints, &table.names[c])
         })

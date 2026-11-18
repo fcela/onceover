@@ -38,9 +38,12 @@ pub const MIN_RFI: f64 = 0.25;
 
 /// Smallest number of violations a random pairing of the target's
 /// values with the determinant's groups must be expected to produce
-/// before an exact mapping counts as evidence (the order pass's bar
-/// for a near-universal order, read the same way).
-pub const MIN_CHANCE_VIOLATIONS: f64 = 20.0;
+/// before a mapping counts as evidence. Under a Poisson approximation
+/// a random pairing satisfies the mapping with probability about
+/// exp(-expected); at 10 that is below 5e-5, small enough to survive
+/// the hundreds of candidates a table offers, and reachable on small
+/// tables (50 rows of two balanced binary columns expect about 24).
+pub const MIN_CHANCE_VIOLATIONS: f64 = 10.0;
 
 /// Random values collide unless the tuple space far exceeds n^2 / 2, so a
 /// key this far below that is structure, not chance.

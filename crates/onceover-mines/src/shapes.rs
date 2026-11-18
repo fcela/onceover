@@ -68,6 +68,10 @@ pub struct ShapeDiagnostics {
     /// Midpoint between the two predictor values bracketing the
     /// best split.
     pub step_at: f64,
+    /// Spearman correlation between the curve's bin order and its bin
+    /// means: near 1 or -1 only when the binned curve itself rises or
+    /// falls throughout (issue #446).
+    pub bin_trend: f64,
 }
 
 impl ShapeDiagnostics {
@@ -120,6 +124,7 @@ pub fn shape_diagnostics(x: &[f64], y: &[f64]) -> ShapeDiagnostics {
     // splitting a tie; adjusted for the bins' degrees of freedom.
     let bins = distinct.clamp(1, 20);
     let mut rss_curve = 0.0;
+    let mut bin_means: Vec<f64> = Vec::new();
     let mut start = 0usize;
     for b in 0..bins {
         let mut end = ((b + 1) * n) / bins;
@@ -133,6 +138,7 @@ pub fn shape_diagnostics(x: &[f64], y: &[f64]) -> ShapeDiagnostics {
             continue;
         }
         let m = order[start..end].iter().map(|&k| y[k]).sum::<f64>() / (end - start) as f64;
+        bin_means.push(m);
         rss_curve += order[start..end]
             .iter()
             .map(|&k| (y[k] - m).powi(2))
@@ -142,6 +148,10 @@ pub fn shape_diagnostics(x: &[f64], y: &[f64]) -> ShapeDiagnostics {
             break;
         }
     }
+    let bin_trend = {
+        let idx: Vec<f64> = (0..bin_means.len()).map(|i| i as f64).collect();
+        onceover_core::stats::spearman(&idx, &bin_means).unwrap_or(0.0)
+    };
     let curve_r2 = if tss > 0.0 && n > bins {
         (1.0 - (rss_curve / tss) * (nf - 1.0) / (nf - bins as f64)).max(0.0)
     } else {
@@ -181,6 +191,7 @@ pub fn shape_diagnostics(x: &[f64], y: &[f64]) -> ShapeDiagnostics {
         curve_r2,
         step_r2,
         step_at,
+        bin_trend,
     }
 }
 
@@ -314,9 +325,12 @@ fn make_finding(
         )
     } else {
         metrics.insert("form".into(), json!("curved_shape"));
-        let monotone = if d.spearman >= 0.5 {
+        // Monotone only when the binned curve itself rises or falls
+        // throughout; a twin-peaked profile has a positive rank
+        // correlation with its column but is not monotone.
+        let monotone = if d.bin_trend >= 0.9 {
             "monotone increasing"
-        } else if d.spearman <= -0.5 {
+        } else if d.bin_trend <= -0.9 {
             "monotone decreasing"
         } else {
             "non-monotone"

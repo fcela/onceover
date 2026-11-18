@@ -672,7 +672,7 @@ fn profile_inner(
         // the indicator evidence; they are no later pass's subject or
         // input.
         for (f, x, evidence) in
-            crate::basis::missingness_indicators(&table, &card_facts, cfg.hints.as_ref())
+            crate::basis::missingness_indicators(&table, &frame, &card_facts, cfg.hints.as_ref())
         {
             if let Some(r) = frame.info.roles.get_mut(f) {
                 r.evidence = evidence;
