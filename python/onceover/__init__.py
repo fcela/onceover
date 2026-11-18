@@ -74,8 +74,9 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         interruptible, so a very short deadline can still be exceeded.
 
     sample_rows : int, optional
-        Override row samples for relationship searches. Column summaries and
-        identity verification still examine all rows. Small samples can leave
+        Override row samples for relationship searches, including both search
+        and scoring in row_clusters. Column summaries and identity verification
+        still examine all rows. Small samples can leave
         too few rows for model fitting; check coverage.
     max_predictors : int, optional
         Predictors retained per model after screening all usable columns.

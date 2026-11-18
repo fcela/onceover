@@ -57,7 +57,7 @@ impl Default for ViewsConfig {
     fn default() -> Self {
         ViewsConfig {
             row_cap: 20_000,
-            search_rows: 2000,
+            search_rows: 20_000,
             max_columns: 64,
             max_clusters: 8,
             tried_merges_cap: 256,
@@ -77,6 +77,8 @@ pub struct ViewsOutcome {
     pub n_views: usize,
     pub n_findings: usize,
     pub budget_hit: bool,
+    /// Any search, merge, or column limit prevented a complete search.
+    pub capped: bool,
     /// Every column the pass did not examine, for any reason:
     /// the extraction-dropped columns followed by the cap-dropped
     /// columns. Coverage wording must use the two separate lists
@@ -184,6 +186,7 @@ struct ViewCol {
     raw: Vec<Option<f64>>,
     n_levels: usize,
     level_names: Vec<String>,
+    pooled_level_count: usize,
 }
 
 /// Extract eligible columns on the given sample row indices (original
@@ -199,22 +202,19 @@ fn extract_columns(
         let name = table.names[ci].clone();
         let vals_opt: Option<ViewCol> = match col {
             TypedCol::I64 { vals } => {
-                let raw: Vec<Option<f64>> = sample
-                    .iter()
-                    .map(|&r| vals.at(r).map(|v| v as f64))
-                    .collect();
-                Some(standardize(name.clone(), raw))
+                let exact = sample.iter().map(|&r| vals.at(r).map(i128::from)).collect();
+                let raw = sample.iter().map(|&r| col.numeric_at(r)).collect();
+                Some(standardize_exact(name.clone(), exact, raw))
             }
             TypedCol::U64 { vals } => {
-                let raw: Vec<Option<f64>> = sample
-                    .iter()
-                    .map(|&r| vals.at(r).map(|v| v as f64))
-                    .collect();
-                Some(standardize(name.clone(), raw))
-            }
-            TypedCol::Decimal { .. } => {
+                let exact = sample.iter().map(|&r| vals.at(r).map(i128::from)).collect();
                 let raw = sample.iter().map(|&r| col.numeric_at(r)).collect();
-                Some(standardize(name.clone(), raw))
+                Some(standardize_exact(name.clone(), exact, raw))
+            }
+            TypedCol::Decimal { vals, .. } => {
+                let exact = sample.iter().map(|&r| vals[r]).collect();
+                let raw = sample.iter().map(|&r| col.numeric_at(r)).collect();
+                Some(standardize_exact(name.clone(), exact, raw))
             }
             TypedCol::F64 { vals } => {
                 let raw: Vec<Option<f64>> = sample.iter().map(|&r| vals.at(r)).collect();
@@ -228,11 +228,9 @@ fn extract_columns(
                 Some(standardize(name.clone(), raw))
             }
             TypedCol::Datetime { vals, .. } => {
-                let raw: Vec<Option<f64>> = sample
-                    .iter()
-                    .map(|&r| vals.get(r).copied().flatten().map(|v| v as f64))
-                    .collect();
-                Some(standardize(name.clone(), raw))
+                let raw = sample.iter().map(|&r| vals[r].map(|v| v as f64)).collect();
+                let exact = sample.iter().map(|&r| vals[r].map(i128::from)).collect();
+                Some(standardize_exact(name.clone(), exact, raw))
             }
             TypedCol::Str { vals } => {
                 let strs: Vec<Option<String>> = sample
@@ -283,7 +281,7 @@ fn extract_columns(
 /// the cap pre-screen.
 const SCREEN_BINS: usize = 8;
 
-/// Rows used by the cap pre-screen (a prefix of the search rows).
+/// Rows used by the cap pre-screen, sampled across the full search range.
 const SCREEN_ROW_LIMIT: usize = 256;
 
 /// Pair evaluations the cap pre-screen performs at most; wider
@@ -385,14 +383,20 @@ fn mutual_information(a: &[Option<u32>], b: &[Option<u32>]) -> f64 {
 /// work budget; if the budget runs out mid-screen the ranking
 /// uses the pairs computed so far (iteration order is fixed, so
 /// the result stays deterministic).
+struct ColumnScreen {
+    rows: usize,
+    pairs_visited: usize,
+    total_pairs: usize,
+}
+
 fn select_columns(
     cols: Vec<ViewCol>,
     search_pos: &[usize],
     cfg: &ViewsConfig,
     work: &mut WorkBudget,
-) -> (Vec<ViewCol>, Vec<String>, bool) {
+) -> (Vec<ViewCol>, Vec<String>, Option<ColumnScreen>) {
     if cols.len() <= cfg.max_columns {
-        return (cols, Vec::new(), false);
+        return (cols, Vec::new(), None);
     }
     // The screen's cost is bounded on both axes: at most
     // SCREEN_ROW_LIMIT rows, and at most SCREEN_PAIR_LIMIT pairs
@@ -401,8 +405,11 @@ fn select_columns(
     // spread across the table). Without the pair bound, a
     // several-thousand-column table makes the screen itself the
     // most expensive part of the pass.
-    let screen_pos = &search_pos[..search_pos.len().min(SCREEN_ROW_LIMIT)];
-    let codes: Vec<Vec<Option<u32>>> = cols.iter().map(|c| screen_codes(c, screen_pos)).collect();
+    let screen_pos: Vec<usize> = sample_rows(search_pos.len(), SCREEN_ROW_LIMIT)
+        .iter()
+        .map(|&p| search_pos[p as usize])
+        .collect();
+    let codes: Vec<Vec<Option<u32>>> = cols.iter().map(|c| screen_codes(c, &screen_pos)).collect();
     // A column with more distinct codes than half its present rows
     // (an identifier, pre-pooling) can memorize every other column
     // on the sample: its empirical dependence is maximal against
@@ -422,9 +429,10 @@ fn select_columns(
         .collect();
     let c = cols.len();
     let total_pairs = (c * (c - 1) / 2) as u64;
-    let stride = (total_pairs / SCREEN_PAIR_LIMIT).max(1);
+    let stride = total_pairs.div_ceil(SCREEN_PAIR_LIMIT).max(1);
     let mut best = vec![0.0f64; c];
     let mut pair_idx = 0u64;
+    let mut pairs_visited = 0;
     'outer: for i in 0..c {
         for j in (i + 1)..c {
             let take = pair_idx.is_multiple_of(stride);
@@ -436,6 +444,7 @@ fn select_columns(
             if work.hit {
                 break 'outer;
             }
+            pairs_visited += 1;
             if near_unique[i] || near_unique[j] {
                 continue;
             }
@@ -448,8 +457,22 @@ fn select_columns(
             }
         }
     }
+    let varying: Vec<bool> = codes
+        .iter()
+        .map(|col| {
+            let mut values = col.iter().flatten();
+            values
+                .next()
+                .is_some_and(|first| values.any(|other| first != other))
+        })
+        .collect();
     let mut order: Vec<usize> = (0..c).collect();
-    order.sort_by(|&a, &b| best[b].total_cmp(&best[a]).then_with(|| a.cmp(&b)));
+    order.sort_by(|&a, &b| {
+        best[b]
+            .total_cmp(&best[a])
+            .then_with(|| varying[b].cmp(&varying[a]))
+            .then_with(|| a.cmp(&b))
+    });
     let mut keep = vec![false; c];
     for &i in order.iter().take(cfg.max_columns) {
         keep[i] = true;
@@ -463,7 +486,34 @@ fn select_columns(
             dropped.push(col.name.clone());
         }
     }
-    (kept, dropped, true)
+    (
+        kept,
+        dropped,
+        Some(ColumnScreen {
+            rows: screen_pos.len(),
+            pairs_visited,
+            total_pairs: total_pairs as usize,
+        }),
+    )
+}
+
+/// Center in the exact domain before projecting: translating a tight integer
+/// cluster past 2^53 must not erase its variation. Models still use f64;
+/// raw values and exact modal counts retain their source representation.
+fn standardize_exact(name: String, exact: Vec<Option<i128>>, raw: Vec<Option<f64>>) -> ViewCol {
+    let origin = exact.iter().flatten().next().copied().unwrap_or(0);
+    let centered = exact
+        .into_iter()
+        .map(|v| {
+            v.map(|x| {
+                x.checked_sub(origin)
+                    .map_or_else(|| x as f64 - origin as f64, |d| d as f64)
+            })
+        })
+        .collect();
+    let mut col = standardize(name, centered);
+    col.raw = raw;
+    col
 }
 
 /// Standardize a continuous column robustly: z = (x - median) / IQR,
@@ -516,6 +566,7 @@ fn standardize(name: String, raw: Vec<Option<f64>>) -> ViewCol {
         raw,
         n_levels: 0,
         level_names: Vec::new(),
+        pooled_level_count: 0,
     }
 }
 
@@ -565,6 +616,7 @@ fn encode_levels(name: String, strs: Vec<Option<String>>, cap: usize) -> ViewCol
         raw: Vec::new(),
         n_levels: level_names.len(),
         level_names,
+        pooled_level_count: levels.len().saturating_sub(kept_n),
     }
 }
 
@@ -901,6 +953,14 @@ struct ViewState {
     merge_gain: f64,
 }
 
+#[derive(Default)]
+struct SearchStats {
+    total_pairs: usize,
+    pairs_screened: usize,
+    merge_attempts: usize,
+    merge_cap_hit: bool,
+}
+
 /// Greedy view discovery: singleton clusterings, pair pre-screen by
 /// shared-clustering gain, then merges in pre-screen order.
 fn views_search(
@@ -908,9 +968,13 @@ fn views_search(
     search_rows: &[usize],
     cfg: &ViewsConfig,
     work: &mut WorkBudget,
-) -> Vec<ViewState> {
+) -> (Vec<ViewState>, SearchStats) {
     let n_search = search_rows.len();
     let c = cols.len();
+    let mut stats = SearchStats {
+        total_pairs: c * c.saturating_sub(1) / 2,
+        ..Default::default()
+    };
     let penalty = cfg.gamma * (n_search.max(1) as f64).ln();
     // Singleton scores.
     let mut single_scores = Vec::with_capacity(c);
@@ -932,22 +996,23 @@ fn views_search(
         })
         .collect();
     if work.hit || c < 2 {
-        return views;
+        return (views, stats);
     }
     // Pair pre-screen.
     let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
     for i in 0..c {
         for j in (i + 1)..c {
             let (_, s) = phase_b(cols, &[i, j], search_rows, cfg, work);
-            pairs.push((s - single_scores[i] - single_scores[j], i, j));
             if work.hit {
                 break;
             }
+            pairs.push((s - single_scores[i] - single_scores[j], i, j));
         }
         if work.hit {
             break;
         }
     }
+    stats.pairs_screened = pairs.len();
     pairs.sort_by(|a, b| {
         b.0.total_cmp(&a.0)
             .then_with(|| a.1.cmp(&b.1))
@@ -957,13 +1022,17 @@ fn views_search(
     let mut col_to_view: Vec<usize> = (0..c).collect();
     let mut attempts = 0usize;
     for (_, i, j) in pairs {
-        if work.hit || attempts >= cfg.tried_merges_cap {
+        if work.hit {
             break;
         }
         let vi = col_to_view[i];
         let vj = col_to_view[j];
         if vi == vj {
             continue;
+        }
+        if attempts >= cfg.tried_merges_cap {
+            stats.merge_cap_hit = true;
+            break;
         }
         attempts += 1;
         let mut combined = views[vi].cols.clone();
@@ -999,7 +1068,8 @@ fn views_search(
             }
         }
     }
-    views
+    stats.merge_attempts = attempts;
+    (views, stats)
 }
 
 /// Per-cluster, per-column statistics from a row assignment.
@@ -1109,6 +1179,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
         n_views: 0,
         n_findings: 0,
         budget_hit: false,
+        capped: false,
         dropped_columns: Vec::new(),
         cap_dropped_columns: Vec::new(),
         extraction_dropped_columns: Vec::new(),
@@ -1134,6 +1205,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
                 n_views: 0,
                 n_findings: 0,
                 budget_hit: false,
+                capped: false,
                 dropped_columns: dropped,
                 cap_dropped_columns: Vec::new(),
                 extraction_dropped_columns: extraction_dropped,
@@ -1153,7 +1225,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     let (cols, cap_dropped, prescreened) = select_columns(all_cols, &search_pos, cfg, &mut work);
     let cap_dropped_names = cap_dropped.clone();
     dropped.extend(cap_dropped);
-    let views = views_search(&cols, &search_pos, cfg, &mut work);
+    let (views, search_stats) = views_search(&cols, &search_pos, cfg, &mut work);
     // A budget hit mid-singleton drops tail columns from the search
     // entirely: they are in no view. They are not extract drops, so
     // list them separately rather than losing them silently. (A hit
@@ -1216,27 +1288,37 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     } else {
         String::new()
     };
-    let cap_suffix = if prescreened {
+    let cap_suffix = if let Some(screen) = prescreened {
         format!(
             "; {} eligible columns over the {}-column cap: kept the {} with \
-             the strongest pairwise dependence (mutual-information pre-screen)",
+             the strongest pairwise dependence (mutual-information pre-screen: {} rows spanning the search sample, {} of {} pairs visited)",
             n_eligible,
             cfg.max_columns,
-            cfg.max_columns.min(n_eligible)
+            cfg.max_columns.min(n_eligible), screen.rows, screen.pairs_visited, screen.total_pairs
         )
     } else {
         String::new()
     };
+    let merge_suffix = if search_stats.merge_cap_hit {
+        format!("; merge-attempt cap reached ({})", cfg.tried_merges_cap)
+    } else {
+        String::new()
+    };
+    let search_suffix = if search_pos.len() < n_sample {
+        "; search row cap reached"
+    } else {
+        ""
+    };
     let coverage = format!(
-        "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats{}{}",
+        "{} views ({} multi-column), {} findings, sample {} of {} rows, total score {:.1} nats; search {} of {} scoring rows; pair screen {} of {} pairs; {} merge attempts{}{}{}{}",
         views.len(),
         views.iter().filter(|v| v.cols.len() > 1).count(),
         n_findings,
         n_sample,
         table.n,
-        total_score,
-        budget_suffix,
-        cap_suffix
+        total_score, search_pos.len(), n_sample,
+        search_stats.pairs_screened, search_stats.total_pairs, search_stats.merge_attempts,
+        budget_suffix, cap_suffix, merge_suffix, search_suffix
     );
     (
         findings,
@@ -1245,6 +1327,10 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
             n_views: views.len(),
             n_findings,
             budget_hit: work.hit,
+            capped: work.hit
+                || search_stats.merge_cap_hit
+                || !cap_dropped_names.is_empty()
+                || search_pos.len() < n_sample,
             dropped_columns: dropped,
             cap_dropped_columns: cap_dropped_names,
             extraction_dropped_columns: extraction_dropped,
@@ -1324,6 +1410,68 @@ fn summarize_clusters(
         .collect()
 }
 
+struct ModalEntry {
+    cluster: usize,
+    rows_min: usize,
+    rows_max: usize,
+    cluster_n: usize,
+    nonnull_n: usize,
+    modal_value: serde_json::Value,
+    modal_share: f64,
+    modal_n: usize,
+}
+
+impl ModalEntry {
+    fn metrics(&self) -> serde_json::Value {
+        json!({"cluster": self.cluster, "rows_min": self.rows_min, "rows_max": self.rows_max,
+            "cluster_n": self.cluster_n, "nonnull_n": self.nonnull_n,
+            "modal_value": self.modal_value, "modal_share": self.modal_share, "modal_n": self.modal_n})
+    }
+
+    fn claim(&self, column: &str) -> String {
+        let (rows, denominator, range) = if self.nonnull_n < self.cluster_n {
+            (
+                "non-null rows",
+                "the non-null rows",
+                format!(
+                    "{} total rows; rows {}-{}",
+                    self.cluster_n, self.rows_min, self.rows_max
+                ),
+            )
+        } else {
+            (
+                "rows",
+                "the cluster",
+                format!("rows {}-{}", self.rows_min, self.rows_max),
+            )
+        };
+        let value = if self
+            .modal_value
+            .get("pooled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            format!(
+                "fall within the pooled set of {} other levels of {}",
+                self.modal_value["level_count"], column
+            )
+        } else {
+            format!("hold {} at {}", column, self.modal_value)
+        };
+        format!(
+            "{} of {} {} in cluster {} ({}) {} ({:.0}% of {})",
+            self.modal_n,
+            self.nonnull_n,
+            rows,
+            self.cluster,
+            range,
+            value,
+            self.modal_share * 100.0,
+            denominator
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_view_findings(
     table: &TypedTable,
@@ -1346,7 +1494,10 @@ fn emit_view_findings(
     base_metrics.insert("n".to_string(), json!(n_sample));
     base_metrics.insert("population_rows".to_string(), json!(table.n));
     base_metrics.insert("sampled".to_string(), json!(n_sample < table.n));
-    base_metrics.insert("search_rows".to_string(), json!(cfg.search_rows));
+    base_metrics.insert(
+        "search_rows".to_string(),
+        json!(n_sample.min(cfg.search_rows)),
+    );
     base_metrics.insert("max_columns".to_string(), json!(cfg.max_columns));
     base_metrics.insert("max_clusters".to_string(), json!(cfg.max_clusters));
     base_metrics.insert(
@@ -1518,8 +1669,7 @@ fn emit_view_findings(
         // Modal findings are one statement per column: collecting
         // entries here keeps multiple modal clusters (and the spike
         // finding below) from colliding on one selector key.
-        let mut modal_entries: Vec<(usize, usize, usize, usize, serde_json::Value, f64, usize)> =
-            Vec::new();
+        let mut modal_entries: Vec<ModalEntry> = Vec::new();
         for (k, g) in groups.iter().enumerate() {
             // The gate counts non-null observations, not rows: a
             // cluster of 40 rows with 39 nulls holds one observation,
@@ -1528,110 +1678,98 @@ fn emit_view_findings(
             if non_null < cfg.min_degenerate_rows {
                 continue;
             }
-            let (modal_value, modal_share, modal_n): (serde_json::Value, f64, usize) =
-                match &stats[k][jj] {
-                    Acc::Cont { .. } => {
-                        let mut counts: BTreeMap<u64, (usize, f64)> = BTreeMap::new();
-                        for &p in g {
-                            if let (Some(z), Some(r)) = (col.vals[p], col.raw[p]) {
-                                // Canonicalize signed zero: +0.0 and
-                                // -0.0 are the same value and must count
-                                // together, or a mixed-sign zero column
-                                // escapes the modal test on bit keys.
-                                let key = if z == 0.0 { 0.0f64 } else { z }.to_bits();
-                                let e = counts.entry(key).or_insert((0, r));
-                                e.0 += 1;
-                            }
+            let (modal_value, modal_share, modal_n): (serde_json::Value, f64, usize) = match &stats
+                [k][jj]
+            {
+                Acc::Cont { .. } => {
+                    let source =
+                        &table.cols[table.names.iter().position(|n| n == &col.name).unwrap()];
+                    let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+                    for &p in g {
+                        let row = sample[p];
+                        if !source.is_null_at(row) {
+                            let key = if matches!(source, TypedCol::F64 { vals } if vals.at(row) == Some(0.0))
+                            {
+                                "0".to_string()
+                            } else {
+                                source.render_cell(row)
+                            };
+                            let entry = counts.entry(key).or_insert((0, row));
+                            entry.0 += 1;
                         }
-                        let total: usize = counts.values().map(|(c, _)| c).sum();
-                        if total == 0 {
-                            continue;
-                        }
-                        let (n, raw) = counts
-                            .values()
-                            .max_by_key(|(c, _)| *c)
-                            .copied()
-                            .unwrap_or((0, 0.0));
-                        (json!(raw), n as f64 / total as f64, n)
                     }
-                    Acc::Cat { counts } => {
-                        let total: u64 = counts.iter().sum();
-                        if total == 0 {
-                            continue;
-                        }
-                        let (bi, bc) = counts
-                            .iter()
-                            .enumerate()
-                            .max_by_key(|(_, &c)| c)
-                            .unwrap_or((0, &0));
-                        (
-                            json!(col.level_names.get(bi).cloned().unwrap_or_default()),
-                            *bc as f64 / total as f64,
-                            *bc as usize,
-                        )
+                    let Some(&(n, row)) = counts.values().max_by_key(|(count, _)| *count) else {
+                        continue;
+                    };
+                    let value = match source {
+                        TypedCol::I64 { vals } => json!(vals.at(row)),
+                        TypedCol::U64 { vals } => json!(vals.at(row)),
+                        TypedCol::F64 { vals } => json!(vals.at(row)),
+                        _ => json!(source.render_cell(row)),
+                    };
+                    (value, n as f64 / non_null as f64, n)
+                }
+                Acc::Cat { counts } => {
+                    let total: u64 = counts.iter().sum();
+                    if total == 0 {
+                        continue;
                     }
-                };
+                    let (bi, bc) = counts
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|(_, &c)| c)
+                        .unwrap_or((0, &0));
+                    (
+                        if col.pooled_level_count > 0 && bi + 1 == col.n_levels {
+                            json!({"pooled": true, "level_count": col.pooled_level_count,
+                                    "excluding": &col.level_names[..bi]})
+                        } else {
+                            json!(col.level_names.get(bi).cloned().unwrap_or_default())
+                        },
+                        *bc as f64 / total as f64,
+                        *bc as usize,
+                    )
+                }
+            };
             if modal_share >= 0.9 {
                 let s = &summaries[k];
-                modal_entries.push((
-                    k,
-                    s.rows_min,
-                    s.rows_max,
-                    g.len(),
+                modal_entries.push(ModalEntry {
+                    cluster: k,
+                    rows_min: s.rows_min,
+                    rows_max: s.rows_max,
+                    cluster_n: g.len(),
+                    nonnull_n: non_null,
                     modal_value,
                     modal_share,
                     modal_n,
-                ));
+                });
             }
         }
         if !modal_entries.is_empty() {
             let mut m = base_metrics.clone();
-            let claim = if modal_entries.len() == 1 {
-                let (k, rmin, rmax, cn, mv, ms, mn) = &modal_entries[0];
-                m.insert("cluster".to_string(), json!(k));
-                m.insert("rows_min".to_string(), json!(rmin));
-                m.insert("rows_max".to_string(), json!(rmax));
-                m.insert("cluster_n".to_string(), json!(cn));
-                m.insert("modal_value".to_string(), mv.clone());
-                m.insert("modal_share".to_string(), json!(ms));
-                format!(
-                    "{} of {} rows in cluster {} (rows {}-{}) hold {} at {} ({:.0}% of the cluster; {}).",
-                    mn, cn, k, rmin, rmax, col.name, mv, ms * 100.0, HONESTY
-                )
+            if modal_entries.len() == 1 {
+                for (key, value) in modal_entries[0].metrics().as_object().unwrap() {
+                    m.insert(key.clone(), value.clone());
+                }
             } else {
-                let frags: Vec<String> = modal_entries
-                    .iter()
-                    .map(|(k, rmin, rmax, cn, mv, ms, mn)| {
-                        format!(
-                            "{} of {} rows in cluster {} (rows {}-{}) hold {} at {} ({:.0}% of the cluster)",
-                            mn, cn, k, rmin, rmax, col.name, mv, ms * 100.0
-                        )
-                    })
-                    .collect();
                 m.insert(
-                    "modal_clusters".to_string(),
+                    "modal_clusters".into(),
                     json!(modal_entries
                         .iter()
-                        .map(|(k, rmin, rmax, cn, mv, ms, _)| {
-                            json!({
-                                "cluster": k,
-                                "rows_min": rmin,
-                                "rows_max": rmax,
-                                "cluster_n": cn,
-                                "modal_value": mv,
-                                "modal_share": ms,
-                            })
-                        })
+                        .map(ModalEntry::metrics)
                         .collect::<Vec<_>>()),
                 );
-                format!("{} ({}).", frags.join("; "), HONESTY)
-            };
+            }
+            let fragments: Vec<String> = modal_entries
+                .iter()
+                .map(|entry| entry.claim(&col.name))
+                .collect();
             out.push(Finding::from_statement(
                 Category::Concentration,
                 Some("modal_share".to_string()),
                 Subject::columns([col.name.clone()]),
                 Default::default(),
-                claim,
+                format!("{} ({}).", fragments.join("; "), HONESTY),
                 make_evidence(m),
                 0.60,
                 Some(HONESTY.to_string()),
@@ -1924,6 +2062,7 @@ mod tests {
             raw: Vec::new(),
             n_levels: 0,
             level_names: Vec::new(),
+            pooled_level_count: 0,
         };
         let cols = vec![col];
         let groups = vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7, 8]];
@@ -1978,6 +2117,7 @@ mod tests {
             raw: vals.to_vec(),
             n_levels: 0,
             level_names: Vec::new(),
+            pooled_level_count: 0,
         };
         let cols = vec![col];
         let groups = vec![(0..100).collect::<Vec<usize>>()];
@@ -1986,7 +2126,9 @@ mod tests {
             n: 100,
             names: vec!["z".to_string()],
             dtypes: vec!["float64".to_string()],
-            cols: vec![],
+            cols: vec![TypedCol::F64 {
+                vals: NumericValues::Owned(vals),
+            }],
         };
         let view = ViewState {
             cols: vec![0],
@@ -2042,6 +2184,7 @@ mod tests {
             raw: Vec::new(),
             n_levels: 0,
             level_names: Vec::new(),
+            pooled_level_count: 0,
         }
     }
 
@@ -2514,6 +2657,7 @@ mod tests {
             raw: Vec::new(),
             n_levels: 0,
             level_names: Vec::new(),
+            pooled_level_count: 0,
         }];
         let search: Vec<usize> = (0..400).collect();
         let mut work = WorkBudget {
@@ -2599,6 +2743,33 @@ mod tests {
             "constant columns merged: {}",
             serde_json::to_string(&findings).unwrap()
         );
+    }
+
+    #[test]
+    fn coverage_distinguishes_search_rows_and_work_truncation() {
+        let table = synthetic_table();
+        let cfg = ViewsConfig {
+            row_cap: table.n,
+            search_rows: 50,
+            ..Default::default()
+        };
+        let (findings, outcome) = views_pass(&table, &cfg);
+        assert!(outcome.capped);
+        assert!(!outcome.budget_hit);
+        assert!(outcome.coverage.contains("search 50 of 200 scoring rows"));
+        assert!(outcome.coverage.contains("search row cap reached"));
+        assert!(findings
+            .iter()
+            .all(|f| f.metrics()["search_rows"] == json!(50)));
+
+        let cfg = ViewsConfig {
+            work_budget: 1,
+            ..Default::default()
+        };
+        let (_, outcome) = views_pass(&table, &cfg);
+        assert!(outcome.capped && outcome.budget_hit);
+        assert!(outcome.coverage.contains("pair screen 0 of 1 pairs"));
+        assert!(outcome.coverage.contains("search work budget reached"));
     }
 
     #[test]

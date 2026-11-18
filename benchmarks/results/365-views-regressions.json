@@ -1,0 +1,666 @@
+{
+  "base_commit": "a8debce",
+  "protocol": "PYTHONPATH=python python scripts/audit_structure.py",
+  "cases": [
+    {
+      "case": "search_row_override",
+      "options": {
+        "sample_rows": 50,
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_sampled",
+          "detail": "1 views (1 multi-column), 2 findings, sample 50 of 6000 rows, total score -98.3 nats"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": []
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_sampled",
+          "detail": "1 views (1 multi-column), 2 findings, sample 50 of 6000 rows, total score -98.3 nats; search 50 of 50 scoring rows; pair screen 1 of 1 pairs; 1 merge attempts"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": []
+      }
+    },
+    {
+      "case": "search_row_override",
+      "options": {
+        "sample_rows": 6000,
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": []
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7300.0 nats; search 6000 of 6000 scoring rows; pair screen 1 of 1 pairs; 1 merge attempts"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": []
+      }
+    },
+    {
+      "case": "integer_precision",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 21282.2 nats"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": [
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at 2.0 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at 3.0 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at 0.0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 2.0,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 3.0,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 0.0,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1.0,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 2000
+            }
+          },
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at 2.0 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at 3.0 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at 0.0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 2.0,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 3.0,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 0.0,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1.0,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 2000
+            }
+          }
+        ]
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 21282.2 nats; search 6000 of 6000 scoring rows; pair screen 1 of 1 pairs; 1 merge attempts"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": [
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at 2 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at 3 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at 0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at 1 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 2,
+                  "nonnull_n": 1500,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 3,
+                  "nonnull_n": 1500,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 0,
+                  "nonnull_n": 1500,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1,
+                  "nonnull_n": 1500,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 6000
+            }
+          },
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at 2 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at 3 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at 0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at 1 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 2,
+                  "nonnull_n": 1500,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 3,
+                  "nonnull_n": 1500,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 0,
+                  "nonnull_n": 1500,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1,
+                  "nonnull_n": 1500,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 6000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case": "integer_precision",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "2 views (0 multi-column), 2 findings, sample 6000 of 6000 rows, total score 30958.5 nats"
+        },
+        "dependence_blocks": [],
+        "modal_findings": [
+          {
+            "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold x at 1.152921504606847e+18 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 6000,
+              "modal_share": 1.0,
+              "modal_value": 1.152921504606847e+18,
+              "n": 6000,
+              "search_rows": 2000
+            }
+          },
+          {
+            "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold y at 1.152921504606847e+18 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 6000,
+              "modal_share": 1.0,
+              "modal_value": 1.152921504606847e+18,
+              "n": 6000,
+              "search_rows": 2000
+            }
+          }
+        ]
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 21282.2 nats; search 6000 of 6000 scoring rows; pair screen 1 of 1 pairs; 1 merge attempts"
+        },
+        "dependence_blocks": [
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "modal_findings": [
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at 1152921504606846978 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at 1152921504606846979 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at 1152921504606846976 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at 1152921504606846977 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846978,
+                  "nonnull_n": 1500,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846979,
+                  "nonnull_n": 1500,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846976,
+                  "nonnull_n": 1500,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846977,
+                  "nonnull_n": 1500,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 6000
+            }
+          },
+          {
+            "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at 1152921504606846978 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at 1152921504606846979 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at 1152921504606846976 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at 1152921504606846977 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "modal_clusters": [
+                {
+                  "cluster": 0,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846978,
+                  "nonnull_n": 1500,
+                  "rows_max": 5998,
+                  "rows_min": 2
+                },
+                {
+                  "cluster": 1,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846979,
+                  "nonnull_n": 1500,
+                  "rows_max": 5999,
+                  "rows_min": 3
+                },
+                {
+                  "cluster": 2,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846976,
+                  "nonnull_n": 1500,
+                  "rows_max": 5996,
+                  "rows_min": 0
+                },
+                {
+                  "cluster": 3,
+                  "cluster_n": 1500,
+                  "modal_n": 1500,
+                  "modal_share": 1.0,
+                  "modal_value": 1152921504606846977,
+                  "nonnull_n": 1500,
+                  "rows_max": 5997,
+                  "rows_min": 1
+                }
+              ],
+              "n": 6000,
+              "search_rows": 6000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case": "leading_null_dependent_pair_wide_True",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "64 views (0 multi-column), 64 findings, sample 6000 of 6000 rows, total score 990672.2 nats; 66 eligible columns over the 64-column cap: kept the 64 with the strongest pairwise dependence (mutual-information pre-screen); dropped 2 column(s) past the 64-column cap: late_x, late_y"
+        },
+        "dependence_blocks": []
+      },
+      "after": {
+        "coverage": {
+          "status": "capped",
+          "detail": "63 views (1 multi-column), 66 findings, sample 6000 of 6000 rows, total score 965507.2 nats; search 6000 of 6000 scoring rows; pair screen 2016 of 2016 pairs; 256 merge attempts; 66 eligible columns over the 64-column cap: kept the 64 with the strongest pairwise dependence (mutual-information pre-screen: 256 rows spanning the search sample, 2145 of 2145 pairs visited); merge-attempt cap reached (256); dropped 2 column(s) past the 64-column cap: constant_62, constant_63"
+        },
+        "dependence_blocks": [
+          [
+            "late_x",
+            "late_y"
+          ]
+        ]
+      }
+    },
+    {
+      "case": "merge_attempt_cap",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "30 views (0 multi-column), 33 findings, sample 600 of 600 rows, total score -422.2 nats"
+        },
+        "dependence_blocks": []
+      },
+      "after": {
+        "coverage": {
+          "status": "capped",
+          "detail": "30 views (0 multi-column), 33 findings, sample 600 of 600 rows, total score -422.2 nats; search 600 of 600 scoring rows; pair screen 435 of 435 pairs; 256 merge attempts; merge-attempt cap reached (256)"
+        },
+        "dependence_blocks": []
+      }
+    },
+    {
+      "case": "pooled_category_not_real_value",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (0 multi-column), 2 findings, sample 6400 of 6400 rows, total score -6003.2 nats"
+        },
+        "dependence_blocks": [],
+        "modal_findings": [
+          {
+            "claim": "3200 of 3200 rows in cluster 0 (rows 32-6399) hold x at \"other\" (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 3200,
+              "modal_share": 1.0,
+              "modal_value": "other",
+              "n": 6400,
+              "search_rows": 2000
+            }
+          }
+        ]
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (0 multi-column), 2 findings, sample 6400 of 6400 rows, total score -6051.7 nats; search 6400 of 6400 scoring rows; pair screen 0 of 0 pairs; 0 merge attempts"
+        },
+        "dependence_blocks": [],
+        "modal_findings": [
+          {
+            "claim": "3200 of 3200 rows in cluster 0 (rows 32-6399) fall within the pooled set of 32 other levels of x (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 3200,
+              "modal_n": 3200,
+              "modal_share": 1.0,
+              "modal_value": {
+                "excluding": [
+                  "level_00",
+                  "level_01",
+                  "level_02",
+                  "level_03",
+                  "level_04",
+                  "level_05",
+                  "level_06",
+                  "level_07",
+                  "level_08",
+                  "level_09",
+                  "level_10",
+                  "level_11",
+                  "level_12",
+                  "level_13",
+                  "level_14",
+                  "level_15",
+                  "level_16",
+                  "level_17",
+                  "level_18",
+                  "level_19",
+                  "level_20",
+                  "level_21",
+                  "level_22",
+                  "level_23",
+                  "level_24",
+                  "level_25",
+                  "level_26",
+                  "level_27",
+                  "level_28",
+                  "level_29",
+                  "level_30",
+                  "level_31"
+                ],
+                "level_count": 32,
+                "pooled": true
+              },
+              "n": 6400,
+              "nonnull_n": 3200,
+              "search_rows": 6400
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case": "modal_share_missing_denominator",
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "before": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (0 multi-column), 1 findings, sample 1000 of 1000 rows, total score 30.6 nats"
+        },
+        "dependence_blocks": [],
+        "modal_findings": [
+          {
+            "claim": "100 of 1000 rows in cluster 0 (rows 0-999) hold x at 1.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 1000,
+              "modal_share": 1.0,
+              "modal_value": 1.0,
+              "n": 1000,
+              "search_rows": 2000
+            }
+          }
+        ]
+      },
+      "after": {
+        "coverage": {
+          "status": "ran_exact",
+          "detail": "1 views (0 multi-column), 1 findings, sample 1000 of 1000 rows, total score 30.6 nats; search 1000 of 1000 scoring rows; pair screen 0 of 0 pairs; 0 merge attempts"
+        },
+        "dependence_blocks": [],
+        "modal_findings": [
+          {
+            "claim": "100 of 100 non-null rows in cluster 0 (1000 total rows; rows 0-999) hold x at 1 (100% of the non-null rows) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+            "metrics": {
+              "cluster_n": 1000,
+              "modal_n": 100,
+              "modal_share": 1.0,
+              "modal_value": 1,
+              "n": 1000,
+              "nonnull_n": 100,
+              "search_rows": 1000
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "corpus": {
+    "datasets": {
+      "ok": 32,
+      "skipped": 25
+    },
+    "datasets_total": 57,
+    "machine_verified": {
+      "passed": 220,
+      "total": 220
+    },
+    "documented_cases": {
+      "found": 17,
+      "missed": 11,
+      "partial": 4
+    },
+    "documented_missed_in": [
+      "thyroid",
+      "adventureworks",
+      "sec-edgar-company-facts",
+      "metro-interstate-traffic",
+      "bike-sharing-hourly",
+      "adult-census-income"
+    ],
+    "exit_code": 2
+  },
+  "coverage_changes": {
+    "hospital-dha": {
+      "status": "capped",
+      "detail": "41 views (15 multi-column), 109 findings, sample 307 of 307 rows, total score -5174.0 nats; search 307 of 307 scoring rows; pair screen 2016 of 2016 pairs; 256 merge attempts; merge-attempt cap reached (256)"
+    },
+    "state-unemployment": {
+      "status": "capped",
+      "detail": "51 views (1 multi-column), 77 findings, sample 609 of 609 rows, total score 1613.6 nats; search 609 of 609 scoring rows; pair screen 1326 of 1326 pairs; 256 merge attempts; merge-attempt cap reached (256)"
+    },
+    "gse15258-expression": {
+      "status": "capped",
+      "detail": "35 views (12 multi-column), 111 findings, sample 86 of 86 rows, total score -6739.5 nats; search 86 of 86 scoring rows; pair screen 2016 of 2016 pairs; 256 merge attempts; 5006 eligible columns over the 64-column cap: kept the 64 with the strongest pairwise dependence (mutual-information pre-screen: 86 rows spanning the search sample, 245638 of 12527515 pairs visited); merge-attempt cap reached (256)"
+    },
+    "lace-animals": {
+      "status": "capped",
+      "detail": "37 views (18 multi-column), 139 findings, sample 50 of 50 rows, total score -1500.8 nats; search 50 of 50 scoring rows; pair screen 2016 of 2016 pairs; 256 merge attempts; 86 eligible columns over the 64-column cap: kept the 64 with the strongest pairwise dependence (mutual-information pre-screen: 50 rows spanning the search sample, 3655 of 3655 pairs visited); merge-attempt cap reached (256)"
+    }
+  }
+}

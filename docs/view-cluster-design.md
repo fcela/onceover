@@ -63,7 +63,7 @@ use fixed indices. The limits are:
 
 | Work | Limit |
 |---|---:|
-| Search subsample | 2,000 rows |
+| Search sample | 20,000 standard / 50,000 deep; `sample_rows` overrides both search and scoring |
 | Modeled width | 64 eligible columns; when more are eligible, a pairwise normalized-mutual-information pre-screen keeps the strongest (near-unique columns get no ranking signal) |
 | Clusters per view | 8 |
 | Merge attempts | 256 |
@@ -94,8 +94,18 @@ instead, unless the small cluster is itself the largest. This can expose small
 groups of repeated extremes, but it can also flag valid rare groups. Crossing
 the 30-row threshold changes the scoring reference abruptly.
 
-A dominant pooled category can represent several raw labels. Such a modal
-finding describes the encoded level, not a repeated single raw value.
+A dominant pooled category is reported as a set of original levels, with
+its level count and retained-level exclusions, never as a literal `other`
+value. Modal evidence includes the exact count and both cluster and non-null
+row counts; percentages use the non-null denominator. Integer and Decimal
+models center in the exact domain before floating projection, and modal
+counts always compare source values rather than standardized floats.
+
+The column pre-screen samples up to 256 positions across the entire search
+range and favors varying columns over constants when dependence scores tie.
+Coverage states search/scoring row counts, completed pair screens, merge
+attempts, and each limit that stopped work. Column drops and merge/work
+exhaustion report `capped`, even if the scoring sample includes every row.
 
 The concentration types keep modal findings and spike findings separate during
 statement consolidation. The reference chapter describes a remaining ranking
