@@ -148,7 +148,7 @@ fn profile_inner(
     tier.views.row_cap = tier.encode.row_cap;
     tier.views.search_rows = tier.encode.row_cap;
     tier.slices.row_cap = tier.encode.row_cap;
-    tier.modelfail.row_cap = tier.encode.row_cap;
+
     if let Some(predictors) = cfg.max_predictors {
         tier.screen.max_predictors = predictors.max(1);
         tier.encode.feature_cap = predictors.max(1);

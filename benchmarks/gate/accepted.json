@@ -131,7 +131,7 @@
    "metric": "reference.should_8k_default",
    "scope": "total",
    "limit": 35,
-   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. Also: One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
   },
   {
    "metric": "reference.should_full_default",
@@ -173,7 +173,7 @@
    "metric": "redundancy.finding_permille_target",
    "scope": "total",
    "limit": 9381,
-   "reason": "Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md."
+   "reason": "Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
   },
   {
    "metric": "invariance.row_shuffle",
@@ -185,19 +185,19 @@
    "metric": "invariance.noise",
    "scope": "total",
    "limit": 44,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
   },
   {
    "metric": "invariance.noise",
    "scope": "adult-census-income",
    "limit": 9,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2. With the #363 screen cap on this base the count is 8 (one more noise-sensitive predictive statement)."
   },
   {
    "metric": "invariance.noise",
    "scope": "bank-marketing",
    "limit": 4,
-   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
   },
   {
    "metric": "invariance.row_shuffle",
@@ -275,7 +275,7 @@
    "metric": "redundancy.finding_permille_default",
    "scope": "bike-sharing-hourly",
    "limit": 838,
-   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). Also: Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 842 -> 841."
   },
   {
    "metric": "redundancy.finding_permille_default",
@@ -288,6 +288,24 @@
    "scope": "column_order_stress",
    "limit": 944,
    "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "total",
+   "limit": 16629,
+   "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "cost.profile_seconds",
+   "scope": "total",
+   "limit": 56.6,
+   "reason": "Standard-tier profiles pay for the screen's raised fitting-row cap (5,000 to 50,000 rows per target, issue #363): the gate total rises 41.5s to 56.5s on this base, concentrated in the datasets over 5,000 rows. The trade is measured and priced in docs/benchmarks/2026-11-17-sample-caps.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "adult-census-income",
+   "limit": 877,
+   "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877."
   }
  ]
 }

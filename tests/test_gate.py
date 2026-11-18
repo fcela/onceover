@@ -22,7 +22,14 @@ def compare(base, head, tmp_path, *extra):
     b, h = tmp_path / "b.json", tmp_path / "h.json"
     b.write_text(json.dumps(base))
     h.write_text(json.dumps(head))
-    return subprocess.run([sys.executable, str(GATE / "compare.py"), str(b), str(h), *extra],
+    # Isolate the synthetic cards from the repository's live accepted
+    # file: these tests judge compare.py's tolerance arithmetic, not
+    # the acceptances in force. A caller passing its own --accepted
+    # overrides this one (argparse takes the last value).
+    empty = tmp_path / "accepted-empty.json"
+    empty.write_text(json.dumps({"accepted": []}))
+    return subprocess.run([sys.executable, str(GATE / "compare.py"), str(b), str(h),
+                           "--accepted", str(empty), *extra],
                           capture_output=True, text=True)
 
 
