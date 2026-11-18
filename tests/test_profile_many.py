@@ -5,12 +5,35 @@ the module under test is pure Polars, and this file must import
 cleanly in wheel environments that install neither numpy nor scipy.
 """
 import json
+import math
 
 import polars as pl
 import pytest
 
 import onceover
 from onceover import MultiTableReport, profile_many
+
+
+@pytest.mark.parametrize("n,k", [
+    (0, 0), (100, 1), (100, 99), (2**60, 2), (2**64, 3),
+    (1000, 128), (1000, 129), (1000, 500), (20000, 10000),
+    (2**60, 129), (2**64, 1000),
+])
+def test_log_choose_matches_exact_integer_binomial(n, k):
+    from onceover._many import _log_choose
+
+    assert _log_choose(n, k) == pytest.approx(math.log(math.comb(n, k)), rel=2e-14, abs=1e-12)
+
+
+def test_sparse_integer_foreign_key_chance_keeps_wide_span_signal():
+    keys = pl.DataFrame({"key": [0, 2**60]})
+    report = profile_many({"child": keys, "parent": keys.rename({"key": "parent_key"})})
+    assert len(report.candidates) == 2
+    expected = 1 / math.comb(2**60 + 1, 2)
+    for candidate in report.candidates:
+        assert candidate["tier"] == "weak"
+        assert candidate["chance_basis"] == "integer_span"
+        assert candidate["chance_score"] == pytest.approx(expected, rel=1e-13, abs=0)
 
 
 def _customers_orders():
