@@ -48,6 +48,7 @@ project:
         - file: methodology/tested_associations.ipynb
         - file: methodology/dependence_measures.ipynb
         - file: methodology/target_shapes.ipynb
+        - file: methodology/outcome_contrasts.ipynb
         - file: methodology/interactions.ipynb
         - file: methodology/period_associations.ipynb
         - file: methodology/view_clusters.ipynb

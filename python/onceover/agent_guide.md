@@ -1,89 +1,90 @@
 # Agent guide: profiling a table with onceover
 
-Ships in the package, version-matched to it.
-`onceover.capabilities()` is its machine-readable companion.
+Ships in the package, version-matched;
+`onceover.capabilities()` is the machine-readable companion.
 
 ## 1. Hand over what you know before the call
 
-What you know about the table decides which passes run, so
-declare it in the call.
+What you know decides what runs: declare it in the call.
 
 **The outcome.** `target="<column>"` designates the response
-column. A designated target engages three passes otherwise
-skipped: `target_shapes` (each numeric predictor's relationship
-shape to the target), `leakage` (a column that determines the
-target or dwarfs every other relationship to it), and
-`model_failures` (where a cross-fitted model of the target
-fails). An unknown target goes to coverage, not an error.
+and engages five passes otherwise skipped: `outcome_account`
+(the outcome's distribution), `outcome_contrasts`
+(per-level event rates, or medians, against the pooled
+outcome; absences stated as nulls), `target_shapes`,
+`leakage`, `model_failures`. Unknown targets go to coverage.
 
-**Meanings and structure.** `roles` overrides a column's
-semantic role; the vocabulary is `identifier`, `row_number`,
-`timestamp`, `timestamp_part`, `dimension`, `flag`, `measure`,
-`text`. A role outside the vocabulary is ignored. `labels` gives a column a
-display label for prose; evidence keeps raw names.
+**Meaning and purpose.** These ride the frame account;
+`declarations` coverage states what was checked and what was
+carried unchecked. `gloss` ({column: text, or {level: text}}): a column's
+meaning. `units`
+({column: unit}): magnitudes, via the findings' `unit`
+field. `event`: the target level counting as the event —
+contrasts and nulls are stated against it, else in a weaker
+per-level form. `entity`: the panel entity column.
+`recorded_after` ([columns]): recorded after the outcome;
+leakage checks them first, as declared suspects; model
+screens exclude them as predictors. `purpose` and
+`questions` ([strings]): what the data is for — a finding
+answering a declared question (matched by the columns it
+names) is admitted ahead of an equal-score unmatched
+finding, and `questions` coverage counts the answers per
+question, including zero.
 
-Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`.
+**Structure.** `roles` overrides a column's semantic role;
+an unknown role is ignored. `labels`: display labels for
+prose (evidence keeps raw names). The expectations pass
+checks `order_by`, `no_gaps`, `cadence` (a named calendar
+cadence or a step count), `hierarchies` (finest to coarsest),
+and `dimensions`/`measures` exactly; unusable entries go to
+coverage. Instructions: `time`, `ordered_axis`, `level_order`
+({column: [levels in order]}, never inferred),
+`exclude_columns`, `contrast` (`{"column": name, "value":
+scalar}`; a boolean column needs no `value`) profiles one
+subset against the rest; `weights` ([columns]): hotspots
+judge cells by weight shares too. Unknown keys raise.
 
-The expectations pass checks `order_by`, `no_gaps`, `cadence`,
-`hierarchies`, and `dimensions`/`measures` exactly (evidence
-tagged `reference_source="declared"`); unusable entries go to
-coverage, not errors. `cadence`
-values are `"daily"`, `"business_day"`, `"weekly"`, `"monthly"`,
-or a step count; `hierarchies` are level columns, finest to
-coarsest. Instructions to the run: `time`, `ordered_axis` (a non-date
-ordering column), `level_order` ({column: [levels in order]},
-never inferred), `exclude_columns` (dropped pre-run),
-`contrast` (`{"column": name, "value": scalar}`; a boolean
-column needs no `value`) profiles one subset against the rest;
-`weights` ([columns]): hotspots also judge cells by share of
-each weight. Other unknown keys raise an error.
-
-**Units, grain, and your questions.** No hint key carries a
-column's unit, the grain (what one row is), or the questions
-the data serves. Read magnitudes against your units; pull
-each question's findings with `report.select(...)`. A
-question no finding answers is
-information when coverage shows the pass ran.
+Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`, `gloss`, `units`, `event`, `entity`, `recorded_after`, `purpose`, `questions`.
 
 ```python
 report = onceover.profile(df, target="is_canceled",
-    hints={"time": "arrival_date", "labels": {"adr": "average daily rate"}})
+    hints={"event": 1, "recorded_after": ["reservation_status"],
+           "questions": ["what drives cancellations?"]})
 ```
 
 ## 2. The call and the budgets
 
-`profile()` also accepts a LazyFrame or a file path, sampled
-above 200,000 rows unless `exact=True`: `source` states the basis.
+`profile()` accepts a LazyFrame or a file path too, sampled
+above 200,000 rows unless `exact=True`; `source` states the basis.
 
 Budgets: `quick`, `standard`, `deep`.
 
 `quick`: summaries and integrity checks. `standard`
 (default): the default set, capped. `deep`: wider caps,
 deeper search. `deadline_seconds=` bounds the run. Bad
-budgets, detectors, hint keys, or hint values raise errors
-listing the valid values.
+budgets, detectors, or hint keys raise errors listing the
+valid values.
 
 ## 3. Reading the answer
 
-The digest, `report.to_digest()`, is a briefing in sections by
-reader question, one line per fact, each line naming the
-finding that speaks for it; `report.finding(id)` expands one.
+The digest, `report.to_digest()`, is a briefing in sections
+by reader question, one line per fact; `report.finding(id)`
+expands one.
 `report.coverage` records each pass as run, skipped, capped,
-or ineligible; an empty findings list with skipped or capped
-coverage means the table was not fully examined, not clean data.
+or ineligible; empty findings with skipped or capped coverage
+mean the table was not fully examined, not clean data.
 
-A finding's key is its (`category`, `type`) pair;
 `report.select(category=..., type=..., column=..., target=...)`
-also filters on facet fields. The `claim` is a statement with
-evidence attached: read its `metrics` payload and `basis`
-(`measured`, `estimated`, `inferred`) before quoting it.
-`interestingness` is the selection score that orders the
-report; it is not a probability. Verify before acting:
-`report.verify(df)` recounts the statements; `report.rows(id,
-df)` returns one statement's rows.
+filters the findings. The `claim` is a statement with evidence
+attached: read its `metrics` payload and `basis` (`measured`,
+`estimated`, `inferred`) before quoting it. `interestingness`
+is the selection score that orders the report, not a
+probability. Verify before acting: `report.verify(df)`
+recounts the statements; `report.rows(id, df)` returns one
+statement's rows.
 
 ## 4. Detector selection
 
-The default set runs 30 of the 43 registered detectors;
-`detectors=[...]` restricts a run. `capabilities()` lists each
-detector's membership, trigger, and purpose.
+The default set runs 30 of the 45 registered detectors;
+`detectors=[...]` restricts a run; `capabilities()` lists
+membership, trigger, and purpose per detector.

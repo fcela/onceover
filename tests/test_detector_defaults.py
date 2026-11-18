@@ -45,12 +45,19 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_membership_trigger_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 43
+    assert len(registry) == 45
     on_request = sorted(
         d["id"] for d in registry.values() if d["membership"] == "on_request"
     )
     assert on_request == sorted(
-        ON_REQUEST + ["leakage", "model_failures", "target_shapes"]
+        ON_REQUEST
+        + [
+            "leakage",
+            "model_failures",
+            "outcome_account",
+            "outcome_contrasts",
+            "target_shapes",
+        ]
     )
     hint_triggered = sorted(
         d["id"] for d in registry.values() if d["trigger"] == "hints"
@@ -62,7 +69,13 @@ def test_registry_membership_trigger_partition():
     target_triggered = sorted(
         d["id"] for d in registry.values() if d["trigger"] == "target"
     )
-    assert target_triggered == ["leakage", "model_failures", "target_shapes"]
+    assert target_triggered == [
+        "leakage",
+        "model_failures",
+        "outcome_account",
+        "outcome_contrasts",
+        "target_shapes",
+    ]
     default_always = [
         d["id"]
         for d in registry.values()

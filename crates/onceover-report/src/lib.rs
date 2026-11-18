@@ -13,8 +13,8 @@ mod hints;
 mod ledger;
 pub use finding::*;
 pub use hints::{
-    labels_for_finding, resolve_labels, substitute_labels, Cadence, GroupContrast, ProfileHints,
-    ResolvedLabels, HINT_KEYS,
+    labels_for_finding, resolve_labels, substitute_labels, Cadence, Gloss, GroupContrast,
+    ProfileHints, ResolvedLabels, HINT_KEYS,
 };
 pub use ledger::{
     finalize_ledger, group_findings, report_band, select_findings, select_findings_counted,
@@ -484,6 +484,66 @@ pub struct FrameInfo {
     /// The dominant structures, strongest first (at most two).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dominant: Vec<FrameDominant>,
+    /// The caller's declared metadata (the pointed mode's
+    /// handover: gloss, units, event, entity, recorded_after,
+    /// purpose, questions), carried into the frame account as
+    /// declared. The record states what was declared; the
+    /// report's `declarations` coverage entry states what was
+    /// checked and what was carried unchecked. Absent when the
+    /// caller declared no metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declarations: Option<DeclaredMetadata>,
+}
+
+/// The declared metadata of one run, as declared by the caller.
+/// Every field mirrors the hint of the same name; nothing here is
+/// inferred. Fields the caller did not declare are absent.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeclaredMetadata {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub gloss: BTreeMap<String, Gloss>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub units: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recorded_after: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<String>,
+}
+
+impl DeclaredMetadata {
+    /// The record for a hints value: the declared metadata keys,
+    /// copied as declared. `None` when the caller declared none
+    /// of them (the structural hints are not metadata and are
+    /// accounted elsewhere).
+    pub fn from_hints(hints: &ProfileHints) -> Option<Self> {
+        let record = Self {
+            gloss: hints.gloss.clone(),
+            units: hints.units.clone(),
+            event: hints.event.clone(),
+            entity: hints.entity.clone(),
+            recorded_after: hints.recorded_after.clone(),
+            purpose: hints.purpose.clone(),
+            questions: hints.questions.clone(),
+        };
+        if record.gloss.is_empty()
+            && record.units.is_empty()
+            && record.event.is_none()
+            && record.entity.is_none()
+            && record.recorded_after.is_empty()
+            && record.purpose.is_none()
+            && record.questions.is_empty()
+        {
+            None
+        } else {
+            Some(record)
+        }
+    }
 }
 
 /// The complete profile report.

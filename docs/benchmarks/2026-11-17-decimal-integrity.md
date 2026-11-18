@@ -31,7 +31,7 @@ and a Decimal near 1 that must not round into a binary flag.
 
 - Dtype regressions: 40 passed, including seven new tests.
 - Full Python suite: 782 passed.
-- Rust workspace: 576 passed; strict Clippy and formatting pass.
+- Rust workspace: 476 passed; strict Clippy and formatting pass.
 - Corpus before/after: 32 datasets pass, 25 absent datasets skipped;
   **220/220 machine expectations pass on both builds**. Reviewed
   cases remain 17 found, 11 missed and 4 partial (harness exit 2).

@@ -471,6 +471,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         (ModalShare, Category::Concentration),
         (SpikeCells, Category::Concentration),
         (Hotspot, Category::Concentration),
+        (OutcomeDistribution, Category::Concentration),
         (ConcentrationOverTime, Category::Concentration),
         (OutlierEntity, Category::Concentration),
         (CategoricalRole, Category::ColumnRoles),
@@ -495,6 +496,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         (OrderConstraint, Category::Dependencies),
         (OrderViolation, Category::Dependencies),
         (ModelFailure, Category::Dependencies),
+        (OutcomeContrast, Category::Dependencies),
         (ConditionalRule, Category::ConditionalRules),
         (StatisticalAssociation, Category::Associations),
         (PeriodAssociation, Category::Associations),
@@ -1821,10 +1823,10 @@ fn pressure_detector_caps_bind_under_pressure() {
 
 #[test]
 fn pattern_taxonomy_is_complete_and_self_consistent() {
-    // 65 patterns, including the two views-pass patterns
+    // 67 patterns, including the two views-pass patterns
     // (modal_share, spike_cells) that Finding::from_statement
     // callers name directly.
-    assert_eq!(Pattern::ALL.len(), 65);
+    assert_eq!(Pattern::ALL.len(), 67);
     let mut pairs = std::collections::BTreeSet::new();
     for pattern in Pattern::ALL {
         let facets = Facets::for_pattern(
@@ -1841,9 +1843,9 @@ fn pattern_taxonomy_is_complete_and_self_consistent() {
         );
         pairs.insert((category, pattern.subtype()));
     }
-    // 64 distinct (category, type) pairs: "predictive" is shared
+    // 66 distinct (category, type) pairs: "predictive" is shared
     // by two patterns; every other pattern carries its own type.
-    assert_eq!(pairs.len(), 64);
+    assert_eq!(pairs.len(), 66);
 }
 
 #[test]
@@ -1863,6 +1865,7 @@ fn derived_type_lists_match_the_taxonomy() {
             "order_constraint",
             "order_violation",
             "model_failure",
+            "outcome_contrast",
             "leakage_signature"
         ]
         .into_iter()

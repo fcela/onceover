@@ -64,14 +64,14 @@ path.
 | Category | Types |
 |---|---|
 | `missingness` | `missing_values`, `sentinel_values`, `predictable_missingness` |
-| `concentration` | `value_concentration`, `modal_share`, `spike_cells`, `hotspot`, `concentration_over_time`, `outlier_entity` |
+| `concentration` | `value_concentration`, `modal_share`, `spike_cells`, `hotspot`, `concentration_over_time`, `outlier_entity`, `outcome_distribution` |
 | `column_roles` | `categorical_role`, `identifier_role`, `long_format`, `duplicate_encoding` |
 | `uniqueness` | `uniqueness` |
 | `duplicates` | `duplicate_rows`, `near_duplicate_rows` |
 | `formats` | `format_variation`, `heaping`, `digit_preference`, `benford_deviation`, `boundary_mass`, `content_anomaly` |
 | `changes` | `series_structure`, `residual_shift`, `level_shift`, `trend_change`, `variance_change`, `transient_excursion`, `step_discontinuity`, `predictor_drift`, `joint_distribution_change`, `slope_break`, `regime_contrast`, `spike_contrast`, `ordered_partition`, `one_way_flag`, `entry_block`, `exit_block`, `first_activity` |
 | `anomalies` | `row_inconsistency`, `interval_variation`, `extreme_value`, `categorical_outlier` |
-| `dependencies` | `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure` |
+| `dependencies` | `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure`, `outcome_contrast` |
 | `conditional_rules` | `if_then` |
 | `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift` |
 | `gaps` | `gap`, `sequence_gap`, `missing_combinations`, `partial_period` |
@@ -161,6 +161,13 @@ upgrades a statement to an exact constraint.
 | `tail_shift` | `slice_shift` | The slice's rows sit in the target's upper tail at a higher rate than the table's rows. |
 | `median_shift` | `slice_shift` | The slice's median of the target against the table-wide median. |
 | `level_share` | `slice_shift` | The slice's share of one level of a categorical target against its share of rows. |
+| `level_shares` | `outcome_distribution` | The share of the designated outcome's rows at each of its levels, with the declared event's rate over the whole file and on the event basis when an event is declared. |
+| `center_spread_range` | `outcome_distribution` | The designated numeric outcome's center (mean and median), spread (the middle half), and range, in the outcome's own units. |
+| `event_rate` | `outcome_contrast` | One level's rate of the declared event against the pooled event rate, on the event basis (rows carrying the event or the reference level). |
+| `event_rate_null` | `outcome_contrast` | A grouping measured against the declared event and found without a difference: every level's event rate beside the pooled rate, stated as a null. |
+| `level_rate` | `outcome_contrast` | One level's share of one level of the categorical outcome against that level's pooled share, stated when no event is declared. |
+| `location` | `outcome_contrast` | One level's median of the designated numeric outcome against the pooled median. |
+| `location_null` | `outcome_contrast` | A grouping measured against the designated numeric outcome and found without a difference: every level's median beside the pooled median, stated as a null. |
 | `location` | `level_contrast` | The level's median of the measure differs from the rest's median. |
 | `scale` | `level_contrast` | The level's interquartile range of the measure differs from the rest's. |
 | `location_scale` | `level_contrast` | The level's median and interquartile range of the measure both differ from the rest's. |
@@ -294,7 +301,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 |---|---|---|---|---|---|---|---|
 | `missing_values`, `sentinel_values` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | `completeness` | `deviation` |
 | `predictable_missingness` | `column` | `distribution` | `model_based` | `unconditional` | `atemporal` | `completeness` | `regularity` |
-| `value_concentration`, `modal_share`, `spike_cells` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
+| `value_concentration`, `modal_share`, `spike_cells`, `outcome_distribution` | `column` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
 | `hotspot` | `columns` | `distribution` | `approximate` | `unconditional` | `atemporal` | — | `regularity` |
 | `categorical_role`, `identifier_role` | `column` | `role` | `inferred` | `unconditional` | `atemporal` | — | `regularity` |
 | `uniqueness` | `column` or `columns` | `relation` | `exact` | `unconditional` | `atemporal` | `uniqueness` | `regularity` |
@@ -327,7 +334,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `axis_shape` | `columns` | `relation` | `approximate` | `unconditional` | `ordered` | — | `regularity` |
 | `ordered_partition` | `sequence` | `temporal_behaviour` | `model_based` | `segment_conditioned` | `change_across_segments` | — | `regularity` |
 | `one_way_flag`, `entry_block`, `exit_block`, `first_activity` | `columns` | `temporal_behaviour` | `exact` | `unconditional` | `ordered` | — | `regularity` |
-| `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
+| `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift`, `outcome_contrast` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
 | `concentration_over_time`, `outlier_entity` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
 <!-- /generated:facets-by-type -->
 
@@ -849,6 +856,94 @@ findings were reported. The detector is in the default set:
 its scans are exact quantile work in the same cost class as
 the other exact passes, and it runs at every budget.
 
+### The designated outcome
+
+Designating a target (the `target` argument) states the
+outcome itself before anything about its drivers. The
+`outcome_account` detector (type `outcome_distribution`,
+category `concentration`) states the outcome's own
+distribution: for a numeric outcome its median, mean, middle
+half, and range over its finite values, in the outcome's
+declared unit when one is declared; for a categorical outcome
+the share and row count of each level (the eight largest in
+the claim, every level in the evidence), and — when an event
+is declared with the `event` hint — the event's share of all
+rows and its rate on the event basis defined below.
+
+The `outcome_contrasts` detector (type `outcome_contrast`,
+category `dependencies`) states how the outcome varies across
+the levels of each categorical grouping column, against the
+pooled outcome rather than against the pooled rest: the
+comparison a reader of the outcome asks first, which the
+per-level contrasts above do not make (they compare levels of
+a grouping on measures, with no designated outcome). A
+grouping is eligible with at least two levels of 30 or more
+rows and at least 60 rows in total; groupings past 64 levels
+are not scanned, and integer columns past 25 levels are not
+groupings at all — an integer column with forty distinct
+values is a measure that happens to be discrete. Calendar parts of the frame's date axis
+(day of week, month of year, hour of day) enter as groupings
+of the same scan, under the level contrasts' gate: a calendar
+level whose rows span fewer than two distinct cycles is not
+a level of the grouping. A part finer than the axis's own
+resolution does not enter at all — day of week requires a
+sub-monthly modal gap between the axis's distinct values,
+since the weekday of a monthly timestamp is an artifact of
+the calendar, not a property of the rows. Grouping columns recorded after the outcome
+(the `recorded_after` hint) and scaffold-derived columns are
+excluded, and the coverage entry states the exclusions.
+
+For a categorical outcome with a declared event, rates are
+computed on the event basis: the rows carrying the event
+level or the reference level, the target's modal other level
+(for a binary outcome, every row). Each grouping is tested
+by an omnibus chi-square over its eligible levels and each
+level by a two-proportion z-test against the pooled event
+rate; the two families are corrected separately by
+Benjamini–Hochberg. A grouping enters when its omnibus
+q-value is at most 0.05 and at least one level's rate differs
+from the pooled rate by at least two percentage points with
+q-value at most 0.05; an entered grouping states every
+eligible level (at most twelve, largest rate difference
+first), marking each level as a measured difference or as
+beside the pooled rate. Without a declared event, contrasts
+take the weaker per-level form: each level's share of each
+outcome level against that outcome level's pooled share over
+the eligible rows, one Benjamini–Hochberg family, stated at
+the same bars, behind a chi-square omnibus over the grouping
+(corrected across groupings as its own family, q-value at
+most 0.05). For a
+numeric outcome, each level's median is compared with the
+pooled median by a rank-sum test against the rest; a grouping
+enters when its Kruskal–Wallis omnibus q-value is at most
+0.05 and a level's median clears half the pooled IQR with
+q-value at most 0.05, and entered groupings state every
+eligible level's median. The omnibus gates are the
+grouping-level half of the entry rule in every form: without
+them, entry rests on single levels or cells, and across the
+hundreds a wide table offers, chance clears the bars on its
+own.
+
+Measured absences are stated as nulls at the same prominence
+as measured differences — form `event_rate_null` for a
+categorical outcome, form `location_null` for a numeric one —
+but only in the pointed mode: when the caller declared
+metadata (any of `gloss`, `units`, `event`, `entity`,
+`recorded_after`, `purpose`, `questions`) alongside the
+target. A categorical null requires the grouping's omnibus
+p-value at least 0.10, every eligible level's 95% confidence
+interval for its event rate to contain the pooled rate, and
+every interval's half-width at most five percentage points —
+a null is a measured absence precise enough to have seen a
+difference, not a failure to look. A numeric null requires
+every eligible level's median within a quarter of the pooled
+IQR of the pooled median. Without declared metadata the
+passes still state the account and the measured differences,
+and their coverage entries state that nulls are not stated
+and why: on an undeclared run a null would fire on any flat
+grouping, including groupings whose flatness carries no
+information for a reader who declared nothing.
+
 ### Slice shifts
 
 A slice shift (`associations` category, type `slice_shift`)
@@ -1222,7 +1317,60 @@ Callers can declare structure the profiler cannot infer, through the
   on its own. A weight that is not a column of the table, is not
   numeric, carries negative values, totals zero, or is constant
   (its shares would restate row shares) is not applied, and the
-  `hotspots` coverage entry states each case.
+  `hotspots` coverage entry states each case;
+- `gloss`: what a column means, in the caller's words — a text per
+  column, or, for a categorical column, a map of level label to
+  text. Carried unchecked into the report's frame account
+  (`frame.declarations`) and stated in the prose of selected
+  findings whose subject is the column; per-level glosses are
+  stated by the outcome passes where they name levels. A gloss
+  naming a column the table does not have is not carried, and the
+  `declarations` coverage entry states the case;
+- `units`: per-column units (`{column: unit}`). Carried unchecked
+  into the frame account and stated through the `unit` field of
+  the outcome account's subject; a unit for an unknown column is
+  not carried and is stated in the `declarations` coverage entry;
+- `event`: the level of the designated target that counts as the
+  event (a string, number, or boolean naming one of the target's
+  levels). Checked against the target's levels when a target is
+  designated: with it, the outcome account states the event's
+  rate and the outcome contrasts state event rates and, in the
+  pointed mode, event-rate nulls; an event that names no level of
+  the target is refused in the `declarations` coverage entry and
+  the contrasts take the per-level form;
+- `entity`: the frame's entity column for the panel passes, used
+  instead of the inferred entity. Checked to be a column of the
+  table; a name that is not is refused in the `declarations`
+  coverage entry and the inferred entity is used;
+- `recorded_after`: columns recorded after the outcome or derived
+  from it. Checked to be columns of the table. The leakage pass
+  checks them first as declared suspects — a declared column that
+  determines the target, or clears the leakage strength bar, is
+  stated as a declared suspect, and every declared column's
+  measured strength is stated in the `leakage` coverage entry —
+  and they are excluded from the predictor pools of the
+  model-failure and predictability screens and from the outcome
+  contrasts' groupings, each stated in the passes' coverage;
+- `purpose`: what the data is for, one string. Carried unchecked
+  into the frame account and stated in the digest's account of
+  the table;
+- `questions`: the questions the data serves, a list of strings.
+  Carried unchecked into the frame account. A selected finding
+  whose subject names a column a question names (or the
+  designated target, when the question names it) is marked in
+  its evidence (`declared_questions`) and admitted ahead of an
+  unmatched finding of equal selection score; the `questions`
+  coverage entry states how many selected findings answer each
+  question, including zero.
+
+Declaring any of `gloss`, `units`, `event`, `entity`,
+`recorded_after`, `purpose`, or `questions` engages the pointed
+mode: the metadata is carried into `frame.declarations` (present
+only when at least one key is declared), the `declarations`
+coverage entry accounts for every key — what was checked, what
+was carried unchecked, what was refused and why — and the
+outcome contrasts state their measured nulls. Nothing declared
+under these keys is silently dropped.
 
 The `expectations` pass checks the declarations exactly and tags its
 evidence `reference_source: "declared"`, against the date_gaps pass's
@@ -1295,7 +1443,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 30 of the 43 registered detectors; the other 13 run only when named in `detectors`.
+The default set has 30 of the 45 registered detectors; the other 15 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1325,6 +1473,8 @@ The default set has 30 of the 43 registered detectors; the other 13 run only whe
 | `covering_rules` | `conditional_rules` | `default_set` | `always` | `predictability` | Multi-condition rules for categorical targets |
 | `regimes` | `dependencies`, `changes` | `default_set` | `always` | `predictability` | Local linear equations and dated reference-model residual shifts |
 | `interactions` | `dependencies` | `on_request` | `always` | `predictability` | Non-additive predictor pairs under a fitted target model |
+| `outcome_account` | `concentration` | `on_request` | `target` | — | The designated outcome's own distribution: center, spread, and range for a numeric outcome; the share of each level for a categorical one, with the declared event's rate when an event is declared |
+| `outcome_contrasts` | `dependencies` | `on_request` | `target` | — | Per-level outcome contrasts for a designated target: each categorical level's event rate (or median, for a numeric outcome) against the pooled outcome, with measured absences stated as nulls in the pointed mode |
 | `target_shapes` | `dependencies` | `on_request` | `target` | — | Line, curve, and step comparisons for a designated numeric target |
 | `leakage` | `dependencies` | `on_request` | `target` | — | A column that determines the designated target exactly, or relates to it far more strongly than any other column does — the signature of a column derived from the outcome or recorded after it |
 | `model_failures` | `dependencies` | `on_request` | `target` | — | Slices where a cross-fitted model of the designated target fails: out-of-fold errors one-sided or materially larger than the model's overall error |

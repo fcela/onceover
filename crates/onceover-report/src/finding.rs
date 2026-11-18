@@ -197,6 +197,20 @@ pub enum Pattern {
     /// entities' totals. No single cell needs to be extreme:
     /// every row of such an entity is.
     OutlierEntity,
+    /// The designated outcome's own distribution: for a numeric
+    /// outcome its center, spread, and range in the outcome's own
+    /// units; for a categorical outcome the share of each level
+    /// (and, with an event declared, the event's rate over the
+    /// whole file and on the event basis). The base every
+    /// outcome-relative statement compares against.
+    OutcomeDistribution,
+    /// One level of a categorical column against the designated
+    /// outcome: with an event declared, the level's event rate
+    /// against the pooled event rate; for a numeric outcome, the
+    /// level's median against the rest's. A grouping measured and
+    /// found without a difference is stated the same way, as a
+    /// null: the rates or medians and the absence.
+    OutcomeContrast,
 }
 impl Pattern {
     /// Whether a statement of this pattern names a target or an
@@ -217,6 +231,8 @@ impl Pattern {
                 | Self::ModelFailure
                 | Self::LeakageSignature
                 | Self::ConditionalRule
+                | Self::OutcomeDistribution
+                | Self::OutcomeContrast
         )
     }
     /// The finding `type`: every pattern carries one, so consumers
@@ -288,6 +304,8 @@ impl Pattern {
             Self::FirstActivity => "first_activity",
             Self::ConcentrationOverTime => "concentration_over_time",
             Self::OutlierEntity => "outlier_entity",
+            Self::OutcomeDistribution => "outcome_distribution",
+            Self::OutcomeContrast => "outcome_contrast",
             Self::DuplicateEncoding => "duplicate_encoding",
         }
     }
@@ -361,6 +379,8 @@ impl Pattern {
         Pattern::SliceShift,
         Pattern::ConcentrationOverTime,
         Pattern::OutlierEntity,
+        Pattern::OutcomeDistribution,
+        Pattern::OutcomeContrast,
     ];
 
     /// The distinct type strings accepted for `category`, in
@@ -433,6 +453,13 @@ pub const FORMS: &[FormSpec] = &[
     FormSpec { form: "tail_shift", finding_type: "slice_shift", definition: "The slice's rows sit in the target's upper tail at a higher rate than the table's rows." },
     FormSpec { form: "median_shift", finding_type: "slice_shift", definition: "The slice's median of the target against the table-wide median." },
     FormSpec { form: "level_share", finding_type: "slice_shift", definition: "The slice's share of one level of a categorical target against its share of rows." },
+    FormSpec { form: "level_shares", finding_type: "outcome_distribution", definition: "The share of the designated outcome's rows at each of its levels, with the declared event's rate over the whole file and on the event basis when an event is declared." },
+    FormSpec { form: "center_spread_range", finding_type: "outcome_distribution", definition: "The designated numeric outcome's center (mean and median), spread (the middle half), and range, in the outcome's own units." },
+    FormSpec { form: "event_rate", finding_type: "outcome_contrast", definition: "One level's rate of the declared event against the pooled event rate, on the event basis (rows carrying the event or the reference level)." },
+    FormSpec { form: "event_rate_null", finding_type: "outcome_contrast", definition: "A grouping measured against the declared event and found without a difference: every level's event rate beside the pooled rate, stated as a null." },
+    FormSpec { form: "level_rate", finding_type: "outcome_contrast", definition: "One level's share of one level of the categorical outcome against that level's pooled share, stated when no event is declared." },
+    FormSpec { form: "location", finding_type: "outcome_contrast", definition: "One level's median of the designated numeric outcome against the pooled median." },
+    FormSpec { form: "location_null", finding_type: "outcome_contrast", definition: "A grouping measured against the designated numeric outcome and found without a difference: every level's median beside the pooled median, stated as a null." },
     FormSpec { form: "location", finding_type: "level_contrast", definition: "The level's median of the measure differs from the rest's median." },
     FormSpec { form: "scale", finding_type: "level_contrast", definition: "The level's interquartile range of the measure differs from the rest's." },
     FormSpec { form: "location_scale", finding_type: "level_contrast", definition: "The level's median and interquartile range of the measure both differ from the rest's." },
@@ -1119,6 +1146,24 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
+            Pattern::OutcomeDistribution => (
+                Sc::Column,
+                O::Distribution,
+                E::Exact,
+                C::Unconditional,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
+            Pattern::OutcomeContrast => (
+                Sc::Columns,
+                O::Relation,
+                E::Approximate,
+                C::SegmentConditioned,
+                T::Atemporal,
+                None,
+                S::Regularity,
+            ),
             Pattern::Gap | Pattern::SequenceGap => (
                 Sc::Sequence,
                 O::Structure,
@@ -1331,6 +1376,7 @@ impl Facets {
                 Pattern::ConcentrationOverTime
             }
             (Category::Concentration, Some("outlier_entity")) => Pattern::OutlierEntity,
+            (Category::Concentration, Some("outcome_distribution")) => Pattern::OutcomeDistribution,
             (Category::Concentration, Some("modal_share")) => Pattern::ModalShare,
             (Category::Concentration, Some("spike_cells")) => Pattern::SpikeCells,
             (Category::Concentration, _) => Pattern::ValueConcentration,
@@ -1351,6 +1397,7 @@ impl Facets {
             (Category::Dependencies, Some("order_violation")) => Pattern::OrderViolation,
             (Category::Dependencies, Some("model_failure")) => Pattern::ModelFailure,
             (Category::Dependencies, Some("leakage_signature")) => Pattern::LeakageSignature,
+            (Category::Dependencies, Some("outcome_contrast")) => Pattern::OutcomeContrast,
             (Category::Dependencies, Some("predictive")) => {
                 if spec.form.as_deref() == Some("piecewise_linear") {
                     Pattern::PiecewiseDependency
@@ -2021,6 +2068,36 @@ impl Finding {
                 spec.definition.insert(
                     "missing_values".into(),
                     json!("rows missing the grouping value or the measure are excluded from that pair's comparison"),
+                );
+            }
+            Pattern::OutcomeDistribution => {
+                if let Some(f) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(f.to_owned());
+                }
+                if let Some(v) = metrics.get("event") {
+                    spec.definition.insert("event".into(), v.clone());
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the outcome are excluded and counted in the statement"),
+                );
+            }
+            Pattern::OutcomeContrast => {
+                // The level is part of the statement's identity,
+                // as with the level contrasts: each level's rate
+                // against the outcome is its own statement, and a
+                // grouping's null names the grouping.
+                if let Some(f) = metrics.get("form").and_then(Value::as_str) {
+                    spec.form = Some(f.to_owned());
+                }
+                for k in ["level", "grouping_column", "event"] {
+                    if let Some(v) = metrics.get(k) {
+                        spec.definition.insert(k.into(), v.clone());
+                    }
+                }
+                spec.definition.insert(
+                    "missing_values".into(),
+                    json!("rows missing the grouping value or the outcome are excluded from that grouping's comparison"),
                 );
             }
             Pattern::ModelFailure => {

@@ -1747,9 +1747,23 @@ pub fn select_findings_counted(
     // beyond the demotions themselves (a demoted finding's lower
     // score can cost it a capped slot; that is the demotion
     // mechanism working as designed).
+    //
+    // One addition (issue #310): a finding the pipeline marked as
+    // answering a declared question (`declared_questions` in its
+    // evidence metrics) is admitted ahead of an unmatched finding
+    // of equal score — the declared questions are the caller's
+    // own ranking, applied only where the measured scores tie.
+    // Runs that declare no questions mark nothing, and their
+    // order is exactly the standing one.
+    let answers_question = |f: &Finding| {
+        f.evidence
+            .iter()
+            .any(|e| e.metrics.contains_key("declared_questions"))
+    };
     ranked.sort_by(|a, b| {
         b.interestingness
             .total_cmp(&a.interestingness)
+            .then(answers_question(b).cmp(&answers_question(a)))
             .then(a.canonical_key().cmp(&b.canonical_key()))
     });
     // Verified relationship families (issue #116) form over the
