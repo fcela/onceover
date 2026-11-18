@@ -605,12 +605,27 @@ mod tests {
         // be suppressed as chance.
         let n = 6000usize;
         let cap = 600usize;
-        let sampled = subsample_rows(n, cap);
-        let violation_row = (0..n as u32)
-            .find(|r| !sampled.contains(r))
-            .expect("a 600-row sample of 6000 rows leaves unsampled rows")
-            as usize;
-        let (codes, mut labels) = codes_labels(50, n);
+        let (codes, base_labels) = codes_labels(50, n);
+        // Pick a violating row that stays outside the content-keyed
+        // sample of the final frame, not merely outside a sample of the
+        // pristine frame.
+        let mut chosen = None;
+        for candidate in 0..n {
+            let mut labels = base_labels.clone();
+            let other = (codes[candidate] % 50) + 1;
+            labels[candidate] = format!("group_{other}");
+            let frame = df!["code" => &codes, "label" => &labels].unwrap();
+            let table = extract(&frame);
+            let sampled = subsample_rows(&table, cap);
+            if !sampled.contains(&(candidate as u32)) {
+                chosen = Some((candidate, sampled));
+                break;
+            }
+        }
+        let (violation_row, sampled) =
+            chosen.expect("a 600-row content sample of 6000 rows leaves an unsampled row");
+        assert!(!sampled.contains(&(violation_row as u32)));
+        let mut labels = base_labels;
         let other = (codes[violation_row] % 50) + 1;
         labels[violation_row] = format!("group_{other}");
         let frame = df!["code" => &codes, "label" => &labels].unwrap();

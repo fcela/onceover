@@ -1526,12 +1526,28 @@ mod tests {
         // violation, so the claim must be a sample-scoped candidate.
         let n = 600usize;
         let cap = 60usize;
-        let sampled = subsample_rows(n, cap);
-        let violation_row = (0..n as u32)
-            .find(|r| !sampled.contains(r))
-            .expect("a 60-row sample of 600 rows leaves unsampled rows")
-            as usize;
         let key: Vec<i64> = (0..n as i64).map(|i| i % 50).collect();
+        // The sampler is content-keyed, so choose a violating row that is
+        // outside the sample of the final frame, not merely outside a
+        // sample of the pristine frame.
+        let mut chosen = None;
+        for candidate in 0..n {
+            let mut code = key.clone();
+            code[candidate] = (key[candidate] + 1) % 50;
+            let frame = df! {
+                "key" => key.clone(),
+                "code" => code,
+            }
+            .unwrap();
+            let table = extract(&frame);
+            let sampled = subsample_rows(&table, cap);
+            if !sampled.contains(&(candidate as u32)) {
+                chosen = Some((candidate, sampled));
+                break;
+            }
+        }
+        let (violation_row, sampled) =
+            chosen.expect("a 60-row content sample of 600 rows leaves an unsampled row");
         let mut code = key.clone();
         code[violation_row] = (key[violation_row] + 1) % 50;
         let df = df! {
