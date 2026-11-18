@@ -349,7 +349,10 @@ fn prepare_target(
 ) -> Option<TargetKind> {
     let col = &table.cols[ci];
     match col {
-        TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+        TypedCol::I64 { .. }
+        | TypedCol::U64 { .. }
+        | TypedCol::F64 { .. }
+        | TypedCol::Decimal { .. } => {
             // Target eligibility uses the same bounded row sample as fitting;
             // do not recount millions of full-column values for every model.
             let mut distinct = std::collections::BTreeSet::new();

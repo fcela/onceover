@@ -385,10 +385,8 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
     // ---------- measures ----------
     let measures: Vec<usize> = (0..table.cols.len())
         .filter(|&ci| {
-            matches!(
-                table.cols[ci],
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
-            ) && !input.exclude_measures.contains(&table.names[ci].as_str())
+            table.cols[ci].is_numeric()
+                && !input.exclude_measures.contains(&table.names[ci].as_str())
         })
         .collect();
 

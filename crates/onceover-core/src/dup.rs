@@ -46,6 +46,11 @@ fn row_eq(t: &TypedTable, i: usize, j: usize) -> bool {
                     return false;
                 }
             }
+            TypedCol::Decimal { vals, .. } => {
+                if vals[i] != vals[j] {
+                    return false;
+                }
+            }
             TypedCol::Str { vals } => {
                 if vals[i] != vals[j] {
                     return false;
@@ -84,6 +89,9 @@ fn row_hash(t: &TypedTable, i: usize) -> u64 {
             TypedCol::I64 { vals } => vals.at(i).map(|v| v as u64).unwrap_or(MISSING),
             TypedCol::U64 { vals } => vals.at(i).unwrap_or(MISSING),
             TypedCol::F64 { vals } => vals.at(i).map(|v| v.to_bits()).unwrap_or(MISSING),
+            TypedCol::Decimal { vals, .. } => {
+                vals[i].map(|v| fnv64(&v.to_le_bytes())).unwrap_or(MISSING)
+            }
             TypedCol::Str { vals } => match vals[i] {
                 Some(s) => fnv64(s.as_bytes()),
                 None => MISSING,

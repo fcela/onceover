@@ -108,6 +108,7 @@ fn digit_column(name: &str, col: &TypedCol) -> Option<(Vec<Finding>, bool)> {
             .collect(),
         TypedCol::I64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
         TypedCol::U64 { vals } => vals.iter().filter_map(|v| v.map(|x| *x as f64)).collect(),
+        TypedCol::Decimal { .. } => (0..col.len()).filter_map(|r| col.numeric_at(r)).collect(),
         _ => return None,
     };
     if vals.len() < MIN_VALUES {

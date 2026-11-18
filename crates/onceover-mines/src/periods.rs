@@ -219,7 +219,10 @@ pub fn period_associations(table: &TypedTable, deps: &[PairDep], row_cap: usize)
             i != axis.column
                 && matches!(
                     table.cols[i],
-                    TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                    TypedCol::I64 { .. }
+                        | TypedCol::U64 { .. }
+                        | TypedCol::F64 { .. }
+                        | TypedCol::Decimal { .. }
                 )
         })
         .collect();

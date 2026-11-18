@@ -287,3 +287,33 @@ pins live in `crates/onceover-report/src/tests.rs`,
 (the target-triggered set and the benign hint-key dict), and
 the prose counts in the guide, the `profile()` docstring,
 `AGENTS.md`, and the book's usage chapters.
+
+## Reconciliation with main after the Decimal and views fixes
+
+Merged main `34718c6` into PR #367's `fc30796` head. The only textual
+conflict was the level-contrast measure filter: main added Decimal
+eligibility while pointed mode excluded the designated target. The
+resolution uses the shared `is_numeric()` predicate and retains the
+`exclude_measures` guard, preserving both behaviors. Two public-API
+regressions cover float and Decimal measures: unpointed contrasts still
+run, and target-designated contrasts are owned by the outcome pass without
+an additional level-contrast statement.
+
+Validation of the reconciled tree: **823 Python tests**, **487 Rust tests**,
+strict all-target Clippy and formatting pass. The corpus remains 220/220
+machine expectations across 32 available datasets, with 25 missing datasets
+skipped and reviewed cases unchanged (17 found, 11 missed, 4 partial;
+expected exit 2). The strict executed book produces static HTML successfully.
+No corpus or gate expectation was changed by this conflict resolution.
+
+Checks used an isolated checkout, build cache and Python environment,
+leaving the original checkout's uncommitted work alone. The book used an
+explicit isolated Jupyter kernel; the initial global kernel lacked its
+optional dependencies. As in the earlier validation, MyST 1.10.1 required
+its compatible book theme 1.4.1 selected temporarily, with the tracked
+configuration restored afterward.
+
+The earlier Decimal and views records overstated their Rust test totals by
+100 due to an arithmetic error in the audit summary. Their stored test logs
+sum to 476 and 477 respectively; those records are corrected in this update.
+This correction changes no pass/fail result.

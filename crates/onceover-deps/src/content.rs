@@ -908,9 +908,10 @@ pub fn column_content(table: &TypedTable) -> Vec<Finding> {
                 TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
                     text_findings(name, col, table.n)
                 }
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
-                    numeric_findings(name, col, table.n)
-                }
+                TypedCol::I64 { .. }
+                | TypedCol::U64 { .. }
+                | TypedCol::F64 { .. }
+                | TypedCol::Decimal { .. } => numeric_findings(name, col, table.n),
                 TypedCol::Date { .. } | TypedCol::Datetime { .. } => {
                     temporal_findings(name, col, table.n)
                 }

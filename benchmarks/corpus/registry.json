@@ -1414,8 +1414,8 @@
     {
      "kind": "coverage_status",
      "detector": "row_clusters",
-     "status": "ran_exact",
-     "note": "64 columns: exactly at the views cap."
+     "status": "capped",
+     "note": "Issue #365: all 64 columns and 307 rows are scored, but the merge search stops at 256 of the possible pair attempts; coverage must say capped, not ran_exact (measured 2026-11-17)."
     },
     {
      "kind": "finding",
@@ -1474,8 +1474,8 @@
     {
      "kind": "coverage_status",
      "detector": "row_clusters",
-     "status": "ran_exact",
-     "note": "Views partitions the 51 state columns."
+     "status": "capped",
+     "note": "Issue #365: all 609 rows are scored and 1,326 pairs screened, but only 256 merge attempts run; coverage must say capped (measured 2026-11-17)."
     },
     {
      "kind": "finding",
@@ -1568,9 +1568,9 @@
     {
      "kind": "coverage_status",
      "detector": "row_clusters",
-     "status": "ran_exact",
+     "status": "capped",
      "detail_contains": "64-column cap",
-     "note": "Views selects 64 of 5,006 columns by the dependence pre-screen (issue #73; the wide-table screen is pair- and row-bounded): coverage reports 4,942 columns dropped past the cap (measured on this table)."
+     "note": "Issue #365: selects 64 of 5,006 eligible columns (4,942 cap drops), visits 245,638 of 12,527,515 column-screen pairs and reaches the 256-merge limit; coverage must say capped (measured 2026-11-17)."
     },
     {
      "kind": "finding",
@@ -1631,9 +1631,9 @@
     {
      "kind": "coverage_status",
      "detector": "row_clusters",
-     "status": "ran_exact",
+     "status": "capped",
      "detail_contains": "64-column cap",
-     "note": "The views pass selects 64 of 86 columns by a pairwise-dependence pre-screen (issue #73); the 22 dropped columns - the identifier first - are named in the coverage detail. Selection and recall against Lace are recorded in the head-to-head note."
+     "note": "Issue #365: selects 64 of 86 columns (22 cap drops) and reaches the 256-merge limit; all 50 scoring rows do not make this a complete search. Coverage must say capped (measured 2026-11-17)."
     }
    ],
    "notes": [

@@ -1232,6 +1232,7 @@ fn value_hash64(col: &TypedCol, r: usize) -> u64 {
         TypedCol::I64 { vals } => vals.at(r).map(|v| v as u64).unwrap_or(0),
         TypedCol::U64 { vals } => vals.at(r).unwrap_or(0),
         TypedCol::F64 { vals } => vals.at(r).map(|v| v.to_bits()).unwrap_or(0),
+        TypedCol::Decimal { vals, .. } => vals[r].map(|v| fnv64(&v.to_le_bytes())).unwrap_or(0),
         TypedCol::Str { vals } => match vals[r] {
             Some(s) => fnv64(s.as_bytes()),
             None => 0,

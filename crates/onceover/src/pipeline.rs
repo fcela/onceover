@@ -135,6 +135,7 @@ fn profile_inner(
         tier.regimes.row_cap = rows.max(1);
     }
     tier.views.row_cap = tier.encode.row_cap;
+    tier.views.search_rows = tier.encode.row_cap;
     tier.slices.row_cap = tier.encode.row_cap;
     tier.modelfail.row_cap = tier.encode.row_cap;
     if let Some(predictors) = cfg.max_predictors {
@@ -308,7 +309,10 @@ fn profile_inner(
             let col = &table.cols[ci];
             if !matches!(
                 col,
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                TypedCol::I64 { .. }
+                    | TypedCol::U64 { .. }
+                    | TypedCol::F64 { .. }
+                    | TypedCol::Decimal { .. }
             ) {
                 weight_notes.push(format!("weight '{name}' not applied: not a numeric column"));
                 continue;
@@ -1354,6 +1358,7 @@ fn profile_inner(
                     .filter(|c| matches!(
                         c,
                         onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::Decimal { .. }
                             | onceover_core::TypedCol::I64 { .. }
                             | onceover_core::TypedCol::U64 { .. }
                     ))
@@ -1671,6 +1676,7 @@ fn profile_inner(
                     .filter(|c| matches!(
                         c,
                         onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::Decimal { .. }
                             | onceover_core::TypedCol::I64 { .. }
                             | onceover_core::TypedCol::U64 { .. }
                     ))
@@ -2613,6 +2619,7 @@ fn profile_inner(
                             onceover_core::TypedCol::I64 { .. }
                                 | onceover_core::TypedCol::U64 { .. }
                                 | onceover_core::TypedCol::F64 { .. }
+                                | onceover_core::TypedCol::Decimal { .. }
                         )
                     })
                     .count();
@@ -2730,7 +2737,7 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "row_clusters".into(),
-                    if vout.budget_hit {
+                    if vout.capped {
                         PassInfo::capped(detail)
                     } else if table.n > tier.views.row_cap {
                         PassInfo::sampled(detail)
@@ -2855,6 +2862,7 @@ fn profile_inner(
                             onceover_core::TypedCol::I64 { .. }
                                 | onceover_core::TypedCol::U64 { .. }
                                 | onceover_core::TypedCol::F64 { .. }
+                                | onceover_core::TypedCol::Decimal { .. }
                         )
                     })
                     .count();

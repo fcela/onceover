@@ -248,3 +248,20 @@ def test_outcome_contrast_reaches_the_digest_at_the_default_budget():
     assert "channel = 'direct'" in target_section
     assert "60%" in target_section
     assert "No difference in the 'yes' rate across 'region'" in target_section
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.Decimal(12, 2)])
+def test_numeric_target_contrasts_keep_decimal_support_without_duplication(dtype):
+    """Merging Decimal support must preserve pointed mode's ownership of target contrasts."""
+    df = pl.DataFrame({
+        "region": ["a"] * 200 + ["b"] * 200,
+        "amount": pl.Series([float(i % 200 + 1000 * (i >= 200)) for i in range(400)]).cast(dtype),
+    })
+    unpointed = onceover.profile(df, detectors=["level_contrasts"])
+    assert unpointed.select(type="level_contrast", column="amount", include_grouped=True)
+
+    pointed = onceover.profile(
+        df, target="amount", detectors=["level_contrasts", "outcome_contrasts"]
+    )
+    assert pointed.select(type="outcome_contrast", column="amount", include_grouped=True)
+    assert not pointed.select(type="level_contrast", column="amount", include_grouped=True)

@@ -1257,6 +1257,7 @@ pub fn multiterm_identities(
                 onceover_core::TypedCol::I64 { .. }
                     | onceover_core::TypedCol::U64 { .. }
                     | onceover_core::TypedCol::F64 { .. }
+                    | onceover_core::TypedCol::Decimal { .. }
             )
         })
         .map(|(idx, _)| idx)

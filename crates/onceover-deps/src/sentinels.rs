@@ -49,32 +49,40 @@ pub fn sentinel_values_for_columns(table: &TypedTable, columns: &[usize]) -> Vec
     for &i in columns {
         let col = &table.cols[i];
         // (row, exact key, value) over the non-null entries.
-        let entries: Vec<(usize, u64, f64)> = match col {
+        let entries: Vec<(usize, i128, f64)> = match col {
             TypedCol::F64 { vals } => vals
                 .iter()
                 .enumerate()
-                .filter_map(|(r, v)| v.filter(|x| x.is_finite()).map(|x| (r, x.to_bits(), *x)))
+                .filter_map(|(r, v)| {
+                    v.filter(|x| x.is_finite())
+                        .map(|x| (r, x.to_bits() as i128, *x))
+                })
                 .collect(),
             TypedCol::I64 { vals } => vals
                 .iter()
                 .enumerate()
-                .filter_map(|(r, v)| v.map(|x| (r, *x as u64, *x as f64)))
+                .filter_map(|(r, v)| v.map(|x| (r, *x as u64 as i128, *x as f64)))
                 .collect(),
             TypedCol::U64 { vals } => vals
                 .iter()
                 .enumerate()
-                .filter_map(|(r, v)| v.map(|x| (r, *x, *x as f64)))
+                .filter_map(|(r, v)| v.map(|x| (r, *x as i128, *x as f64)))
+                .collect(),
+            TypedCol::Decimal { vals, .. } => vals
+                .iter()
+                .enumerate()
+                .filter_map(|(r, v)| v.map(|x| (r, x, col.numeric_at(r).unwrap())))
                 .collect(),
             _ => continue,
         };
         if entries.len() < MIN_OCCURRENCES + MIN_OTHERS {
             continue;
         }
-        let mut counts: HashMap<u64, usize> = HashMap::new();
+        let mut counts: HashMap<i128, usize> = HashMap::new();
         for &(_, key, _) in &entries {
             *counts.entry(key).or_default() += 1;
         }
-        let mut positions: HashMap<u64, Vec<usize>> = counts
+        let mut positions: HashMap<i128, Vec<usize>> = counts
             .into_iter()
             .filter(|(_, n)| *n >= MIN_OCCURRENCES)
             .map(|(key, n)| (key, Vec::with_capacity(n)))
@@ -87,7 +95,7 @@ pub fn sentinel_values_for_columns(table: &TypedTable, columns: &[usize]) -> Vec
                 pos.push(r);
             }
         }
-        let mut candidates: Vec<(u64, &Vec<usize>)> = positions
+        let mut candidates: Vec<(i128, &Vec<usize>)> = positions
             .iter()
             .filter(|(_, p)| p.len() >= MIN_OCCURRENCES)
             .map(|(k, p)| (*k, p))
@@ -106,7 +114,8 @@ pub fn sentinel_values_for_columns(table: &TypedTable, columns: &[usize]) -> Vec
             let v = match col {
                 TypedCol::I64 { .. } => (key as i64) as f64,
                 TypedCol::U64 { .. } => key as f64,
-                _ => f64::from_bits(key),
+                TypedCol::Decimal { scale, .. } => key as f64 / 10f64.powi(*scale as i32),
+                _ => f64::from_bits(key as u64),
             };
             let count = pos.len();
             // Shortest window covering >= WINDOW_COVER_SHARE of
