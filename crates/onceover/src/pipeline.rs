@@ -2198,6 +2198,20 @@ fn profile_inner(
         findings.extend(out.findings);
     }
 
+    // What every model-based pass shares with the predictability
+    // screen (issue #446): the inputs no model may use, and the exact
+    // identity groups, filled in once the identity scans have run.
+    let mut model_basis = onceover_mines::ModelBasis {
+        // The time axis itself stays an input: a level by time
+        // interaction is a group's drift.
+        excluded_inputs: scaffold_excluded
+            .iter()
+            .copied()
+            .filter(|i| !calendar_inputs.contains(i) && !basis.axis_cols.contains(i))
+            .collect(),
+        identity_groups: Vec::new(),
+    };
+
     // ---------- model-based passes (standard / deep) ----------
     if cfg.budget != Budget::Quick {
         if check_deadline(&mut coverage, "predictability_screen") {
@@ -2361,6 +2375,7 @@ fn profile_inner(
             }
 
             merge_groups(&mut identity_groups);
+            model_basis.identity_groups = identity_groups.clone();
             let mut screen = if enabled("predictability") {
                 screen_predictability(
                     &table,
@@ -2496,8 +2511,17 @@ fn profile_inner(
                 deadline_hit = true;
             }
             if !deadline_hit && enabled("interactions") {
-                let (f, cov) =
-                    profile_interactions(&table, &enc, &screen.results, &tier.screen, &tier.hstat);
+                let (f, cov) = profile_interactions(
+                    &table,
+                    &enc,
+                    &screen.results,
+                    &tier.screen,
+                    &tier.hstat,
+                    &model_basis,
+                    cfg.target
+                        .as_deref()
+                        .and_then(|t| table.names.iter().position(|n| n == t)),
+                );
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
@@ -2872,6 +2896,7 @@ fn profile_inner(
                     excluded,
                     &tier.screen,
                     &tier.drift,
+                    &model_basis,
                 );
                 stamp_insert(
                     &mut coverage,
@@ -3321,7 +3346,7 @@ fn profile_inner(
     if !deadline_hit && enabled("target_shapes") {
         match &cfg.target {
             Some(target) => {
-                let (f, cov) = profile_target_shapes(&table, target, &tier.shapes);
+                let (f, cov) = profile_target_shapes(&table, target, &tier.shapes, &model_basis);
                 stamp_insert(
                     &mut coverage,
                     &mut last_mark,
@@ -3392,6 +3417,17 @@ fn profile_inner(
                     }
                 };
                 let mut mf_excluded = grouping_excluded.clone();
+                // A column an exact identity ties to the target is its
+                // arithmetic: as a model input it makes the model
+                // fail exactly where the identity's other parts are
+                // large; it is neither an input nor a slice variable.
+                if let Some(ti) = table.names.iter().position(|n| n == target) {
+                    for c in model_basis.excluded_for(ti) {
+                        if !mf_excluded.contains(&c) {
+                            mf_excluded.push(c);
+                        }
+                    }
+                }
                 for &idx in &recorded_after_idx {
                     if !mf_excluded.contains(&idx) {
                         mf_excluded.push(idx);

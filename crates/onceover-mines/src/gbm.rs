@@ -625,6 +625,43 @@ fn driver_profile(
     Some(DriverProfile { text, bins })
 }
 
+/// What every model-based pass shares with the predictability
+/// screen: the columns no model may use as an input (scaffolding,
+/// redundant recodings, missingness indicators), the columns the
+/// time axis determines that remain valid inputs, and the exact
+/// identity groups whose members are each other's arithmetic, not
+/// explanation (issue #446).
+#[derive(Clone, Debug, Default)]
+pub struct ModelBasis {
+    pub excluded_inputs: Vec<usize>,
+    pub identity_groups: Vec<Vec<usize>>,
+}
+
+impl ModelBasis {
+    /// The input columns a model of table column `target` must not
+    /// use: the excluded inputs and the target's identity partners.
+    pub fn excluded_for(&self, target: usize) -> Vec<usize> {
+        let mut out = self.excluded_inputs.clone();
+        for g in self.identity_groups.iter().filter(|g| g.contains(&target)) {
+            for &c in g {
+                if c != target && !out.contains(&c) {
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether `col` shares an exact identity with `target`.
+    pub fn identity_partner(&self, target: usize, col: usize) -> bool {
+        col != target
+            && self
+                .identity_groups
+                .iter()
+                .any(|g| g.contains(&target) && g.contains(&col))
+    }
+}
+
 // ---------- screening ----------
 
 pub fn screen(
@@ -2155,7 +2192,13 @@ pub fn fit_gbm_model_restricted(
     let own = enc.feat_cols.iter().position(|&c| c == ci)?;
     let screen_rows: Vec<u32> = train.iter().take(2048).copied().collect();
     let mut selected: Vec<usize> = (0..enc.bins.len())
-        .filter(|&f| f != own && !exclude_cols.contains(&enc.feat_cols[f]))
+        .filter(|&f| {
+            // Calendar parts of the axis are inputs of their own,
+            // as in the screen.
+            f != own
+                && (enc.calendar_part.get(f).copied().flatten().is_some()
+                    || !exclude_cols.contains(&enc.feat_cols[f]))
+        })
         .collect();
     if selected.len() > cfg.max_predictors {
         // Pair each feature with its information score before
