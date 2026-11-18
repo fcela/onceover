@@ -24,6 +24,18 @@ use onceover_core::{TypedCol, TypedTable};
 use crate::hashutil::{build_hashes, encode_value, fnv64, subsample_rows, ColHashes};
 use crate::ColInfo;
 
+/// Smallest reliable fraction of information (`rfi`: the observed
+/// fraction of information minus the fraction the permutation model
+/// expects) at which an approximate dependency, or a rollup or
+/// duplicate encoding, is stated. Below it, agreement between the
+/// columns is what their marginals produce by chance: a near-unique
+/// determinant "determines" any column, and any column "determines" a
+/// near-constant one. Measured on the gate's tables with every column
+/// shuffled (docs/benchmarks/2026-11-18-null-bars.md): the largest rfi
+/// of a stated approximate dependency there is 0.118, and no
+/// unshuffled dependency lies between 0.18 and 0.35.
+pub const MIN_RFI: f64 = 0.25;
+
 /// Random values collide unless the tuple space far exceeds n^2 / 2, so a
 /// key this far below that is structure, not chance.
 const KEY_CHANCE_DIVISOR: f64 = 20.0;
@@ -78,6 +90,10 @@ pub struct DepsOutcome {
     pub caps_bound: Vec<String>,
     /// Verification ran on a stratified row sample, not all rows.
     pub sampled: bool,
+    /// Approximate dependencies within the violation bar whose
+    /// reliable fraction of information is below `MIN_RFI`: the
+    /// agreement chance predicts, not stated.
+    pub n_afd_chance: usize,
     pub n_exact: usize,
     pub n_afd: usize,
     pub coverage: String,
@@ -830,7 +846,14 @@ pub fn discover(
             exact_fds.push((lhs_orig, rhs_orig));
         } else {
             let g1 = stats.violations as f64 / stats.n_used as f64;
-            if g1 <= cfg.afd_g1_max {
+            if g1 > cfg.afd_g1_max {
+                continue;
+            }
+            if stats.rfi < MIN_RFI {
+                out.n_afd_chance += 1;
+                continue;
+            }
+            {
                 let better = match best_afd.get(&rhs_orig) {
                     Some((r, g, l, _)) => {
                         stats.rfi > *r + 1e-12
@@ -904,7 +927,7 @@ pub fn discover(
         n_eligible_lhs, n_eligible_rhs, screened_pairs, screen_rows.len(), cfg.lhs_cap.min(62), cfg.max_lhs_size,
         rows.len(), if sampled { "stratified sample" } else { "full" },
     );
-    cov.push_str(&format!("; {} exact FDs, {} AFDs; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, cfg.key_pair_cap));
+    cov.push_str(&format!("; {} exact FDs, {} AFDs{}; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, if out.n_afd_chance > 0 { format!(" ({} more within the violation bar not stated: reliable fraction of information below {MIN_RFI}, the agreement chance predicts)", out.n_afd_chance) } else { String::new() }, cfg.key_pair_cap));
     if triple_targets > 0 {
         cov.push_str(&format!(
             "; size-3 determinants screened for {} of {} targets with no exact FD at size <= {} (standard-tier step)",

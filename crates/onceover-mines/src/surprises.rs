@@ -546,27 +546,18 @@ fn bitset_for(codes: &[Option<u32>], level: u32, words: usize) -> Vec<u64> {
 
 /// Lanczos log-gamma (ranking-grade accuracy).
 fn lgamma(x: f64) -> f64 {
-    const C: [f64; 6] = [
-        76.18009172947146,
-        -86.50532032941677,
-        24.01409824083091,
-        -1.231739572450155,
-        0.001208650973866179,
-        -0.000005395239384953,
-    ];
-    let mut ser = 1.000000000190015;
-    let mut y = x;
-    for &c in &C {
-        y += 1.0;
-        ser += c / y;
-    }
-    let tmp = x + 5.5;
-    tmp.ln() * (x + 0.5) - tmp + (2.5066282746310005 * ser / x).ln()
+    onceover_core::stats::ln_gamma(x)
 }
 
 /// log10 of the binomial survival P(X >= k) for X ~ Bin(n, p):
 /// how surprising the dominant count is under the level's
 /// global rate.
+/// Family-wise error rate of the categorical context search: a
+/// context is stated only when its dominant share's binomial tail,
+/// against the level's rate in the whole column, is below this rate
+/// divided by the number of contexts evaluated.
+const CONTEXT_ALPHA: f64 = 0.05;
+
 fn log10_binomial_tail(n: usize, k: usize, p: f64) -> f64 {
     if k == 0 || p <= 0.0 {
         return 0.0;
@@ -760,7 +751,7 @@ fn profile_categorical_surprises(
     excluded: &[usize],
     cfg: &SurpriseConfig,
     budget: usize,
-) -> (Vec<Finding>, usize, usize, usize, usize) {
+) -> (Vec<Finding>, usize, usize, usize, usize, usize) {
     let words = table.n.div_ceil(64);
     // Eligible columns coded once: conditions may be any eligible
     // column; targets are the text/bool ones.
@@ -963,6 +954,17 @@ fn profile_categorical_surprises(
         }
     }
 
+    // Significance bar: the context must raise the dominant level's
+    // share above the column's overall rate beyond what chance gives
+    // any of the contexts searched (Bonferroni over every context
+    // evaluated, family alpha CONTEXT_ALPHA). A context where the
+    // level dominates no more than it does in the whole column
+    // isolates nothing: its breaker rows are ordinary.
+    let bar = (CONTEXT_ALPHA / contexts_evaluated.max(1) as f64).log10();
+    let before = candidates.len();
+    candidates.retain(|c| c.logtail <= bar);
+    let not_significant = before - candidates.len();
+
     // Selection: significance order, brevity as tie-break, at
     // most 3 findings per target, and a context must add a breaker
     // row no earlier statement about the target has named.
@@ -1062,6 +1064,7 @@ fn profile_categorical_surprises(
         contexts_evaluated,
         not_started,
         withheld,
+        not_significant,
     )
 }
 
@@ -1213,11 +1216,11 @@ pub fn profile_surprises(
     findings.append(&mut subset_findings);
     findings.truncate(cfg.max_findings);
     let numeric_findings = findings.len();
-    let (cat_findings, cat_targets, cat_contexts, cat_not_started, cat_withheld) =
+    let (cat_findings, cat_targets, cat_contexts, cat_not_started, cat_withheld, cat_chance) =
         if findings.len() < cfg.max_findings {
             profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
         } else {
-            (Vec::new(), 0, 0, 0, 0)
+            (Vec::new(), 0, 0, 0, 0, 0)
         };
     let cat_count = cat_findings.len();
     findings.extend(cat_findings);
@@ -1231,6 +1234,11 @@ pub fn profile_surprises(
         cfg.max_context_conditions,
         cat_count
     );
+    if cat_chance > 0 {
+        detail.push_str(&format!(
+            "; {cat_chance} categorical contexts not stated: the dominant level's share in the context is within what chance gives against its rate in the whole column (binomial tail above {CONTEXT_ALPHA} / {cat_contexts} contexts)"
+        ));
+    }
     if cat_withheld > 0 {
         detail.push_str(&format!(
             "; {cat_withheld} categorical outlier statements not stated: a deviating level is common in its column overall (a default run requires every deviating level at or below 1% of the column's values); name the outliers detector explicitly to state them"
@@ -1485,7 +1493,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert_eq!(
             findings.len(),
             1,
@@ -1520,7 +1528,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1552,7 +1560,7 @@ mod tests {
             400,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         // The planted context ranks first; the same row is also
         // the breaker from the other two columns' perspectives
         // (one finding per target, by design).
@@ -1605,7 +1613,7 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1654,7 +1662,7 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert_eq!(withheld, 0);
         assert_eq!(
             findings.len(),
@@ -1707,7 +1715,7 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
         assert_eq!(withheld, 2);
         assert_eq!(
             findings.len(),

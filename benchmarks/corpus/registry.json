@@ -18,8 +18,8 @@
      "category": "dependencies",
      "type": "functional",
      "target": "tsh_measured",
-     "expect": "missed",
-     "note": "Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
+     "expect": "found",
+     "note": "Promoted from known-miss tripwire 2026-11-18 (issue #374 step 3): with chance-level approximate dependencies, categorical contexts and order violations no longer stated, the tsh -> tsh_measured statement fits within the report cap. Earlier note: Each assay's value column determines its measured flag (missingness structure). Under the chance-corrected scoring (issue #128) the assay-value singles score at their RFI (about 0.08) and fall out of the capped report, so this expectation asserts the statement's absence from the report body: report-cap displacement, class 3 in docs/benchmarks/2026-11-05-fd-chance-correction.md."
     },
     {
      "kind": "finding",
@@ -214,7 +214,8 @@
      "category": "dependencies",
      "type": "model_failure",
      "target": "rings",
-     "note": "The model-failure pass confirms 1 slice failure on 'rings' and states it. Measured 2026-11-15 (issue #315)."
+     "note": "Changed 2026-11-18 (issue #374 step 4): the model splits are now seeded from the target column's values instead of its position; under the new seed this outcome flipped, so the statement depends on which random split the cross-fit draws, not on the data alone. Under the new seed 0 of 90 slice x form candidates clear the search bars. Earlier note: The model-failure pass confirms 1 slice failure on 'rings' and states it. Measured 2026-11-15 (issue #315).",
+     "expect": "missed"
     }
    ],
    "notes": [
@@ -808,8 +809,8 @@
      "category": "dependencies",
      "type": "model_failure",
      "target": "absenteeism_time_hours",
-     "expect": "missed",
-     "note": "The model-failure pass searches 434 slice x form candidates; 48 clear the search bars and 0 confirm on the held-out half at Benjamini-Hochberg q <= 0.05, so no failure is stated. Measured 2026-11-15 (issue #315)."
+     "expect": "found",
+     "note": "Changed 2026-11-18 (issue #374 step 4): the model splits are now seeded from the target column's values instead of its position; under the new seed this outcome flipped, so the statement depends on which random split the cross-fit draws, not on the data alone. Under the new seed the pass confirms slice failures on this target. Earlier note: The model-failure pass searches 434 slice x form candidates; 48 clear the search bars and 0 confirm on the held-out half at Benjamini-Hochberg q <= 0.05, so no failure is stated. Measured 2026-11-15 (issue #315)."
     }
    ],
    "notes": [
@@ -875,8 +876,8 @@
      "category": "dependencies",
      "type": "predictive",
      "target": "credit_risk",
-     "expect": "missed",
-     "note": "The shapes pass does not apply: 'credit_risk' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
+     "expect": "found",
+     "note": "Changed 2026-11-18 (issue #374 step 4): the model splits are now seeded from the target column's values instead of its position; under the new seed this outcome flipped, so the statement depends on which random split the cross-fit draws, not on the data alone. Under the new seed the predictability screen states credit_risk in the report body. Earlier note: The shapes pass does not apply: 'credit_risk' is categorical, and no pass states a predictive relation on it in the report body. Measured 2026-11-15 (issue #315)."
     },
     {
      "kind": "finding",
@@ -2842,8 +2843,8 @@
       "age_years",
       "price"
      ],
-     "expect": "found",
-     "note": "The weak negative age effect (-0.098) is stated as a pair."
+     "expect": "missed",
+     "note": "The weak negative age effect (-0.098) is below the 0.1 minimum effect a stated association needs since 2026-11-18 (issue #374 step 3: at large n every pair clears the q-value bar, so significance alone does not make a pair worth stating). The pair stays in report.associations() with tier none; a release that states it again trips this expectation."
     },
     {
      "kind": "finding",
@@ -3048,8 +3049,8 @@
       "date",
       "sessions"
      ],
-     "expect": "missed",
-     "note": "Known miss: the collapse is not stated as a level_shift finding on the current build; it surfaces as a trend_change at the onset, a variance_change at the recovery, and the ordered partition. The gate's reference file carries the collapse, its duration, and the recovery as checked statements (issue #332)."
+     "expect": "found",
+     "note": "Promoted from known-miss tripwire 2026-11-18: the collapse is now stated as a level_shift (observed after main took the recalibrated breaks bars of #361/#373; issue #374 step 3 does not change the breaks pass). Earlier note: Known miss: the collapse is not stated as a level_shift finding on the current build; it surfaces as a trend_change at the onset, a variance_change at the recovery, and the ordered partition. The gate's reference file carries the collapse, its duration, and the recovery as checked statements (issue #332)."
     }
    ],
    "sha256": "28d47f9915f559a4cb840e2db2826f07296b9b4434b1da2feb881c3cd702c5cb",

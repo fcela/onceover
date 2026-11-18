@@ -174,13 +174,6 @@ const SYSTEMATIC_ASYMMETRY: f64 = 2.0;
 /// pairs that sit closer to a reverse order than to a broken one
 /// are not verified for the statement.
 const SCREEN_SYSTEMATIC_MAX_SHARE: f64 = 0.25;
-/// The systematic statement's scale gate: the two columns must
-/// track their diagonal — the median over sampled complete rows
-/// of |a − b| / max(|a|, |b|) is at most this. A bound pair (a
-/// subset count against its total, a part against its whole)
-/// sits near the diagonal; two columns on unrelated scales cross
-/// asymmetrically too, but from far away.
-const MAX_PAIR_DISTANCE: f64 = 0.2;
 /// The columns' medians must agree within this factor when both
 /// are non-zero: the same-scale half of the gate above.
 const MAX_MEDIAN_RATIO: f64 = 2.5;
@@ -746,40 +739,13 @@ fn spearman_on_sample<T: ScanVal>(a: &[Option<T>], b: &[Option<T>], rows: &[u32]
 /// Average ranks (1-based) of a value vector, ties sharing the
 /// mean of the ranks they span.
 fn midranks(v: &[f64]) -> Vec<f64> {
-    let mut idx: Vec<usize> = (0..v.len()).collect();
-    idx.sort_by(|&p, &q| v[p].partial_cmp(&v[q]).unwrap_or(std::cmp::Ordering::Equal));
-    let mut ranks = vec![0.0; v.len()];
-    let mut i = 0;
-    while i < idx.len() {
-        let mut j = i + 1;
-        while j < idx.len() && v[idx[j]] == v[idx[i]] {
-            j += 1;
-        }
-        let mid = (i + j - 1) as f64 / 2.0 + 1.0;
-        for k in i..j {
-            ranks[idx[k]] = mid;
-        }
-        i = j;
-    }
-    ranks
+    onceover_core::stats::midranks(v)
 }
 
 /// Pearson correlation of two equal-length vectors; None when
 /// either has zero variance.
 fn pearson_xy(xs: &[f64], ys: &[f64]) -> Option<f64> {
-    let n = xs.len() as f64;
-    let (mx, my) = (xs.iter().sum::<f64>() / n, ys.iter().sum::<f64>() / n);
-    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
-    for (x, y) in xs.iter().zip(ys) {
-        let (dx, dy) = (x - mx, y - my);
-        sxy += dx * dy;
-        sxx += dx * dx;
-        syy += dy * dy;
-    }
-    if sxx <= 0.0 || syy <= 0.0 {
-        return None;
-    }
-    Some(sxy / (sxx * syy).sqrt())
+    onceover_core::stats::pearson(xs, ys)
 }
 
 /// The bases a certified or systematic direction can carry
@@ -1478,72 +1444,15 @@ fn dispatch<T: ScanVal>(
         }
         return (None, true);
     }
-    // Neither direction certifies. The complementary
-    // statement: a wanted direction whose violations are
-    // numerous and substantial while the reverse direction's
-    // are at least twice as many, on a pair whose columns
-    // share a scale and track their diagonal — the shape of
-    // a bound that held by construction (a subset count
-    // against its total) and is broken in bulk. The reverse
-    // count is exact even for an unwanted direction — every
-    // evaluated row violates one direction, violates the
-    // other, or ties. The scale gate keeps the statement
-    // off pairs that merely overlap numerically: an age in
-    // years against a duration in seconds also crosses
-    // asymmetrically, but from far off the diagonal.
-    let (pair_distance, comparable) = pair_closeness(av, bv);
-    let systematic = |viol: usize| {
-        let other = d.n - d.equal - viol;
-        viol >= MIN_SYSTEMATIC_VIOLATIONS
-            && (viol as f64) >= MIN_SYSTEMATIC_SHARE * d.n as f64
-            && (other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64
-            && comparable
-            && pair_distance <= MAX_PAIR_DISTANCE
-    };
-    let sys = if want_fs && systematic(d.fs.violations) {
-        let mut c = make(
-            i,
-            j,
-            &d.fs,
-            d.lo_min,
-            d.lo_max,
-            d.hi_min,
-            d.hi_max,
-            chance_violations(av, bv),
-            true,
-        );
-        c.pair_distance = pair_distance;
-        Some(c)
-    } else if want_sf && systematic(d.sf.violations) {
-        let mut c = make(
-            j,
-            i,
-            &d.sf,
-            d.hi_min,
-            d.hi_max,
-            d.lo_min,
-            d.lo_max,
-            chance_violations(bv, av),
-            true,
-        );
-        c.pair_distance = pair_distance;
-        Some(c)
-    } else {
-        None
-    };
-    if let Some(mut c) = sys {
-        // The basis gate (issue #293), as on the certified
-        // form. A systematic direction whose pair carries no
-        // basis is not restated by the part/whole variant
-        // below: the variant exists for pairs the scale gate
-        // excludes, and this pair passed it.
-        if let Some((basis, rho)) = stated_basis(av, bv, derived, temporal, sample_rows) {
-            c.basis = basis;
-            c.basis_spearman = rho;
-            return (Some(c), false);
-        }
-        return (None, true);
-    }
+    // Neither direction certifies. A bound broken on 5-25% of the
+    // rows is stated only when an exact decomposition makes the
+    // lower column a part of the upper one (the whole minus the
+    // part equals a sum of other columns where the bound holds):
+    // the broken rows are then rows where the parts no longer add
+    // up. Without that decomposition, "a <= b is violated on 17%
+    // of rows while the reverse is violated on 75%" says only that
+    // neither order holds.
+    let (pair_distance, _) = pair_closeness(av, bv);
     if exact_f64 && !temporal {
         // The part/whole variant: the same count and
         // share bars as the systematic rule, with the
@@ -1572,19 +1481,15 @@ fn dispatch<T: ScanVal>(
         // The reverse count is exact, as in the
         // systematic rule: every evaluated row violates
         // one direction, violates the other, or ties.
-        let component = |viol: usize, verdict: PartWhole| match verdict {
+        // Containment (both columns floored at zero and sometimes
+        // equal) does not establish a component: two unrelated
+        // non-negative counts meet both conditions (issue #337).
+        let component = |verdict: PartWhole| match verdict {
             PartWhole::Component(basis) if basis != "containment" => Some(basis),
-            PartWhole::Component(basis) => {
-                let other = d.n - d.equal - viol;
-                ((other as f64) >= SYSTEMATIC_ASYMMETRY * viol as f64).then_some(basis)
-            }
             _ => None,
         };
         if want_fs && variant(d.fs.violations) {
-            if let Some(basis) = component(
-                d.fs.violations,
-                part_whole_relation(av, bv, table, i, j, excluded),
-            ) {
+            if let Some(basis) = component(part_whole_relation(av, bv, table, i, j, excluded)) {
                 let mut c = make(
                     i,
                     j,
@@ -1604,10 +1509,7 @@ fn dispatch<T: ScanVal>(
             }
         }
         if want_sf && variant(d.sf.violations) {
-            if let Some(basis) = component(
-                d.sf.violations,
-                part_whole_relation(bv, av, table, j, i, excluded),
-            ) {
+            if let Some(basis) = component(part_whole_relation(bv, av, table, j, i, excluded)) {
                 let mut c = make(
                     j,
                     i,
@@ -2381,12 +2283,14 @@ mod tests {
     }
 
     #[test]
-    fn systematic_violation_is_reported_with_its_count() {
+    fn broken_order_without_a_decomposition_is_not_stated() {
         // generated in [50, 249]; accepted exceeds it on 480 of
         // 2,000 rows (24%), falls below it on 1,300 (65%), and ties
         // on 220. The direction accepted <= generated fails far
-        // past the 1% certification bar, and the reverse fails far
-        // more often: a systematic violation, stated with its count.
+        // past the 1% certification bar and the reverse fails far
+        // more often: neither order holds, and no decomposition
+        // makes one column a part of the other, so nothing is
+        // stated.
         let gen: Vec<f64> = (0..2000).map(|k| 50.0 + ((k * 37) % 200) as f64).collect();
         let mut acc = gen.clone();
         for (k, a) in acc.iter_mut().enumerate() {
@@ -2398,21 +2302,11 @@ mod tests {
         }
         let df = df! { "generated" => gen, "accepted" => acc }.unwrap();
         let out = scan(&df);
-        let hits = pair_findings(&out, "accepted", "generated");
-        assert_eq!(
-            hits.len(),
-            1,
+        assert!(
+            pair_findings(&out, "accepted", "generated").is_empty(),
             "{:?}",
             out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );
-        let f = hits[0];
-        assert_eq!(f.finding_type.as_deref(), Some("order_violation"));
-        let m = &f.evidence[0].metrics;
-        assert_eq!(m["violations"], json!(480));
-        assert_eq!(m["reverse_violations"], json!(1300));
-        assert_eq!(m["violation_kind"], json!("systematic"));
-        assert!(f.claim.contains("480 of 2000"), "{}", f.claim);
-        f.validate().unwrap();
     }
 
     #[test]
@@ -2532,7 +2426,7 @@ mod tests {
     }
 
     #[test]
-    fn contained_part_without_a_decomposition_is_stated() {
+    fn contained_part_without_a_decomposition_is_not_stated() {
         // The whole is recorded independently — no rest column
         // exists to decompose the slack. The part sits inside
         // the whole, the slack is zero on a tenth of the held
@@ -2556,20 +2450,14 @@ mod tests {
         }
         let df = df! { "part" => part, "whole" => whole }.unwrap();
         let out = scan(&df);
-        let hits = pair_findings(&out, "part", "whole");
-        assert_eq!(
-            hits.len(),
-            1,
+        // Containment alone (both floored at zero, sometimes equal)
+        // does not make one column a part of the other; two
+        // unrelated non-negative counts meet it too (issue #337).
+        assert!(
+            pair_findings(&out, "part", "whole").is_empty(),
             "{:?}",
             out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );
-        let f = hits[0];
-        assert_eq!(f.finding_type.as_deref(), Some("order_violation"));
-        let m = &f.evidence[0].metrics;
-        assert_eq!(m["violations"], json!(480));
-        assert_eq!(m["violation_kind"], json!("part_whole"));
-        assert_eq!(m["part_whole_basis"], json!("containment"));
-        f.validate().unwrap();
     }
 
     #[test]
@@ -2729,8 +2617,7 @@ mod tests {
         // count, share, asymmetry, and scale terms all pass —
         // but the pair carries no basis: no functional relation,
         // no component relation, and a rank correlation near
-        // zero. The direction is counted as unstated, not
-        // reported.
+        // zero. Nothing is stated.
         let n = 5000;
         let mut lower = vec![0.0; n];
         let mut upper = vec![0.0; n];
@@ -2748,7 +2635,6 @@ mod tests {
             "{:?}",
             out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
         );
-        assert_eq!(out.directions_unstated, 1);
     }
 
     #[test]
@@ -2838,36 +2724,6 @@ mod tests {
         assert_eq!(m["order_basis"], json!("predictive"));
         let rho = m["basis_spearman"].as_f64().unwrap();
         assert!(rho >= MIN_BASIS_SPEARMAN, "{rho}");
-        hits[0].validate().unwrap();
-    }
-
-    #[test]
-    fn systematic_violation_with_a_predictive_basis_states_it() {
-        // accepted is generated perturbed by a few units, as in
-        // the systematic test above: the pair is strongly
-        // rank-correlated, so the violation is stated with the
-        // predictive basis.
-        let gen: Vec<f64> = (0..2000).map(|k| 50.0 + ((k * 37) % 200) as f64).collect();
-        let mut acc = gen.clone();
-        for (k, a) in acc.iter_mut().enumerate() {
-            if k < 480 {
-                *a += 5.0;
-            } else if k < 1780 {
-                *a -= 3.0;
-            }
-        }
-        let df = df! { "generated" => gen, "accepted" => acc }.unwrap();
-        let out = scan(&df);
-        let hits = pair_findings(&out, "accepted", "generated");
-        assert_eq!(
-            hits.len(),
-            1,
-            "{:?}",
-            out.findings.iter().map(|f| &f.claim).collect::<Vec<_>>()
-        );
-        let m = &hits[0].evidence[0].metrics;
-        assert_eq!(m["violation_kind"], json!("systematic"));
-        assert_eq!(m["order_basis"], json!("predictive"));
         hits[0].validate().unwrap();
     }
 

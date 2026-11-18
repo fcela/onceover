@@ -196,14 +196,8 @@ fn entity_columns(table: &TypedTable, frame: &FrameModel) -> Vec<usize> {
 }
 
 fn median(values: &[usize]) -> f64 {
-    let mut sorted = values.to_vec();
-    sorted.sort_unstable();
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        sorted[mid] as f64
-    } else {
-        (sorted[mid - 1] as f64 + sorted[mid] as f64) / 2.0
-    }
+    let v: Vec<f64> = values.iter().map(|&x| x as f64).collect();
+    onceover_core::stats::median(&v)
 }
 
 /// A count or median rendered for a claim: whole numbers without a
@@ -225,14 +219,7 @@ fn json_count(v: f64) -> Value {
 }
 
 fn median_f64(values: &[f64]) -> f64 {
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        sorted[mid]
-    } else {
-        (sorted[mid - 1] + sorted[mid]) / 2.0
-    }
+    onceover_core::stats::median(values)
 }
 
 /// A measure total rendered for a claim: whole numbers without a

@@ -44,8 +44,10 @@ pub fn profile_with_detectors(
 /// neither does a timestamp part (an hour beside a date subdivides
 /// the period; it is not an entity followed through time). An
 /// entity axis also needs at least 10 distinct values — the panel
-/// checks' own floor for the entities they follow. At most three
-/// columns are returned.
+/// checks' own floor for the entities they follow — and at least two
+/// non-null rows per entity on average: a column with one row per value (an
+/// order number) has no history to follow, and its "entity total" is
+/// one row's value. At most three columns are returned.
 fn entity_columns(
     table: &TypedTable,
     frame: &crate::frame::FrameModel,
@@ -69,6 +71,7 @@ fn entity_columns(
         if non_axis.len() == 1 && non_axis[0].1 >= 10 {
             if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
                 if !entities.contains(&i)
+                    && 2 * card_facts[i].distinct <= table.n - card_facts[i].null_count
                     && !matches!(
                         frame.roles[i].as_deref(),
                         Some("timestamp_part" | "row_number")
@@ -83,6 +86,7 @@ fn entity_columns(
         for (i, r) in frame.roles.iter().enumerate() {
             if r.as_deref() == Some(role)
                 && card_facts[i].distinct >= 10
+                && 2 * card_facts[i].distinct <= table.n - card_facts[i].null_count
                 && !entities.contains(&i)
                 && table.names[i] != axis_name
             {
@@ -2158,6 +2162,154 @@ fn profile_inner(
                 PassInfo::sampled(enc_cov),
             );
 
+            let mut identity_groups: Vec<Vec<usize>> = Vec::new();
+            // Pairwise dependence (supporting role) + identities,
+            // ahead of the predictability screen (issue #374): a
+            // column an exact identity ties to a target (a part of a
+            // total, the total of a part) is withheld from that
+            // target's predictors, so the screen states what
+            // explains the target rather than the arithmetic.
+            // The screen polls the deadline inside its own loops,
+            // so it is exempt from the dispatch skip, like the
+            // discontinuities and hotspots passes: dispatched even
+            // when the deadline has already expired, its first
+            // poll stops it, and its coverage entry discloses the
+            // stop (0 pairs screened). The between-pass check
+            // still runs when the screen is not dispatched, so
+            // the skip record is unchanged there.
+            let dep_dispatched = tier.dep_pair_cap > 0 && enabled("numeric_dependence");
+            if !dep_dispatched && check_deadline(&mut coverage, "dependence_screen") {
+                deadline_hit = true;
+            }
+            if dep_dispatched {
+                let dep_out = onceover_mines::dep::screen_sampled(
+                    &table,
+                    tier.dep_pair_cap,
+                    tier.encode.row_cap,
+                    &scaffold_excluded,
+                    pass_deadline,
+                );
+                if dep_out.deadline_stopped {
+                    deadline_hit = true;
+                }
+                let (deps_pair, dep_findings, dep_cov) =
+                    (dep_out.deps, dep_out.findings, dep_out.coverage);
+                association_pairs.extend(dep_out.records);
+                if enabled("row_consistency") {
+                    let measures: Vec<usize> = frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.as_deref() == Some("measure"))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let (mut f, detail) = onceover_mines::profile_row_consistency(
+                        &table,
+                        &deps_pair,
+                        &scaffold_excluded,
+                        &measures,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "row_consistency".into(),
+                        PassInfo::ran(detail),
+                    );
+                    findings.append(&mut f);
+                }
+                let numeric = table
+                    .cols
+                    .iter()
+                    .filter(|col| {
+                        matches!(
+                            col,
+                            onceover_core::TypedCol::I64 { .. }
+                                | onceover_core::TypedCol::U64 { .. }
+                                | onceover_core::TypedCol::F64 { .. }
+                                | onceover_core::TypedCol::Decimal { .. }
+                        )
+                    })
+                    .count();
+                let possible_pairs = numeric * numeric.saturating_sub(1) / 2;
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "dependence_screen".into(),
+                    if dep_out.deadline_stopped || deps_pair.len() < possible_pairs {
+                        PassInfo::capped(dep_cov)
+                    } else {
+                        if table.n > tier.encode.row_cap {
+                            PassInfo::sampled(dep_cov)
+                        } else {
+                            PassInfo::ran(dep_cov)
+                        }
+                    },
+                );
+                findings.extend(dep_findings);
+
+                if tier.ident_pair_cap > 0 && enabled("identities") {
+                    let (id_f, id_cov) =
+                        identities(&table, &deps_pair, tier.ident_pair_cap, &scaffold_excluded);
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "arithmetic_identities".into(),
+                        PassInfo::ran(format!("{id_cov}{exclusion_note}")),
+                    );
+                    identity_groups.extend(identity_columns(&table, &id_f));
+                    findings.extend(id_f);
+                }
+                if enabled("period_associations") {
+                    let out = onceover_mines::period_associations(
+                        ttable,
+                        &deps_pair,
+                        tier.encode.row_cap,
+                    );
+                    let info = match out.status {
+                        onceover_mines::PeriodsStatus::NotApplicable(d) => PassInfo::na(d),
+                        onceover_mines::PeriodsStatus::Ran(d) => PassInfo::ran(d),
+                        onceover_mines::PeriodsStatus::Capped(d) => PassInfo::capped(d),
+                    };
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "period_associations".into(),
+                        info,
+                    );
+                    findings.extend(out.findings);
+                }
+
+                if tier.ident_multiterm_cap > 0 && enabled("identities") {
+                    let (mt_f, mt_cov) = onceover_mines::multiterm_identities(
+                        &table,
+                        tier.ident_multiterm_cap,
+                        &scaffold_excluded,
+                    );
+                    stamp_insert(
+                        &mut coverage,
+                        &mut last_mark,
+                        timing_on,
+                        "multiterm_identities".into(),
+                        PassInfo::ran(format!("{mt_cov}{exclusion_note}")),
+                    );
+                    identity_groups.extend(identity_columns(&table, &mt_f));
+                    findings.extend(mt_f);
+                }
+            } else if deadline_hit {
+                stamp_insert(
+                    &mut coverage,
+                    &mut last_mark,
+                    timing_on,
+                    "dependence_screen".into(),
+                    PassInfo::skipped("deadline reached"),
+                );
+            }
+
+            merge_groups(&mut identity_groups);
             let mut screen = if enabled("predictability") {
                 screen_predictability(
                     &table,
@@ -2166,6 +2318,7 @@ fn profile_inner(
                     &scaffold_excluded,
                     &calendar_inputs,
                     &recorded_after_idx,
+                    &identity_groups,
                 )
             } else {
                 onceover_mines::ScreenOutcome {
@@ -2743,145 +2896,6 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "hotspots".into(),
-                    PassInfo::skipped("deadline reached"),
-                );
-            }
-
-            // Pairwise dependence (supporting role) + identities.
-            // The screen polls the deadline inside its own loops,
-            // so it is exempt from the dispatch skip, like
-            // discontinuities and hotspots above: dispatched even
-            // when the deadline has already expired, its first
-            // poll stops it, and its coverage entry discloses the
-            // stop (0 pairs screened). The between-pass check
-            // still runs when the screen is not dispatched, so
-            // the skip record is unchanged there.
-            let dep_dispatched = tier.dep_pair_cap > 0 && enabled("numeric_dependence");
-            if !dep_dispatched && check_deadline(&mut coverage, "dependence_screen") {
-                deadline_hit = true;
-            }
-            if dep_dispatched {
-                let dep_out = onceover_mines::dep::screen_sampled(
-                    &table,
-                    tier.dep_pair_cap,
-                    tier.encode.row_cap,
-                    &scaffold_excluded,
-                    pass_deadline,
-                );
-                if dep_out.deadline_stopped {
-                    deadline_hit = true;
-                }
-                let (deps_pair, dep_findings, dep_cov) =
-                    (dep_out.deps, dep_out.findings, dep_out.coverage);
-                association_pairs.extend(dep_out.records);
-                if enabled("row_consistency") {
-                    let measures: Vec<usize> = frame
-                        .roles
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, r)| r.as_deref() == Some("measure"))
-                        .map(|(i, _)| i)
-                        .collect();
-                    let (mut f, detail) = onceover_mines::profile_row_consistency(
-                        &table,
-                        &deps_pair,
-                        &scaffold_excluded,
-                        &measures,
-                    );
-                    stamp_insert(
-                        &mut coverage,
-                        &mut last_mark,
-                        timing_on,
-                        "row_consistency".into(),
-                        PassInfo::ran(detail),
-                    );
-                    findings.append(&mut f);
-                }
-                let numeric = table
-                    .cols
-                    .iter()
-                    .filter(|col| {
-                        matches!(
-                            col,
-                            onceover_core::TypedCol::I64 { .. }
-                                | onceover_core::TypedCol::U64 { .. }
-                                | onceover_core::TypedCol::F64 { .. }
-                                | onceover_core::TypedCol::Decimal { .. }
-                        )
-                    })
-                    .count();
-                let possible_pairs = numeric * numeric.saturating_sub(1) / 2;
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "dependence_screen".into(),
-                    if dep_out.deadline_stopped || deps_pair.len() < possible_pairs {
-                        PassInfo::capped(dep_cov)
-                    } else {
-                        if table.n > tier.encode.row_cap {
-                            PassInfo::sampled(dep_cov)
-                        } else {
-                            PassInfo::ran(dep_cov)
-                        }
-                    },
-                );
-                findings.extend(dep_findings);
-
-                if tier.ident_pair_cap > 0 && enabled("identities") {
-                    let (id_f, id_cov) =
-                        identities(&table, &deps_pair, tier.ident_pair_cap, &scaffold_excluded);
-                    stamp_insert(
-                        &mut coverage,
-                        &mut last_mark,
-                        timing_on,
-                        "arithmetic_identities".into(),
-                        PassInfo::ran(format!("{id_cov}{exclusion_note}")),
-                    );
-                    findings.extend(id_f);
-                }
-                if enabled("period_associations") {
-                    let out = onceover_mines::period_associations(
-                        ttable,
-                        &deps_pair,
-                        tier.encode.row_cap,
-                    );
-                    let info = match out.status {
-                        onceover_mines::PeriodsStatus::NotApplicable(d) => PassInfo::na(d),
-                        onceover_mines::PeriodsStatus::Ran(d) => PassInfo::ran(d),
-                        onceover_mines::PeriodsStatus::Capped(d) => PassInfo::capped(d),
-                    };
-                    stamp_insert(
-                        &mut coverage,
-                        &mut last_mark,
-                        timing_on,
-                        "period_associations".into(),
-                        info,
-                    );
-                    findings.extend(out.findings);
-                }
-
-                if tier.ident_multiterm_cap > 0 && enabled("identities") {
-                    let (mt_f, mt_cov) = onceover_mines::multiterm_identities(
-                        &table,
-                        tier.ident_multiterm_cap,
-                        &scaffold_excluded,
-                    );
-                    stamp_insert(
-                        &mut coverage,
-                        &mut last_mark,
-                        timing_on,
-                        "multiterm_identities".into(),
-                        PassInfo::ran(format!("{mt_cov}{exclusion_note}")),
-                    );
-                    findings.extend(mt_f);
-                }
-            } else if deadline_hit {
-                stamp_insert(
-                    &mut coverage,
-                    &mut last_mark,
-                    timing_on,
-                    "dependence_screen".into(),
                     PassInfo::skipped("deadline reached"),
                 );
             }
@@ -4151,4 +4165,57 @@ fn scaffold_note(
         ));
     }
     note
+}
+
+/// Merge column groups that share a column: two identities that
+/// share a column tie all their columns together (a part's affine
+/// copy is a part of the same total).
+fn merge_groups(groups: &mut Vec<Vec<usize>>) {
+    let mut merged: Vec<BTreeSet<usize>> = Vec::new();
+    for g in groups.drain(..) {
+        let mut set: BTreeSet<usize> = g.into_iter().collect();
+        let mut i = 0;
+        while i < merged.len() {
+            if merged[i].intersection(&set).next().is_some() {
+                set.extend(merged.swap_remove(i));
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+        merged.push(set);
+    }
+    groups.extend(merged.into_iter().map(|s| s.into_iter().collect()));
+}
+
+/// The table columns of each exact identity finding (an arithmetic
+/// identity or an affine map holding on every row): the columns one
+/// equation ties together.
+fn identity_columns(table: &TypedTable, findings: &[Finding]) -> Vec<Vec<usize>> {
+    findings
+        .iter()
+        .filter(|f| {
+            matches!(
+                f.finding_type.as_deref(),
+                Some("arithmetic_identity" | "affine")
+            ) && f.evidence.iter().all(|e| {
+                e.metrics
+                    .get("violations")
+                    .and_then(|v| v.as_f64())
+                    .is_none_or(|v| v == 0.0)
+            })
+        })
+        .map(|f| {
+            let mut cols: Vec<usize> = f
+                .subject
+                .columns
+                .iter()
+                .filter_map(|c| table.names.iter().position(|n| n == c))
+                .collect();
+            cols.sort_unstable();
+            cols.dedup();
+            cols
+        })
+        .filter(|cols| cols.len() >= 2)
+        .collect()
 }

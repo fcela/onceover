@@ -154,7 +154,7 @@ fn sweep_screen() {
                     ..Default::default()
                 };
                 let t0 = Instant::now();
-                let out = screen(&table, &enc, &cfg, &[], &[], &[]);
+                let out = screen(&table, &enc, &cfg, &[], &[], &[], &[]);
                 let secs = t0.elapsed().as_secs_f64();
                 let line = match out.results.iter().find(|r| r.name == "y") {
                     Some(r) => {
@@ -180,7 +180,7 @@ fn sweep_screen() {
                     ..Default::default()
                 };
                 let t0 = Instant::now();
-                let out = screen(&table, &enc, &cfg, &[], &[], &[]);
+                let out = screen(&table, &enc, &cfg, &[], &[], &[], &[]);
                 let secs = t0.elapsed().as_secs_f64();
                 let line = match out.results.iter().find(|r| r.name == "y") {
                     Some(r) => {
@@ -384,6 +384,7 @@ fn sweep_nulls() {
             max_model_rows: n,
             ..Default::default()
         },
+        &[],
         &[],
         &[],
         &[],

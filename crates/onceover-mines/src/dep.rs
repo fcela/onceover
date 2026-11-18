@@ -34,6 +34,27 @@ pub struct PairDep {
 }
 
 impl PairDep {
+    /// The strongest of the pair's measured statistics, named the
+    /// way a claim states it, with its signed value.
+    pub fn strongest(&self, a: &str, b: &str) -> (String, f64) {
+        let candidates = [
+            ("Pearson r".to_string(), self.pearson),
+            ("Spearman rho".to_string(), self.spearman),
+            (format!("Chatterjee xi of {b} on {a}"), self.xi_ab),
+            (format!("Chatterjee xi of {a} on {b}"), self.xi_ba),
+        ];
+        candidates
+            .into_iter()
+            .filter_map(|(name, v)| v.map(|v| (name, v)))
+            .fold((String::new(), 0.0f64), |best, (name, v)| {
+                if v.abs() > best.1.abs() {
+                    (name, v)
+                } else {
+                    best
+                }
+            })
+    }
+
     pub fn max_signal(&self) -> f64 {
         [
             self.pearson.map(|v| v.abs()),
@@ -61,12 +82,21 @@ impl PairDep {
 /// most this.
 pub(crate) const Q_BAR: f64 = 0.05;
 
+/// The smallest effect a stated association carries (|r|, |rho|, xi,
+/// Cramer's V, or the correlation ratio eta). At tens of thousands of
+/// rows every pair clears the q-value bar, so significance alone says
+/// nothing about whether an association is worth stating; below 0.1
+/// a variable explains under 1% of the other's variance. Pairs below
+/// it stay in the associations table with tier "none".
+pub(crate) const MIN_EFFECT: f64 = 0.1;
+
 /// The reporting tier of a tested pair: "strong" when it is
 /// significant after correction and its effect reaches the strong
-/// bar, "weak" when significant but below the bar, "none" otherwise
-/// (including untested pairs).
+/// bar, "weak" when significant and at least `MIN_EFFECT` but below
+/// the strong bar, "none" otherwise (including untested pairs).
 pub(crate) fn assoc_tier(effect: f64, strong_bar: f64, q: Option<f64>) -> &'static str {
     match q {
+        Some(_) if effect < MIN_EFFECT => "none",
         Some(q) if q <= Q_BAR => {
             if effect >= strong_bar {
                 "strong"
@@ -97,23 +127,7 @@ pub(crate) fn bh_qvalues(pvals: &[Option<f64>]) -> Vec<Option<f64>> {
 
 /// Lanczos approximation of ln Γ(x) for x > 0.
 fn ln_gamma(x: f64) -> f64 {
-    const COEF: [f64; 6] = [
-        76.18009172947146,
-        -86.50532032941677,
-        24.01409824083091,
-        -1.231739572450155,
-        0.001208650973866179,
-        -0.000005395239384953,
-    ];
-    let mut y = x;
-    let mut tmp = x + 5.5;
-    tmp -= (x + 0.5) * tmp.ln();
-    let mut ser = 1.000000000190015;
-    for c in COEF {
-        y += 1.0;
-        ser += c / y;
-    }
-    -tmp + (2.5066282746310005 * ser / x).ln()
+    onceover_core::stats::ln_gamma(x)
 }
 
 /// Regularized lower incomplete gamma P(a, x): series below
@@ -301,7 +315,7 @@ pub(crate) fn fmt_q(q: f64) -> String {
 /// ascending slice: pos = q·(n−1), interpolated between the
 /// bracketing order statistics. NaN on an empty slice.
 pub(crate) fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
-    quantile_at(sorted.len(), q, |i| sorted[i])
+    onceover_core::stats::quantile_sorted(sorted, q)
 }
 
 /// The same quantile over the values of ascending (value, row)
@@ -311,14 +325,7 @@ pub(crate) fn quantile_sorted_pairs(sorted: &[(f64, usize)], q: f64) -> f64 {
 }
 
 fn quantile_at(len: usize, q: f64, at: impl Fn(usize) -> f64) -> f64 {
-    if len == 0 {
-        return f64::NAN;
-    }
-    let pos = q * (len - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(len - 1);
-    let frac = pos - lo as f64;
-    at(lo) * (1.0 - frac) + at(hi) * frac
+    onceover_core::stats::quantile_at(len, q, at)
 }
 
 /// Nearest-rank quantile of an ascending slice: the order
@@ -329,12 +336,12 @@ fn quantile_at(len: usize, q: f64, at: impl Fn(usize) -> f64) -> f64 {
 /// use `quantile_sorted` instead. Callers guarantee a non-empty
 /// slice.
 pub(crate) fn quantile_nearest_rank(sorted: &[f64], q: f64) -> f64 {
-    sorted[((q * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)]
+    onceover_core::stats::quantile_nearest_rank(sorted, q)
 }
 
 /// Median of an ascending slice.
 pub(crate) fn median_sorted(sorted: &[f64]) -> f64 {
-    quantile_sorted(sorted, 0.5)
+    onceover_core::stats::median_sorted(sorted)
 }
 
 /// Interquartile range of an ascending slice.
@@ -507,57 +514,24 @@ pub fn sampled_pairs(a: &TypedCol, b: &TypedCol, rows: &[u32]) -> Vec<(f64, f64)
 }
 
 pub fn pearson(pairs: &[(f64, f64)]) -> Option<f64> {
-    let n = pairs.len();
-    if n < 30 {
+    if pairs.len() < 30 {
         return None;
     }
-    let mx = pairs.iter().map(|p| p.0).sum::<f64>() / n as f64;
-    let my = pairs.iter().map(|p| p.1).sum::<f64>() / n as f64;
-    let mut cov = 0.0;
-    let mut vx = 0.0;
-    let mut vy = 0.0;
-    for (x, y) in pairs {
-        let (dx, dy) = (x - mx, y - my);
-        cov += dx * dy;
-        vx += dx * dx;
-        vy += dy * dy;
-    }
-    if vx <= 0.0 || vy <= 0.0 {
-        return None;
-    }
-    Some(cov / (vx * vy).sqrt())
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+    onceover_core::stats::pearson(&xs, &ys)
 }
 
 /// Average (mid)ranks of values, ties averaged.
 pub fn midranks(vals: &[f64]) -> Vec<f64> {
-    let mut idx: Vec<usize> = (0..vals.len()).collect();
-    idx.sort_by(|&a, &b| vals[a].total_cmp(&vals[b]));
-    let mut ranks = vec![0.0f64; vals.len()];
-    let mut i = 0;
-    while i < idx.len() {
-        let mut j = i;
-        while j + 1 < idx.len() && vals[idx[j + 1]] == vals[idx[i]] {
-            j += 1;
-        }
-        let avg = (i + j) as f64 / 2.0 + 1.0; // 1-based average rank
-        for &k in &idx[i..=j] {
-            ranks[k] = avg;
-        }
-        i = j + 1;
-    }
-    ranks
+    onceover_core::stats::midranks(vals)
 }
 
 pub fn spearman(pairs: &[(f64, f64)]) -> Option<f64> {
     if pairs.len() < 30 {
         return None;
     }
-    let xs: Vec<f64> = pairs.iter().map(|p| p.0).collect();
-    let ys: Vec<f64> = pairs.iter().map(|p| p.1).collect();
-    let rx = midranks(&xs);
-    let ry = midranks(&ys);
-    let rank_pairs: Vec<(f64, f64)> = rx.into_iter().zip(ry).collect();
-    pearson(&rank_pairs)
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+    onceover_core::stats::spearman(&xs, &ys)
 }
 
 /// Chatterjee's ξ (Ann. Statist. 2021), tie-corrected per Eq. 1.2 — the
@@ -1507,17 +1481,20 @@ fn dep_finding(table: &onceover_core::TypedTable, d: &PairDep, signal: f64, tier
         ("q_value".into(), json!(d.q_value)),
         ("tier".into(), json!(tier)),
     ]);
+    let (statistic, value) = d.strongest(a, b);
     let (claim, interestingness) = if tier == "weak" {
         (
             format!(
-                "{a} and {b} show weak numeric association (maximum measured effect {signal:.3}; significant after Benjamini-Hochberg correction, q = {})",
+                "{a} and {b} show weak numeric association ({statistic} {value:.3}, the strongest of the four measured; significant after Benjamini-Hochberg correction, q = {})",
                 fmt_q(d.q_value.unwrap_or(1.0))
             ),
             0.10 + 0.25 * signal,
         )
     } else {
         (
-            format!("{a} and {b} show numeric association (maximum measured effect {signal:.3})"),
+            format!(
+                "{a} and {b} show numeric association ({statistic} {value:.3}, the strongest of the four measured)"
+            ),
             0.35 + 0.4 * signal,
         )
     };

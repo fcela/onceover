@@ -68,22 +68,226 @@
    "reason": "Issue #374 step 2: the invariance.reverse change on this dataset. Record: docs/benchmarks/2026-11-18-derived-basis.md."
   },
   {
-   "metric": "invariance.noise",
-   "scope": "adult-census-income",
-   "limit": 8,
-   "reason": "Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2. With the #363 screen cap on this base the count is 8 (one more noise-sensitive predictive statement)."
-  },
-  {
-   "metric": "invariance.noise",
-   "scope": "total",
-   "limit": 30,
-   "reason": "Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
-  },
-  {
    "metric": "reference.should_8k_default",
    "scope": "bank-marketing",
    "limit": 3,
    "reason": "Issue #374 step 2: the base credited subscription-housing-loan through a text-pattern match on a rolled-up 8k digest line that no finding in the full report supports (full default: not matched in base or head). Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "reference.must_4k_default",
+   "scope": "bank-marketing",
+   "limit": 1,
+   "reason": "Issue #374 step 3: subscription-duration is stated (8k digest and full report) by a level contrast that now ranks just below the 4k cut: consolidating per-level contrasts into one profile per (grouping, measure) frees the pass's 20-statement cap for more distinct pairs, which score above it under the hand-set level-contrast score (step 6 of #374 replaces that score). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.must_4k_default",
+   "scope": "total",
+   "limit": 15,
+   "reason": "Issue #374 step 3: the bank-marketing entry above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: age-weak (price vs age_years, r = -0.098) falls below the 0.1 minimum effect a stated association now needs; the pair stays in report.associations() with tier none. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_default",
+   "scope": "total",
+   "limit": 30,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "total",
+   "limit": 35,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. Also: One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
+  },
+  {
+   "metric": "reference.should_full_default",
+   "scope": "total",
+   "limit": 37,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_target",
+   "scope": "total",
+   "limit": 18,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_target",
+   "scope": "total",
+   "limit": 22,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_target",
+   "scope": "total",
+   "limit": 23,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "planted.found_4k",
+   "scope": "adventureworks",
+   "limit": 0,
+   "reason": "Issue #374 step 3: the base credited the planted customer_id sentinel through a text match on a 4k digest line; the full report never stated it (in_full_report false in base and head). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "absenteeism-at-work",
+   "limit": 66,
+   "reason": "Issue #374 step 3: the row_shuffle change above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "total",
+   "limit": 9381,
+   "reason": "Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "total",
+   "limit": 106,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "total",
+   "limit": 44,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "adult-census-income",
+   "limit": 9,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: with a noise column added, one more level contrast (age by marital_status) is stated; the pass's own 20-statement cap now admits it because the education_num restatements no longer take slots. Record: docs/benchmarks/2026-11-18-derived-basis.md. Also: One additional noise-sensitive finding on adult-census-income with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2. With the #363 screen cap on this base the count is 8 (one more noise-sensitive predictive statement)."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "bank-marketing",
+   "limit": 4,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "abalone",
+   "limit": 5,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "thyroid",
+   "limit": 5,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "absenteeism-at-work",
+   "limit": 18,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "hospital-dha",
+   "limit": 10,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "hospital-dha",
+   "limit": 1,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "congressional-voting",
+   "limit": 32,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "congressional-voting",
+   "limit": 14,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "column_order_stress",
+   "limit": 7,
+   "reason": "Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "weighted.must_8k",
+   "scope": "bike-sharing-hourly",
+   "limit": 0,
+   "reason": "Issue #374 step 4: in the weights-hinted run the rush-hour concentration (still stated in the full report) falls out of the 8k digest: cnt, registered and casual are now explained by hr, temp and workingday instead of by their own sum's parts, and those statements take the digest space. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "weighted.must_8k",
+   "scope": "total",
+   "limit": 3,
+   "reason": "Issue #374 step 4: the bike-sharing-hourly entry above. Record: docs/benchmarks/2026-11-18-identity-order.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "bank-marketing",
+   "limit": 887,
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "abalone",
+   "limit": 925,
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "bike-sharing-hourly",
+   "limit": 838,
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). Also: Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 842 -> 841."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "adventureworks",
+   "limit": 835,
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "column_order_stress",
+   "limit": 944,
+   "reason": "Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md)."
   },
   {
    "metric": "redundancy.finding_permille_default",
@@ -92,40 +296,16 @@
    "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
   },
   {
-   "metric": "redundancy.finding_permille_target",
-   "scope": "total",
-   "limit": 9405,
-   "reason": "Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
-  },
-  {
    "metric": "cost.profile_seconds",
    "scope": "total",
    "limit": 56.6,
    "reason": "Standard-tier profiles pay for the screen's raised fitting-row cap (5,000 to 50,000 rows per target, issue #363): the gate total rises 41.5s to 56.5s on this base, concentrated in the datasets over 5,000 rows. The trade is measured and priced in docs/benchmarks/2026-11-17-sample-caps.md."
   },
   {
-   "metric": "invariance.noise",
-   "scope": "bank-marketing",
-   "limit": 2,
-   "reason": "One additional noise-sensitive finding on bank-marketing with the screen's larger fitting sample (issue #363). The noise total is unchanged at 29 and adventureworks improves by 2."
-  },
-  {
-   "metric": "reference.should_8k_default",
-   "scope": "total",
-   "limit": 35,
-   "reason": "One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run."
-  },
-  {
    "metric": "redundancy.finding_permille_target",
    "scope": "adult-census-income",
    "limit": 877,
    "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877."
-  },
-  {
-   "metric": "redundancy.finding_permille_default",
-   "scope": "bike-sharing-hourly",
-   "limit": 841,
-   "reason": "Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 842 -> 841."
   }
  ]
 }

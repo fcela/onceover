@@ -426,6 +426,36 @@ fn cat_target(col: &TypedCol, enc: &EncodedMatrix, cfg: &ScreenConfig) -> Option
     Some(TargetKind::Categorical(ids, labels))
 }
 
+/// A per-column seed from the column's own values: an FNV-1a hash
+/// of its encoded bin histogram (the count of sampled rows in each
+/// bin). The holdout and fold splits then depend on what is
+/// modelled, never on the column's position in the table or on its
+/// name, so reordering or renaming columns leaves every model
+/// unchanged. A column with no encoded feature hashes its index.
+fn column_seed(enc: &EncodedMatrix, ci: usize) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |x: u64| {
+        for b in x.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    match enc.feat_cols.iter().position(|&c| c == ci) {
+        Some(f) => {
+            let mut counts = [0u64; 256];
+            for &b in &enc.bins[f] {
+                counts[b as usize] += 1;
+            }
+            mix(enc.n_bins[f] as u64);
+            for c in counts {
+                mix(c);
+            }
+        }
+        None => mix(ci as u64),
+    }
+    h
+}
+
 // ---------- screening ----------
 
 pub fn screen(
@@ -435,6 +465,7 @@ pub fn screen(
     excluded_targets: &[usize],
     inputs_allowed: &[usize],
     declared_excluded: &[usize],
+    identity_groups: &[Vec<usize>],
 ) -> ScreenOutcome {
     // Frame-role exclusions remove scaffolding columns (index,
     // identifier, timestamp parts) from the target set and from
@@ -461,7 +492,15 @@ pub fn screen(
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
-        .filter_map(|&ci| screen_target(table, enc, ci, cfg, &excluded_inputs, declared_excluded))
+        .filter_map(|&ci| {
+            // Columns an exact identity ties to this target are
+            // the target's arithmetic, not its explanation.
+            let mut excluded = excluded_inputs.clone();
+            for g in identity_groups.iter().filter(|g| g.contains(&ci)) {
+                excluded.extend(g.iter().copied().filter(|&c| c != ci));
+            }
+            screen_target(table, enc, ci, cfg, &excluded, declared_excluded)
+        })
         .collect();
 
     let mut findings = Vec::new();
@@ -668,7 +707,7 @@ pub fn screen_target(
     };
 
     // Deterministic holdout: seeded shuffle, 75/25.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B));
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
     let mut order = present.clone();
     for i in (1..order.len()).rev() {
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
@@ -913,9 +952,7 @@ pub fn screen_missing_indicator(
 
     // Deterministic holdout, seeded like the target screens but
     // salted so the split differs from the column's own screen.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15
-        ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
-        ^ 0x4D49_5353_494E_4721);
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D49_5353_494E_4721);
     let mut order: Vec<u32> = (0..enc.n as u32).collect();
     for i in (1..order.len()).rev() {
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
@@ -1281,9 +1318,7 @@ pub fn crossfit_residuals(
 
     // Seeded shuffle of the present rows; fold f is every
     // `folds`-th row of the shuffled order.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15
-        ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
-        ^ 0x4D4F_4445_4C46_4149);
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D4F_4445_4C46_4149);
     let mut order = present.clone();
     for i in (1..order.len()).rev() {
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
@@ -1319,7 +1354,7 @@ pub fn crossfit_residuals(
         // stopping, seeded per fold from the same stream discipline
         // as the screens (a fixed salt per fold index).
         let mut frng = Lcg(0x9E37_79B9_7F4A_7C15
-            ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B)
+            ^ column_seed(enc, ci)
             ^ 0x4D4F_4445_4C46_4149
             ^ ((fold as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)));
         let mut shuffled = pool.clone();
@@ -1861,7 +1896,7 @@ pub fn fit_gbm_model_restricted(
     if present.len() < cfg.min_target_rows {
         return None;
     }
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ (ci as u64).wrapping_mul(0x853C49E6748FEA9B));
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
     let mut order = present.clone();
     for i in (1..order.len()).rev() {
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
@@ -1955,7 +1990,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[], &[]);
         let y_res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert!(y_res.metric > 0.9, "r2 = {}", y_res.metric);
         assert!(out.findings.iter().any(|f| (f
@@ -1984,7 +2019,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[], &[]);
         let res = out.results.iter().find(|r| r.name == "class").unwrap();
         assert!(res.metric > 0.85, "acc = {}", res.metric);
         assert!(res.metric > res.baseline + 0.2);
@@ -2069,7 +2104,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[], &[]);
         assert!(out
             .results
             .iter()
@@ -2132,7 +2167,7 @@ mod tests {
         let df = driver_frame();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[], &[]);
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
         assert_eq!(res.drivers[0].0, "x");
@@ -2166,7 +2201,15 @@ mod tests {
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let x_col = table.names.iter().position(|n| n == "x").unwrap();
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col], &[], &[]);
+        let out = screen(
+            &table,
+            &enc,
+            &ScreenConfig::default(),
+            &[x_col],
+            &[],
+            &[],
+            &[],
+        );
         for r in &out.results {
             assert!(
                 !r.inputs.iter().any(|i| i == "x"),
@@ -2180,6 +2223,39 @@ mod tests {
             .findings
             .iter()
             .all(|f| !f.claim.starts_with("y is predictable")));
+    }
+
+    #[test]
+    fn identity_partners_leave_only_their_own_targets_pool() {
+        // y and x are tied by one identity group: x is withheld from
+        // y's predictors (and y from x's), but x is still a target
+        // and stays a predictor of every other column.
+        let df = driver_frame();
+        let table = extract(&df);
+        let (enc, _) = encode(&table, &EncodeConfig::default());
+        let x_col = table.names.iter().position(|n| n == "x").unwrap();
+        let y_col = table.names.iter().position(|n| n == "y").unwrap();
+        let groups = vec![vec![x_col, y_col]];
+        let out = screen(
+            &table,
+            &enc,
+            &ScreenConfig::default(),
+            &[],
+            &[],
+            &[],
+            &groups,
+        );
+        let y = out.results.iter().find(|r| r.name == "y");
+        assert!(
+            y.is_none_or(|r| !r.inputs.iter().any(|i| i == "x")),
+            "x among y's inputs"
+        );
+        assert!(out
+            .findings
+            .iter()
+            .all(|f| !f.claim.starts_with("y is predictable from x")));
+        let n0 = out.results.iter().find(|r| r.name == "n0");
+        assert!(n0.is_none_or(|r| r.inputs.iter().any(|i| i == "x")));
     }
 
     #[test]
@@ -2218,6 +2294,7 @@ mod tests {
             &enc,
             &ScreenConfig::default(),
             &[excluded],
+            &[],
             &[],
             &[],
         );
