@@ -2,9 +2,9 @@
 
 ## TL;DR
 
-Latest change `7d27ac8` (2026-11-17), Merge pull request #355 from fcela/docs/347-action-value: compared with `260b1c4`, 0 total metrics better, 0 worse, 0 worse and accepted.
+Latest change `3c2db24` (2026-11-17), Merge pull request #366 from fcela/fix/365-fk-chance: compared with `7d27ac8`, 0 total metrics better, 0 worse, 0 worse and accepted.
 
-| measure | latest (`7d27ac8`) | previous (`260b1c4`) | first recorded (`1618886`) |
+| measure | latest (`3c2db24`) | previous (`7d27ac8`) | first recorded (`1618886`) |
 |---|---:|---:|---:|
 | Must-tier reference facts stated in the 4,000-character digest | 16 of 19 (unchanged) | 16 of 19 | 7 of 11 |
 | Must-tier reference facts stated in the 4,000-character digest, target mode | 16 of 19 (unchanged) | 16 of 19 | 7 of 11 |
@@ -22,7 +22,7 @@ Accepted regressions: none.
 
 Hard lines: none breached — no statement failed or errored in verification, and no must-tier reference fact was lost from the 4,000-character digest.
 
-18 change(s) recorded. Latest: `7d27ac8` (2026-11-17), onceover 0.1.6, seeds [0].
+19 change(s) recorded. Latest: `3c2db24` (2026-11-17), onceover 0.1.6, seeds [0].
 
 Each row is one change on main, newest first. A value is followed, in parentheses, by its movement against the change before it, with `better` or `worse` when the metric has a direction. Seconds are compared only between rows produced on the same platform.
 
@@ -39,6 +39,7 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-17 | `3c2db24` | Merge pull request #366 from fcela/fix/365-fk-chance | 55 | 16 | 16 | 48 | 336 | 0 | 0 | 11.494 |
 | 2026-11-17 | `7d27ac8` | Merge pull request #355 from fcela/docs/347-action-value | 55 | 16 | 16 | 48 | 336 | 0 | 0 | 10.75 |
 | 2026-11-17 | `260b1c4` | Merge pull request #354 from fcela/docs/353-finding-value | 55 | 16 | 16 | 48 | 336 | 0 | 0 | 8.36 |
 | 2026-11-17 | `526507a` | Merge pull request #358 from fcela/fix/ci-history-job | 55 | 16 | 16 | 48 | 336 | 0 | 0 | 10.716 (-0.13) |
@@ -58,9 +59,9 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 20 | 7 | 7 | 136 | 408 | 4 | 0 | 13.385 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 20 | 7 | 7 | 136 | 408 | 4 | 0 | 6.859 |
 
-## Latest change: `7d27ac8` Merge pull request #355 from fcela/docs/347-action-value
+## Latest change: `3c2db24` Merge pull request #366 from fcela/fix/365-fk-chance
 
-Compared with `260b1c4`: 0 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
+Compared with `7d27ac8`: 0 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
 
 ### Better
 
@@ -78,23 +79,23 @@ None.
 
 Oldest on the left. A value in a column is followed by its movement against the column before it.
 
-| metric | reading | `eef295a` | `cec0278` | `52ed9d4` | `39741ac` | `d057860` | `526507a` | `260b1c4` | `7d27ac8` |
+| metric | reading | `cec0278` | `52ed9d4` | `39741ac` | `d057860` | `526507a` | `260b1c4` | `7d27ac8` | `3c2db24` |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| planted.planted | information only | 76 (+11) | 76 | 76 | 76 | 76 | 76 | 76 | 76 |
-| planted.found_full | higher is better | 59 (+8, better) | 59 | 59 | 59 | 59 | 59 | 59 | 59 |
-| planted.found_4k | higher is better | 55 (+8, better) | 55 | 55 | 55 | 55 | 55 | 55 | 55 |
-| planted.line_sum_4k | information only | 621 (+37) | 621 | 621 | 621 | 621 | 621 | 621 | 621 |
-| permuted.false_full | lower is better | 100 (+1, worse) | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
-| permuted.false_4k | lower is better | 48 (+1, worse) | 48 | 48 | 48 | 48 | 48 | 48 | 48 |
+| planted.planted | information only | 76 | 76 | 76 | 76 | 76 | 76 | 76 | 76 |
+| planted.found_full | higher is better | 59 | 59 | 59 | 59 | 59 | 59 | 59 | 59 |
+| planted.found_4k | higher is better | 55 | 55 | 55 | 55 | 55 | 55 | 55 | 55 |
+| planted.line_sum_4k | information only | 621 | 621 | 621 | 621 | 621 | 621 | 621 | 621 |
+| permuted.false_full | lower is better | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+| permuted.false_4k | lower is better | 48 | 48 | 48 | 48 | 48 | 48 | 48 | 48 |
 | permuted.false_full_target | lower is better | 51 | 51 | 51 | 51 | 51 | 51 | 51 | 51 |
 | permuted.false_4k_target | lower is better | 30 | 30 | 30 | 30 | 30 | 30 | 30 | 30 |
-| permuted.findings_full | information only | 318 (+5) | 318 | 318 | 318 | 318 | 318 | 318 | 318 |
+| permuted.findings_full | information only | 318 | 318 | 318 | 318 | 318 | 318 | 318 | 318 |
 | invariance.reverse | lower is better | 199 | 199 | 199 | 199 | 199 | 199 | 199 | 199 |
 | invariance.row_shuffle | lower is better | 106 | 106 | 106 | 106 | 106 | 106 | 106 | 106 |
 | invariance.rename | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| invariance.noise | lower is better | 29 (+2, worse) | 29 | 29 | 29 | 29 | 29 | 29 | 29 |
+| invariance.noise | lower is better | 29 | 29 | 29 | 29 | 29 | 29 | 29 | 29 |
 | invariance.scale | lower is better | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
-| invariance.total | lower is better | 336 (+2, worse) | 336 | 336 | 336 | 336 | 336 | 336 | 336 |
+| invariance.total | lower is better | 336 | 336 | 336 | 336 | 336 | 336 | 336 | 336 |
 | reference.check_failed | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | reference.must_total | information only | 19 | 19 | 19 | 19 | 19 | 19 | 19 | 19 |
 | reference.must_4k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 16 | 16 |
@@ -111,8 +112,8 @@ Oldest on the left. A value in a column is followed by its movement against the 
 | reference.should_8k_target | higher is better | 21 | 21 | 21 | 21 | 21 | 21 | 21 | 21 |
 | reference.should_full_target | higher is better | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 |
 | redundancy.repeated_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_default | information only | 272 (+5) | 272 | 272 | 272 | 272 | 272 | 272 | 272 |
-| redundancy.finding_permille_default | higher is better | 16634 (+1672, better) | 16634 | 16634 | 16634 | 16634 | 16634 | 16634 | 16634 |
+| redundancy.finding_lines_default | information only | 272 | 272 | 272 | 272 | 272 | 272 | 272 | 272 |
+| redundancy.finding_permille_default | higher is better | 16634 | 16634 | 16634 | 16634 | 16634 | 16634 | 16634 | 16634 |
 | redundancy.long_decimals_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.repeated_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.finding_lines_target | information only | 181 | 181 | 181 | 181 | 181 | 181 | 181 | 181 |
@@ -120,11 +121,11 @@ Oldest on the left. A value in a column is followed by its movement against the 
 | redundancy.long_decimals_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.mismatch | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.error | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| truth.ok | information only | 915 (+1) | 915 | 915 | 915 | 915 | 915 | 915 | 915 |
-| truth.not_checkable | information only | 1473 (+4) | 1473 | 1473 | 1473 | 1473 | 1473 | 1473 | 1473 |
-| cost.profile_seconds | lower is better | 10.723 (+0.239) | 10.038 | 10.169 (+0.131) | 14.337 (+4.168, worse) | 10.846 | 10.716 (-0.13) | 8.36 | 10.75 |
-| cost.json_chars | information only | 3874726 (+35568) | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 |
-| cost.findings | information only | 1203 (+5) | 1203 | 1203 | 1203 | 1203 | 1203 | 1203 | 1203 |
+| truth.ok | information only | 915 | 915 | 915 | 915 | 915 | 915 | 915 | 915 |
+| truth.not_checkable | information only | 1473 | 1473 | 1473 | 1473 | 1473 | 1473 | 1473 | 1473 |
+| cost.profile_seconds | lower is better | 10.038 | 10.169 (+0.131) | 14.337 (+4.168, worse) | 10.846 | 10.716 (-0.13) | 8.36 | 10.75 | 11.494 |
+| cost.json_chars | information only | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 | 3874726 |
+| cost.findings | information only | 1203 | 1203 | 1203 | 1203 | 1203 | 1203 | 1203 | 1203 |
 | weighted.must_total | information only | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.must_4k | higher is better | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
 | weighted.must_8k | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
@@ -139,32 +140,32 @@ Oldest on the left. A value in a column is followed by its movement against the 
 
 | dataset | kind | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 1 | 24 | 0 | 0 | 1.342 |
-| bank-marketing | tabular, mixed types | 2 | 2 | 2 | 1 | 35 | 0 | 0 | 1.346 |
-| abalone | tabular, correlated measures | 4 | 3 | 3 | 0 | 7 | 0 | 0 | 0.1 |
-| bike-sharing-hourly | hourly series with calendar columns | 3 | 2 | 2 | 5 | 0 | 0 | 0 | 1.207 |
-| metro-interstate-traffic | hourly time series | 4 | - | - | 7 | 6 | 0 | 0 | 1.312 |
-| thyroid | clinical, many flags and missing values | 1 | - | - | 6 | 35 | 0 | 0 | 0.559 |
-| absenteeism-at-work | small business table | 3 | - | - | 5 | 64 | 0 | 0 | 0.164 |
-| hospital-dha | wide numeric, 64 columns | 3 | - | - | 0 | 23 | 0 | 0 | 0.58 |
-| congressional-voting | categorical votes | 1 | - | - | 2 | 60 | 0 | 0 | 0.046 |
-| adventureworks | sales orders | 1 | - | - | 11 | 44 | 0 | 0 | 2.404 |
-| nab-nyc-taxi | single time series | 3 | - | - | 0 | 0 | 0 | 0 | 0.046 |
-| state-unemployment | wide time series, one column per state | 0 | - | - | 4 | 25 | 0 | 0 | 1.086 |
-| state-unemployment-long | panel, long form | 0 | 1 | 1 | 2 | 0 | 0 | 0 | 0.079 |
-| south-german-credit (held out) | credit table | 4 | 0 | 0 | 3 | 12 | 0 | 0 | 0.134 |
-| soybean (held out) | categorical agronomy table | 0 | - | - | 4 | 49 | 0 | 0 | 0.192 |
-| lace-satellites (held out) | satellite catalogue | 1 | - | - | 7 | 65 | 0 | 0 | 0.185 |
-| sec-edgar-company-facts (held out) | event log, filing events | 1 | 3 | 3 | 1 | 38 | 0 | 0 | 0.351 |
+| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 1 | 24 | 0 | 0 | 1.407 |
+| bank-marketing | tabular, mixed types | 2 | 2 | 2 | 1 | 35 | 0 | 0 | 1.436 |
+| abalone | tabular, correlated measures | 4 | 3 | 3 | 0 | 7 | 0 | 0 | 0.108 |
+| bike-sharing-hourly | hourly series with calendar columns | 3 | 2 | 2 | 5 | 0 | 0 | 0 | 1.266 |
+| metro-interstate-traffic | hourly time series | 4 | - | - | 7 | 6 | 0 | 0 | 1.413 |
+| thyroid | clinical, many flags and missing values | 1 | - | - | 6 | 35 | 0 | 0 | 0.593 |
+| absenteeism-at-work | small business table | 3 | - | - | 5 | 64 | 0 | 0 | 0.169 |
+| hospital-dha | wide numeric, 64 columns | 3 | - | - | 0 | 23 | 0 | 0 | 0.651 |
+| congressional-voting | categorical votes | 1 | - | - | 2 | 60 | 0 | 0 | 0.048 |
+| adventureworks | sales orders | 1 | - | - | 11 | 44 | 0 | 0 | 2.556 |
+| nab-nyc-taxi | single time series | 3 | - | - | 0 | 0 | 0 | 0 | 0.054 |
+| state-unemployment | wide time series, one column per state | 0 | - | - | 4 | 25 | 0 | 0 | 1.185 |
+| state-unemployment-long | panel, long form | 0 | 1 | 1 | 2 | 0 | 0 | 0 | 0.08 |
+| south-german-credit (held out) | credit table | 4 | 0 | 0 | 3 | 12 | 0 | 0 | 0.136 |
+| soybean (held out) | categorical agronomy table | 0 | - | - | 4 | 49 | 0 | 0 | 0.197 |
+| lace-satellites (held out) | satellite catalogue | 1 | - | - | 7 | 65 | 0 | 0 | 0.188 |
+| sec-edgar-company-facts (held out) | event log, filing events | 1 | 3 | 3 | 1 | 38 | 0 | 0 | 0.373 |
 | gse15258-expression (held out) | wide table, 86 samples x 5,006 columns | - | 0 | 0 | - | - | - | - | - |
-| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 9 | 0 | 0 | 0.133 |
-| planted_mix | generated application records with plants | 4 | 2 | 2 | 1 | 1 | 0 | 0 | 0.162 |
-| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 2 | 0 | 0 | 0 | 0.026 |
-| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 1 | 0 | 0 | 0.082 |
-| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0.017 |
-| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.023 |
-| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 1 | 0 | 0 | 0.011 |
-| weighted_noise | generated control: independent noise weight | 4 | - | - | 1 | 1 | 0 | 0 | 0.04 |
+| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 9 | 0 | 0 | 0.15 |
+| planted_mix | generated application records with plants | 4 | 2 | 2 | 1 | 1 | 0 | 0 | 0.175 |
+| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 2 | 0 | 0 | 0 | 0.031 |
+| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 1 | 0 | 0 | 0.09 |
+| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0.019 |
+| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.025 |
+| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 1 | 0 | 0 | 0.012 |
+| weighted_noise | generated control: independent noise weight | 4 | - | - | 1 | 1 | 0 | 0 | 0.044 |
 | weighted_large_cell | generated control: merely large cell | 4 | - | - | 0 | 1 | 0 | 0 | 0.019 |
 
 ## Held-out datasets
@@ -173,6 +174,7 @@ These datasets are scored and left out of the pass/fail comparison. A gain on th
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-17 | `3c2db24` | Merge pull request #366 from fcela/fix/365-fk-chance | 7 | 4 | 3 | 15 | 166 | 0 | 0 | 0.931 |
 | 2026-11-17 | `7d27ac8` | Merge pull request #355 from fcela/docs/347-action-value | 7 | 4 | 3 | 15 | 166 | 0 | 0 | 0.896 |
 | 2026-11-17 | `260b1c4` | Merge pull request #354 from fcela/docs/353-finding-value | 7 | 4 | 3 | 15 | 166 | 0 | 0 | 0.688 |
 | 2026-11-17 | `526507a` | Merge pull request #358 from fcela/fix/ci-history-job | 7 | 4 | 3 | 15 | 166 | 0 | 0 | 0.881 (-0.01) |
