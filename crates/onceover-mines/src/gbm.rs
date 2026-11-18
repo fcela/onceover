@@ -32,7 +32,7 @@ impl Default for ScreenConfig {
         ScreenConfig {
             max_rounds: 30,
             max_predictors: 48,
-            max_model_rows: 5_000,
+            max_model_rows: 50_000,
             patience: 5,
             learning_rate: 0.3,
             max_depth: 3,

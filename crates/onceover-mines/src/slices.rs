@@ -1479,6 +1479,12 @@ pub fn profile_slice_shifts(
             "; the sample is {} of {} rows (row cap {})",
             n_sample, table.n, cfg.row_cap
         ));
+        detail.push_str(&format!(
+            "; slices holding under {}% of the rows cannot be stated on this sample (support floor {} of {} rows)",
+            crate::fmt_float(100.0 * min_support as f64 / n_sample as f64),
+            min_support,
+            n_sample
+        ));
     }
     if cat_cols_capped {
         detail.push_str(&format!(
