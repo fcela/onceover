@@ -57,6 +57,14 @@ pub fn build_hashes(cols: &[&TypedCol], rows: &[u32]) -> ColHashes {
                     }
                 }
             }
+            TypedCol::Decimal { vals, .. } => {
+                for (j, &r) in rows.iter().enumerate() {
+                    match vals[r as usize] {
+                        Some(v) => h[j] = fnv64(&v.to_le_bytes()),
+                        None => nul[j] = true,
+                    }
+                }
+            }
             TypedCol::Str { vals } => {
                 for (j, &r) in rows.iter().enumerate() {
                     match vals[r as usize] {
@@ -148,6 +156,14 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
             Some(v) => {
                 out.push(0x02);
                 push_u64!(v.to_bits());
+            }
+            None => out.push(0x00),
+        },
+        TypedCol::Decimal { vals, scale } => match vals[row] {
+            Some(v) => {
+                out.push(0x08);
+                out.extend_from_slice(&(*scale as u64).to_le_bytes());
+                out.extend_from_slice(&v.to_le_bytes());
             }
             None => out.push(0x00),
         },

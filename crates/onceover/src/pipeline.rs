@@ -298,7 +298,10 @@ fn profile_inner(
             let col = &table.cols[ci];
             if !matches!(
                 col,
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                TypedCol::I64 { .. }
+                    | TypedCol::U64 { .. }
+                    | TypedCol::F64 { .. }
+                    | TypedCol::Decimal { .. }
             ) {
                 weight_notes.push(format!("weight '{name}' not applied: not a numeric column"));
                 continue;
@@ -1206,6 +1209,7 @@ fn profile_inner(
                     .filter(|c| matches!(
                         c,
                         onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::Decimal { .. }
                             | onceover_core::TypedCol::I64 { .. }
                             | onceover_core::TypedCol::U64 { .. }
                     ))
@@ -1505,6 +1509,7 @@ fn profile_inner(
                     .filter(|c| matches!(
                         c,
                         onceover_core::TypedCol::F64 { .. }
+                            | onceover_core::TypedCol::Decimal { .. }
                             | onceover_core::TypedCol::I64 { .. }
                             | onceover_core::TypedCol::U64 { .. }
                     ))
@@ -2425,6 +2430,7 @@ fn profile_inner(
                             onceover_core::TypedCol::I64 { .. }
                                 | onceover_core::TypedCol::U64 { .. }
                                 | onceover_core::TypedCol::F64 { .. }
+                                | onceover_core::TypedCol::Decimal { .. }
                         )
                     })
                     .count();
@@ -2667,6 +2673,7 @@ fn profile_inner(
                             onceover_core::TypedCol::I64 { .. }
                                 | onceover_core::TypedCol::U64 { .. }
                                 | onceover_core::TypedCol::F64 { .. }
+                                | onceover_core::TypedCol::Decimal { .. }
                         )
                     })
                     .count();

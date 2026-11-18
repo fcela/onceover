@@ -20,6 +20,7 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
         let is_sorted = match col {
             TypedCol::I64 { vals } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::U64 { vals } => check_sorted(vals.iter().flatten().copied()),
+            TypedCol::Decimal { vals, .. } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::F64 { vals } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::Date { vals } => check_sorted(vals.iter().flatten().copied()),
             TypedCol::Datetime { vals, .. } => check_sorted(vals.iter().flatten().copied()),
@@ -71,6 +72,13 @@ pub fn sortedness(table: &TypedTable) -> Vec<Finding> {
                         .iter()
                         .enumerate()
                         .filter_map(|(r, v)| v.map(|x| (r, *x as i128)))
+                        .collect::<Vec<_>>(),
+                ),
+                TypedCol::Decimal { vals, .. } => backfill_scan(
+                    &vals
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(r, v)| v.map(|x| (r, x)))
                         .collect::<Vec<_>>(),
                 ),
                 TypedCol::F64 { vals } => backfill_scan(

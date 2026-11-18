@@ -103,21 +103,29 @@ pub fn boundary_mass(table: &TypedTable) -> Vec<Finding> {
 fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Finding> {
     // (row, exact key, value) over the non-null entries, exactly as
     // the sentinel scan reads a column.
-    let entries: Vec<(usize, u64, f64)> = match col {
+    let entries: Vec<(usize, i128, f64)> = match col {
         TypedCol::F64 { vals } => vals
             .iter()
             .enumerate()
-            .filter_map(|(r, v)| v.filter(|x| x.is_finite()).map(|x| (r, x.to_bits(), *x)))
+            .filter_map(|(r, v)| {
+                v.filter(|x| x.is_finite())
+                    .map(|x| (r, x.to_bits() as i128, *x))
+            })
             .collect(),
         TypedCol::I64 { vals } => vals
             .iter()
             .enumerate()
-            .filter_map(|(r, v)| v.map(|x| (r, *x as u64, *x as f64)))
+            .filter_map(|(r, v)| v.map(|x| (r, *x as u64 as i128, *x as f64)))
             .collect(),
         TypedCol::U64 { vals } => vals
             .iter()
             .enumerate()
-            .filter_map(|(r, v)| v.map(|x| (r, *x, *x as f64)))
+            .filter_map(|(r, v)| v.map(|x| (r, *x as i128, *x as f64)))
+            .collect(),
+        TypedCol::Decimal { vals, .. } => vals
+            .iter()
+            .enumerate()
+            .filter_map(|(r, v)| v.map(|x| (r, x, col.numeric_at(r).unwrap())))
             .collect(),
         _ => return Vec::new(),
     };
@@ -125,7 +133,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     if n < MIN_EVALUATED {
         return Vec::new();
     }
-    let mut counts: HashMap<u64, usize> = HashMap::new();
+    let mut counts: HashMap<i128, usize> = HashMap::new();
     for &(_, key, _) in &entries {
         *counts.entry(key).or_default() += 1;
     }
@@ -133,22 +141,25 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
         return Vec::new();
     }
     // Distinct values ascending, with counts.
-    let mut support: Vec<(f64, usize)> = counts
+    let mut support: Vec<(f64, usize, i128)> = counts
         .iter()
         .map(|(&key, &c)| {
             let v = match col {
                 TypedCol::I64 { .. } => (key as i64) as f64,
                 TypedCol::U64 { .. } => key as f64,
-                _ => f64::from_bits(key),
+                TypedCol::Decimal { scale, .. } => key as f64 / 10f64.powi(*scale as i32),
+                _ => f64::from_bits(key as u64),
             };
-            (v, c)
+            (v, c, key)
         })
         .collect();
-    support.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    support.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.2.cmp(&b.2)));
+    let support_keys: Vec<i128> = support.iter().map(|x| x.2).collect();
+    let support: Vec<(f64, usize)> = support.into_iter().map(|(v, c, _)| (v, c)).collect();
     let distinct = support.len();
     let (col_min, _) = support[0];
     let (col_max, _) = support[distinct - 1];
-    let zero_key = 0.0f64.to_bits();
+    let zero_key = 0i128;
     let zero_count = counts.get(&zero_key).copied().unwrap_or(0);
     let zero_share = zero_count as f64 / n as f64;
     let canonical = CANONICAL_SCALES
@@ -157,7 +168,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     // Example rows for candidate values only (count >= MIN_PILE):
     // first few and last row index, so the implicated scope is
     // retrievable from the report.
-    let candidate_keys: std::collections::HashSet<u64> = counts
+    let candidate_keys: std::collections::HashSet<i128> = counts
         .iter()
         .filter(|(_, &c)| c >= MIN_PILE)
         .map(|(&k, _)| k)
@@ -171,7 +182,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     // skipped, instead of re-sorting the bulk per candidate.
     let mut sorted_vals: Vec<f64> = entries.iter().map(|&(_, _, x)| x).collect();
     sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mut rows_of: HashMap<u64, (Vec<usize>, usize)> = HashMap::new();
+    let mut rows_of: HashMap<i128, (Vec<usize>, usize)> = HashMap::new();
     for &(r, key, _) in &entries {
         if candidate_keys.contains(&key) {
             let e = rows_of.entry(key).or_default();
@@ -195,11 +206,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
                 above_med: f64|
      -> Option<Finding> {
         let (v, c) = support[idx];
-        let key = match col {
-            TypedCol::I64 { .. } => (v as i64) as u64,
-            TypedCol::U64 { .. } => v as u64,
-            _ => v.to_bits(),
-        };
+        let key = support_keys[idx];
         let (examples, last_row) = rows_of.get(&key).cloned().unwrap_or_default();
         // Bulk: every value except the pile's own.
         let (bmed, biqr) = bulk_quartiles(&sorted_vals, v, c);

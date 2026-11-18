@@ -201,7 +201,10 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
                     "free_text"
                 }
             }
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
+            TypedCol::I64 { .. }
+            | TypedCol::U64 { .. }
+            | TypedCol::F64 { .. }
+            | TypedCol::Decimal { .. } => {
                 let likely_cat = (distinct <= 12 && n_nonnull >= 30)
                     || (distinct_ratio <= 0.02 && distinct <= 100 && n_nonnull >= 100);
                 if likely_cat {
@@ -234,6 +237,10 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         }
         TypedCol::F64 { vals } => {
             let f: Vec<f64> = vals.iter().flatten().copied().collect();
+            numeric_stats = Some(numeric_stats_f64(f, false));
+        }
+        TypedCol::Decimal { .. } => {
+            let f = (0..col.len()).filter_map(|r| col.numeric_at(r)).collect();
             numeric_stats = Some(numeric_stats_f64(f, false));
         }
         TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
@@ -449,7 +456,10 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     if role == "categorical"
         && matches!(
             col,
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            TypedCol::I64 { .. }
+                | TypedCol::U64 { .. }
+                | TypedCol::F64 { .. }
+                | TypedCol::Decimal { .. }
         )
     {
         action_hints.push("treat_as_categorical".into());

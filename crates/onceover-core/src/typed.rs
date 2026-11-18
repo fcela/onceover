@@ -96,6 +96,18 @@ impl<T: NumericScalar + PartialEq> PartialEq<Vec<Option<T>>> for NumericValues<'
     }
 }
 
+/// Render an exact scaled integer, including negative values and leading zeros.
+pub fn format_decimal(value: i128, scale: usize) -> String {
+    let digits = value.unsigned_abs().to_string();
+    let sign = if value < 0 { "-" } else { "" };
+    if scale == 0 {
+        return format!("{sign}{digits}");
+    }
+    let digits = format!("{:0>width$}", digits, width = scale + 1);
+    let split = digits.len() - scale;
+    format!("{sign}{}.{}", &digits[..split], &digits[split..])
+}
+
 /// A column extracted into onceover's normalized representation.
 /// `Str` borrows directly from the source DataFrame (zero-copy).
 #[derive(Debug)]
@@ -109,10 +121,14 @@ pub enum TypedCol<'a> {
         vals: NumericValues<'a, u64>,
     },
     /// Floats (NaN/inf treated as null; -0.0 normalized to +0.0).
-    /// Decimal columns are converted into this variant at extraction,
-    /// and so are Duration columns (converted to seconds).
+    /// Duration columns are converted to seconds at extraction.
     F64 {
         vals: NumericValues<'a, f64>,
+    },
+    /// Exact scaled integers; numeric models use an explicit f64 projection.
+    Decimal {
+        vals: Vec<Option<i128>>,
+        scale: usize,
     },
     /// Strings (borrowed, zero-copy).
     Str {
@@ -157,6 +173,7 @@ impl<'a> TypedCol<'a> {
             TypedCol::I64 { vals } => vals.len(),
             TypedCol::U64 { vals } => vals.len(),
             TypedCol::F64 { vals } => vals.len(),
+            TypedCol::Decimal { vals, .. } => vals.len(),
             TypedCol::Str { vals } => vals.len(),
             TypedCol::StrOwned { vals } => vals.len(),
             TypedCol::Bool { vals } => vals.len(),
@@ -171,6 +188,7 @@ impl<'a> TypedCol<'a> {
             TypedCol::I64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::U64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::F64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
+            TypedCol::Decimal { vals, .. } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Str { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::StrOwned { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Bool { vals } => vals.iter().filter(|v| v.is_none()).count(),
@@ -188,6 +206,7 @@ impl<'a> TypedCol<'a> {
             TypedCol::I64 { vals } => vals.at(r).is_none(),
             TypedCol::U64 { vals } => vals.at(r).is_none(),
             TypedCol::F64 { vals } => vals.at(r).is_none(),
+            TypedCol::Decimal { vals, .. } => vals[r].is_none(),
             TypedCol::Str { vals } => vals[r].is_none(),
             TypedCol::StrOwned { vals } => vals[r].is_none(),
             TypedCol::Bool { vals } => vals[r].is_none(),
@@ -206,6 +225,9 @@ impl<'a> TypedCol<'a> {
             TypedCol::I64 { vals } => vals.at(r).map(|v| v as f64),
             TypedCol::U64 { vals } => vals.at(r).map(|v| v as f64),
             TypedCol::F64 { vals } => vals.at(r),
+            TypedCol::Decimal { vals, scale } => {
+                vals[r].map(|v| v as f64 / 10f64.powi(*scale as i32))
+            }
             _ => None,
         }
     }
@@ -240,6 +262,9 @@ impl<'a> TypedCol<'a> {
             TypedCol::F64 { vals } => vals
                 .at(i)
                 .map(|v| format!("{v}"))
+                .unwrap_or_else(|| "null".into()),
+            TypedCol::Decimal { vals, scale } => vals[i]
+                .map(|v| format_decimal(v, *scale))
                 .unwrap_or_else(|| "null".into()),
             TypedCol::Str { vals } => vals[i].unwrap_or("null").to_string(),
             TypedCol::StrOwned { vals } => vals[i].as_deref().unwrap_or("null").to_string(),
@@ -302,7 +327,10 @@ impl<'a> TypedCol<'a> {
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            TypedCol::I64 { .. }
+                | TypedCol::U64 { .. }
+                | TypedCol::F64 { .. }
+                | TypedCol::Decimal { .. }
         )
     }
 }
@@ -331,6 +359,26 @@ pub fn two_valued_flag_states(table: &TypedTable, col: usize) -> Option<Vec<Opti
                 }
             }
             (on && off).then(|| vals.clone())
+        }
+        TypedCol::Decimal { vals, scale } => {
+            let one = 10i128.checked_pow(*scale as u32)?;
+            let (mut on, mut off) = (false, false);
+            let mut out = Vec::with_capacity(vals.len());
+            for value in vals {
+                out.push(match value {
+                    Some(0) => {
+                        off = true;
+                        Some(false)
+                    }
+                    Some(v) if *v == one => {
+                        on = true;
+                        Some(true)
+                    }
+                    Some(_) => return None,
+                    None => None,
+                });
+            }
+            (on && off).then_some(out)
         }
         TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. } => {
             let (mut on, mut off) = (false, false);
@@ -565,22 +613,17 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             TypedCol::F64 { vals: vals.into() }
         }
         DataType::Decimal(_, scale) => {
-            // A decimal value is a scaled integer: the stored i128
-            // divided by 10^scale. Convert to f64 at extraction — the
-            // same projection polars itself applies in a decimal-to-
-            // float cast — so every downstream pass analyses the
-            // column as a number. Digits beyond f64 precision are not
-            // retained, as with the u64 -> f64 projection.
-            let divisor = 10f64.powi(*scale as i32);
-            let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::Decimal(v, _, _) => norm_f64(v as f64 / divisor),
-                    AnyValue::Null => None,
+            let vals = s
+                .iter()
+                .map(|av| match av {
+                    AnyValue::Decimal(v, _, _) => Some(v),
                     _ => None,
-                });
+                })
+                .collect();
+            TypedCol::Decimal {
+                vals,
+                scale: *scale,
             }
-            TypedCol::F64 { vals: vals.into() }
         }
         DataType::Duration(unit) => {
             // A duration is a count of ticks at the column's time
@@ -709,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_decimal_as_float() {
+    fn extracts_decimal_exactly() {
         // Decimal(10, 2): the stored integers are the values x100.
         let s = Series::new(
             "d".into(),
@@ -726,13 +769,14 @@ mod tests {
         assert_eq!(dtype_name(s.dtype()), "decimal");
         let t = extract_series(&s);
         match &t {
-            TypedCol::F64 { vals } => {
+            TypedCol::Decimal { vals, scale } => {
+                assert_eq!(*scale, 2);
                 assert_eq!(
                     vals,
-                    &vec![Some(1.5f64), Some(2.5), None, Some(-0.25), Some(100.0)]
+                    &vec![Some(150), Some(250), None, Some(-25), Some(10000)]
                 );
             }
-            _ => panic!("decimal should extract as F64"),
+            _ => panic!("decimal should retain scaled integers"),
         }
         assert!(t.is_numeric());
         assert_eq!(t.null_count(), 1);
@@ -745,17 +789,21 @@ mod tests {
             .cast(&DataType::Decimal(10, 0))
             .unwrap();
         match extract_series(&whole) {
-            TypedCol::F64 { vals } => assert_eq!(vals, vec![Some(7.0f64), Some(42.0)]),
-            _ => panic!("scale-0 decimal should extract as F64"),
+            TypedCol::Decimal { vals, scale } => {
+                assert_eq!(scale, 0);
+                assert_eq!(vals, vec![Some(7), Some(42)]);
+            }
+            _ => panic!("scale-0 decimal should retain scaled integers"),
         }
         let fine = Series::new("f".into(), &["0.000001", "1.000001"])
             .cast(&DataType::Decimal(12, 6))
             .unwrap();
         match extract_series(&fine) {
-            TypedCol::F64 { vals } => {
-                assert_eq!(vals, vec![Some(0.000001f64), Some(1.000001)]);
+            TypedCol::Decimal { vals, scale } => {
+                assert_eq!(scale, 6);
+                assert_eq!(vals, vec![Some(1), Some(1000001)]);
             }
-            _ => panic!("scale-6 decimal should extract as F64"),
+            _ => panic!("scale-6 decimal should retain scaled integers"),
         }
     }
 

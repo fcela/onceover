@@ -1728,7 +1728,10 @@ fn part_whole_relation<T: ScanVal>(
         }
         if !matches!(
             col,
-            TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+            TypedCol::I64 { .. }
+                | TypedCol::U64 { .. }
+                | TypedCol::F64 { .. }
+                | TypedCol::Decimal { .. }
         ) {
             continue;
         }

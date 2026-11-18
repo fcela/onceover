@@ -114,6 +114,13 @@ fn level_counts(col: &TypedCol) -> BTreeMap<String, usize> {
                 bump(v.map(|x| x.to_string()));
             }
         }
+        TypedCol::Decimal { .. } => {
+            for r in 0..col.len() {
+                if !col.is_null_at(r) {
+                    bump(Some(col.render_cell(r)));
+                }
+            }
+        }
         _ => {}
     }
     counts

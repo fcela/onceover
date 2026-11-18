@@ -478,7 +478,10 @@ fn search_failure_slices(
             }
             if matches!(
                 tcol,
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                TypedCol::I64 { .. }
+                    | TypedCol::U64 { .. }
+                    | TypedCol::F64 { .. }
+                    | TypedCol::Decimal { .. }
             ) {
                 numeric_cols.push(col);
             }

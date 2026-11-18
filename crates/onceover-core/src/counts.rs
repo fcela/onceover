@@ -16,6 +16,7 @@ use crate::typed::TypedCol;
 pub enum VKey {
     I(i64),
     U(u64),
+    D(i128, usize),
     /// f64 bit pattern (NaN never stored; -0.0 normalized upstream).
     F(u64),
     S(Box<str>),
@@ -28,6 +29,7 @@ impl VKey {
         match self {
             VKey::I(v) => v.to_string(),
             VKey::U(v) => v.to_string(),
+            VKey::D(v, scale) => crate::typed::format_decimal(*v, *scale),
             VKey::F(bits) => format_f64(f64::from_bits(*bits)),
             VKey::S(s) => s.to_string(),
             VKey::B(b) => {
@@ -64,6 +66,7 @@ impl Ord for VKey {
         match (self, other) {
             (VKey::I(a), VKey::I(b)) => a.cmp(b),
             (VKey::U(a), VKey::U(b)) => a.cmp(b),
+            (VKey::D(a, sa), VKey::D(b, sb)) => sa.cmp(sb).then_with(|| a.cmp(b)),
             (VKey::F(a), VKey::F(b)) => {
                 // Order by value (both non-NaN; -0 normalized).
                 f64::from_bits(*a)
@@ -82,6 +85,7 @@ fn discriminant(v: &VKey) -> u8 {
     match v {
         VKey::I(_) => 0,
         VKey::U(_) => 4,
+        VKey::D(..) => 5,
         VKey::F(_) => 1,
         VKey::S(_) => 2,
         VKey::B(_) => 3,
@@ -112,6 +116,11 @@ pub fn build_counts(col: &TypedCol, hash_limit: usize) -> ColCounts {
     match col {
         TypedCol::I64 { vals } => count_values(vals.iter().flatten().copied(), hash_limit, VKey::I),
         TypedCol::U64 { vals } => count_values(vals.iter().flatten().copied(), hash_limit, VKey::U),
+        TypedCol::Decimal { vals, scale } => {
+            count_values(vals.iter().flatten().copied(), hash_limit, |v| {
+                VKey::D(v, *scale)
+            })
+        }
         TypedCol::F64 { vals } => count_values(
             vals.iter().flatten().map(|v| v.to_bits()),
             hash_limit,

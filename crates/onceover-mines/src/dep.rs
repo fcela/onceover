@@ -846,7 +846,10 @@ fn screen_sampled_impl(
         .filter(|&i| {
             matches!(
                 table.cols[i],
-                TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                TypedCol::I64 { .. }
+                    | TypedCol::U64 { .. }
+                    | TypedCol::F64 { .. }
+                    | TypedCol::Decimal { .. }
             )
         })
         .collect();
@@ -877,7 +880,10 @@ fn screen_sampled_impl(
             .filter(|&&i| {
                 matches!(
                     table.cols[i],
-                    TypedCol::I64 { .. } | TypedCol::U64 { .. } | TypedCol::F64 { .. }
+                    TypedCol::I64 { .. }
+                        | TypedCol::U64 { .. }
+                        | TypedCol::F64 { .. }
+                        | TypedCol::Decimal { .. }
                 )
             })
             .map(|&i| table.names[i].as_str())
