@@ -289,14 +289,17 @@ def test_week_axis_is_not_a_target():
 
 def test_week_axis_role_declaration_overrides_the_exclusion():
     # User declaration wins over the structural default: declaring
-    # the axis column's role explicitly makes it target-eligible
-    # again, exactly as on the unmodified build.
+    # the axis column's role explicitly makes it target-eligible again.
+    # The strongest predictive statement may name another target on a
+    # different sample, so assert eligibility rather than its winner.
+    baseline = onceover.profile(_week_df(), hints={"time": "week"})
     report = onceover.profile(
         _week_df(), hints={"time": "week", "roles": {"week": "measure"}}
     )
-    targeting = [
-        f
-        for f in report.findings
-        if (f["subject"].get("target") == "week") and f.get("type") == "predictive"
-    ]
-    assert len(targeting) == 1
+    baseline_detail = baseline.coverage["predictability_screen"]["detail"]
+    detail = report.coverage["predictability_screen"]["detail"]
+    assert "excluded as targets and predictors by frame role: week" in baseline_detail
+    assert "3 target columns considered" in detail
+    assert "excluded as targets and predictors by frame role: week" not in detail
+    assert report.data["columns"]["week"]["semantic_role"] == "measure"
+    assert report.data["columns"]["week"]["semantic_role_evidence"] == "declared by hints.roles"
