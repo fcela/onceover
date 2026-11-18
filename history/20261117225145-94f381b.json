@@ -1,0 +1,3124 @@
+{
+ "meta": {
+  "commit": "94f381b576b33edd26f53a37083ea78048e8a858",
+  "date": "2026-11-17T22:51:45-05:00",
+  "subject": "Merge pull request #376 from fcela/fix/views-deep-look",
+  "accepted": [
+   {
+    "metric": "planted.found_full",
+    "scope": "absenteeism-at-work",
+    "limit": 3,
+    "reason": "Issue #310: the outcome account and contrasts on the planted target joined a report already saturated at the 100-finding cap (191 functional statements past their group cap alone); the target_driver shape statement (interestingness 0.6289) falls just below the head selection cut (0.6387). found_4k total improves 55 -> 56 across the gate. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "planted.found_full",
+    "scope": "total",
+    "limit": 58,
+    "reason": "Issue #310: the single absenteeism-at-work displacement above; every other dataset's found_full is unchanged or improved, and found_4k total improves. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "planted.found_4k",
+    "scope": "absenteeism-at-work",
+    "limit": 2,
+    "reason": "Issue #310: same displacement as planted.found_full on this dataset; the shape statement is the digest's marginal line at the 4,000-character budget. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "bank-marketing",
+    "limit": 873,
+    "reason": "Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "metro-interstate-traffic",
+    "limit": 832,
+    "reason": "Issue #310: same composition change as bank-marketing; 846 -> 832 (1.7%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "thyroid",
+    "limit": 871,
+    "reason": "Issue #310: same composition change; 874 -> 871 (0.3%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "absenteeism-at-work",
+    "limit": 891,
+    "reason": "Issue #310: same composition change; 902 -> 891 (1.2%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "planted_mix",
+    "limit": 906,
+    "reason": "Issue #310: same composition change; 913 -> 906 (0.8%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   },
+   {
+    "metric": "redundancy.finding_permille_target",
+    "scope": "dominant_driver",
+    "limit": 882,
+    "reason": "Issue #310: same composition change; 891 -> 882 (1.0%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
+   }
+  ]
+ },
+ "scorecard": {
+  "schema": 1,
+  "provenance": {
+   "onceover_version": "0.1.6",
+   "commit": "94f381b576b33edd26f53a37083ea78048e8a858",
+   "python": "3.13.18",
+   "polars": "2.1.0",
+   "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+   "numpy": "2.5.5",
+   "seeds": [
+    0
+   ],
+   "components": [
+    "planted",
+    "permuted",
+    "invariance",
+    "reference",
+    "weighted",
+    "redundancy",
+    "truth",
+    "cost"
+   ],
+   "fast": false,
+   "only": null
+  },
+  "metric_specs": {
+   "planted.planted": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "planted.found_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "planted.found_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "planted.line_sum_4k": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "permuted.false_full": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_4k": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_full_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.false_4k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "permuted.findings_full": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "invariance.reverse": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.row_shuffle": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.rename": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.noise": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.scale": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "invariance.total": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.check_failed": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "reference.must_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.must_4k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_8k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_full_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_4k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_8k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_full_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.should_4k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_8k_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_full_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_4k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_8k_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.should_full_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "reference.must_not_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "reference.must_not_4k_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_8k_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_full_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_4k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_8k_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "reference.must_not_full_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "weighted.must_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "weighted.must_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.must_8k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.must_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_total": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "weighted.should_4k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_8k": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.should_full": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "weighted.weighted_findings": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.repeated_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.finding_lines_default": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.finding_permille_default": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "redundancy.long_decimals_default": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.repeated_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "redundancy.finding_lines_target": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "redundancy.finding_permille_target": {
+    "direction": "higher",
+    "kind": "count"
+   },
+   "redundancy.long_decimals_target": {
+    "direction": "lower",
+    "kind": "count"
+   },
+   "truth.mismatch": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "truth.error": {
+    "direction": "lower",
+    "kind": "count",
+    "zero": true
+   },
+   "truth.ok": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "truth.not_checkable": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "cost.profile_seconds": {
+    "direction": "lower",
+    "kind": "time"
+   },
+   "cost.json_chars": {
+    "direction": "info",
+    "kind": "count"
+   },
+   "cost.findings": {
+    "direction": "info",
+    "kind": "count"
+   }
+  },
+  "totals": {
+   "planted": {
+    "planted": 76,
+    "found_full": 58,
+    "found_4k": 56,
+    "line_sum_4k": 630
+   },
+   "permuted": {
+    "false_full": 100,
+    "false_4k": 48,
+    "false_full_target": 51,
+    "false_4k_target": 30,
+    "findings_full": 318
+   },
+   "invariance": {
+    "reverse": 199,
+    "row_shuffle": 106,
+    "rename": 0,
+    "noise": 29,
+    "scale": 2,
+    "total": 336
+   },
+   "reference": {
+    "check_failed": 0,
+    "must_total": 19,
+    "must_4k_default": 16,
+    "must_8k_default": 16,
+    "must_full_default": 17,
+    "must_4k_target": 17,
+    "must_8k_target": 17,
+    "must_full_target": 17,
+    "should_total": 45,
+    "should_4k_default": 29,
+    "should_8k_default": 36,
+    "should_full_default": 37,
+    "should_4k_target": 18,
+    "should_8k_target": 23,
+    "should_full_target": 24,
+    "must_not_total": 9,
+    "must_not_4k_default": 8,
+    "must_not_8k_default": 18,
+    "must_not_full_default": 81,
+    "must_not_4k_target": 3,
+    "must_not_8k_target": 16,
+    "must_not_full_target": 60
+   },
+   "redundancy": {
+    "repeated_default": 0,
+    "finding_lines_default": 272,
+    "finding_permille_default": 16636,
+    "long_decimals_default": 0,
+    "repeated_target": 0,
+    "finding_lines_target": 193,
+    "finding_permille_target": 9406,
+    "long_decimals_target": 0
+   },
+   "truth": {
+    "mismatch": 0,
+    "error": 0,
+    "ok": 907,
+    "not_checkable": 1524
+   },
+   "cost": {
+    "profile_seconds": 11.502,
+    "json_chars": 3877987,
+    "findings": 1203
+   },
+   "weighted": {
+    "must_total": 4,
+    "must_4k": 3,
+    "must_8k": 4,
+    "must_full": 4,
+    "should_total": 0,
+    "should_4k": 0,
+    "should_8k": 0,
+    "should_full": 0,
+    "weighted_findings": 15
+   }
+  },
+  "held_out_totals": {
+   "planted": {
+    "planted": 12,
+    "found_full": 8,
+    "found_4k": 7,
+    "line_sum_4k": 103
+   },
+   "permuted": {
+    "false_full": 26,
+    "false_4k": 15,
+    "false_full_target": 13,
+    "false_4k_target": 4,
+    "findings_full": 137
+   },
+   "invariance": {
+    "reverse": 94,
+    "row_shuffle": 58,
+    "rename": 0,
+    "noise": 14,
+    "scale": 0,
+    "total": 166
+   },
+   "reference": {
+    "check_failed": 0,
+    "must_total": 9,
+    "must_4k_default": 4,
+    "must_8k_default": 4,
+    "must_full_default": 4,
+    "must_4k_target": 3,
+    "must_8k_target": 3,
+    "must_full_target": 3,
+    "should_total": 16,
+    "should_4k_default": 6,
+    "should_8k_default": 6,
+    "should_full_default": 6,
+    "should_4k_target": 3,
+    "should_8k_target": 3,
+    "should_full_target": 3,
+    "must_not_total": 0,
+    "must_not_4k_default": 0,
+    "must_not_8k_default": 0,
+    "must_not_full_default": 0,
+    "must_not_4k_target": 0,
+    "must_not_8k_target": 0,
+    "must_not_full_target": 0
+   },
+   "redundancy": {
+    "repeated_default": 0,
+    "finding_lines_default": 94,
+    "finding_permille_default": 5115,
+    "long_decimals_default": 0,
+    "repeated_target": 0,
+    "finding_lines_target": 44,
+    "finding_permille_target": 1763,
+    "long_decimals_target": 0
+   },
+   "truth": {
+    "mismatch": 0,
+    "error": 0,
+    "ok": 262,
+    "not_checkable": 399
+   },
+   "cost": {
+    "profile_seconds": 0.937,
+    "json_chars": 1086750,
+    "findings": 363
+   }
+  },
+  "seconds": 194.2,
+  "datasets": {
+   "adult-census-income": {
+    "held_out": false,
+    "kind": "tabular, mixed types",
+    "target": "income",
+    "status": "ok",
+    "rows": 48842,
+    "cols": 15,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 5,
+       "line_sum_4k": 63
+      },
+      "status": "ok",
+      "wall_seconds": 9.46
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 1,
+       "false_4k_target": 1,
+       "findings_full": 28
+      },
+      "status": "ok",
+      "wall_seconds": 2.72
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 11,
+       "row_shuffle": 7,
+       "rename": 0,
+       "noise": 6,
+       "scale": 0,
+       "total": 24
+      },
+      "status": "ok",
+      "wall_seconds": 8.41
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 4,
+       "must_4k_default": 4,
+       "must_8k_default": 4,
+       "must_full_default": 4,
+       "must_4k_target": 4,
+       "must_8k_target": 4,
+       "must_full_target": 4,
+       "should_total": 4,
+       "should_4k_default": 3,
+       "should_8k_default": 4,
+       "should_full_default": 4,
+       "should_4k_target": 3,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 2,
+       "must_not_4k_default": 2,
+       "must_not_8k_default": 4,
+       "must_not_full_default": 30,
+       "must_not_4k_target": 2,
+       "must_not_8k_target": 4,
+       "must_not_full_target": 19
+      },
+      "status": "ok",
+      "wall_seconds": 2.12
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 17,
+       "finding_permille_default": 887,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 19,
+       "finding_permille_target": 879,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 78,
+       "not_checkable": 149
+      },
+      "status": "ok",
+      "wall_seconds": 0.1
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.383,
+       "json_chars": 243898,
+       "findings": 91
+      },
+      "status": "ok",
+      "wall_seconds": 2.78
+     }
+    }
+   },
+   "bank-marketing": {
+    "held_out": false,
+    "kind": "tabular, mixed types",
+    "target": "subscribed_term_deposit",
+    "status": "ok",
+    "rows": 45211,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 3,
+       "line_sum_4k": 38
+      },
+      "status": "ok",
+      "wall_seconds": 8.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 1,
+       "false_4k_target": 1,
+       "findings_full": 18
+      },
+      "status": "ok",
+      "wall_seconds": 2.77
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 15,
+       "row_shuffle": 18,
+       "rename": 0,
+       "noise": 1,
+       "scale": 1,
+       "total": 35
+      },
+      "status": "ok",
+      "wall_seconds": 8.49
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 4,
+       "should_4k_default": 0,
+       "should_8k_default": 4,
+       "should_full_default": 3,
+       "should_4k_target": 2,
+       "should_8k_target": 3,
+       "should_full_target": 4,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 2.04
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 888,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 20,
+       "finding_permille_target": 873,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 42,
+       "not_checkable": 170
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.384,
+       "json_chars": 262810,
+       "findings": 92
+      },
+      "status": "ok",
+      "wall_seconds": 2.77
+     }
+    }
+   },
+   "abalone": {
+    "held_out": false,
+    "kind": "tabular, correlated measures",
+    "target": "rings",
+    "status": "ok",
+    "rows": 4177,
+    "cols": 9,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 5,
+       "line_sum_4k": 61
+      },
+      "status": "ok",
+      "wall_seconds": 0.81
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.13
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 4,
+       "row_shuffle": 3,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 7
+      },
+      "status": "ok",
+      "wall_seconds": 0.68
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 3,
+       "must_8k_default": 3,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 2,
+       "should_4k_default": 1,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 1,
+       "should_8k_target": 2,
+       "should_full_target": 2,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.16
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 17,
+       "finding_permille_default": 930,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 18,
+       "finding_permille_target": 920,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 56,
+       "not_checkable": 82
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.108,
+       "json_chars": 158933,
+       "findings": 62
+      },
+      "status": "ok",
+      "wall_seconds": 0.22
+     }
+    }
+   },
+   "bike-sharing-hourly": {
+    "held_out": false,
+    "kind": "hourly series with calendar columns",
+    "target": "cnt",
+    "status": "ok",
+    "rows": 17379,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 2,
+       "found_4k": 3,
+       "line_sum_4k": 41
+      },
+      "status": "ok",
+      "wall_seconds": 5.71
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 8,
+       "false_4k": 5,
+       "false_full_target": 8,
+       "false_4k_target": 5,
+       "findings_full": 31
+      },
+      "status": "ok",
+      "wall_seconds": 2.52
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 6.54
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 5,
+       "should_4k_default": 2,
+       "should_8k_default": 3,
+       "should_full_default": 3,
+       "should_4k_target": 2,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 7,
+       "must_not_4k_default": 6,
+       "must_not_8k_default": 14,
+       "must_not_full_default": 51,
+       "must_not_4k_target": 1,
+       "must_not_8k_target": 12,
+       "must_not_full_target": 41
+      },
+      "status": "ok",
+      "wall_seconds": 1.69
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 0,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 8
+      },
+      "status": "ok",
+      "wall_seconds": 1.33
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 840,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 18,
+       "finding_permille_target": 839,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 57,
+       "not_checkable": 178
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.292,
+       "json_chars": 316614,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 2.56
+     }
+    }
+   },
+   "metro-interstate-traffic": {
+    "held_out": false,
+    "kind": "hourly time series",
+    "target": "traffic_volume",
+    "status": "ok",
+    "rows": 48204,
+    "cols": 9,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 5,
+       "found_4k": 4,
+       "line_sum_4k": 66
+      },
+      "status": "ok",
+      "wall_seconds": 9.69
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 8,
+       "false_4k": 7,
+       "false_full_target": 8,
+       "false_4k_target": 7,
+       "findings_full": 24
+      },
+      "status": "ok",
+      "wall_seconds": 2.65
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 4,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 2,
+       "scale": 0,
+       "total": 6
+      },
+      "status": "ok",
+      "wall_seconds": 7.4
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 17,
+       "finding_permille_default": 846,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 20,
+       "finding_permille_target": 832,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 1.69
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 88,
+       "not_checkable": 139
+      },
+      "status": "ok",
+      "wall_seconds": 0.15
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.403,
+       "json_chars": 225922,
+       "findings": 89
+      },
+      "status": "ok",
+      "wall_seconds": 2.8
+     }
+    }
+   },
+   "thyroid": {
+    "held_out": false,
+    "kind": "clinical, many flags and missing values",
+    "target": "diagnosis",
+    "status": "ok",
+    "rows": 3772,
+    "cols": 32,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 16
+      },
+      "status": "ok",
+      "wall_seconds": 0.6
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 18,
+       "false_4k": 6,
+       "false_full_target": 18,
+       "false_4k_target": 6,
+       "findings_full": 48
+      },
+      "status": "ok",
+      "wall_seconds": 1.06
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 12,
+       "row_shuffle": 21,
+       "rename": 0,
+       "noise": 2,
+       "scale": 0,
+       "total": 35
+      },
+      "status": "ok",
+      "wall_seconds": 3.6
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 25,
+       "finding_permille_default": 874,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 25,
+       "finding_permille_target": 871,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.62
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 99,
+       "not_checkable": 135
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.593,
+       "json_chars": 315425,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 1.18
+     }
+    }
+   },
+   "absenteeism-at-work": {
+    "held_out": false,
+    "kind": "small business table",
+    "target": "absenteeism_time_hours",
+    "status": "ok",
+    "rows": 740,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 3,
+       "found_4k": 2,
+       "line_sum_4k": 36
+      },
+      "status": "ok",
+      "wall_seconds": 1.1
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 8,
+       "false_4k": 5,
+       "false_full_target": 8,
+       "false_4k_target": 5,
+       "findings_full": 22
+      },
+      "status": "ok",
+      "wall_seconds": 0.27
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 41,
+       "row_shuffle": 15,
+       "rename": 0,
+       "noise": 8,
+       "scale": 0,
+       "total": 64
+      },
+      "status": "ok",
+      "wall_seconds": 1.05
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 21,
+       "finding_permille_default": 902,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 21,
+       "finding_permille_target": 891,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.19
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 170,
+       "not_checkable": 112
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.17,
+       "json_chars": 302843,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 0.34
+     }
+    }
+   },
+   "hospital-dha": {
+    "held_out": false,
+    "kind": "wide numeric, 64 columns",
+    "target": null,
+    "status": "ok",
+    "rows": 307,
+    "cols": 64,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 3,
+       "line_sum_4k": 35
+      },
+      "status": "ok",
+      "wall_seconds": 2.82
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 9
+      },
+      "status": "ok",
+      "wall_seconds": 0.24
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 13,
+       "row_shuffle": 9,
+       "rename": 0,
+       "noise": 0,
+       "scale": 1,
+       "total": 23
+      },
+      "status": "ok",
+      "wall_seconds": 3.95
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 20,
+       "finding_permille_default": 894,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 41,
+       "not_checkable": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.66,
+       "json_chars": 351173,
+       "findings": 61
+      },
+      "status": "ok",
+      "wall_seconds": 1.33
+     }
+    }
+   },
+   "congressional-voting": {
+    "held_out": false,
+    "kind": "categorical votes",
+    "target": "party",
+    "status": "ok",
+    "rows": 435,
+    "cols": 17,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 15
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 2,
+       "false_4k": 2,
+       "false_full_target": 2,
+       "false_4k_target": 2,
+       "findings_full": 18
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 28,
+       "row_shuffle": 26,
+       "rename": 0,
+       "noise": 6,
+       "scale": 0,
+       "total": 60
+      },
+      "status": "ok",
+      "wall_seconds": 0.25
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 908,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 21,
+       "finding_permille_target": 902,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 70,
+       "not_checkable": 137
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.047,
+       "json_chars": 214084,
+       "findings": 87
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     }
+    }
+   },
+   "adventureworks": {
+    "held_out": false,
+    "kind": "sales orders",
+    "target": null,
+    "status": "ok",
+    "rows": 31465,
+    "cols": 26,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 25
+      },
+      "status": "ok",
+      "wall_seconds": 11.09
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 40,
+       "false_4k": 11,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 66
+      },
+      "status": "ok",
+      "wall_seconds": 1.64
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 42,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 2,
+       "scale": 0,
+       "total": 44
+      },
+      "status": "ok",
+      "wall_seconds": 13.1
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 17,
+       "finding_permille_default": 836,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 72,
+       "not_checkable": 79
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 2.566,
+       "json_chars": 305869,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 5.14
+     }
+    }
+   },
+   "nab-nyc-taxi": {
+    "held_out": false,
+    "kind": "single time series",
+    "target": null,
+    "status": "ok",
+    "rows": 10320,
+    "cols": 2,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 3,
+       "found_full": 3,
+       "found_4k": 3,
+       "line_sum_4k": 20
+      },
+      "status": "ok",
+      "wall_seconds": 0.26
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.33
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 2,
+       "finding_permille_default": 449,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 3,
+       "not_checkable": 32
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.056,
+       "json_chars": 105917,
+       "findings": 35
+      },
+      "status": "ok",
+      "wall_seconds": 0.11
+     }
+    }
+   },
+   "state-unemployment": {
+    "held_out": false,
+    "kind": "wide time series, one column per state",
+    "target": null,
+    "status": "ok",
+    "rows": 609,
+    "cols": 52,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 6,
+       "false_4k": 4,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 8
+      },
+      "status": "ok",
+      "wall_seconds": 0.47
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 25,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 25
+      },
+      "status": "ok",
+      "wall_seconds": 4.93
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 16,
+       "finding_permille_default": 843,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 25,
+       "not_checkable": 80
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 1.231,
+       "json_chars": 458004,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 2.46
+     }
+    }
+   },
+   "state-unemployment-long": {
+    "held_out": false,
+    "kind": "panel, long form",
+    "target": "unemployment_rate",
+    "status": "ok",
+    "rows": 31059,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 4,
+       "false_4k": 2,
+       "false_full_target": 4,
+       "false_4k_target": 2,
+       "findings_full": 5
+      },
+      "status": "ok",
+      "wall_seconds": 0.21
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.39
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 1,
+       "must_8k_default": 1,
+       "must_full_default": 1,
+       "must_4k_target": 1,
+       "must_8k_target": 1,
+       "must_full_target": 1,
+       "should_total": 4,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 4,
+       "should_8k_target": 4,
+       "should_full_target": 4,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.14
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 4,
+       "finding_permille_default": 559,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 5,
+       "finding_permille_target": 611,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 47
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.08,
+       "json_chars": 72365,
+       "findings": 19
+      },
+      "status": "ok",
+      "wall_seconds": 0.16
+     }
+    }
+   },
+   "south-german-credit": {
+    "held_out": true,
+    "kind": "credit table",
+    "target": "credit_risk",
+    "status": "ok",
+    "rows": 1000,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 57
+      },
+      "status": "ok",
+      "wall_seconds": 0.91
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 3,
+       "false_4k": 3,
+       "false_full_target": 3,
+       "false_4k_target": 3,
+       "findings_full": 17
+      },
+      "status": "ok",
+      "wall_seconds": 0.25
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 7,
+       "row_shuffle": 5,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 12
+      },
+      "status": "ok",
+      "wall_seconds": 0.84
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 1,
+       "should_4k_default": 1,
+       "should_8k_default": 1,
+       "should_full_default": 1,
+       "should_4k_target": 1,
+       "should_8k_target": 1,
+       "should_full_target": 1,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.17
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 22,
+       "finding_permille_default": 910,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 24,
+       "finding_permille_target": 900,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 30,
+       "not_checkable": 136
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.135,
+       "json_chars": 218228,
+       "findings": 72
+      },
+      "status": "ok",
+      "wall_seconds": 0.27
+     }
+    }
+   },
+   "soybean": {
+    "held_out": true,
+    "kind": "categorical agronomy table",
+    "target": null,
+    "status": "ok",
+    "rows": 683,
+    "cols": 36,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 4,
+       "false_4k": 4,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 45
+      },
+      "status": "ok",
+      "wall_seconds": 0.18
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 19,
+       "row_shuffle": 24,
+       "rename": 0,
+       "noise": 6,
+       "scale": 0,
+       "total": 49
+      },
+      "status": "ok",
+      "wall_seconds": 1.04
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 23,
+       "finding_permille_default": 884,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 58,
+       "not_checkable": 44
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.202,
+       "json_chars": 268348,
+       "findings": 71
+      },
+      "status": "ok",
+      "wall_seconds": 0.41
+     }
+    }
+   },
+   "lace-satellites": {
+    "held_out": true,
+    "kind": "satellite catalogue",
+    "target": null,
+    "status": "ok",
+    "rows": 1164,
+    "cols": 21,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 13
+      },
+      "status": "ok",
+      "wall_seconds": 0.21
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 9,
+       "false_4k": 7,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 39
+      },
+      "status": "ok",
+      "wall_seconds": 0.15
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 34,
+       "row_shuffle": 27,
+       "rename": 0,
+       "noise": 4,
+       "scale": 0,
+       "total": 65
+      },
+      "status": "ok",
+      "wall_seconds": 0.98
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 20,
+       "finding_permille_default": 880,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 93,
+       "not_checkable": 52
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.19,
+       "json_chars": 273233,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 0.38
+     }
+    }
+   },
+   "sec-edgar-company-facts": {
+    "held_out": true,
+    "kind": "event log, filing events",
+    "target": "value",
+    "status": "ok",
+    "rows": 11543,
+    "cols": 10,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 2,
+       "found_4k": 1,
+       "line_sum_4k": 23
+      },
+      "status": "ok",
+      "wall_seconds": 1.8
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 10,
+       "false_4k": 1,
+       "false_full_target": 10,
+       "false_4k_target": 1,
+       "findings_full": 19
+      },
+      "status": "ok",
+      "wall_seconds": 0.63
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 34,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 4,
+       "scale": 0,
+       "total": 38
+      },
+      "status": "ok",
+      "wall_seconds": 1.97
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 3,
+       "must_8k_default": 3,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 2,
+       "should_4k_default": 0,
+       "should_8k_default": 0,
+       "should_full_default": 0,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.53
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 18,
+       "finding_permille_default": 872,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 20,
+       "finding_permille_target": 863,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 62,
+       "not_checkable": 164
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.373,
+       "json_chars": 263732,
+       "findings": 100
+      },
+      "status": "ok",
+      "wall_seconds": 0.75
+     }
+    }
+   },
+   "gse15258-expression": {
+    "held_out": true,
+    "kind": "wide table, 86 samples x 5,006 columns",
+    "target": "response_to_therapy",
+    "status": "ok",
+    "rows": 86,
+    "cols": 5006,
+    "components": {
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 4,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 2,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 2,
+       "should_8k_target": 2,
+       "should_full_target": 2,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 13.94
+     }
+    }
+   },
+   "column_order_stress": {
+    "held_out": false,
+    "kind": "generated numeric battery, latent factors",
+    "target": null,
+    "status": "ok",
+    "rows": 4000,
+    "cols": 15,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 4,
+       "row_shuffle": 5,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 9
+      },
+      "status": "ok",
+      "wall_seconds": 0.92
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 5,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 19,
+       "finding_permille_default": 949,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 19,
+       "not_checkable": 7
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.149,
+       "json_chars": 85641,
+       "findings": 26
+      },
+      "status": "ok",
+      "wall_seconds": 0.3
+     }
+    }
+   },
+   "planted_mix": {
+    "held_out": false,
+    "kind": "generated application records with plants",
+    "target": "approved",
+    "status": "ok",
+    "rows": 6000,
+    "cols": 11,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 56
+      },
+      "status": "ok",
+      "wall_seconds": 1.05
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 1,
+       "false_4k_target": 1,
+       "findings_full": 11
+      },
+      "status": "ok",
+      "wall_seconds": 0.31
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 1.04
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 3,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 3,
+       "must_4k_target": 3,
+       "must_8k_target": 3,
+       "must_full_target": 3,
+       "should_total": 4,
+       "should_4k_default": 3,
+       "should_8k_default": 3,
+       "should_full_default": 3,
+       "should_4k_target": 3,
+       "should_8k_target": 3,
+       "should_full_target": 3,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.25
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 7
+      },
+      "status": "ok",
+      "wall_seconds": 0.19
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 14,
+       "finding_permille_default": 913,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 15,
+       "finding_permille_target": 906,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 46,
+       "not_checkable": 48
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.175,
+       "json_chars": 106967,
+       "findings": 39
+      },
+      "status": "ok",
+      "wall_seconds": 0.35
+     }
+    }
+   },
+   "daily_regime_break": {
+    "held_out": false,
+    "kind": "generated daily series, planted breaks",
+    "target": null,
+    "status": "ok",
+    "rows": 1826,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.18
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 2,
+       "false_4k": 2,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.17
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 6,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 6,
+       "finding_permille_default": 796,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 10,
+       "not_checkable": 29
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.031,
+       "json_chars": 105903,
+       "findings": 35
+      },
+      "status": "ok",
+      "wall_seconds": 0.06
+     }
+    }
+   },
+   "dominant_driver": {
+    "held_out": false,
+    "kind": "generated listings, numeric target",
+    "target": "price",
+    "status": "ok",
+    "rows": 5000,
+    "cols": 8,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 5,
+       "line_sum_4k": 48
+      },
+      "status": "ok",
+      "wall_seconds": 0.67
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.16
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.57
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 2,
+       "must_8k_default": 2,
+       "must_full_default": 2,
+       "must_4k_target": 2,
+       "must_8k_target": 2,
+       "must_full_target": 2,
+       "should_total": 4,
+       "should_4k_default": 3,
+       "should_8k_default": 3,
+       "should_full_default": 3,
+       "should_4k_target": 3,
+       "should_8k_target": 3,
+       "should_full_target": 3,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.14
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 10,
+       "finding_permille_default": 891,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 11,
+       "finding_permille_target": 882,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 22,
+       "not_checkable": 30
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.091,
+       "json_chars": 84776,
+       "findings": 25
+      },
+      "status": "ok",
+      "wall_seconds": 0.18
+     }
+    }
+   },
+   "daily_level_collapse": {
+    "held_out": false,
+    "kind": "generated daily series, planted sustained collapse",
+    "target": null,
+    "status": "ok",
+    "rows": 1096,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 4,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 38
+      },
+      "status": "ok",
+      "wall_seconds": 0.12
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 3
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.11
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 1,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 6,
+       "should_4k_default": 5,
+       "should_8k_default": 5,
+       "should_full_default": 6,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 6,
+       "finding_permille_default": 759,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 33
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.019,
+       "json_chars": 124949,
+       "findings": 37
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     }
+    }
+   },
+   "marginal_ranges": {
+    "held_out": true,
+    "kind": "generated range battery",
+    "target": null,
+    "status": "ok",
+    "rows": 3000,
+    "cols": 7,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 0,
+       "found_full": 0,
+       "found_4k": 0,
+       "line_sum_4k": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 5
+      },
+      "status": "ok",
+      "wall_seconds": 0.03
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.17
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 0,
+       "must_4k_default": 0,
+       "must_8k_default": 0,
+       "must_full_default": 0,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 7,
+       "should_4k_default": 1,
+       "should_8k_default": 1,
+       "should_full_default": 1,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 4,
+       "finding_permille_default": 819,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 4,
+       "not_checkable": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.025,
+       "json_chars": 29976,
+       "findings": 6
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     }
+    }
+   },
+   "messy_intake": {
+    "held_out": true,
+    "kind": "generated messy intake records",
+    "target": null,
+    "status": "ok",
+    "rows": 2500,
+    "cols": 7,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 1,
+       "found_full": 1,
+       "found_4k": 1,
+       "line_sum_4k": 10
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 12
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 1,
+       "rename": 0,
+       "noise": 0,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.08
+     },
+     "reference": {
+      "metrics": {
+       "check_failed": 0,
+       "must_total": 2,
+       "must_4k_default": 1,
+       "must_8k_default": 1,
+       "must_full_default": 1,
+       "must_4k_target": 0,
+       "must_8k_target": 0,
+       "must_full_target": 0,
+       "should_total": 4,
+       "should_4k_default": 2,
+       "should_8k_default": 2,
+       "should_full_default": 2,
+       "should_4k_target": 0,
+       "should_8k_target": 0,
+       "should_full_target": 0,
+       "must_not_total": 0,
+       "must_not_4k_default": 0,
+       "must_not_8k_default": 0,
+       "must_not_full_default": 0,
+       "must_not_4k_target": 0,
+       "must_not_8k_target": 0,
+       "must_not_full_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.01
+     },
+     "weighted": {
+      "status": "not_applicable",
+      "reason": "no weights declared for this dataset",
+      "wall_seconds": 0.0
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 7,
+       "finding_permille_default": 750,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 15,
+       "not_checkable": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.012,
+       "json_chars": 33233,
+       "findings": 14
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     }
+    }
+   },
+   "weighted_noise": {
+    "held_out": false,
+    "kind": "generated control: independent noise weight",
+    "target": null,
+    "status": "ok",
+    "rows": 8000,
+    "cols": 4,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 6,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 16
+      },
+      "status": "ok",
+      "wall_seconds": 0.38
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 1,
+       "false_4k": 1,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 3
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 1,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.26
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.05
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 2,
+       "finding_permille_default": 837,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 0,
+       "not_checkable": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.044,
+       "json_chars": 17630,
+       "findings": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.09
+     }
+    }
+   },
+   "weighted_large_cell": {
+    "held_out": false,
+    "kind": "generated control: merely large cell",
+    "target": null,
+    "status": "ok",
+    "rows": 8000,
+    "cols": 3,
+    "components": {
+     "planted": {
+      "metrics": {
+       "planted": 5,
+       "found_full": 4,
+       "found_4k": 4,
+       "line_sum_4k": 23
+      },
+      "status": "ok",
+      "wall_seconds": 0.21
+     },
+     "permuted": {
+      "metrics": {
+       "false_full": 0,
+       "false_4k": 0,
+       "false_full_target": 0,
+       "false_4k_target": 0,
+       "findings_full": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "invariance": {
+      "metrics": {
+       "reverse": 0,
+       "row_shuffle": 0,
+       "rename": 0,
+       "noise": 1,
+       "scale": 0,
+       "total": 1
+      },
+      "status": "ok",
+      "wall_seconds": 0.14
+     },
+     "reference": {
+      "status": "not_applicable",
+      "reason": "no reference statements for this dataset",
+      "wall_seconds": 0.0
+     },
+     "weighted": {
+      "metrics": {
+       "must_total": 1,
+       "must_4k": 1,
+       "must_8k": 1,
+       "must_full": 1,
+       "should_total": 0,
+       "should_4k": 0,
+       "should_8k": 0,
+       "should_full": 0,
+       "weighted_findings": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.02
+     },
+     "redundancy": {
+      "metrics": {
+       "repeated_default": 0,
+       "finding_lines_default": 3,
+       "finding_permille_default": 835,
+       "long_decimals_default": 0,
+       "repeated_target": 0,
+       "finding_lines_target": 0,
+       "finding_permille_target": 0,
+       "long_decimals_target": 0
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "truth": {
+      "metrics": {
+       "mismatch": 0,
+       "error": 0,
+       "ok": 1,
+       "not_checkable": 2
+      },
+      "status": "ok",
+      "wall_seconds": 0.0
+     },
+     "cost": {
+      "metrics": {
+       "profile_seconds": 0.02,
+       "json_chars": 18264,
+       "findings": 3
+      },
+      "status": "ok",
+      "wall_seconds": 0.04
+     }
+    }
+   }
+  }
+ }
+}
