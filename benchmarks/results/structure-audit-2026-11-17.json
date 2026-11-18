@@ -1,0 +1,4045 @@
+{
+  "commit": "7d27ac8",
+  "version": "0.1.6",
+  "python": "3.13.7",
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "cases": [
+    {
+      "case": "identical_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "standard",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.009056749986484647,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-f3a82a1df0f1ea53",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "affine_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "standard",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.008664791996125132,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -4.2061114564961954 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-8615d4dfb484bcc7",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column y shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_binary",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "standard",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0024388750025536865,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 26124.0 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 45.6 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold x at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold y at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-d3b2e932e9a71c48",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "standard",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.00947345799067989,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "2 views (0 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7101.5 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "2 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.9299582483642355 at row 2242; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-c61786b72c976140",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "changes-0babe7d25a4daed0",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column y shifts by 2.48 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_binary",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "standard",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0026648749771993607,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "2 views (0 multi-column), 4 findings, sample 6000 of 6000 rows, total score 26071.8 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold x at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5997) hold y at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 2-5999) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-85194b831e5ab063",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "changes-8d397a07a8fde687",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column y shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "deep",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.008529124985216185,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-f3a82a1df0f1ea53",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "affine_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "deep",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.00847066700225696,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -4.2061114564961954 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-8615d4dfb484bcc7",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column y shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_binary",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "deep",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0024242910149041563,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 26124.0 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 45.6 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold x at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold y at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-d3b2e932e9a71c48",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_gaussian",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "deep",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.009672624990344048,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "2 views (0 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7225.2 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "2 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.6781467307160067 at row 1295; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-c61786b72c976140",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "changes-567ff10df97f677a",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column y shifts by 2.50 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_binary",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "budget": "deep",
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.002762917021755129,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "2 views (0 multi-column), 4 findings, sample 6000 of 6000 rows, total score 26071.8 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5998) hold x at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 1-5999) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3000 of 3000 rows in cluster 0 (rows 0-5997) hold y at 0.0 (100% of the cluster); 3000 of 3000 rows in cluster 1 (rows 2-5999) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-85194b831e5ab063",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "changes-8d397a07a8fde687",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column y shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_gaussian_detector_comparison",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": null
+      },
+      "seconds": 0.007482332992367446,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "on-request detector; not in the default set \u2014 request it with detectors=[\"row_clusters\"]"
+      },
+      "findings": [
+        {
+          "id": "uniqueness-f7f29a14d22d77ec",
+          "type": "uniqueness",
+          "category": "uniqueness",
+          "claim": "x has a distinct value in each of its 6000 rows (a continuous measure, not a key)",
+          "subject": {
+            "columns": [
+              "x"
+            ],
+            "unit": "column_values"
+          }
+        },
+        {
+          "id": "dependencies-362724a9f24dabdc",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "y is predictable from x (100% of gain) (holdout R\u00b2 = 0.99)",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "y"
+          }
+        },
+        {
+          "id": "dependencies-8e3952a15ac50cd8",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "x is predictable from y (100% of gain) (holdout R\u00b2 = 0.99)",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ],
+            "inputs": [
+              "y"
+            ],
+            "target": "x"
+          }
+        },
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and y show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "dependencies-f6a7aa1111872ff8",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "y = 1.000000\u00b7x within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "y"
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_gaussian_detector_comparison",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.00874375001876615,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-f3a82a1df0f1ea53",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "identical_gaussian_detector_comparison",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "functional_dependencies"
+        ]
+      },
+      "seconds": 0.0009720409871079028,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "on-request detector; not in the default set \u2014 request it with detectors=[\"row_clusters\"]"
+      },
+      "findings": []
+    },
+    {
+      "case": "identical_gaussian_detector_comparison",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "identities"
+        ]
+      },
+      "seconds": 0.0016297500114887953,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "on-request detector; not in the default set \u2014 request it with detectors=[\"row_clusters\"]"
+      },
+      "findings": [
+        {
+          "id": "dependencies-f6a7aa1111872ff8",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "y = 1.000000\u00b7x within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "y"
+          }
+        }
+      ]
+    },
+    {
+      "case": "search_row_override",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "sample_rows": 50,
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0007693750085309148,
+      "row_clusters_coverage": {
+        "status": "ran_sampled",
+        "detail": "1 views (1 multi-column), 2 findings, sample 50 of 6000 rows, total score -98.3 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 27.9 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-da2d97affc568ecf",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 4 clusters; headline column x shifts by 2.18 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "search_row_override",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "sample_rows": 6000,
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.00854000000981614,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 7319.4 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-328bada4fb2bc44b",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b9e5eaa8e5951016",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in y have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-f3a82a1df0f1ea53",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "category_relabeling",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.004164541984209791,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score -196.9 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 34.6 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at \"c\" (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at \"d\" (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at \"a\" (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at \"b\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at \"hi\" (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at \"hi\" (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at \"lo\" (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at \"lo\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-a61cdfdb2b682f75",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 4 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "category_relabeling",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.003886249993229285,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score -196.9 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 34.6 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at \"b\" (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at \"d\" (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at \"a\" (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at \"c\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at \"hi\" (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at \"hi\" (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at \"lo\" (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at \"lo\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-15b704d0b63e47b5",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 4 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "integer_precision",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.003755999990971759,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 21282.2 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-7673ee81b0170d1c",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns x, y form a dependence block under the greedy view partition (merge gain 76.0 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold x at 2.0 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold x at 3.0 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold x at 0.0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold x at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "1500 of 1500 rows in cluster 0 (rows 2-5998) hold y at 2.0 (100% of the cluster); 1500 of 1500 rows in cluster 1 (rows 3-5999) hold y at 3.0 (100% of the cluster); 1500 of 1500 rows in cluster 2 (rows 0-5996) hold y at 0.0 (100% of the cluster); 1500 of 1500 rows in cluster 3 (rows 1-5997) hold y at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        },
+        {
+          "id": "changes-09747fb8b0525879",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 4 clusters; headline column x shifts by 2.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "integer_precision",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0015269160212483257,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "2 views (0 multi-column), 2 findings, sample 6000 of 6000 rows, total score 30958.5 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold x at 1.152921504606847e+18 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4ac85daecd112415",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold y at 1.152921504606847e+18 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_cartesian_string",
+      "shape": [
+        4096,
+        6
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.01070212500053458,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "6 views (0 multi-column), 12 findings, sample 4096 of 4096 rows, total score -390.9 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-e2a8ea89282e26e3",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4094) hold c0 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 1-4095) hold c0 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c0"
+            ]
+          }
+        },
+        {
+          "id": "concentration-2a38ab76e3e1c06e",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4093) hold c1 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 2-4095) hold c1 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c1"
+            ]
+          }
+        },
+        {
+          "id": "concentration-5ebe6374c664eb0d",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4091) hold c2 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 4-4095) hold c2 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c2"
+            ]
+          }
+        },
+        {
+          "id": "concentration-39e54801a79ebd18",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4087) hold c3 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 8-4095) hold c3 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c3"
+            ]
+          }
+        },
+        {
+          "id": "concentration-995628b00038ac7f",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4079) hold c4 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 16-4095) hold c4 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c4"
+            ]
+          }
+        },
+        {
+          "id": "concentration-d053d8927a832b8a",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4063) hold c5 at \"0\" (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 32-4095) hold c5 at \"1\" (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c5"
+            ]
+          }
+        },
+        {
+          "id": "changes-5719ec37e2d0c475",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c0 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c0"
+            ]
+          }
+        },
+        {
+          "id": "changes-7c64d339dc386141",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c1 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c1"
+            ]
+          }
+        },
+        {
+          "id": "changes-1f5666226fc8d053",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c2 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c2"
+            ]
+          }
+        },
+        {
+          "id": "changes-0b51bb5c4b6d6074",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c3 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c3"
+            ]
+          }
+        },
+        {
+          "id": "changes-7aab0ab48be9767c",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c4 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c4"
+            ]
+          }
+        },
+        {
+          "id": "changes-26016f36141f6b39",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c5 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "independent_cartesian_integer",
+      "shape": [
+        4096,
+        6
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.011818040977232158,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "6 views (0 multi-column), 12 findings, sample 4096 of 4096 rows, total score 48643.2 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-e2a8ea89282e26e3",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4094) hold c0 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 1-4095) hold c0 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c0"
+            ]
+          }
+        },
+        {
+          "id": "concentration-2a38ab76e3e1c06e",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4093) hold c1 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 2-4095) hold c1 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c1"
+            ]
+          }
+        },
+        {
+          "id": "concentration-5ebe6374c664eb0d",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4091) hold c2 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 4-4095) hold c2 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c2"
+            ]
+          }
+        },
+        {
+          "id": "concentration-39e54801a79ebd18",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4087) hold c3 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 8-4095) hold c3 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c3"
+            ]
+          }
+        },
+        {
+          "id": "concentration-995628b00038ac7f",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4079) hold c4 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 16-4095) hold c4 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c4"
+            ]
+          }
+        },
+        {
+          "id": "concentration-d053d8927a832b8a",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "2048 of 2048 rows in cluster 0 (rows 0-4063) hold c5 at 0.0 (100% of the cluster); 2048 of 2048 rows in cluster 1 (rows 32-4095) hold c5 at 1.0 (100% of the cluster) (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c5"
+            ]
+          }
+        },
+        {
+          "id": "changes-336fcf7ff5b6fbff",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c0 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c0"
+            ]
+          }
+        },
+        {
+          "id": "changes-6ed45996f7628fb9",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c1 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c1"
+            ]
+          }
+        },
+        {
+          "id": "changes-443de02bc66237ff",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c2 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c2"
+            ]
+          }
+        },
+        {
+          "id": "changes-08388d02e756731a",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c3 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c3"
+            ]
+          }
+        },
+        {
+          "id": "changes-98a2517a833f2916",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c4 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c4"
+            ]
+          }
+        },
+        {
+          "id": "changes-72f318ced31d5ce9",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 2 clusters; headline column c5 shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "c5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "default_trivial_structure",
+      "shape": [
+        6000,
+        7
+      ],
+      "options": {
+        "budget": "standard"
+      },
+      "seconds": 0.028359165997244418,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "on-request detector; not in the default set \u2014 request it with detectors=[\"row_clusters\"]"
+      },
+      "findings": [
+        {
+          "id": "uniqueness-f7f29a14d22d77ec",
+          "type": "uniqueness",
+          "category": "uniqueness",
+          "claim": "x has a distinct value in each of its 6000 rows (a continuous measure, not a key)",
+          "subject": {
+            "columns": [
+              "x"
+            ],
+            "unit": "column_values"
+          }
+        },
+        {
+          "id": "dependencies-1f3f24208021cd61",
+          "type": "order_constraint",
+          "category": "dependencies",
+          "claim": "copy <= affine on 5998 of 6000 evaluated rows (2 violations, 0.03%): the worst violation is at row 1123, where copy = -3.7354 against affine = -4.2061",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-57a8576093bb6933",
+          "type": "order_constraint",
+          "category": "dependencies",
+          "claim": "x <= affine on 5998 of 6000 evaluated rows (2 violations, 0.03%): the worst violation is at row 1123, where x = -3.7354 against affine = -4.2061",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-a600afb7b5c4a71c",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "affine = 3.000000\u00b7copy + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-a698ba1d54ee40e8",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 1.333333\u00b7affine + -2.333333 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum"
+            ],
+            "inputs": [
+              "affine"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-25573a3cf2f68872",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 4.000000\u00b7copy + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "copy",
+              "sum"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-234059d358ff5fe0",
+          "type": "arithmetic_identity",
+          "category": "dependencies",
+          "claim": "sum = copy + affine within tolerance on all 6000 non-missing rows",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy",
+              "sum"
+            ],
+            "inputs": [
+              "affine",
+              "copy"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-04e135d6dc666aec",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "label is predictable from binary (100% of gain) (holdout accuracy 1.00 vs 0.50 majority baseline)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "dependencies-d3ef28389ef9b4bc",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "binary is predictable from label (100% of gain) (holdout accuracy 1.00 vs 0.51 majority baseline)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "dependencies-8bba2db9e7794866",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "copy is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "copy"
+          }
+        },
+        {
+          "id": "dependencies-1a509bb8eeba490c",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "sum is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-20b5f9a8013ad392",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "affine is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "affine",
+              "binary",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-2f6518fab7e95cfa",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "x is predictable from copy (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "copy"
+            ],
+            "target": "x"
+          }
+        },
+        {
+          "id": "associations-34a99378383146c1",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "copy and affine show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ]
+          }
+        },
+        {
+          "id": "associations-5bebe2f8e7d8baed",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "affine and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "associations-deb319c12d307ea0",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and affine show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "associations-6d9838641e198a7f",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "copy and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "copy",
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "associations-de42beae36ed9cf6",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and copy show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "copy",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "associations-c7d99cef19d83e98",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "sum",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "conditional_rules-0d55a9104e93d840",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When label = \"yes\", binary = 1 holds in 596 of 596 matching diagnostic rows (100.00%; baseline 49.22%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "conditional_rules-a138dacb922759c2",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When binary <= 0, label = \"no\" holds in 615 of 615 matching diagnostic rows (100.00%; baseline 50.78%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "conditional_rules-ce0e57c4dd766a0d",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When label = \"no\", binary = 0 holds in 615 of 615 matching diagnostic rows (100.00%; baseline 50.78%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "conditional_rules-dfb12bcc70163a6e",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When binary > 0 and binary <= 1, label = \"yes\" holds in 596 of 596 matching diagnostic rows (100.00%; baseline 49.22%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "dependencies-7e68d2464ab25531",
+          "type": "functional",
+          "category": "dependencies",
+          "claim": "binary \u2192 label (label is a function of binary; 0 violations in 6000 rows)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "associations-0ebbc19ae05634e4",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "binary differs across the levels of label (correlation ratio 1.000)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ]
+          }
+        },
+        {
+          "id": "dependencies-8846008cc808e082",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "affine = 3.000000\u00b7x + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-56bc1a388e5cb824",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "copy = 1.000000\u00b7x within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "copy"
+          }
+        },
+        {
+          "id": "dependencies-a8844b6ad24c8a9e",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 4.000000\u00b7x + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-e691404f81099764",
+          "type": "arithmetic_identity",
+          "category": "dependencies",
+          "claim": "sum = x + affine within tolerance on all 6000 non-missing rows",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "affine",
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "formats-43ff0c218cf70e2b",
+          "type": "benford_deviation",
+          "category": "formats",
+          "claim": "column affine deviates from Benford's first-digit law: mean absolute deviation 0.067 (nonconformity boundary 0.012), chi-square 2916.8 on 8 df (bar 34); digit 1 leads 18.9% of values against Benford's 30.1%",
+          "subject": {
+            "columns": [
+              "affine"
+            ]
+          }
+        },
+        {
+          "id": "formats-f24f0ca272b838ad",
+          "type": "benford_deviation",
+          "category": "formats",
+          "claim": "column sum deviates from Benford's first-digit law: mean absolute deviation 0.044 (nonconformity boundary 0.012), chi-square 1412.9 on 8 df (bar 34); digit 1 leads 27.9% of values against Benford's 30.1%",
+          "subject": {
+            "columns": [
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "concentration-6e2b5b3200c746b1",
+          "type": "hotspot",
+          "category": "concentration",
+          "claim": "cell (binary = '<= 0', label = 'no') holds 3000 of 6000 scanned rows (50.0%) against 1500.0 expected under independence of binary, label \u2014 2.0x the baseline (z = 38.7, bar 3.1 over 6 cells examined)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0239317e5b6cab44",
+          "type": "value_concentration",
+          "category": "concentration",
+          "claim": "column constant is constant ('42')",
+          "subject": {
+            "columns": [
+              "constant"
+            ]
+          }
+        },
+        {
+          "id": "ordering-5bdf8654297a5ce8",
+          "type": "column_ordering",
+          "category": "ordering",
+          "claim": "column constant is non-decreasing with row order",
+          "subject": {
+            "columns": [
+              "constant"
+            ]
+          }
+        },
+        {
+          "id": "column_roles-3692e486ad608429",
+          "type": "categorical_role",
+          "category": "column_roles",
+          "claim": "numeric column binary behaves like a category (2 distinct values)",
+          "subject": {
+            "columns": [
+              "binary"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "default_trivial_structure",
+      "shape": [
+        6000,
+        7
+      ],
+      "options": {
+        "budget": "deep"
+      },
+      "seconds": 0.03067574999295175,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "on-request detector; not in the default set \u2014 request it with detectors=[\"row_clusters\"]"
+      },
+      "findings": [
+        {
+          "id": "uniqueness-f7f29a14d22d77ec",
+          "type": "uniqueness",
+          "category": "uniqueness",
+          "claim": "x has a distinct value in each of its 6000 rows (a continuous measure, not a key)",
+          "subject": {
+            "columns": [
+              "x"
+            ],
+            "unit": "column_values"
+          }
+        },
+        {
+          "id": "dependencies-1f3f24208021cd61",
+          "type": "order_constraint",
+          "category": "dependencies",
+          "claim": "copy <= affine on 5998 of 6000 evaluated rows (2 violations, 0.03%): the worst violation is at row 1123, where copy = -3.7354 against affine = -4.2061",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-57a8576093bb6933",
+          "type": "order_constraint",
+          "category": "dependencies",
+          "claim": "x <= affine on 5998 of 6000 evaluated rows (2 violations, 0.03%): the worst violation is at row 1123, where x = -3.7354 against affine = -4.2061",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-a600afb7b5c4a71c",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "affine = 3.000000\u00b7copy + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-a698ba1d54ee40e8",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 1.333333\u00b7affine + -2.333333 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum"
+            ],
+            "inputs": [
+              "affine"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-25573a3cf2f68872",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 4.000000\u00b7copy + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "copy",
+              "sum"
+            ],
+            "inputs": [
+              "copy"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-234059d358ff5fe0",
+          "type": "arithmetic_identity",
+          "category": "dependencies",
+          "claim": "sum = copy + affine within tolerance on all 6000 non-missing rows",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy",
+              "sum"
+            ],
+            "inputs": [
+              "affine",
+              "copy"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-04e135d6dc666aec",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "label is predictable from binary (100% of gain) (holdout accuracy 1.00 vs 0.50 majority baseline)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "dependencies-d3ef28389ef9b4bc",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "binary is predictable from label (100% of gain) (holdout accuracy 1.00 vs 0.50 majority baseline)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "dependencies-8bba2db9e7794866",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "copy is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "copy"
+          }
+        },
+        {
+          "id": "dependencies-1a509bb8eeba490c",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "sum is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-20b5f9a8013ad392",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "affine is predictable from x (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "affine",
+              "binary",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-2f6518fab7e95cfa",
+          "type": "predictive",
+          "category": "dependencies",
+          "claim": "x is predictable from copy (100% of gain) (holdout R\u00b2 = 0.99 using only these drivers; 0.99 using all inputs)",
+          "subject": {
+            "columns": [
+              "binary",
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "binary",
+              "copy"
+            ],
+            "target": "x"
+          }
+        },
+        {
+          "id": "associations-34a99378383146c1",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "copy and affine show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "copy"
+            ]
+          }
+        },
+        {
+          "id": "associations-5bebe2f8e7d8baed",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "affine and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "associations-deb319c12d307ea0",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and affine show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "associations-6d9838641e198a7f",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "copy and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "copy",
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "associations-de42beae36ed9cf6",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and copy show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "copy",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "associations-c7d99cef19d83e98",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "x and sum show numeric association (maximum measured effect 1.000)",
+          "subject": {
+            "columns": [
+              "sum",
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "conditional_rules-0d55a9104e93d840",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When label = \"yes\", binary = 1 holds in 596 of 596 matching diagnostic rows (100.00%; baseline 49.22%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "conditional_rules-a138dacb922759c2",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When binary <= 0, label = \"no\" holds in 615 of 615 matching diagnostic rows (100.00%; baseline 50.78%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "conditional_rules-ce0e57c4dd766a0d",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When label = \"no\", binary = 0 holds in 615 of 615 matching diagnostic rows (100.00%; baseline 50.78%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "label"
+            ],
+            "target": "binary"
+          }
+        },
+        {
+          "id": "conditional_rules-dfb12bcc70163a6e",
+          "type": "if_then",
+          "category": "conditional_rules",
+          "claim": "When binary > 0 and binary <= 1, label = \"yes\" holds in 596 of 596 matching diagnostic rows (100.00%; baseline 49.22%)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "dependencies-7e68d2464ab25531",
+          "type": "functional",
+          "category": "dependencies",
+          "claim": "binary \u2192 label (label is a function of binary; 0 violations in 6000 rows)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ],
+            "inputs": [
+              "binary"
+            ],
+            "target": "label"
+          }
+        },
+        {
+          "id": "associations-0ebbc19ae05634e4",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "binary differs across the levels of label (correlation ratio 1.000)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ]
+          }
+        },
+        {
+          "id": "dependencies-8846008cc808e082",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "affine = 3.000000\u00b7x + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "affine",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "affine"
+          }
+        },
+        {
+          "id": "dependencies-56bc1a388e5cb824",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "copy = 1.000000\u00b7x within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "copy",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "copy"
+          }
+        },
+        {
+          "id": "dependencies-a8844b6ad24c8a9e",
+          "type": "affine",
+          "category": "dependencies",
+          "claim": "sum = 4.000000\u00b7x + 7.000000 within tolerance on all 6000 non-missing row pairs",
+          "subject": {
+            "columns": [
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "dependencies-e691404f81099764",
+          "type": "arithmetic_identity",
+          "category": "dependencies",
+          "claim": "sum = x + affine within tolerance on all 6000 non-missing rows",
+          "subject": {
+            "columns": [
+              "affine",
+              "sum",
+              "x"
+            ],
+            "inputs": [
+              "affine",
+              "x"
+            ],
+            "target": "sum"
+          }
+        },
+        {
+          "id": "formats-43ff0c218cf70e2b",
+          "type": "benford_deviation",
+          "category": "formats",
+          "claim": "column affine deviates from Benford's first-digit law: mean absolute deviation 0.067 (nonconformity boundary 0.012), chi-square 2916.8 on 8 df (bar 34); digit 1 leads 18.9% of values against Benford's 30.1%",
+          "subject": {
+            "columns": [
+              "affine"
+            ]
+          }
+        },
+        {
+          "id": "formats-f24f0ca272b838ad",
+          "type": "benford_deviation",
+          "category": "formats",
+          "claim": "column sum deviates from Benford's first-digit law: mean absolute deviation 0.044 (nonconformity boundary 0.012), chi-square 1412.9 on 8 df (bar 34); digit 1 leads 27.9% of values against Benford's 30.1%",
+          "subject": {
+            "columns": [
+              "sum"
+            ]
+          }
+        },
+        {
+          "id": "concentration-6e2b5b3200c746b1",
+          "type": "hotspot",
+          "category": "concentration",
+          "claim": "cell (binary = '<= 0', label = 'no') holds 3000 of 6000 scanned rows (50.0%) against 1500.0 expected under independence of binary, label \u2014 2.0x the baseline (z = 38.7, bar 3.1 over 6 cells examined)",
+          "subject": {
+            "columns": [
+              "binary",
+              "label"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0239317e5b6cab44",
+          "type": "value_concentration",
+          "category": "concentration",
+          "claim": "column constant is constant ('42')",
+          "subject": {
+            "columns": [
+              "constant"
+            ]
+          }
+        },
+        {
+          "id": "ordering-5bdf8654297a5ce8",
+          "type": "column_ordering",
+          "category": "ordering",
+          "claim": "column constant is non-decreasing with row order",
+          "subject": {
+            "columns": [
+              "constant"
+            ]
+          }
+        },
+        {
+          "id": "column_roles-3692e486ad608429",
+          "type": "categorical_role",
+          "category": "column_roles",
+          "claim": "numeric column binary behaves like a category (2 distinct values)",
+          "subject": {
+            "columns": [
+              "binary"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "leading_null_dependent_pair_wide_False",
+      "shape": [
+        6000,
+        2
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.007482332992367446,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (1 multi-column), 4 findings, sample 6000 of 6000 rows, total score 5787.1 nats"
+      },
+      "findings": [
+        {
+          "id": "associations-a553d51382e802e2",
+          "type": "statistical",
+          "category": "associations",
+          "claim": "Columns late_x, late_y form a dependence block under the greedy view partition (merge gain 136.8 nats over separate views on the search sample; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "late_x",
+              "late_y"
+            ]
+          }
+        },
+        {
+          "id": "concentration-9f504ca5be16c05e",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in late_x have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "late_x"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0b886af514e204d3",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "3 cells in late_y have log predictive density below -9.1 nats under their cluster (lowest -3.7353704854987315 at row 1123; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "late_y"
+            ]
+          }
+        },
+        {
+          "id": "changes-0576e7ecf3e8c7b9",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column late_x shifts by 2.54 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "late_x",
+              "late_y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "leading_null_dependent_pair_wide_True",
+      "shape": [
+        6000,
+        66
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.182050250004977,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "64 views (0 multi-column), 64 findings, sample 6000 of 6000 rows, total score 990672.2 nats; 66 eligible columns over the 64-column cap: kept the 64 with the strongest pairwise dependence (mutual-information pre-screen); dropped 2 column(s) past the 64-column cap: late_x, late_y"
+      },
+      "findings": [
+        {
+          "id": "concentration-c76cdb0007d5910b",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_0 at 0.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_0"
+            ]
+          }
+        },
+        {
+          "id": "concentration-b862e5160078a3d6",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_1 at 1.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_1"
+            ]
+          }
+        },
+        {
+          "id": "concentration-467a56f84d6feff0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_10 at 10.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_10"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c28003c304d02ea5",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_11 at 11.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_11"
+            ]
+          }
+        },
+        {
+          "id": "concentration-14d3714225150466",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_12 at 12.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_12"
+            ]
+          }
+        },
+        {
+          "id": "concentration-86110372c2ca05db",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_13 at 13.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_13"
+            ]
+          }
+        },
+        {
+          "id": "concentration-765b012a8cdf481c",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_14 at 14.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_14"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c9cb0a0f5fdda141",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_15 at 15.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_15"
+            ]
+          }
+        },
+        {
+          "id": "concentration-9a4a85f2c443c6e2",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_16 at 16.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_16"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0ac6278ebf8a2e17",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_17 at 17.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_17"
+            ]
+          }
+        },
+        {
+          "id": "concentration-ecea46cdcbd224c8",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_18 at 18.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_18"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c879540a3468537d",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_19 at 19.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_19"
+            ]
+          }
+        },
+        {
+          "id": "concentration-33a2a1bde4cbc995",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_2 at 2.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_2"
+            ]
+          }
+        },
+        {
+          "id": "concentration-487bef1659a1c731",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_20 at 20.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_20"
+            ]
+          }
+        },
+        {
+          "id": "concentration-70ea0e408b3f5dcc",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_21 at 21.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_21"
+            ]
+          }
+        },
+        {
+          "id": "concentration-8bb6b1ea1bec8d47",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_22 at 22.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_22"
+            ]
+          }
+        },
+        {
+          "id": "concentration-411341b12ced6192",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_23 at 23.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_23"
+            ]
+          }
+        },
+        {
+          "id": "concentration-ea2cdb71b9004f95",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_24 at 24.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_24"
+            ]
+          }
+        },
+        {
+          "id": "concentration-aaa5b1205a0aa620",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_25 at 25.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_25"
+            ]
+          }
+        },
+        {
+          "id": "concentration-7df714b3dc0a170b",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_26 at 26.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_26"
+            ]
+          }
+        },
+        {
+          "id": "concentration-6eed1ec9d4ad29d6",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_27 at 27.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_27"
+            ]
+          }
+        },
+        {
+          "id": "concentration-a63b3d4a713c8b49",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_28 at 28.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_28"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c2fb00292483cf64",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_29 at 29.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_29"
+            ]
+          }
+        },
+        {
+          "id": "concentration-f41b776c85d62020",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_3 at 3.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_3"
+            ]
+          }
+        },
+        {
+          "id": "concentration-bab0a312ec36afce",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_30 at 30.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_30"
+            ]
+          }
+        },
+        {
+          "id": "concentration-d78df756a4cbce43",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_31 at 31.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_31"
+            ]
+          }
+        },
+        {
+          "id": "concentration-188ac294293606f8",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_32 at 32.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_32"
+            ]
+          }
+        },
+        {
+          "id": "concentration-94912f5ee0978bed",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_33 at 33.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_33"
+            ]
+          }
+        },
+        {
+          "id": "concentration-1599b6b789f4fe6a",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_34 at 34.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_34"
+            ]
+          }
+        },
+        {
+          "id": "concentration-27242477236be45f",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_35 at 35.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_35"
+            ]
+          }
+        },
+        {
+          "id": "concentration-486becc668a638a4",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_36 at 36.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_36"
+            ]
+          }
+        },
+        {
+          "id": "concentration-69b232536fbc1f89",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_37 at 37.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_37"
+            ]
+          }
+        },
+        {
+          "id": "concentration-df4413d7be0cdf16",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_38 at 38.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_38"
+            ]
+          }
+        },
+        {
+          "id": "concentration-57e9d6d3d3a3934b",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_39 at 39.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_39"
+            ]
+          }
+        },
+        {
+          "id": "concentration-d52c783647b80747",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_4 at 4.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_4"
+            ]
+          }
+        },
+        {
+          "id": "concentration-dabf33ac1a8e514f",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_40 at 40.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_40"
+            ]
+          }
+        },
+        {
+          "id": "concentration-0a90ad9f1b0a3b5a",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_41 at 41.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_41"
+            ]
+          }
+        },
+        {
+          "id": "concentration-46a4d631a5c32bb9",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_42 at 42.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_42"
+            ]
+          }
+        },
+        {
+          "id": "concentration-ea302cd6398fcad4",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_43 at 43.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_43"
+            ]
+          }
+        },
+        {
+          "id": "concentration-7fd5e0077ccf95f3",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_44 at 44.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_44"
+            ]
+          }
+        },
+        {
+          "id": "concentration-bafa407e9c69b87e",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_45 at 45.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_45"
+            ]
+          }
+        },
+        {
+          "id": "concentration-3edac2881d23091d",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_46 at 46.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_46"
+            ]
+          }
+        },
+        {
+          "id": "concentration-2306478b9791e2e8",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_47 at 47.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_47"
+            ]
+          }
+        },
+        {
+          "id": "concentration-df707c9a97607237",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_48 at 48.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_48"
+            ]
+          }
+        },
+        {
+          "id": "concentration-6420bdc99ca80682",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_49 at 49.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_49"
+            ]
+          }
+        },
+        {
+          "id": "concentration-8a8907fd58b8db92",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_5 at 5.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_5"
+            ]
+          }
+        },
+        {
+          "id": "concentration-40e31a5de6438104",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_50 at 50.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_50"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c36daff85cd43469",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_51 at 51.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_51"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c3d789df2a84ffca",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_52 at 52.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_52"
+            ]
+          }
+        },
+        {
+          "id": "concentration-dff9d9f7c55a5fbf",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_53 at 53.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_53"
+            ]
+          }
+        },
+        {
+          "id": "concentration-6f4b56b995efb758",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_54 at 54.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_54"
+            ]
+          }
+        },
+        {
+          "id": "concentration-3f2c47aa8030004d",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_55 at 55.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_55"
+            ]
+          }
+        },
+        {
+          "id": "concentration-073f8fac9ac7f9ae",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_56 at 56.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_56"
+            ]
+          }
+        },
+        {
+          "id": "concentration-8510c653279c1123",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_57 at 57.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_57"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4650677780d7136c",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_58 at 58.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_58"
+            ]
+          }
+        },
+        {
+          "id": "concentration-d2b02ed656566051",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_59 at 59.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_59"
+            ]
+          }
+        },
+        {
+          "id": "concentration-91f1b562856d4131",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_6 at 6.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_6"
+            ]
+          }
+        },
+        {
+          "id": "concentration-c28e759ff6c64725",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_60 at 60.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_60"
+            ]
+          }
+        },
+        {
+          "id": "concentration-4688c8d53f660870",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_61 at 61.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_61"
+            ]
+          }
+        },
+        {
+          "id": "concentration-861f754fb4c01e5b",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_62 at 62.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_62"
+            ]
+          }
+        },
+        {
+          "id": "concentration-14e1e31f170b1ce6",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_63 at 63.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_63"
+            ]
+          }
+        },
+        {
+          "id": "concentration-ba5fd48cb70ad7cc",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_7 at 7.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_7"
+            ]
+          }
+        },
+        {
+          "id": "concentration-41a8d10a71921403",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_8 at 8.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_8"
+            ]
+          }
+        },
+        {
+          "id": "concentration-2d98a73f234a238e",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "6000 of 6000 rows in cluster 0 (rows 0-5999) hold constant_9 at 9.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "constant_9"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "decimal_exact_integrity",
+      "shape": [
+        100,
+        1
+      ],
+      "options": {
+        "budget": "quick"
+      },
+      "seconds": 0.00020016601774841547,
+      "row_clusters_coverage": {
+        "status": "skipped",
+        "detail": "quick tier"
+      },
+      "findings": [
+        {
+          "id": "duplicates-a9451b90caff7d06",
+          "type": "duplicate_rows",
+          "category": "duplicates",
+          "claim": "99 rows repeat earlier values across the compared columns (1 groups, largest 100)",
+          "subject": {
+            "columns": [
+              "x"
+            ],
+            "unit": "rows"
+          }
+        },
+        {
+          "id": "concentration-1abbfeefb34344c2",
+          "type": "value_concentration",
+          "category": "concentration",
+          "claim": "column x is constant ('1152921504606846976')",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "ordering-1dd7ec063b8335dc",
+          "type": "column_ordering",
+          "category": "ordering",
+          "claim": "column x is non-decreasing with row order",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        }
+      ],
+      "columns": {
+        "x": {
+          "name": "x",
+          "dtype": "decimal",
+          "card_role": "constant",
+          "semantic_role": "measure",
+          "semantic_role_evidence": "numeric column not otherwise classified",
+          "n": 100,
+          "null_count": 0,
+          "null_fraction": 0.0,
+          "distinct": 1,
+          "distinct_ratio": 0.01,
+          "numeric_stats": {
+            "min": 1.152921504606847e+18,
+            "max": 1.152921504606847e+18,
+            "mean": 1.152921504606847e+18,
+            "std": 0.0,
+            "q25": 1.152921504606847e+18,
+            "q50": 1.152921504606847e+18,
+            "q75": 1.152921504606847e+18,
+            "zeros": 0,
+            "negatives": 0,
+            "integral": false
+          },
+          "concentration": {
+            "hhi": 1.0,
+            "entropy_nats": 0.0,
+            "effective_cardinality": 1.0,
+            "top1_share": 1.0,
+            "top3_share": 1.0
+          },
+          "top_values": [
+            {
+              "value": "1152921504606846976",
+              "count": 100,
+              "share": 1.0
+            }
+          ],
+          "action_hints": [
+            "drop_candidate"
+          ]
+        }
+      }
+    },
+    {
+      "case": "merge_attempt_cap",
+      "shape": [
+        600,
+        30
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.1721129999787081,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "30 views (0 multi-column), 33 findings, sample 600 of 600 rows, total score -422.2 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-e256afe5c5e47ad0",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "20 cells in x10 have log predictive density below -9.6 nats under their cluster (lowest -3.514051682394186 at row 473; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x10"
+            ]
+          }
+        },
+        {
+          "id": "concentration-8f03d2b193cd93c2",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "20 cells in x16 have log predictive density below -9.5 nats under their cluster (lowest -3.6967608486072696 at row 331; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x16"
+            ]
+          }
+        },
+        {
+          "id": "concentration-ed528e3dd55b4b00",
+          "type": "spike_cells",
+          "category": "concentration",
+          "claim": "20 cells in x25 have log predictive density below -9.5 nats under their cluster (lowest -3.3270022611842314 at row 557; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x25"
+            ]
+          }
+        },
+        {
+          "id": "changes-560c9745d5fcce10",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x0 shifts by 2.65 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x0"
+            ]
+          }
+        },
+        {
+          "id": "changes-00929932cdabf684",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x1 shifts by 2.59 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x1"
+            ]
+          }
+        },
+        {
+          "id": "changes-7638c4390a618157",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x10 shifts by 3.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x10"
+            ]
+          }
+        },
+        {
+          "id": "changes-1158841a0f425d52",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x11 shifts by 2.50 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x11"
+            ]
+          }
+        },
+        {
+          "id": "changes-4031962b07fe01e8",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x12 shifts by 2.59 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x12"
+            ]
+          }
+        },
+        {
+          "id": "changes-1b04ca33d15e46a2",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x13 shifts by 2.72 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x13"
+            ]
+          }
+        },
+        {
+          "id": "changes-aa20d77bd7844c1f",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x14 shifts by 2.62 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x14"
+            ]
+          }
+        },
+        {
+          "id": "changes-9fa679e566e79b1d",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x15 shifts by 2.68 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x15"
+            ]
+          }
+        },
+        {
+          "id": "changes-2bba91da57769e44",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x16 shifts by 3.57 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x16"
+            ]
+          }
+        },
+        {
+          "id": "changes-53f0dd9b652e33ed",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x17 shifts by 2.67 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x17"
+            ]
+          }
+        },
+        {
+          "id": "changes-5a682d99d09d724a",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x18 shifts by 2.54 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x18"
+            ]
+          }
+        },
+        {
+          "id": "changes-63cd11d8d59cced7",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x19 shifts by 2.65 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x19"
+            ]
+          }
+        },
+        {
+          "id": "changes-cf9f396a204423bb",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x2 shifts by 2.48 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x2"
+            ]
+          }
+        },
+        {
+          "id": "changes-0202ce692f196f54",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x20 shifts by 2.65 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x20"
+            ]
+          }
+        },
+        {
+          "id": "changes-1a1045356d79b2a3",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x21 shifts by 2.66 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x21"
+            ]
+          }
+        },
+        {
+          "id": "changes-bfec1d867f57f284",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x22 shifts by 2.79 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x22"
+            ]
+          }
+        },
+        {
+          "id": "changes-fe7c48b0506280e7",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x23 shifts by 2.48 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x23"
+            ]
+          }
+        },
+        {
+          "id": "changes-72f2a353b12cad78",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x24 shifts by 2.83 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x24"
+            ]
+          }
+        },
+        {
+          "id": "changes-4df52d0d0353c0cc",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x25 shifts by 3.12 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x25"
+            ]
+          }
+        },
+        {
+          "id": "changes-cba42e92224bc5df",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x26 shifts by 2.46 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x26"
+            ]
+          }
+        },
+        {
+          "id": "changes-8875750aad1dd51c",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x27 shifts by 2.47 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x27"
+            ]
+          }
+        },
+        {
+          "id": "changes-9c9456ebc7551ea3",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x28 shifts by 2.65 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x28"
+            ]
+          }
+        },
+        {
+          "id": "changes-fcbfb86e2aeaa76d",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x29 shifts by 2.66 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x29"
+            ]
+          }
+        },
+        {
+          "id": "changes-b4a8f66fb5db5712",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x3 shifts by 2.54 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x3"
+            ]
+          }
+        },
+        {
+          "id": "changes-fe60f702b84473bc",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x4 shifts by 2.53 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x4"
+            ]
+          }
+        },
+        {
+          "id": "changes-3a8c50bc37a22c17",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 7 clusters; headline column x5 shifts by 2.64 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x5"
+            ]
+          }
+        },
+        {
+          "id": "changes-9b7f4aac2520b7ab",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x6 shifts by 2.63 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x6"
+            ]
+          }
+        },
+        {
+          "id": "changes-906b3831cb4b6c1e",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x7 shifts by 2.42 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x7"
+            ]
+          }
+        },
+        {
+          "id": "changes-fe55af4d7095b30a",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x8 shifts by 2.43 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x8"
+            ]
+          }
+        },
+        {
+          "id": "changes-1fc31977173661b0",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 6 clusters; headline column x9 shifts by 2.65 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x9"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "pooled_category_not_real_value",
+      "shape": [
+        6400,
+        1
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.003016333997948095,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (0 multi-column), 2 findings, sample 6400 of 6400 rows, total score -6003.2 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "3200 of 3200 rows in cluster 0 (rows 32-6399) hold x at \"other\" (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        },
+        {
+          "id": "changes-7571dd2bc02e2fe6",
+          "type": "residual_shift",
+          "category": "changes",
+          "claim": "Rows split into 8 clusters; headline column x shifts by 1.00 between clusters (Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "modal_share_missing_denominator",
+      "shape": [
+        1000,
+        1
+      ],
+      "options": {
+        "detectors": [
+          "row_clusters"
+        ]
+      },
+      "seconds": 0.0001149999734479934,
+      "row_clusters_coverage": {
+        "status": "ran_exact",
+        "detail": "1 views (0 multi-column), 1 findings, sample 1000 of 1000 rows, total score 30.6 nats"
+      },
+      "findings": [
+        {
+          "id": "concentration-0b41335d6e1b7aa0",
+          "type": "modal_share",
+          "category": "concentration",
+          "claim": "100 of 1000 rows in cluster 0 (rows 0-999) hold x at 1.0 (100% of the cluster; Greedy deterministic partition; scores are marginal-likelihood values, not posterior probabilities.).",
+          "subject": {
+            "columns": [
+              "x"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "sparse_integer_foreign_key": {
+    "candidates": [
+      {
+        "chance_basis": "integer_span",
+        "chance_score": 1.0,
+        "child_column": "key",
+        "child_distinct": 2,
+        "child_nonnull_rows": 2,
+        "child_null_rows": 0,
+        "child_rows": 2,
+        "child_table": "child",
+        "containment": 1.0,
+        "name_agreement": false,
+        "orphan_rows": 0,
+        "parent_column": "parent_key",
+        "parent_distinct": 2,
+        "parent_table": "parent",
+        "shared_distinct": 2,
+        "tier": "weak"
+      },
+      {
+        "chance_basis": "integer_span",
+        "chance_score": 1.0,
+        "child_column": "parent_key",
+        "child_distinct": 2,
+        "child_nonnull_rows": 2,
+        "child_null_rows": 0,
+        "child_rows": 2,
+        "child_table": "parent",
+        "containment": 1.0,
+        "name_agreement": false,
+        "orphan_rows": 0,
+        "parent_column": "key",
+        "parent_distinct": 2,
+        "parent_table": "child",
+        "shared_distinct": 2,
+        "tier": "weak"
+      }
+    ],
+    "coverage": {
+      "columns_examined": 2,
+      "families": [
+        "integer"
+      ],
+      "pairs": {
+        "exact_checked_pairs": 0,
+        "ordered_cross_table_pairs": 2,
+        "probe_checked_pairs": 2,
+        "same_family_pairs": 2,
+        "size_pruned_pairs": 0,
+        "unique_parent_pairs": 2
+      },
+      "statement": "Considered 2 ordered column pairs across different tables; 2 pairs shared a value family (integer, float, string, or temporal), 2 of those had a unique parent candidate, 2 passed the size prune and were probe-screened, and 0 pairs were large enough to need full verification beyond the probe. Same-table pairs were not examined.",
+      "unexamined_columns": [],
+      "value_pools": {}
+    },
+    "kind": "onceover.profile_many",
+    "overlaps": [],
+    "tables": [
+      {
+        "columns": 1,
+        "name": "child",
+        "rows": 2
+      },
+      {
+        "columns": 1,
+        "name": "parent",
+        "rows": 2
+      }
+    ],
+    "version": "1"
+  },
+  "expected_sparse_chance": 1.504632769052528e-36,
+  "corpus_summary": {
+    "datasets": {
+      "ok": 32,
+      "skipped": 25
+    },
+    "datasets_total": 57,
+    "machine_verified": {
+      "passed": 220,
+      "total": 220
+    },
+    "documented_cases": {
+      "found": 17,
+      "missed": 11,
+      "partial": 4
+    },
+    "documented_missed_in": [
+      "thyroid",
+      "adventureworks",
+      "sec-edgar-company-facts",
+      "metro-interstate-traffic",
+      "bike-sharing-hourly",
+      "adult-census-income"
+    ],
+    "exit_code": 2
+  },
+  "decimal_verification": [
+    {
+      "id": "duplicates-a9451b90caff7d06",
+      "type": "duplicate_rows",
+      "status": "mismatch",
+      "quantity": "repeated rows",
+      "expected": "99",
+      "actual": "96",
+      "note": null
+    },
+    {
+      "id": "concentration-1abbfeefb34344c2",
+      "type": "value_concentration",
+      "status": "not_checkable",
+      "quantity": null,
+      "expected": null,
+      "actual": null,
+      "note": "no exact count for this statement"
+    },
+    {
+      "id": "ordering-1dd7ec063b8335dc",
+      "type": "column_ordering",
+      "status": "mismatch",
+      "quantity": "sorted",
+      "expected": "True",
+      "actual": "False",
+      "note": null
+    }
+  ],
+  "decimal_ground_truth": {
+    "distinct": 4,
+    "redundant_rows": 96,
+    "non_decreasing": false
+  },
+  "checks": {
+    "python_tests_passed": 775,
+    "rust_tests_passed": 576,
+    "clippy": "passed",
+    "format": "passed",
+    "release_metadata": "passed"
+  }
+}

@@ -117,7 +117,7 @@ def summary(report):
     affine = find(report,"dependencies",subtype="affine",form="affine",inputs=["quantity"],target="double_quantity")
     gap = find(report,"gaps",subtype="gap",column="order_date")
     rule = measured(find(report,"dependencies",subtype="predictive",target="churn",inputs=["tenure_months"]))
-    local = measured(find(report,"dependencies",subtype="predictive",form="piecewise_linear",target="line_total"))
+    product = measured(find(report,"dependencies",subtype="arithmetic_identity",target="line_total"))
     phone = measured(find(report,"formats",column="phone"))
     support = report.columns["support_hours"]
     country = report.columns["country"]["top_values"][0]
@@ -140,8 +140,8 @@ def summary(report):
          "Exact value counts", "Overall results will be dominated by this group."),
         ("Predictive relationship", f"churn from tenure_months: accuracy {rule['cv_accuracy']:.3f}; majority baseline {rule['baseline']:.3f}.",
          f"{rule['folds']}-fold diagnostic cross-validation; {rule['n']:,} rows", "Tenure contains predictive information in this fixture; the result does not identify a causal effect."),
-        ("Conditional numeric structure", f"line_total: local-model R² {local['holdout_r2']:.3f}; global-linear R² {local['global_linear_holdout_r2']:.3f}.",
-         f"Diagnostic holdout: {local['n_holdout']:,} rows", "One global linear relation does not describe the generated quantity–price interaction adequately."),
+        ("Derived total", "line_total = quantity × unit_price on every row.",
+         f"Identity check on {product['n']:,} rows", "line_total adds no independent measurement; models of it restate the product."),
     ]
     return table(pl.DataFrame(rows, schema=["Diagnostic", "Result", "Basis", "Interpretation"], orient="row"),
                  "Table 1. Principal diagnostic results",
@@ -183,7 +183,7 @@ def validation(orders, report, shuffled_report):
         {"Check":"Derived quantity", "Expected":"double_quantity = 2 × quantity", "Observed":"All rows agree"},
         {"Check":"Independent numeric control", "Expected":"No reported predictability", "Observed":"No finding reported"},
         {"Check":"Permuted churn labels", "Expected":"No reported churn prediction or decision table", "Observed":"No finding reported"},
-    ], "Table 7. Verification and negative controls",
+    ], "Table 6. Verification and negative controls",
     "The permutation is one fixed control, not an estimate of a false-positive rate.",
     {"Check":"27%", "Expected":"41%", "Observed":"32%"})
 
@@ -218,20 +218,9 @@ def formula_check(orders, report):
         {"Relationship":"double_quantity = 2 × quantity", "Matching rows":f"{orders.height:,} of {orders.height:,}",
          "How established":"Profiler identity finding, checked against every row"},
         {"Relationship":"line_total = round(quantity × unit_price, 2)", "Matching rows":f"{matched:,} of {orders.height:,}",
-         "How established":"Independent check of the known fixture formula; this multiplication law is not inferred by the library"},
+         "How established":"Profiler identity finding (line_total = quantity · unit_price), checked here against the fixture's formula"},
     ],"Table 4. Exact checks of the generated quantities", "The direct formula check allows an absolute floating-point difference of 1e−9.",
     {"Relationship":"35%", "Matching rows":"20%", "How established":"45%"})
-
-
-def local_models(report):
-    ev=measured(find(report,"dependencies",subtype="predictive",form="piecewise_linear",target="line_total"))
-    return table([
-        {"Model":"One global linear model", "Holdout R²":f"{ev['global_linear_holdout_r2']:.3f}",
-         "Holdout rows":f"{ev['n_holdout']:,}"},
-        {"Model":f"{len(ev['leaves'])} local linear models", "Holdout R²":f"{ev['holdout_r2']:.3f}",
-         "Holdout rows":f"{ev['n_holdout']:,}"},
-    ],"Table 5. Approximate models of line_total",
-    "Both scores are taken from the same reported diagnostic holdout. Neither score establishes an exact accounting identity.")
 
 
 def total_plot(orders):
@@ -249,7 +238,7 @@ def missing_dates(orders, report):
     missing=sorted(expected-observed)
     assert len(missing) == measured(find(report,"gaps",subtype="gap",column="order_date"))["missing"] == 2
     return table([{"Date absent from the extract":d.isoformat(),"Reference calendar":"Monday–Friday; holidays not excluded"} for d in missing],
-                 "Table 6. Direct check of the date-gap finding")
+                 "Table 5. Direct check of the date-gap finding")
 
 
 def permute_churn(orders):
