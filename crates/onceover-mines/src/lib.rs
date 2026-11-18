@@ -45,7 +45,8 @@ pub use views::{views_pass, ViewsConfig, ViewsOutcome};
 
 pub use association::{association_rules, pair_associations, AssociationConfig};
 pub use axisbreaks::{
-    profile_ordered_axis, AxisBatteryConfig, AxisBatteryOutcome, AxisBatteryStatus,
+    declared_ordered_axis_usable, profile_ordered_axis, AxisBatteryConfig, AxisBatteryOutcome,
+    AxisBatteryStatus,
 };
 pub use breaks::{profile_breaks, BreaksConfig};
 pub use changeforest::{

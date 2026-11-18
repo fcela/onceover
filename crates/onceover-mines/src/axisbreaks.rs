@@ -1248,6 +1248,61 @@ fn stride_sample(n: usize, cap: usize) -> Vec<usize> {
         .collect()
 }
 
+/// The axis kind a column can supply to the battery, given the
+/// effective level orders. Kept separate from axis selection so
+/// the pipeline's hint accounting and the battery agree on what
+/// "usable" means.
+fn axis_kind(
+    table: &TypedTable,
+    i: usize,
+    ordinals: &BTreeMap<String, Vec<String>>,
+) -> Option<AxisKind> {
+    match &table.cols[i] {
+        TypedCol::Date { .. } => Some(AxisKind::Date),
+        TypedCol::Datetime { .. } => Some(AxisKind::Datetime),
+        TypedCol::I64 { .. }
+        | TypedCol::U64 { .. }
+        | TypedCol::F64 { .. }
+        | TypedCol::Decimal { .. } => Some(AxisKind::Numeric),
+        TypedCol::Str { .. } | TypedCol::StrOwned { .. } | TypedCol::Bool { .. } => {
+            if ordinals.contains_key(&table.names[i]) {
+                Some(AxisKind::Ordinal)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether a declared ordered-axis column can actually supply at
+/// least one finite axis key. Numeric and temporal kinds read
+/// their values directly; a string kind needs a level order that
+/// maps at least one of its values. The pipeline uses this to
+/// state an applied/refused decision in the declarations account
+/// and to avoid opening the along-axis gate on a hint the battery
+/// would ignore.
+pub fn declared_ordered_axis_usable(
+    table: &TypedTable,
+    name: &str,
+    ordinals: &BTreeMap<String, Vec<String>>,
+) -> bool {
+    let Some(i) = table.names.iter().position(|n| n == name) else {
+        return false;
+    };
+    let Some(kind) = axis_kind(table, i, ordinals) else {
+        return false;
+    };
+    let axis = AxisDef {
+        col: i,
+        name: name.to_string(),
+        kind,
+    };
+    axis_keys(table, &axis, ordinals)
+        .iter()
+        .any(|key| key.is_some_and(|v| v.is_finite()))
+}
+
 /// The battery's primary axis, by the design's precedence: an
 /// axis hint, then the time hint, then the first date/datetime
 /// column, then a year-like integer column, then a strictly
@@ -1264,27 +1319,9 @@ fn select_primary_axis(
     automatic: bool,
 ) -> Option<AxisDef> {
     let by_name = |name: &str| table.names.iter().position(|n| n == name);
-    let kind_of = |i: usize| -> Option<AxisKind> {
-        match &table.cols[i] {
-            TypedCol::Date { .. } => Some(AxisKind::Date),
-            TypedCol::Datetime { .. } => Some(AxisKind::Datetime),
-            TypedCol::I64 { .. }
-            | TypedCol::U64 { .. }
-            | TypedCol::F64 { .. }
-            | TypedCol::Decimal { .. } => Some(AxisKind::Numeric),
-            TypedCol::Str { .. } | TypedCol::StrOwned { .. } | TypedCol::Bool { .. } => {
-                if ordinals.contains_key(&table.names[i]) {
-                    Some(AxisKind::Ordinal)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    };
     if let Some(hint) = axis_hint {
         if let Some(i) = by_name(hint) {
-            if let Some(kind) = kind_of(i) {
+            if let Some(kind) = axis_kind(table, i, ordinals) {
                 return Some(AxisDef {
                     col: i,
                     name: hint.to_string(),

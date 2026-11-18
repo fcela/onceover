@@ -9,6 +9,7 @@
 pub mod account;
 pub mod basis;
 pub mod config;
+pub(crate) mod declared;
 pub mod detectors;
 pub mod frame;
 pub mod panel;

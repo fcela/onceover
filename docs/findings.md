@@ -1371,7 +1371,12 @@ only when at least one key is declared), the `declarations`
 coverage entry accounts for every key — what was checked, what
 was carried unchecked, what was refused and why — and the
 outcome contrasts state their measured nulls. Nothing declared
-under these keys is silently dropped.
+under these keys is silently dropped. The same coverage entry
+also states the applied/refused decisions for `roles`,
+`level_order`, `time`, and `ordered_axis`: these instructions
+steer the frame model and the along-axis passes rather than
+riding the frame account, but an unusable declaration is still
+refused in the report.
 
 The `expectations` pass checks the declarations exactly and tags its
 evidence `reference_source: "declared"`, against the date_gaps pass's
