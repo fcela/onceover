@@ -5,7 +5,10 @@ build's output better, the same, or worse? `run.py` profiles a set of
 tables with the installed `onceover` and writes a scorecard (JSON).
 `compare.py` takes the scorecards of two builds and prints a markdown
 table with base, head and delta per metric. It exits 0 when no metric
-is worse and 1 when any metric is worse beyond its tolerance.
+is worse and no metric is above its ceiling, and 1 otherwise. A
+comparison against a base cannot say whether the base itself is good;
+the ceilings in `ceilings.json` are absolute targets that the head
+must meet whatever the base holds (see "Ceilings" below).
 
     python benchmarks/gate/run.py --out scorecard.json --commit <sha>
     python benchmarks/gate/run.py --out s.json --only abalone --components planted,cost
@@ -16,7 +19,7 @@ Run options: `--only` (comma-separated dataset ids), `--components`,
 `--seeds` (comma-separated integers, default `0`), `--fast`, `--commit`.
 Compare options: `--time-rel` (default 0.20), `--time-floor` in seconds
 (default 1.0), `--include-held-out`, `--accepted` (default
-`accepted.json`), `--out`.
+`accepted.json`), `--ceilings` (default `ceilings.json`), `--out`.
 
 The full run takes about 100 seconds on a laptop. It needs `polars` and
 `numpy` (the plant generators and shuffles use numpy).
@@ -35,7 +38,7 @@ failed reference checks) fail whenever the head value is above zero.
 | `planted` | A known structure is injected into a real table (a relabelled copy of a categorical column, a sentinel value, a sum of two columns, a binary target driven by one column, three extreme rows, missingness tied to one level). Is it stated in the full report, and in the 4,000-character digest? Each plant's defining property is checked with Polars/NumPy on the generated frame before profiling. | `found_full`, `found_4k` higher |
 | `permuted` | Every column is shuffled independently, which keeps each column's values and destroys every relationship. How many statements about two or more columns remain (full report and 4k digest, default and target mode)? Each is false by construction. | lower |
 | `invariance` | Facts (category, type, sorted column names) lost plus gained when the column order is reversed, the rows are shuffled (only for tables without a time axis), the columns are renamed, an independent noise column is added, or one numeric column is multiplied by 1000. The exclusions are listed in `components/invariance.py`. | lower |
-| `reference` | Hand-written statements per dataset (see below), found in the 4k digest, the 8k digest and the full report, in default and target mode. | higher |
+| `reference` | Hand-written statements per dataset (see below), found in the 4k digest, the 8k digest and the full report, in default and target mode. `must_not` statements describe findings that should not be stated (restatements of structure the report already carries, statistics that carry no information); their metrics count the findings that match. | `must`, `should` higher; `must_not` lower |
 | `weighted` | The hinted run: a dataset declaring `weights` is profiled once more with those weights in the hints. Reference statements carrying a `hinted_tier` must match in that run (4k digest, 8k digest, full report), and controls declared as `weighted_controls` must stay silent — no weighted finding fits the control's columns and kind. A satisfied control counts as a must match at every scope. | higher |
 | `redundancy` | In the 4k digest: finding lines whose column set and relation kind repeat an earlier line, characters on finding lines (per thousand), and numbers printed with six or more decimals. | `repeated`, `long_decimals` lower; `finding_permille` higher |
 | `truth` | `report.verify(df)` statuses. `mismatch` and `error` must be 0. | lower |
@@ -59,6 +62,7 @@ base and failed or was skipped in the head counts as worse.
   including its sha256 check), profiling with a cache, digest parsing.
 - `results/`: committed baseline scorecards.
 - `accepted.json`: regressions accepted on purpose.
+- `ceilings.json`: absolute limits the head must meet.
 - `report.py`: the history of scorecards and the report rendered from it.
 
 Nothing in `run.py`, `compare.py`, `report.py` or `gatelib.py` names a
@@ -162,7 +166,7 @@ and not compared.
 |---|---|
 | `id` | short unique name |
 | `text` | the statement in words |
-| `tier` | `must` or `should` |
+| `tier` | `must`, `should`, or `must_not` |
 | `provisional` | `true` while the statement has not been reviewed |
 | `columns` | columns a matching finding must state |
 | `columns_any` | optional: a matching finding states at least one of these |
@@ -180,6 +184,31 @@ Example:
  "kind": "identity", "columns": ["cnt", "casual", "registered"],
  "patterns": ["\\bcnt\\b", "casual", "registered"],
  "check": "(pl.col('cnt') == pl.col('casual') + pl.col('registered')).all()"}
+```
+
+A `must_not` statement describes findings the report should not
+state. It is matched against every finding of the full report and the
+lead finding of every digest line, and a finding matches when it
+satisfies every field given. Besides `columns`, `columns_any`, `types`,
+`kind` and `patterns` (here every pattern must match the finding's
+claim), it takes:
+
+| Field | Meaning |
+|---|---|
+| `columns_within` | every column of the finding is in this list |
+| `min_columns` | with `columns_within`: the finding names at least this many columns (default 1) |
+| `categories` | finding categories allowed |
+| `exclude_types` | finding types not counted |
+| `effect_below` | the largest association effect in the finding's evidence (`eta`, `cramers_v`, `pearson`, `spearman`, `xi_ab`, `xi_ba`, absolute values) is below this |
+| `max_matches` | matches up to this many are wanted; only the excess is counted (default 0) |
+
+Example: the hourly profile of `cnt` is one fact, and every further
+per-hour statement restates it.
+
+```json
+{"id": "hourly-profile-per-level", "tier": "must_not",
+ "text": "The hourly profile of cnt stated once per hour level instead of once",
+ "columns": ["cnt", "hr"], "types": ["level_contrast"], "max_matches": 1}
 ```
 
 A statement whose `check` is false is wrong about the data and is
@@ -215,6 +244,28 @@ The entry is part of the pull request that needs it, so it is reviewed
 with the change. Once the change is on main the base contains it, the
 entry accepts nothing, and `compare.py` says so in its notes; remove it
 then.
+
+## Ceilings
+
+`ceilings.json` lists absolute limits. `compare.py` fails when the head
+value of a listed metric is above its limit, whatever the base holds,
+and prints every ceiling with the head value and its status (`above`,
+`at`, `below`, `unmeasured`). A ceiling the head did not measure (a run
+with `--components` that leaves its component out) is listed and does
+not fail.
+
+```json
+{"ceilings": [
+  {"metric": "permuted.false_full", "scope": "total", "limit": 100,
+   "reason": "false statements on shuffled tables; target 0 (#374)"}
+]}
+```
+
+The fields are those of an accepted entry; `limit` is the highest head
+value allowed. When a change brings a metric below its limit,
+`compare.py` notes it and the same pull request lowers the limit, so
+the ceiling records the best value reached. A ceiling at 0 can be
+replaced by marking the metric `zero` in its component.
 
 ## History and report
 

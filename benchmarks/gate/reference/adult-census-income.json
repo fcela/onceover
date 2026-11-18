@@ -42,6 +42,8 @@
    "kind": "concentration", "columns": ["native_country"],
    "patterns": ["native_country", "United-States", "concentrat|share"],
    "note": "Measured: 'United-States' holds 43,832 of 47,985 non-null rows (91.3%); the next level, 'Mexico', holds 951 (2.0%), and 857 rows are null. The column profile states this as a value_concentration finding.",
-   "check": "((pl.col('native_country') == 'United-States').mean() > 0.85)"}
- ]
+   "check": "((pl.col('native_country') == 'United-States').mean() > 0.85)"},
+  {"id": "education-recoding-restated", "tier": "must_not", "text": "Restatements of the education <-> education_num recoding beyond the one duplicate-encoding statement", "columns_any": ["education_num"], "exclude_types": ["duplicate_encoding"], "categories": ["dependencies", "associations", "conditional_rules", "anomalies", "concentration"], "note": "education_num is a one-to-one recoding of education (16 levels, paired on every row). Once that is stated, a level contrast of education_num by education, education predicted from education_num, or any statement using education_num where education says the same thing is a restatement.", "check": "(pl.col('education_num').n_unique().over('education') == 1).all() & (pl.col('education').n_unique().over('education_num') == 1).all()"},
+  {"id": "negligible-association", "tier": "must_not", "text": "Associations stated with an effect below 0.1 (significant only because n is 48,842)", "types": ["statistical"], "effect_below": 0.1}
+]
 }

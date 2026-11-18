@@ -1,0 +1,65 @@
+{
+ "doc": "Absolute ceilings. compare.py fails when the head value of a listed metric is above the entry's limit, whatever the base holds. Fields: metric (component.metric), scope (\"total\" or a dataset id; default total), limit (the highest head value allowed), reason. Lower a limit when a change brings the head below it; compare.py lists ceilings the head is below.",
+ "ceilings": [
+  {
+   "metric": "reference.must_not_4k_default",
+   "scope": "total",
+   "limit": 8,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "reference.must_not_8k_default",
+   "scope": "total",
+   "limit": 18,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "reference.must_not_full_default",
+   "scope": "total",
+   "limit": 81,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "reference.must_not_4k_target",
+   "scope": "total",
+   "limit": 3,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "reference.must_not_8k_target",
+   "scope": "total",
+   "limit": 16,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "reference.must_not_full_target",
+   "scope": "total",
+   "limit": 60,
+   "reason": "Issue #374: restatements and uninformative statistics described by the must_not reference statements; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "permuted.false_full",
+   "scope": "total",
+   "limit": 100,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "permuted.false_4k",
+   "scope": "total",
+   "limit": 48,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "permuted.false_full_target",
+   "scope": "total",
+   "limit": 51,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  },
+  {
+   "metric": "permuted.false_4k_target",
+   "scope": "total",
+   "limit": 30,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; measured on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md). Lower the limit as fixes merge; the target is 0."
+  }
+ ]
+}

@@ -35,6 +35,13 @@ bindings (`python/onceover/`, PyO3/maturin).
   detector changes. Registry expectations are the contract; a
   failing known-miss tripwire means a capability arrived — promote
   the expectation, do not delete it.
+- Gate: `benchmarks/gate/` (README there). `compare.py` must pass
+  against the base build, including the absolute limits in
+  `benchmarks/gate/ceilings.json`. While any ceiling is above zero,
+  no new detectors, finding types, hint keys or report fields are
+  added: work goes into removing false and restated findings. A
+  change that brings a metric below its ceiling lowers the ceiling
+  in the same pull request.
 - Every benchmark result gets a write-up in `docs/benchmarks/`
   (protocol, numbers, provenance). If it is not in the docs, it
   does not exist.

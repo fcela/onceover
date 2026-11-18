@@ -5,6 +5,7 @@
   {"metric": "planted.found_4k", "label": "planted found in 4k digest", "meaning": "known structures injected into real tables that the 4,000-character digest states"},
   {"metric": "reference.must_4k_default", "label": "must statements in 4k digest", "meaning": "hand-written reference statements of tier must that the digest states, default mode"},
   {"metric": "reference.must_4k_target", "label": "must statements in 4k digest, target mode", "meaning": "the same count with the dataset's target designated"},
+  {"metric": "reference.must_not_full_default", "label": "restatements in the full report", "meaning": "findings matching a must_not reference statement (restated structure, statistics carrying no information), full report, default mode"},
   {"metric": "permuted.false_4k", "label": "statements on shuffled tables (4k digest)", "meaning": "relationship statements in the digest of a table whose columns were shuffled independently, where no relationship exists"},
   {"metric": "invariance.total", "label": "facts changed by layout", "meaning": "stated facts lost or gained when columns are reordered, rows shuffled, columns renamed, a noise column added, or a column rescaled"},
   {"metric": "redundancy.repeated_default", "label": "repeated facts in 4k digest", "meaning": "digest lines that restate the columns and relation of an earlier line"},
