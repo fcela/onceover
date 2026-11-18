@@ -29,6 +29,7 @@ __all__ = [
     "taxonomy",
     "agent_guide",
     "capabilities",
+    "infer_spec",
 ]
 
 _SCHEMA_VERSION = "0.8"
@@ -74,7 +75,7 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
             hints: dict | None = None, target: str | None = None,
             timing: bool = False,
             source_row_cap: int | None = None, exact: bool = False,
-            sample_seed: int = 0):
+            sample_seed: int = 0, spec: dict | None = None):
     """Give a Polars DataFrame a once-over.
 
     New callers: `agent_guide()` returns the packaged quickstart
@@ -338,6 +339,8 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         if _cap_value <= 0:
             raise ValueError(f"{_cap_name} must be positive")
 
+    if spec is not None:
+        hints, target = _apply_spec(df, spec, hints, target)
     source = None
     if isinstance(df, _pl.DataFrame):
         if source_row_cap is not None or exact or sample_seed:
@@ -356,6 +359,163 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
                                          hints=_json.dumps(hints) if hints is not None else None,
                                          target=target, timing=timing,
                                          source=_json.dumps(source) if source is not None else None))
+
+
+# ------------------------------------------------------------------
+# The frame spec (issue #449): one resolved interpretation of a
+# frame -- every column's role, the time axis, the entity, the
+# target, the weights -- each entry marked declared or inferred
+# with its evidence. `infer_spec` returns it without profiling;
+# `profile(df, spec=...)` runs on it exactly.
+
+_SPEC_VERSION = 1
+_SPEC_ROLES = ("identifier", "row_number", "timestamp", "timestamp_part",
+               "dimension", "flag", "measure", "text")
+# Hint keys the spec carries; with a spec they are not also accepted
+# as hints, so the run has one source for each.
+_SPEC_HINT_KEYS = ("roles", "time", "entity", "weights")
+
+
+def infer_spec(df, hints: dict | None = None, target: str | None = None) -> dict:
+    """The frame's resolved interpretation, without profiling it.
+
+    Returns a JSON-serializable document:
+    - ``columns``: each column's role with ``source`` ("declared"
+      when ``hints["roles"]`` named it, else "inferred") and the
+      ``evidence`` the assignment rests on;
+    - ``time_axis``: the axis column (null when none), its source
+      and evidence;
+    - ``entity``: the entity column (null when none);
+    - ``target`` and ``weights``: as declared (inference does not
+      choose an outcome or a weight).
+
+    Only the frame model and the cheap structural passes it needs
+    run. Edit the document and pass it back as
+    ``profile(df, spec=...)``: the run then uses every entry
+    exactly as written, each as a declaration.
+    """
+    import polars as _pl
+
+    if not isinstance(df, _pl.DataFrame):
+        df, _ = _materialize_source(df, source_row_cap=None, exact=False, sample_seed=0)
+    hints = dict(hints or {})
+    report = profile(df, budget="quick", detectors=["keys", "duplicate_encodings"],
+                     hints=hints or None, target=target)
+    frame = report.data.get("frame") or {}
+    declared_roles = hints.get("roles") or {}
+    columns = {}
+    for r in frame.get("roles") or []:
+        name = r["column"]
+        columns[name] = {
+            "role": r.get("role"),
+            "source": "declared" if name in declared_roles else "inferred",
+            "evidence": r.get("evidence"),
+        }
+    axis = frame.get("axis") or None
+    time_axis = {"column": None, "source": "none", "evidence": "no time axis found"}
+    if axis:
+        time_axis = {
+            "column": axis.get("source_column") or axis.get("name"),
+            "source": "declared" if axis.get("source") == "hint" else "inferred",
+            "evidence": axis.get("description"),
+        }
+        if axis.get("parts"):
+            time_axis["parts"] = list(axis["parts"])
+    entity = {"column": None, "source": "none", "evidence": "no entity found"}
+    if hints.get("entity"):
+        entity = {"column": hints["entity"], "source": "declared", "evidence": "declared by hints.entity"}
+    else:
+        n = (report.data.get("overview") or {}).get("n_rows") or df.height
+        grain = frame.get("grain") or {}
+        axis_name = axis.get("name") if axis else None
+        factors = [f for f in grain.get("factorization") or [] if f.get("column") != axis_name]
+        if len(factors) == 1 and factors[0].get("distinct", 0) >= 10:
+            col = factors[0]["column"]
+            card = (report.data.get("columns") or {}).get(col) or {}
+            nonnull = n - (card.get("null_count") or 0)
+            if (columns.get(col, {}).get("role") in ("identifier", "dimension")
+                    and 2 * factors[0]["distinct"] <= nonnull):
+                entity = {"column": col, "source": "inferred",
+                          "evidence": f"the grain's non-axis factor: {grain.get('statement')}"}
+    return {
+        "spec_version": _SPEC_VERSION,
+        "columns": columns,
+        "time_axis": time_axis,
+        "entity": entity,
+        "target": {"column": target, "source": "declared" if target else "none"},
+        "weights": {"columns": list(hints.get("weights") or []),
+                    "source": "declared" if hints.get("weights") else "none"},
+    }
+
+
+def _apply_spec(df, spec: dict, hints: dict | None, target: str | None):
+    """Translate a spec into the run's declarations. An entry that
+    matches what inference resolves on its own is left to inference,
+    so an unedited spec reproduces the plain run exactly; an entry
+    that differs becomes a declaration (a role, the axis, the entity,
+    the weights). Declaring one role can move another column's
+    inferred role, so the comparison repeats until every role the run
+    resolves is the spec's. Raises ValueError on a spec that does not
+    describe this frame, or whose roles cannot all be held."""
+    if not isinstance(spec, dict) or spec.get("spec_version") != _SPEC_VERSION:
+        raise ValueError(f"spec must be a dict with spec_version {_SPEC_VERSION} (from infer_spec)")
+    import polars as _pl
+
+    if not isinstance(df, _pl.DataFrame):
+        df, _ = _materialize_source(df, source_row_cap=None, exact=False, sample_seed=0)
+    names = list(df.columns)
+    cols = spec.get("columns")
+    if not isinstance(cols, dict):
+        raise ValueError("spec['columns'] must map each column name to its entry")
+    missing = [c for c in names if c not in cols]
+    extra = [c for c in cols if c not in names]
+    if missing or extra:
+        raise ValueError(f"spec does not describe this frame: columns missing from the spec {missing}, "
+                         f"spec columns not in the frame {extra}")
+    wanted = {}
+    for name, entry in cols.items():
+        role = (entry or {}).get("role")
+        if role is not None and role not in _SPEC_ROLES:
+            raise ValueError(f"spec role {role!r} for column {name!r} is not one of {_SPEC_ROLES}")
+        wanted[name] = role
+    hints = dict(hints or {})
+    clash = [k for k in _SPEC_HINT_KEYS if k in hints]
+    if clash:
+        raise ValueError(f"hints {clash} are carried by the spec; edit the spec instead")
+    spec_target = (spec.get("target") or {}).get("column")
+    if spec_target and target and spec_target != target:
+        raise ValueError(f"target {target!r} differs from the spec's target {spec_target!r}")
+    target = spec_target or target
+    axis = (spec.get("time_axis") or {}).get("column")
+    entity = (spec.get("entity") or {}).get("column")
+    for label, col in (("time_axis", axis), ("entity", entity)):
+        if col and col not in names and not (label == "time_axis" and (spec.get("time_axis") or {}).get("parts")):
+            raise ValueError(f"spec {label} column {col!r} is not a column of the frame")
+    weights = list((spec.get("weights") or {}).get("columns") or [])
+    if weights:
+        hints["weights"] = weights
+    if entity:
+        hints["entity"] = entity
+    declared_roles = {}
+    for _ in range(4):
+        trial = dict(hints)
+        if declared_roles:
+            trial["roles"] = dict(declared_roles)
+        resolved = infer_spec(df, hints=trial, target=target)
+        if axis != resolved["time_axis"]["column"] and "time" not in hints:
+            if not axis:
+                raise ValueError("the spec states no time axis, but the frame has one the run would use; "
+                                 "declare the axis column's role instead of removing the axis")
+            hints["time"] = axis
+            continue
+        differ = {c: r for c, r in wanted.items()
+                  if r is not None and resolved["columns"].get(c, {}).get("role") != r}
+        if not differ:
+            if declared_roles:
+                hints["roles"] = declared_roles
+            return hints, target
+        declared_roles.update(differ)
+    raise ValueError(f"the spec's roles cannot all be held together: {sorted(differ)} still resolve differently")
 
 
 #: Default cap on rows collected from a lazy or file source.
