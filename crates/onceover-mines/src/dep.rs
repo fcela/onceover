@@ -34,6 +34,27 @@ pub struct PairDep {
 }
 
 impl PairDep {
+    /// The strongest of the pair's measured statistics, named the
+    /// way a claim states it, with its signed value.
+    pub fn strongest(&self, a: &str, b: &str) -> (String, f64) {
+        let candidates = [
+            ("Pearson r".to_string(), self.pearson),
+            ("Spearman rho".to_string(), self.spearman),
+            (format!("Chatterjee xi of {b} on {a}"), self.xi_ab),
+            (format!("Chatterjee xi of {a} on {b}"), self.xi_ba),
+        ];
+        candidates
+            .into_iter()
+            .filter_map(|(name, v)| v.map(|v| (name, v)))
+            .fold((String::new(), 0.0f64), |best, (name, v)| {
+                if v.abs() > best.1.abs() {
+                    (name, v)
+                } else {
+                    best
+                }
+            })
+    }
+
     pub fn max_signal(&self) -> f64 {
         [
             self.pearson.map(|v| v.abs()),
@@ -61,12 +82,21 @@ impl PairDep {
 /// most this.
 pub(crate) const Q_BAR: f64 = 0.05;
 
+/// The smallest effect a stated association carries (|r|, |rho|, xi,
+/// Cramer's V, or the correlation ratio eta). At tens of thousands of
+/// rows every pair clears the q-value bar, so significance alone says
+/// nothing about whether an association is worth stating; below 0.1
+/// a variable explains under 1% of the other's variance. Pairs below
+/// it stay in the associations table with tier "none".
+pub(crate) const MIN_EFFECT: f64 = 0.1;
+
 /// The reporting tier of a tested pair: "strong" when it is
 /// significant after correction and its effect reaches the strong
-/// bar, "weak" when significant but below the bar, "none" otherwise
-/// (including untested pairs).
+/// bar, "weak" when significant and at least `MIN_EFFECT` but below
+/// the strong bar, "none" otherwise (including untested pairs).
 pub(crate) fn assoc_tier(effect: f64, strong_bar: f64, q: Option<f64>) -> &'static str {
     match q {
+        Some(_) if effect < MIN_EFFECT => "none",
         Some(q) if q <= Q_BAR => {
             if effect >= strong_bar {
                 "strong"
@@ -1507,17 +1537,20 @@ fn dep_finding(table: &onceover_core::TypedTable, d: &PairDep, signal: f64, tier
         ("q_value".into(), json!(d.q_value)),
         ("tier".into(), json!(tier)),
     ]);
+    let (statistic, value) = d.strongest(a, b);
     let (claim, interestingness) = if tier == "weak" {
         (
             format!(
-                "{a} and {b} show weak numeric association (maximum measured effect {signal:.3}; significant after Benjamini-Hochberg correction, q = {})",
+                "{a} and {b} show weak numeric association ({statistic} {value:.3}, the strongest of the four measured; significant after Benjamini-Hochberg correction, q = {})",
                 fmt_q(d.q_value.unwrap_or(1.0))
             ),
             0.10 + 0.25 * signal,
         )
     } else {
         (
-            format!("{a} and {b} show numeric association (maximum measured effect {signal:.3})"),
+            format!(
+                "{a} and {b} show numeric association ({statistic} {value:.3}, the strongest of the four measured)"
+            ),
             0.35 + 0.4 * signal,
         )
     };

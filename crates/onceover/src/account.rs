@@ -1499,6 +1499,7 @@ mod tests {
             triple_key_search: false,
             caps_bound: Vec::new(),
             sampled: false,
+            n_afd_chance: 0,
         }
     }
 

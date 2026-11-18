@@ -44,8 +44,10 @@ pub fn profile_with_detectors(
 /// neither does a timestamp part (an hour beside a date subdivides
 /// the period; it is not an entity followed through time). An
 /// entity axis also needs at least 10 distinct values — the panel
-/// checks' own floor for the entities they follow. At most three
-/// columns are returned.
+/// checks' own floor for the entities they follow — and at least two
+/// non-null rows per entity on average: a column with one row per value (an
+/// order number) has no history to follow, and its "entity total" is
+/// one row's value. At most three columns are returned.
 fn entity_columns(
     table: &TypedTable,
     frame: &crate::frame::FrameModel,
@@ -69,6 +71,7 @@ fn entity_columns(
         if non_axis.len() == 1 && non_axis[0].1 >= 10 {
             if let Some(i) = table.names.iter().position(|n| n == non_axis[0].0) {
                 if !entities.contains(&i)
+                    && 2 * card_facts[i].distinct <= table.n - card_facts[i].null_count
                     && !matches!(
                         frame.roles[i].as_deref(),
                         Some("timestamp_part" | "row_number")
@@ -83,6 +86,7 @@ fn entity_columns(
         for (i, r) in frame.roles.iter().enumerate() {
             if r.as_deref() == Some(role)
                 && card_facts[i].distinct >= 10
+                && 2 * card_facts[i].distinct <= table.n - card_facts[i].null_count
                 && !entities.contains(&i)
                 && table.names[i] != axis_name
             {

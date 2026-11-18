@@ -109,17 +109,13 @@ def _order_pair():
                          "suggestions_accepted": acc})
 
 
-def test_systematic_order_violation_is_reported():
+def test_order_broken_on_a_quarter_of_rows_is_not_stated():
+    # accepted exceeds generated on 2,408 of 10,000 rows and falls
+    # below it on most of the rest: neither order holds, and no
+    # decomposition makes one a part of the other. Nothing is stated
+    # (issue #374).
     report = onceover.profile(_order_pair(), detectors=["order_constraints"])
-    hits = report.select(type="order_violation")
-    assert len(hits) == 1, [f["claim"] for f in report.findings]
-    metrics = hits[0]["evidence"][0]["metrics"]
-    assert metrics["lower"] == "suggestions_accepted"
-    assert metrics["upper"] == "suggestions_generated"
-    assert metrics["violations"] == 2408
-    assert metrics["reverse_violations"] >= 2 * 2408
-    assert len(metrics["example_rows"]) > 0
-    assert "2408 of 10000" in hits[0]["claim"]
+    assert report.select(type="order_violation") == []
 
 
 def test_unrelated_counts_crossing_both_ways_stay_quiet():

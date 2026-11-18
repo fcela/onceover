@@ -8,13 +8,20 @@
 //! This pass is the automatic scan for that shape. For each
 //! low-cardinality categorical column (at most 25 levels) and
 //! each numeric measure, every level with enough rows is
-//! compared with all the other levels pooled: median and
-//! interquartile range on both sides, stated when the location
-//! shift clears half the pooled IQR or the IQR ratio clears
-//! 1.5 (or its reciprocal 2/3). A level whose values sit at a
-//! near-constant multiple of the rest's distribution gets its
-//! own statement, because the quotient is the actionable fact
-//! (a unit error: cm against inch, cents against dollars).
+//! compared with the other levels. Location: the level's median
+//! against the median of all other rows pooled, stated when the
+//! shift clears half the pooled IQR. Scale: the level's IQR
+//! against the typical other level's IQR (the median of the other
+//! levels' IQRs), stated when the ratio clears 1.5 or its
+//! reciprocal; for a measure with no negative values the ratio is
+//! of relative spread (IQR over median), and no scale contrast is
+//! stated when either IQR is zero. When several levels of one
+//! grouping differ on one measure, the pair is stated once, as the
+//! measure's profile over the grouping, with each level in the
+//! evidence. A level whose values sit at a near-constant multiple
+//! of the rest's distribution gets its own statement, because the
+//! quotient is the actionable fact (a unit error: cm against inch,
+//! cents against dollars).
 //!
 //! Location and scale are each backed by a rank-sum test
 //! (level against rest; scale ranks the absolute deviations
@@ -302,6 +309,26 @@ pub(crate) fn calendar_groupings(input: &LevelContrastInput) -> Vec<Grouping> {
     out
 }
 
+/// The spread ratio a scale contrast is judged on, or None when
+/// it is undefined. Either IQR at zero (a zero-inflated measure,
+/// a level with no spread) makes the ratio 0 or infinite, which
+/// says the two sides are discrete, not that one varies more. For a
+/// measure with no negative values the ratio is of relative spread
+/// (IQR over median): a count's spread grows with its level, so a
+/// low-count level is narrower in absolute terms by construction.
+fn scale_effect_ratio(c: &Candidate) -> Option<f64> {
+    if c.level_iqr <= 0.0 || c.rest_iqr <= 0.0 {
+        return None;
+    }
+    if c.nonneg {
+        if c.level_median <= 0.0 || c.rest_median <= 0.0 {
+            return None;
+        }
+        return Some((c.level_iqr / c.level_median) / (c.rest_iqr / c.rest_median));
+    }
+    Some(c.ratio)
+}
+
 /// Whether two groupings put the rows into the same classes:
 /// a one-to-one map between their codes on the rows where both
 /// are known, and the same rows known.
@@ -396,7 +423,13 @@ struct Candidate {
     /// most extreme level on the scale form; None for that
     /// level itself, and when no other level remains.
     ratio_without_primary: Option<f64>,
+    /// The measure takes no negative value on the pair's rows.
+    nonneg: bool,
 }
+
+/// A stated level contrast: its effect, its finding, and its
+/// candidate index.
+type StatedLevel = (f64, Finding, usize);
 
 /// The per-level contrast pass. See the module documentation
 /// for the reporting bars.
@@ -660,6 +693,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                     max_other_std_shift: 0.0,
                     std_shift_without_primary: None,
                     ratio_without_primary: None,
+                    nonneg: pooled_sorted[0] >= 0.0,
                 });
             }
             // The pair's primary level (largest |standardized
@@ -784,7 +818,8 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
     let mut scale_flags: Vec<bool> = candidates
         .iter()
         .map(|c| {
-            (c.ratio >= SCALE_RATIO_BAR || c.ratio <= 1.0 / SCALE_RATIO_BAR)
+            let ratio = scale_effect_ratio(c);
+            ratio.is_some_and(|r| r >= SCALE_RATIO_BAR || r <= 1.0 / SCALE_RATIO_BAR)
                 && c.q_scale <= BH_ALPHA
         })
         .collect();
@@ -846,6 +881,10 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
         }
     }
     let mut scored: Vec<(f64, Finding)> = Vec::new();
+    // Location and scale statements by (grouping, measure) pair,
+    // with their candidate index: a pair with more than one
+    // stated level is stated once, as a profile (below).
+    let mut per_pair: BTreeMap<(usize, usize), Vec<StatedLevel>> = BTreeMap::new();
     let mut n_multiple = 0usize;
     for (ci, c) in candidates.iter().enumerate() {
         let g = &groupings[c.grouping];
@@ -970,12 +1009,39 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
         };
         let effect = loc_eff.max(scale_eff);
         let score = 0.5 + 0.25 * effect.min(2.0);
-        scored.push((
+        per_pair.entry((c.grouping, c.measure)).or_default().push((
             effect,
             make_finding(g, measure, c, form, claim, score, Some(format!(
                 "one level of {} reads differently from the rest on {} — in location, spread, or both — while the pooled mean over all levels can look unremarkable; check whether the '{}' rows were recorded, converted, or collected differently before pooling them with the rest",
                 g.describe, measure, c.level_label
             ))),
+            ci,
+        ));
+    }
+    let mut n_profiles = 0usize;
+    for ((gi, mi), mut stated) in per_pair {
+        if stated.len() == 1 {
+            let (effect, f, _) = stated.pop().unwrap();
+            scored.push((effect, f));
+            continue;
+        }
+        n_profiles += 1;
+        let tested: Vec<&Candidate> = candidates
+            .iter()
+            .filter(|c| c.grouping == gi && c.measure == mi)
+            .collect();
+        let effect = stated.iter().map(|s| s.0).fold(0.0f64, f64::max);
+        let levels: Vec<usize> = stated.iter().map(|s| s.2).collect();
+        scored.push((
+            effect,
+            profile_finding(
+                &groupings[gi],
+                &table.names[mi],
+                &tested,
+                &levels,
+                &candidates,
+                effect,
+            ),
         ));
     }
     scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.claim.cmp(&b.1.claim)));
@@ -985,7 +1051,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
 
     let n_calendar = groupings.len() - n_column_groupings;
     let mut detail = format!(
-        "{} groupings ({} categorical columns, {} calendar parts of the axis) x {} numeric measures: {} pairs examined, {} levels tested ({} location and scale tests in the Benjamini-Hochberg family), {} contrasts reported{} (cap {MAX_FINDINGS})",
+        "{} groupings ({} categorical columns, {} calendar parts of the axis) x {} numeric measures: {} pairs examined, {} levels tested ({} location and scale tests in the Benjamini-Hochberg family), {} contrasts reported{}{} (cap {MAX_FINDINGS})",
         groupings.len(),
         n_column_groupings,
         n_calendar,
@@ -996,6 +1062,13 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
         reported,
         if n_multiple > 0 {
             format!(", {n_multiple} of them constant multiples")
+        } else {
+            String::new()
+        },
+        if n_profiles > 0 {
+            format!(
+                ", {n_profiles} of them profiles stating every differing level of one grouping on one measure"
+            )
         } else {
             String::new()
         },
@@ -1024,6 +1097,108 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
 }
 
 #[allow(clippy::too_many_arguments)]
+/// One statement for a (grouping, measure) pair on which several
+/// levels differ from their pooled rest: the measure's profile over
+/// the grouping, with every tested level's median and every stated
+/// level's contrast in the evidence (`levels`).
+fn profile_finding(
+    g: &Grouping,
+    measure: &str,
+    tested: &[&Candidate],
+    stated: &[usize],
+    candidates: &[Candidate],
+    effect: f64,
+) -> Finding {
+    let lo = tested
+        .iter()
+        .min_by(|a, b| a.level_median.total_cmp(&b.level_median))
+        .unwrap();
+    let hi = tested
+        .iter()
+        .max_by(|a, b| a.level_median.total_cmp(&b.level_median))
+        .unwrap();
+    let pooled_median = {
+        let mut m: Vec<f64> = tested.iter().map(|c| c.level_median).collect();
+        m.sort_by(|a, b| a.total_cmp(b));
+        median_sorted(&m)
+    };
+    // A calendar part's labels read alone (January, Saturday); a
+    // column's labels are named with the column (hr = '3').
+    let label = |c: &Candidate| -> String {
+        if g.calendar_part.is_some() {
+            c.level_label.clone()
+        } else {
+            format!("{} = '{}'", g.column, c.level_label)
+        }
+    };
+    let claim = format!(
+        "{} varies across {}: medians from {} ({}) to {} ({}); {} of {} levels differ from their pooled rest",
+        measure,
+        g.describe,
+        crate::fmt_float(lo.level_median),
+        label(lo),
+        crate::fmt_float(hi.level_median),
+        label(hi),
+        stated.len(),
+        tested.len(),
+    );
+    let level_rows: Vec<Value> = tested
+        .iter()
+        .map(|c| {
+            let idx = candidates
+                .iter()
+                .position(|o| std::ptr::eq(o, *c))
+                .unwrap_or(usize::MAX);
+            json!({
+                "level": c.level_label,
+                "rows": c.n_level,
+                "median": c.level_median,
+                "iqr": c.level_iqr,
+                "shift_in_pooled_iqrs": c.std_shift,
+                "location_q_value": c.q_location,
+                "scale_q_value": c.q_scale,
+                "stated": stated.contains(&idx),
+            })
+        })
+        .collect();
+    let mut metrics: BTreeMap<String, Value> = BTreeMap::from([
+        ("column".into(), json!(measure)),
+        ("measure_column".into(), json!(measure)),
+        ("grouping_column".into(), json!(g.column)),
+        ("form".into(), json!("profile")),
+        ("levels_tested".into(), json!(tested.len())),
+        ("levels_stated".into(), json!(stated.len())),
+        ("median_of_level_medians".into(), json!(pooled_median)),
+        ("n".into(), json!(tested[0].n_level + tested[0].n_rest)),
+        ("levels".into(), Value::Array(level_rows)),
+        ("method".into(), json!(METHOD_TEXT)),
+    ]);
+    if let Some(part) = g.calendar_part {
+        metrics.insert("calendar_part".into(), json!(part));
+        metrics.insert("axis".into(), json!(g.column));
+    }
+    Finding::new(
+        Pattern::LevelContrast,
+        BTreeMap::from([(
+            "columns".into(),
+            json!([g.column.clone(), measure.to_string()]),
+        )]),
+        claim,
+        EvidenceBasis::Measured,
+        0.5 + 0.25 * effect.min(2.0),
+        metrics,
+        Some(format!(
+            "{measure} depends on {}: the levels named differ from the rest in location or spread; the per-level medians and tests are in the evidence's levels table",
+            g.describe
+        )),
+        Method::new(
+            "level_contrasts",
+            "per_level_quantile_contrast",
+            "per-level quantile contrasts (onceover v0.1)",
+        ),
+    )
+}
+
 fn make_finding(
     g: &Grouping,
     measure: &str,
