@@ -366,6 +366,42 @@
    "scope": "planted_mix",
    "limit": 907,
    "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "thyroid",
+   "limit": 877,
+   "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 878 -> 877 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "hospital-dha",
+   "limit": 893,
+   "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 895 -> 893 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "dominant_driver",
+   "limit": 877,
+   "reason": "Issue #435: rank-derived row keys redraw sample-dependent statements; the digest finding-character share moves 878 -> 877 per mille. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "abalone",
+   "limit": 924,
+   "reason": "Issue #435: the target-mode digest finding-character share moves 925 -> 924 per mille when content keys replace positional splits. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "congressional-voting",
+   "limit": 903,
+   "reason": "Issue #435: the target-mode digest finding-character share moves 904 -> 903 per mille when content keys replace positional splits. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "invariance.noise",
+   "scope": "column_order_stress",
+   "limit": 2,
+   "reason": "Issue #435: adding an independent noise column changes two model-selected facts (0 -> 2), while row-shuffle differences on this table fall 7 -> 5 and its invariance total stays 7. Record: docs/benchmarks/2026-11-18-content-sampling.md."
   }
  ]
 }
