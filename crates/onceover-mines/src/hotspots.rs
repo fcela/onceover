@@ -1342,6 +1342,7 @@ mod tests {
             col[..100].fill(0);
         }
         EncodedMatrix {
+            row_keys: onceover_core::RowKeys::default(),
             rows: (0..n as u32).collect(),
             n,
             bins,
@@ -1505,6 +1506,7 @@ mod tests {
             bins[3][r] = ((r / 64) % 4) as u8;
         }
         EncodedMatrix {
+            row_keys: onceover_core::RowKeys::default(),
             rows: (0..n as u32).collect(),
             n,
             bins,

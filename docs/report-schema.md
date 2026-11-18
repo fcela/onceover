@@ -43,6 +43,19 @@ headline states the sample, and the coverage `input` entry records
 the sample's size and seed, so no sampled number is presented as a
 population number.
 
+## Internal row caps
+
+Separately from source sampling, passes with a row cap draw an
+**internal** sample keyed by row content: a stable hash of the
+canonical values in every column, with exact duplicate rows broken by
+a stable occurrence ordinal. The selected indices are ordered by those
+keys, so a sampled statistic or finding is a function of the table's
+row multiset, not of its input order. Passes that read the row sequence
+itself (the along-axis scans) stay positional by design. Sampled
+evidence keeps the disclosures above; fields that name original row
+positions, such as row-cluster ranges, remain positional descriptions
+and are the exception to permutation invariance.
+
 ## The frame model
 
 The `frame` section records two judgements the pipeline makes

@@ -241,7 +241,7 @@ pub fn period_associations(table: &TypedTable, deps: &[PairDep], row_cap: usize)
         }
     }
 
-    let rows = crate::stride_rows(table.n, row_cap);
+    let rows = onceover_core::sample_rows(table, row_cap);
     let sampled = rows.len() < table.n;
     let mut period_rows: Vec<Vec<u32>> = vec![Vec::new(); k];
     for &r in &rows {

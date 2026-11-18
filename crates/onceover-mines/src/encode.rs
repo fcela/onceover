@@ -2,8 +2,7 @@
 //! decision tables, PRISM rules): every usable column quantile-binned or
 //! level-coded over a deterministic row subsample.
 
-use onceover_core::TypedCol;
-use onceover_core::TypedTable;
+use onceover_core::{RowKeys, TypedCol, TypedTable};
 use rustc_hash::FxHashMap;
 
 pub const MISSING: u8 = 255;
@@ -11,8 +10,10 @@ pub const MAX_BINS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct EncodedMatrix {
-    /// Subsampled original row ids (deterministic stratified sample).
+    /// Subsampled original row ids (deterministic content-keyed sample).
     pub rows: Vec<u32>,
+    /// Content keys aligned with `rows` and with every feature's bins.
+    pub row_keys: RowKeys,
     pub n: usize,
     /// Original column index per feature.
     pub feat_cols: Vec<usize>,
@@ -63,9 +64,11 @@ impl Default for EncodeConfig {
 }
 
 pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String) {
-    let rows: Vec<u32> = crate::stride_rows(table.n, cfg.row_cap);
+    let all_keys = onceover_core::row_keys(table);
+    let rows = all_keys.sample(cfg.row_cap);
     let m = rows.len();
     let mut out = EncodedMatrix {
+        row_keys: all_keys.subset(&rows),
         rows,
         n: m,
         feat_cols: Vec::new(),

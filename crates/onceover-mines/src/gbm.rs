@@ -984,13 +984,13 @@ pub fn screen_target(
         _ => None,
     };
 
-    // Deterministic holdout: seeded shuffle, 75/25.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
-    let mut order = present.clone();
-    for i in (1..order.len()).rev() {
-        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-        order.swap(i, j);
-    }
+    // Deterministic content-keyed holdout order, 75/25. The salt is
+    // derived from the modelled column's own values, keeping the split
+    // independent of column position and of the other screens' splits
+    // without consulting row positions.
+    let mut order = enc
+        .row_keys
+        .order_from(&present, 0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
     // Each target is considered. Bound fitting rows independently of table width.
     order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
     let n_hold = order.len() / 4;
@@ -1233,14 +1233,12 @@ pub fn screen_missing_indicator(
     }
     let y: Vec<f32> = missing.iter().map(|&m| if m { 1.0 } else { 0.0 }).collect();
 
-    // Deterministic holdout, seeded like the target screens but
-    // salted so the split differs from the column's own screen.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D49_5353_494E_4721);
-    let mut order: Vec<u32> = (0..enc.n as u32).collect();
-    for i in (1..order.len()).rev() {
-        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-        order.swap(i, j);
-    }
+    // Deterministic content-keyed holdout, salted so the split
+    // differs from the column's own screen.
+    let mut order = enc.row_keys.order_from(
+        &(0..enc.n as u32).collect::<Vec<_>>(),
+        0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D49_5353_494E_4721,
+    );
     order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
     let n_hold = order.len() / 4;
     let (train, holdout) = order.split_at(order.len() - n_hold);
@@ -1599,14 +1597,12 @@ pub fn crossfit_residuals(
         None => &target_bins,
     };
 
-    // Seeded shuffle of the present rows; fold f is every
-    // `folds`-th row of the shuffled order.
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D4F_4445_4C46_4149);
-    let mut order = present.clone();
-    for i in (1..order.len()).rev() {
-        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-        order.swap(i, j);
-    }
+    // Content-keyed order of the present rows; fold f is every
+    // `folds`-th row of that order.
+    let mut order = enc.row_keys.order_from(
+        &present,
+        0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci) ^ 0x4D4F_4445_4C46_4149,
+    );
     order.truncate((cfg.max_model_rows * 4).max(cfg.min_target_rows));
     let fold_of: Vec<usize> = {
         let mut f = vec![0usize; enc.n];
@@ -1633,18 +1629,15 @@ pub fn crossfit_residuals(
         if test.is_empty() || pool.len() < 100 {
             continue;
         }
-        // Internal 75/25 split of the training pool for early
-        // stopping, seeded per fold from the same stream discipline
-        // as the screens (a fixed salt per fold index).
-        let mut frng = Lcg(0x9E37_79B9_7F4A_7C15
-            ^ column_seed(enc, ci)
-            ^ 0x4D4F_4445_4C46_4149
-            ^ ((fold as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)));
-        let mut shuffled = pool.clone();
-        for i in (1..shuffled.len()).rev() {
-            let j = (frng.next_u64() % (i as u64 + 1)) as usize;
-            shuffled.swap(i, j);
-        }
+        // Internal content-keyed 75/25 split of the training pool
+        // for early stopping, with a fixed salt per fold index.
+        let shuffled = enc.row_keys.order_from(
+            &pool,
+            0x9E37_79B9_7F4A_7C15
+                ^ column_seed(enc, ci)
+                ^ 0x4D4F_4445_4C46_4149
+                ^ ((fold as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)),
+        );
         let n_hold = shuffled.len() / 4;
         let (train, holdout) = shuffled.split_at(shuffled.len() - n_hold);
         let train: Vec<u32> = train.to_vec();
@@ -2179,12 +2172,9 @@ pub fn fit_gbm_model_restricted(
     if present.len() < cfg.min_target_rows {
         return None;
     }
-    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
-    let mut order = present.clone();
-    for i in (1..order.len()).rev() {
-        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-        order.swap(i, j);
-    }
+    let mut order = enc
+        .row_keys
+        .order_from(&present, 0x9E37_79B9_7F4A_7C15 ^ column_seed(enc, ci));
     order.truncate(cfg.max_model_rows.max(cfg.min_target_rows));
     let n_hold = order.len() / 4;
     let (train, holdout) = order.split_at(order.len() - n_hold);

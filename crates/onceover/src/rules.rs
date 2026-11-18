@@ -63,8 +63,8 @@ fn compare(a: &Value, b: &Value, op: Operator) -> bool {
         Operator::Ge => matches!(order, Some(Greater | Equal)),
     }
 }
-fn partition(row: u32) -> bool {
-    let mut x = row as u64 + 0x9e3779b97f4a7c15;
+fn partition(key: onceover_core::RowKey) -> bool {
+    let mut x = (key as u64).wrapping_add(0x9e3779b97f4a7c15);
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
     (x ^ (x >> 31)).is_multiple_of(5)
@@ -92,7 +92,9 @@ pub fn evaluate_rules(
     row_cap: usize,
     policy: &onceover_report::SelectionPolicy,
 ) {
-    let rows = onceover_core::sample_rows(table.n, row_cap);
+    let all_keys = onceover_core::row_keys(table);
+    let rows = all_keys.sample(row_cap);
+    let sample_keys = all_keys.subset(&rows);
     let columns: BTreeMap<&str, usize> = table
         .names
         .iter()
@@ -128,7 +130,8 @@ pub fn evaluate_rules(
             return false;
         };
         let (mut train, mut n, mut antecedent, mut consequent, mut joint) = (0, 0, 0, 0, 0);
-        for &row in &rows {
+        for (i, &row) in rows.iter().enumerate() {
+            let key = sample_keys.key(i);
             let index = row as usize;
             let Some(y) = value(&table.cols[target], index, outcome.transform.as_deref()) else {
                 continue;
@@ -138,7 +141,7 @@ pub fn evaluate_rules(
                 .collect::<Option<Vec<_>>>() else {
                 continue;
             };
-            if !partition(row) {
+            if !partition(key) {
                 train += 1;
                 continue;
             }

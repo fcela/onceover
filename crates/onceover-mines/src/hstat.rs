@@ -270,16 +270,17 @@ pub fn profile_interactions(
             continue;
         }
         n_gated += 1;
-        // Evaluation sample: a deterministic stride sample
-        // of the target's present rows, in encoded space (the rows
-        // `enc.bins` is indexed by — a row sample of the table at
-        // larger sizes, so table-space indices would run off the
-        // end of the bin columns).
+        // Evaluation sample: a content-keyed sample of the target's
+        // present rows, in encoded space (the rows `enc.bins` is
+        // indexed by — a row sample of the table at larger sizes, so
+        // table-space indices would run off the end of the bin
+        // columns). Keys are carried on the encoded matrix so the
+        // nested cap stays invariant to input row order.
         let present = &model.present;
         if present.len() < 30 {
             continue;
         }
-        let sample_idx = onceover_core::sample_rows(present.len(), cfg.pd_rows);
+        let sample_idx = enc.row_keys.sample_from(present, cfg.pd_rows);
         let sample: Vec<(u32, f64)> = sample_idx
             .iter()
             .map(|&i| {

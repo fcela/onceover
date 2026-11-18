@@ -86,11 +86,6 @@ pub use shapes::{profile_target_shapes, shape_diagnostics, ShapeDiagnostics, Sha
 pub use slices::{profile_slice_shifts, SliceConfig, SliceOutcome, SliceStatus};
 pub use surprises::{profile_surprises, SurpriseConfig};
 
-/// Deterministic stratified subsample (one hashed offset per row interval) of row indices (0..n down to cap).
-pub fn stride_rows(n: usize, cap: usize) -> Vec<u32> {
-    onceover_core::sample_rows(n, cap)
-}
-
 /// Compact float display (for class labels).
 pub fn fmt_float(v: f64) -> String {
     if v == v.trunc() && v.abs() < 1e15 {
@@ -103,14 +98,12 @@ pub fn fmt_float(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn stride_rows_deterministic_and_bounded() {
-        assert_eq!(stride_rows(10, 100).len(), 10);
-        let s = stride_rows(1_000_000, 20_000);
+    fn positional_rows_deterministic_and_bounded() {
+        assert_eq!(onceover_core::positional_rows(10, 100).len(), 10);
+        let s = onceover_core::positional_rows(1_000_000, 20_000);
         assert!(s.len() <= 20_000);
         assert!(s.windows(2).all(|w| w[0] < w[1]));
-        assert_eq!(s, stride_rows(1_000_000, 20_000));
+        assert_eq!(s, onceover_core::positional_rows(1_000_000, 20_000));
     }
 }

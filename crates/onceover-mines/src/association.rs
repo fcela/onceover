@@ -2,6 +2,7 @@
 
 use crate::dep::{assoc_tier, bh_qvalues, chi2_sf, eta_squared, f_sf, fmt_q, Q_BAR};
 use crate::encode::{EncodedMatrix, MISSING};
+use onceover_core::RowKey;
 use onceover_report::{AssociationPair, EvidenceBasis, Finding};
 use onceover_report::{Method, Pattern};
 use serde_json::json;
@@ -51,14 +52,25 @@ impl Mask {
     }
 }
 
-fn holdout(row: u32) -> bool {
-    // Stable integer mix of the original row id. The split is independent of
-    // the deterministic stratified sample used to construct EncodedMatrix.
-    let mut x = row as u64 + 0x9e3779b97f4a7c15;
+fn holdout(key: RowKey) -> bool {
+    // Stable integer mix of the row's content key. The split is independent
+    // of input row positions and of the encoded sample's cap.
+    let mut x = (key as u64).wrapping_add(0x9e3779b97f4a7c15);
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
     x ^= x >> 31;
     x.is_multiple_of(5)
+}
+
+fn encoded_holdout(enc: &EncodedMatrix, j: usize) -> bool {
+    // Fixtures may build an EncodedMatrix directly without keys; real
+    // profiles always carry one key per encoded row.
+    let key = if j < enc.row_keys.len() {
+        enc.row_keys.key(j)
+    } else {
+        j as RowKey
+    };
+    holdout(key)
 }
 
 pub fn association_rules(
@@ -88,7 +100,7 @@ pub fn association_rules(
     let mut valid: Vec<(Mask, Mask)> = Vec::new();
     let (mut ntr, mut nho) = (0usize, 0usize);
     for j in 0..enc.n {
-        if holdout(*enc.rows.get(j).unwrap_or(&(j as u32))) {
+        if encoded_holdout(enc, j) {
             nho += 1
         } else {
             ntr += 1
@@ -102,7 +114,7 @@ pub fn association_rules(
             if c == MISSING || c as usize >= by.len() {
                 continue;
             }
-            if holdout(*enc.rows.get(j).unwrap_or(&(j as u32))) {
+            if encoded_holdout(enc, j) {
                 by[c as usize].1.set(j);
                 ho_valid.set(j);
             } else {
@@ -830,6 +842,7 @@ mod tests {
             })
             .collect();
         EncodedMatrix {
+            row_keys: onceover_core::RowKeys::default(),
             rows: (0..n as u32).collect(),
             n,
             feat_cols: (0..bins.len()).collect(),
@@ -955,7 +968,7 @@ mod tests {
         let n = 3000;
         let a: Vec<u8> = (0..n).map(|i| (i % 2) as u8).collect();
         let b: Vec<u8> = (0..n)
-            .map(|i| if holdout(i as u32) { 1 - a[i] } else { a[i] })
+            .map(|i| if holdout(i as RowKey) { 1 - a[i] } else { a[i] })
             .collect();
         let enc = matrix(
             n,

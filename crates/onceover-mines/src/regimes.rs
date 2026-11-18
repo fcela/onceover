@@ -62,8 +62,8 @@ fn time_at(col: &TypedCol<'_>, row: usize) -> Option<i64> {
     }
 }
 
-fn holdout(row: u32) -> bool {
-    let mut x = row as u64 ^ 0xD16A_0057_5EED;
+fn holdout(key: onceover_core::RowKey) -> bool {
+    let mut x = key as u64 ^ 0xD16A_0057_5EED;
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
     (x ^ (x >> 31)).is_multiple_of(5)
@@ -92,7 +92,9 @@ pub fn profile_regimes(
     let eligible_cols: Vec<usize> = candidates.iter().map(|r| r.col).collect();
     candidates.truncate(cfg.target_cap);
     let n_candidates = candidates.len();
-    let sampled: Vec<u32> = crate::stride_rows(enc.rows.len(), cfg.row_cap.max(1))
+    let sample_positions = enc.row_keys.sample(cfg.row_cap.max(1));
+    let sampled_keys = enc.row_keys.subset(&sample_positions);
+    let sampled: Vec<u32> = sample_positions
         .into_iter()
         .map(|p| enc.rows[p as usize])
         .collect();
@@ -157,8 +159,8 @@ pub fn profile_regimes(
             skipped += 1;
             continue;
         }
-        let (mut x, mut y, mut rows) = (Vec::new(), Vec::new(), Vec::new());
-        for &r in &sampled {
+        let (mut x, mut y, mut rows, mut keys) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (i, &r) in sampled.iter().enumerate() {
             let vals: Option<Vec<f64>> = features
                 .iter()
                 .map(|&i| numeric(&table.cols[i], r as usize))
@@ -167,12 +169,13 @@ pub fn profile_regimes(
                 x.push(vals);
                 y.push(v);
                 rows.push(r);
+                keys.push(sampled_keys.key(i));
             } else {
                 incomplete += 1;
             }
         }
         let (train, test): (Vec<usize>, Vec<usize>) =
-            (0..rows.len()).partition(|&i| !holdout(rows[i]));
+            (0..rows.len()).partition(|&i| !holdout(keys[i]));
         if train.len() / 2 < cfg.model.min_leaf || test.len() < cfg.min_holdout {
             skipped += 1;
             continue;

@@ -198,7 +198,7 @@ pub fn profile_duplicate_encodings_stopped(
     if !cfg.is_enabled() {
         return ((Vec::new(), "disabled at this budget".into()), false);
     }
-    let rows = subsample_rows(table.n, cfg.row_cap);
+    let rows = subsample_rows(table, cfg.row_cap);
     let sampled = rows.len() < table.n;
 
     // Eligible columns: label-like, not an identifier, with a

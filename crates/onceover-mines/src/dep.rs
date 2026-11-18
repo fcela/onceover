@@ -906,7 +906,7 @@ fn screen_sampled_impl(
         }
         let positions: Vec<u32> = (0..encoded.n as u32).collect();
         // Stage 1: all pairs on a bounded row subsample.
-        let stage1_rows = crate::stride_rows(encoded.n, 256);
+        let stage1_rows = encoded.row_keys.sample(256);
         // Marginal entropies over the stage-1 rows, per encoded
         // slot; Some only where the column has no missing value
         // there, which makes the entropy pair-independent.
@@ -1104,7 +1104,7 @@ fn screen_sampled_impl(
             .map(|(pair, _)| pair)
             .collect();
     }
-    let rows = crate::stride_rows(table.n, row_cap);
+    let rows = onceover_core::sample_rows(table, row_cap);
 
     let dep_for_pair = |a: usize, b: usize| -> PairDep {
         let pairs = sampled_pairs(&table.cols[a], &table.cols[b], &rows);

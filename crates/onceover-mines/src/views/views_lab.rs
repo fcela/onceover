@@ -388,17 +388,15 @@ struct LabRun {
 /// partition here is the pass's partition.
 fn run_lab(table: &TypedTable, cfg: &ViewsConfig) -> LabRun {
     let t0 = Instant::now();
-    let sample: Vec<usize> = sample_rows(table.n, cfg.row_cap)
-        .iter()
-        .map(|&r| r as usize)
-        .collect();
-    let n_sample = sample.len();
+    let keys = row_keys(table);
+    let sampled = keys.sample(cfg.row_cap);
+    let sample_keys = keys.subset(&sampled);
+    let sample: Vec<usize> = sampled.iter().map(|&r| r as usize).collect();
     let (all_cols, dropped) = extract_columns(table, &sample, cfg);
     let extraction_dropped = dropped.clone();
-    let search_pos: Vec<usize> = sample_rows(n_sample, cfg.search_rows)
-        .iter()
-        .map(|&r| r as usize)
-        .collect();
+    let search_u32 = sample_keys.sample(cfg.search_rows);
+    let search_keys = sample_keys.subset(&search_u32);
+    let search_pos: Vec<usize> = search_u32.iter().map(|&r| r as usize).collect();
     let mut work = WorkBudget {
         used: 0,
         cap: cfg.work_budget,
@@ -410,8 +408,14 @@ fn run_lab(table: &TypedTable, cfg: &ViewsConfig) -> LabRun {
         partners: Vec::new(),
         kept: Vec::new(),
     };
-    let (cols, cap_dropped, _prescreened) =
-        select_columns(all_cols, &search_pos, cfg, &mut work, Some(&mut screen));
+    let (cols, cap_dropped, _prescreened) = select_columns(
+        all_cols,
+        &search_pos,
+        &search_keys,
+        cfg,
+        &mut work,
+        Some(&mut screen),
+    );
     let kept_names: Vec<String> = cols.iter().map(|c| c.name.clone()).collect();
     let mut trace = SearchTrace {
         single_groups: Vec::new(),
@@ -1437,7 +1441,8 @@ fn lab_detail() {
                 gamma,
                 ..Default::default()
             };
-            let sample: Vec<usize> = sample_rows(planted.table.n, cfg.row_cap)
+            let sample: Vec<usize> = row_keys(&planted.table)
+                .sample(cfg.row_cap)
                 .iter()
                 .map(|&r| r as usize)
                 .collect();
@@ -1539,7 +1544,8 @@ fn lab_overlay() {
             gamma: 2.0,
             ..Default::default()
         };
-        let sample: Vec<usize> = sample_rows(planted.table.n, cfg.row_cap)
+        let sample: Vec<usize> = row_keys(&planted.table)
+            .sample(cfg.row_cap)
             .iter()
             .map(|&r| r as usize)
             .collect();

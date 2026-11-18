@@ -1032,7 +1032,7 @@ pub fn order_constraints(table: &TypedTable, cfg: &OrderConfig) -> OrderOutcome 
     let mut out = OrderOutcome::default();
     let sampled = table.n > SCREEN_ROWS;
     let rows: Vec<u32> = if sampled {
-        onceover_core::sample_rows(table.n, SCREEN_ROWS)
+        onceover_core::sample_rows(table, SCREEN_ROWS)
     } else {
         (0..table.n as u32).collect()
     };

@@ -1242,7 +1242,7 @@ fn aggregate(
 
 /// Deterministic stride sample of row indices up to `cap`.
 fn stride_sample(n: usize, cap: usize) -> Vec<usize> {
-    crate::stride_rows(n, cap)
+    onceover_core::positional_rows(n, cap)
         .into_iter()
         .map(|i| i as usize)
         .collect()

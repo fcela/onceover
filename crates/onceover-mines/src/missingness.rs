@@ -639,7 +639,7 @@ pub fn profile_missingness_with(
     }
 
     // ---- conditions ----
-    let sample = crate::stride_rows(n, search_rows);
+    let sample = onceover_core::sample_rows(table, search_rows);
     let surprise_cfg = SurpriseConfig::default();
     let coded: Vec<(usize, Coded)> = (0..table.cols.len())
         .filter(|c| !excluded.contains(c))

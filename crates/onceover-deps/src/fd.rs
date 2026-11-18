@@ -747,7 +747,7 @@ pub fn discover(
         .filter(|i| !excluded_targets.contains(i))
         .collect();
     let n_eligible_rhs = rhs_pool.len();
-    let rows = subsample_rows(n, cfg.row_cap);
+    let rows = subsample_rows(table, cfg.row_cap);
     let sampled = rows.len() < n;
     if lhs_pool.is_empty() || rhs_pool.is_empty() {
         discover_uccs(table, info, cfg, &mut out);
@@ -757,7 +757,7 @@ pub fn discover(
         );
         return out;
     }
-    let screen_rows = subsample_rows(n, 2048.min(cfg.row_cap));
+    let screen_rows = subsample_rows(table, 2048.min(cfg.row_cap));
     let broad_cols: Vec<&TypedCol> = table.cols.iter().collect();
     let broad = build_hashes(&broad_cols, &screen_rows);
     let mut scores: Vec<Vec<(usize, f64)>> = vec![Vec::new(); info.len()];
@@ -1209,7 +1209,7 @@ fn discover_uccs(table: &TypedTable, info: &[ColInfo], cfg: &FdConfig, out: &mut
             .total_cmp(&info[a].distinct_ratio())
             .then(a.cmp(&b))
     });
-    let sample = subsample_rows(n, 2048);
+    let sample = subsample_rows(table, 2048);
     let refs: Vec<_> = ranked.iter().map(|&c| &table.cols[c]).collect();
     let hashes = build_hashes(&refs, &sample);
     let mut candidates = Vec::new();

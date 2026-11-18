@@ -4,7 +4,7 @@
 //! combined per set), followed by *exact canonical verification* of anything
 //! we emit — hashing can only cost us recall, never truth (P7).
 
-use onceover_core::TypedCol;
+use onceover_core::{TypedCol, TypedTable};
 
 /// Per-column fast hash arrays + null masks over a selected row subset.
 pub struct ColHashes {
@@ -212,9 +212,9 @@ pub fn encode_value(col: &TypedCol, row: usize, out: &mut Vec<u8>) {
     }
 }
 
-/// Deterministic stratified subsample of row indices (0..n down to cap).
-pub fn subsample_rows(n: usize, cap: usize) -> Vec<u32> {
-    onceover_core::sample_rows(n, cap)
+/// Content-keyed subsample of row indices (0..table.n down to cap).
+pub fn subsample_rows(table: &TypedTable, cap: usize) -> Vec<u32> {
+    onceover_core::sample_rows(table, cap)
 }
 
 /// Deterministic pseudo-random seed (fixed — P5 determinism).
@@ -223,13 +223,24 @@ pub const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use polars::df;
 
     #[test]
-    fn stride_sampling_bounds() {
-        assert_eq!(subsample_rows(10, 100).len(), 10);
-        let s = subsample_rows(1_000_000, 200_000);
-        assert!(s.len() <= 200_000 && s.len() >= 200_000 / 2);
-        assert!(s.windows(2).all(|w| w[0] < w[1]));
+    fn content_sampling_bounds() {
+        let df = df! {
+            "v" => (0..1_000_000i64).collect::<Vec<_>>(),
+        }
+        .unwrap();
+        let table = onceover_core::extract(&df);
+        assert_eq!(subsample_rows(&table, 100).len(), 100);
+        let s = subsample_rows(&table, 200_000);
+        assert_eq!(s.len(), 200_000);
+        assert_eq!(s, subsample_rows(&table, 200_000));
+        // Samples are ordered by content key, not original row index.
+        let mut unique = s.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), 200_000);
     }
 
     #[test]

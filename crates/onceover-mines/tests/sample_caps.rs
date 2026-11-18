@@ -348,7 +348,9 @@ fn sweep_floors() {
         for &share in &[0.05f64, 0.02, 0.01, 0.005, 0.001] {
             let full = (0..n).filter(|&i| is_rare(13, i, share)).count();
             for &cap in &[20_000usize, 50_000, 200_000, n] {
-                let sample = onceover_core::sample_rows(n, cap);
+                // This sweep measures the old per-stratum diagnostic
+                // sample, not a content-keyed profile pass.
+                let sample = onceover_core::positional_rows(n, cap);
                 let rows = sample
                     .iter()
                     .filter(|&&r| is_rare(13, r as usize, share))
