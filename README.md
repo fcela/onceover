@@ -2,27 +2,27 @@
 
 ## TL;DR
 
-Latest change `e3a2c9c` (2026-11-18), Merge pull request #444 from fcela/fix/374-steps-3-5: compared with `4a18255`, 14 total metrics better, 1 worse, 7 worse and accepted.
+Latest change `79208eb` (2026-11-18), State how targets move, give models the calendar, drop vacuous and mirrored sta…: compared with `e3a2c9c`, 6 total metrics better, 2 worse, 4 worse and accepted.
 
-| measure | latest (`e3a2c9c`) | previous (`4a18255`) | first recorded (`1618886`) |
+| measure | latest (`79208eb`) | previous (`e3a2c9c`) | first recorded (`1618886`) |
 |---|---:|---:|---:|
-| Must-tier reference facts stated in the 4,000-character digest | 16 of 19 (unchanged) | 16 of 19 | 7 of 11 |
+| Must-tier reference facts stated in the 4,000-character digest | 15 of 19 (-1, worse) | 16 of 19 | 7 of 11 |
 | Must-tier reference facts stated in the 4,000-character digest, target mode | 17 of 19 (unchanged) | 17 of 19 | 7 of 11 |
-| Should-tier reference facts stated in the 4,000-character digest | 32 of 45 (+1, better) | 31 of 45 | 7 of 12 |
-| Should-tier reference facts stated in the 4,000-character digest, target mode | 20 of 45 (unchanged) | 20 of 45 | 8 of 12 |
-| Planted structures stated in the 4,000-character digest | 57 (+1, better) | 56 | 20 |
+| Should-tier reference facts stated in the 4,000-character digest | 33 of 45 (+1, better) | 32 of 45 | 7 of 12 |
+| Should-tier reference facts stated in the 4,000-character digest, target mode | 21 of 45 (+1, better) | 20 of 45 | 8 of 12 |
+| Planted structures stated in the 4,000-character digest | 58 (+1, better) | 57 | 20 |
 | Facts repeated in the 4,000-character digest | 0 (unchanged) | 0 | 4 |
 | Facts repeated in the 4,000-character digest, target mode | 0 (unchanged) | 0 | 3 |
-| Relationship statements in the 4,000-character digest of shuffled tables (all false by construction) | 22 (-24, better) | 46 | 136 |
+| Relationship statements in the 4,000-character digest of shuffled tables (all false by construction) | 22 (unchanged) | 22 | 136 |
 | Statements that fail verification against the data | 0 (unchanged) | 0 | 0 |
 
-Biggest improvements: restatements in the full report 22 → 0; reference must not full target 14 → 0; reference must not 8k default 1 → 0
-Biggest regressions: redundancy finding permille default 16632 → 16518
-Accepted regressions: invariance noise 30 → 40 (Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md.); reference should 8k target 24 → 23 (Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md.); reference should full target 24 → 23 (Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md.)
+Biggest improvements: invariance row shuffle 102 → 96; Should-tier reference facts stated in the 4,000-character digest, target mode 20 → 21; Should-tier reference facts stated in the 4,000-character digest 32 → 33
+Biggest regressions: invariance reverse 87 → 91; facts changed by layout 230 → 240
+Accepted regressions: invariance noise 40 → 52 (Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md.); weighted must 8k 4 → 3 (Issue #374 step 4: the bike-sharing-hourly entry above. Record: docs/benchmarks/2026-11-18-identity-order.md.); Must-tier reference facts stated in the 4,000-character digest 16 → 15 (Issue #374 step 3: the bank-marketing entry above. Record: docs/benchmarks/2026-11-18-null-bars.md.)
 
-Hard lines: none breached — no statement failed or errored in verification, and no must-tier reference fact was lost from the 4,000-character digest.
+Hard line breached: a must-tier reference fact was lost from the 4,000-character digest (default mode): 16 → 15.
 
-31 change(s) recorded. Latest: `e3a2c9c` (2026-11-18), onceover 0.1.6, seeds [0].
+32 change(s) recorded. Latest: `79208eb` (2026-11-18), onceover 0.1.6, seeds [0].
 
 Each row is one change on main, newest first. A value is followed, in parentheses, by its movement against the change before it, with `better` or `worse` when the metric has a direction. Seconds are compared only between rows produced on the same platform.
 
@@ -40,6 +40,7 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-18 | `79208eb` | State how targets move, give models the calendar, drop vacuous and mi… | 58 (+1, better) | 15 (-1, worse) | 17 | 0 | 22 | 240 (+10, worse) | 0 | 0 | 10.846 (+0.026) |
 | 2026-11-18 | `e3a2c9c` | Merge pull request #444 from fcela/fix/374-steps-3-5 | 57 (+1, better) | 16 | 17 | 0 (-22, better) | 22 (-24, better) | 230 (-85, better) | 0 | 0 | 10.82 |
 | 2026-11-18 | `4a18255` | Merge pull request #443 from fcela/fix/363-sample-caps | 56 | 16 | 17 | 22 | 46 | 315 (-19, better) | 0 | 0 | 10.53 |
 | 2026-11-18 | `7cc00d4` | Merge pull request #380 from fcela/fix/374-derived-basis | 56 | 16 | 17 | 22 (-59, better) | 46 (-2, better) | 334 (-3, better) | 0 | 0 | 9.663 (-1.089) |
@@ -72,252 +73,180 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 13.385 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 6.859 |
 
-## Latest change: `e3a2c9c` Merge pull request #444 from fcela/fix/374-steps-3-5
+## Latest change: `79208eb` State how targets move, give models the calendar, drop vacuous and mirrored statements (#374 follow…
 
-Compared with `4a18255`: 14 total metrics better, 1 worse, 7 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
+Compared with `e3a2c9c`: 6 total metrics better, 2 worse, 4 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
 
 ### Better
 
 | metric | where | before | after | change |
 |---|---|---:|---:|---:|
-| invariance.reverse | total | 185 | 87 | -98 |
-| invariance.scale | total | 2 | 1 | -1 |
-| invariance.total | total | 315 | 230 | -85 |
-| permuted.false_4k | total | 46 | 22 | -24 |
-| permuted.false_4k_target | total | 28 | 10 | -18 |
-| permuted.false_full | total | 86 | 39 | -47 |
-| permuted.false_full_target | total | 47 | 17 | -30 |
-| planted.found_4k | total | 56 | 57 | +1 |
-| planted.found_full | total | 58 | 59 | +1 |
-| reference.must_not_8k_default | total | 1 | 0 | -1 |
-| reference.must_not_8k_target | total | 1 | 0 | -1 |
-| reference.must_not_full_default | total | 22 | 0 | -22 |
-| reference.must_not_full_target | total | 14 | 0 | -14 |
-| reference.should_4k_default | total | 31 | 32 | +1 |
-| invariance.noise | adult-census-income | 8 | 7 | -1 |
-| invariance.noise | weighted_noise | 1 | 0 | -1 |
-| invariance.reverse | abalone | 4 | 0 | -4 |
-| invariance.reverse | absenteeism-at-work | 41 | 29 | -12 |
-| invariance.reverse | adult-census-income | 4 | 0 | -4 |
-| invariance.reverse | adventureworks | 40 | 33 | -7 |
-| invariance.reverse | bank-marketing | 9 | 4 | -5 |
-| invariance.reverse | bike-sharing-hourly | 1 | 0 | -1 |
-| invariance.reverse | column_order_stress | 4 | 0 | -4 |
-| invariance.reverse | congressional-voting | 28 | 3 | -25 |
-| invariance.reverse | hospital-dha | 13 | 5 | -8 |
-| invariance.reverse | state-unemployment | 25 | 6 | -19 |
-| invariance.reverse | thyroid | 12 | 3 | -9 |
-| invariance.row_shuffle | bank-marketing | 15 | 12 | -3 |
-| invariance.row_shuffle | thyroid | 21 | 14 | -7 |
-| invariance.scale | bank-marketing | 1 | 0 | -1 |
-| invariance.total | abalone | 7 | 5 | -2 |
-| invariance.total | absenteeism-at-work | 64 | 55 | -9 |
-| invariance.total | adult-census-income | 14 | 9 | -5 |
-| invariance.total | adventureworks | 40 | 33 | -7 |
-| invariance.total | bank-marketing | 27 | 18 | -9 |
-| invariance.total | bike-sharing-hourly | 1 | 0 | -1 |
-| invariance.total | column_order_stress | 9 | 7 | -2 |
-| invariance.total | congressional-voting | 60 | 49 | -11 |
-| invariance.total | hospital-dha | 23 | 17 | -6 |
-| invariance.total | state-unemployment | 25 | 6 | -19 |
-| invariance.total | thyroid | 35 | 22 | -13 |
-| invariance.total | weighted_noise | 1 | 0 | -1 |
-| permuted.false_4k | absenteeism-at-work | 4 | 2 | -2 |
-| permuted.false_4k | adult-census-income | 1 | 0 | -1 |
-| permuted.false_4k | adventureworks | 11 | 6 | -5 |
-| permuted.false_4k | bank-marketing | 1 | 0 | -1 |
-| permuted.false_4k | bike-sharing-hourly | 4 | 2 | -2 |
-| permuted.false_4k | metro-interstate-traffic | 7 | 2 | -5 |
-| permuted.false_4k | planted_mix | 1 | 0 | -1 |
-| permuted.false_4k | thyroid | 6 | 0 | -6 |
-| permuted.false_4k | weighted_noise | 1 | 0 | -1 |
-| permuted.false_4k_target | absenteeism-at-work | 4 | 2 | -2 |
-| permuted.false_4k_target | adult-census-income | 1 | 0 | -1 |
-| permuted.false_4k_target | bank-marketing | 1 | 0 | -1 |
-| permuted.false_4k_target | bike-sharing-hourly | 4 | 2 | -2 |
-| permuted.false_4k_target | metro-interstate-traffic | 7 | 2 | -5 |
-| permuted.false_4k_target | planted_mix | 1 | 0 | -1 |
-| permuted.false_4k_target | thyroid | 6 | 0 | -6 |
-| permuted.false_full | absenteeism-at-work | 7 | 5 | -2 |
-| permuted.false_full | adult-census-income | 1 | 0 | -1 |
-| permuted.false_full | adventureworks | 30 | 14 | -16 |
-| permuted.false_full | bank-marketing | 1 | 0 | -1 |
-| permuted.false_full | bike-sharing-hourly | 5 | 3 | -2 |
-| permuted.false_full | metro-interstate-traffic | 8 | 3 | -5 |
-| permuted.false_full | planted_mix | 1 | 0 | -1 |
-| permuted.false_full | thyroid | 18 | 0 | -18 |
-| permuted.false_full | weighted_noise | 1 | 0 | -1 |
-| permuted.false_full_target | absenteeism-at-work | 7 | 5 | -2 |
-| permuted.false_full_target | adult-census-income | 1 | 0 | -1 |
-| permuted.false_full_target | bank-marketing | 1 | 0 | -1 |
-| permuted.false_full_target | bike-sharing-hourly | 5 | 3 | -2 |
-| permuted.false_full_target | metro-interstate-traffic | 8 | 3 | -5 |
-| permuted.false_full_target | planted_mix | 1 | 0 | -1 |
-| permuted.false_full_target | thyroid | 18 | 0 | -18 |
-| planted.found_4k | bike-sharing-hourly | 3 | 4 | +1 |
-| planted.found_4k | metro-interstate-traffic | 4 | 5 | +1 |
-| planted.found_full | bike-sharing-hourly | 2 | 3 | +1 |
-| redundancy.finding_permille_default | absenteeism-at-work | 902 | 903 | +1 |
-| redundancy.finding_permille_default | adventureworks | 833 | 835 | +2 |
-| redundancy.finding_permille_default | planted_mix | 913 | 916 | +3 |
-| redundancy.finding_permille_default | state-unemployment | 843 | 846 | +3 |
-| redundancy.finding_permille_target | abalone | 920 | 921 | +1 |
-| redundancy.finding_permille_target | adult-census-income | 877 | 880 | +3 |
-| redundancy.finding_permille_target | metro-interstate-traffic | 832 | 839 | +7 |
-| redundancy.finding_permille_target | planted_mix | 906 | 909 | +3 |
-| reference.must_not_8k_default | bike-sharing-hourly | 1 | 0 | -1 |
-| reference.must_not_8k_target | bike-sharing-hourly | 1 | 0 | -1 |
-| reference.must_not_full_default | adult-census-income | 7 | 0 | -7 |
-| reference.must_not_full_default | bike-sharing-hourly | 15 | 0 | -15 |
-| reference.must_not_full_target | bike-sharing-hourly | 14 | 0 | -14 |
-| reference.should_4k_default | bank-marketing | 1 | 2 | +1 |
-| reference.should_4k_default | bike-sharing-hourly | 3 | 4 | +1 |
-| reference.should_4k_target | bike-sharing-hourly | 3 | 4 | +1 |
+| invariance.row_shuffle | total | 102 | 96 | -6 |
+| planted.found_4k | total | 57 | 58 | +1 |
+| planted.found_full | total | 59 | 60 | +1 |
+| redundancy.finding_permille_target | total | 9386 | 9388 | +2 |
+| reference.should_4k_default | total | 32 | 33 | +1 |
+| reference.should_4k_target | total | 20 | 21 | +1 |
+| invariance.noise | absenteeism-at-work | 8 | 6 | -2 |
+| invariance.noise | hospital-dha | 1 | 0 | -1 |
+| invariance.noise | thyroid | 5 | 3 | -2 |
+| invariance.reverse | thyroid | 3 | 1 | -2 |
+| invariance.row_shuffle | thyroid | 14 | 6 | -8 |
+| invariance.total | absenteeism-at-work | 55 | 54 | -1 |
+| invariance.total | hospital-dha | 17 | 16 | -1 |
+| invariance.total | thyroid | 22 | 10 | -12 |
+| planted.found_4k | hospital-dha | 3 | 4 | +1 |
+| planted.found_full | adventureworks | 1 | 2 | +1 |
+| redundancy.finding_permille_default | abalone | 925 | 933 | +8 |
+| redundancy.finding_permille_default | bike-sharing-hourly | 836 | 838 | +2 |
+| redundancy.finding_permille_default | column_order_stress | 944 | 952 | +8 |
+| redundancy.finding_permille_default | daily_level_collapse | 759 | 787 | +28 |
+| redundancy.finding_permille_default | daily_regime_break | 796 | 814 | +18 |
+| redundancy.finding_permille_default | dominant_driver | 870 | 878 | +8 |
+| redundancy.finding_permille_default | hospital-dha | 894 | 895 | +1 |
+| redundancy.finding_permille_default | nab-nyc-taxi | 449 | 644 | +195 |
+| redundancy.finding_permille_default | thyroid | 872 | 878 | +6 |
+| redundancy.finding_permille_target | abalone | 921 | 925 | +4 |
+| redundancy.finding_permille_target | congressional-voting | 902 | 903 | +1 |
+| redundancy.finding_permille_target | dominant_driver | 862 | 870 | +8 |
+| redundancy.finding_permille_target | thyroid | 861 | 868 | +7 |
+| reference.should_4k_default | abalone | 1 | 2 | +1 |
+| reference.should_4k_target | abalone | 1 | 2 | +1 |
 
 ### Worse
 
 | metric | where | before | after | change |
 |---|---|---:|---:|---:|
-| redundancy.finding_permille_default | total | 16632 | 16518 | -114 |
-| redundancy.finding_permille_default | adult-census-income | 889 | 888 | -1 |
-| redundancy.finding_permille_default | bike-sharing-hourly | 841 | 836 | -5 |
-| redundancy.finding_permille_default | dominant_driver | 891 | 870 | -21 |
-| redundancy.finding_permille_default | thyroid | 874 | 872 | -2 |
-| redundancy.finding_permille_default | weighted_noise | 837 | 750 | -87 |
+| invariance.reverse | total | 87 | 91 | +4 |
+| invariance.total | total | 230 | 240 | +10 |
+| invariance.reverse | adventureworks | 33 | 39 | +6 |
+| invariance.total | adventureworks | 33 | 39 | +6 |
+| redundancy.finding_permille_target | absenteeism-at-work | 891 | 890 | -1 |
+| redundancy.finding_permille_target | planted_mix | 909 | 900 | -9 |
 
 ### Worse and accepted
 
 | metric | where | before | after | change | reason |
 |---|---|---:|---:|---:|---|
-| invariance.noise | total | 30 | 40 | +10 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. Also: Issue #374 step 2: the adult-census-income change above. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
-| invariance.row_shuffle | total | 98 | 102 | +4 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| redundancy.finding_permille_target | total | 9405 | 9386 | -19 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
-| reference.should_8k_default | total | 36 | 35 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. Also: One should-tier reference statement on bank-marketing falls out of the 8k digest in default mode under the screen's larger fitting sample (issue #363): the digest selection on that dataset shifts with the screen's driver metrics. Must-tier counts are unchanged and the should-tier 4k count improves 29 to 30 on the same run. |
-| reference.should_8k_target | total | 24 | 23 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_full_default | total | 38 | 37 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_full_target | total | 24 | 23 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| invariance.noise | congressional-voting | 6 | 14 | +8 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.noise | hospital-dha | 0 | 1 | +1 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.noise | thyroid | 2 | 5 | +3 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.row_shuffle | abalone | 3 | 5 | +2 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.row_shuffle | absenteeism-at-work | 15 | 18 | +3 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.row_shuffle | column_order_stress | 5 | 7 | +2 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.row_shuffle | congressional-voting | 26 | 32 | +6 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.row_shuffle | hospital-dha | 9 | 10 | +1 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| planted.found_4k | adventureworks | 1 | 0 | -1 | Issue #374 step 3: the base credited the planted customer_id sentinel through a text match on a 4k digest line; the full report never stated it (in_full_report false in base and head). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| redundancy.finding_permille_default | abalone | 926 | 925 | -1 | Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). |
-| redundancy.finding_permille_default | bank-marketing | 888 | 887 | -1 | Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). |
-| redundancy.finding_permille_default | column_order_stress | 949 | 944 | -5 | Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). |
-| redundancy.finding_permille_target | bank-marketing | 876 | 875 | -1 | Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md. |
-| redundancy.finding_permille_target | bike-sharing-hourly | 837 | 835 | -2 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
-| redundancy.finding_permille_target | dominant_driver | 882 | 862 | -20 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
-| redundancy.finding_permille_target | thyroid | 871 | 861 | -10 | Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md. Also: Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md. |
-| reference.should_4k_default | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: age-weak (price vs age_years, r = -0.098) falls below the 0.1 minimum effect a stated association now needs; the pair stays in report.associations() with tier none. Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_4k_target | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_8k_default | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_8k_target | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_full_default | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_full_target | dominant_driver | 3 | 2 | -1 | Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md. |
+| invariance.noise | total | 40 | 52 | +12 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | total | 16518 | 15959 | -559 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| reference.must_4k_default | total | 16 | 15 | -1 | Issue #374 step 3: the bank-marketing entry above. Record: docs/benchmarks/2026-11-18-null-bars.md. |
+| weighted.must_8k | total | 4 | 3 | -1 | Issue #374 step 4: the bike-sharing-hourly entry above. Record: docs/benchmarks/2026-11-18-identity-order.md. |
+| invariance.noise | adult-census-income | 7 | 24 | +17 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| invariance.row_shuffle | absenteeism-at-work | 18 | 19 | +1 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| invariance.row_shuffle | planted_mix | 1 | 2 | +1 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| invariance.total | adult-census-income | 9 | 26 | +17 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| invariance.total | planted_mix | 1 | 2 | +1 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | adventureworks | 835 | 834 | -1 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | metro-interstate-traffic | 846 | 845 | -1 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | planted_mix | 916 | 912 | -4 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | weighted_large_cell | 835 | 758 | -77 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_default | weighted_noise | 750 | 0 | -750 | Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md. |
+| redundancy.finding_permille_target | adult-census-income | 880 | 879 | -1 | Issue #363 on the #374 step-2 base: the screen's larger fitting sample (5,000 to 50,000 rows) shifts which driver-level statements the selection keeps; the finding-line character share moves 880 -> 877. |
+| redundancy.finding_permille_target | bank-marketing | 875 | 874 | -1 | Issue #310: the target section's composition changed (the outcome account and per-level outcome contrasts are longer lines); finding-char density moved 883 -> 873 (1.1%) while the section gained the outcome's own statements and the total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md. |
+| redundancy.finding_permille_target | metro-interstate-traffic | 839 | 833 | -6 | Issue #310: same composition change as bank-marketing; 846 -> 832 (1.7%), total rose. Record: docs/benchmarks/2026-11-17-pointed-mode.md. |
+| reference.must_4k_default | bank-marketing | 2 | 1 | -1 | Issue #374 step 3: subscription-duration is stated (8k digest and full report) by a level contrast that now ranks just below the 4k cut: consolidating per-level contrasts into one profile per (grouping, measure) frees the pass's 20-statement cap for more distinct pairs, which score above it under the hand-set level-contrast score (step 6 of #374 replaces that score). Record: docs/benchmarks/2026-11-18-null-bars.md. |
+| weighted.must_8k | bike-sharing-hourly | 1 | 0 | -1 | Issue #374 step 4: in the weights-hinted run the rush-hour concentration (still stated in the full report) falls out of the 8k digest: cnt, registered and casual are now explained by hr, temp and workingday instead of by their own sum's parts, and those statements take the digest space. Record: docs/benchmarks/2026-11-18-identity-order.md. |
 
 ## Every total metric, last 8 changes
 
 Oldest on the left. A value in a column is followed by its movement against the column before it.
 
-| metric | reading | `227d742` | `94f381b` | `11dfa8e` | `114fff6` | `de041e2` | `7cc00d4` | `4a18255` | `e3a2c9c` |
+| metric | reading | `94f381b` | `11dfa8e` | `114fff6` | `de041e2` | `7cc00d4` | `4a18255` | `e3a2c9c` | `79208eb` |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | planted.planted | information only | 76 | 76 | 76 | 76 | 76 | 76 | 76 | 76 |
-| planted.found_full | higher is better | 58 | 58 | 58 | 58 | 58 | 58 | 58 | 59 (+1, better) |
-| planted.found_4k | higher is better | 56 | 56 | 56 | 56 | 56 | 56 | 56 | 57 (+1, better) |
-| planted.line_sum_4k | information only | 630 | 630 | 630 | 630 | 630 | 628 (-2) | 628 | 635 (+7) |
-| permuted.false_full | lower is better | 100 | 100 | 100 | 100 | 100 | 86 (-14, better) | 86 | 39 (-47, better) |
-| permuted.false_4k | lower is better | 48 | 48 | 48 | 48 | 48 | 46 (-2, better) | 46 | 22 (-24, better) |
-| permuted.false_full_target | lower is better | 51 | 51 | 51 | 51 | 51 | 47 (-4, better) | 47 | 17 (-30, better) |
-| permuted.false_4k_target | lower is better | 30 | 30 | 30 | 30 | 30 | 28 (-2, better) | 28 | 10 (-18, better) |
-| permuted.findings_full | information only | 318 | 318 | 318 | 318 | 318 | 304 (-14) | 304 | 257 (-47) |
-| invariance.reverse | lower is better | 199 | 199 | 199 | 200 (+1, worse) | 200 | 197 (-3, better) | 185 (-12, better) | 87 (-98, better) |
-| invariance.row_shuffle | lower is better | 106 | 106 | 106 | 106 | 106 | 105 (-1, better) | 98 (-7, better) | 102 (+4, worse) |
+| planted.found_full | higher is better | 58 | 58 | 58 | 58 | 58 | 58 | 59 (+1, better) | 60 (+1, better) |
+| planted.found_4k | higher is better | 56 | 56 | 56 | 56 | 56 | 56 | 57 (+1, better) | 58 (+1, better) |
+| planted.line_sum_4k | information only | 630 | 630 | 630 | 630 | 628 (-2) | 628 | 635 (+7) | 593 (-42) |
+| permuted.false_full | lower is better | 100 | 100 | 100 | 100 | 86 (-14, better) | 86 | 39 (-47, better) | 39 |
+| permuted.false_4k | lower is better | 48 | 48 | 48 | 48 | 46 (-2, better) | 46 | 22 (-24, better) | 22 |
+| permuted.false_full_target | lower is better | 51 | 51 | 51 | 51 | 47 (-4, better) | 47 | 17 (-30, better) | 17 |
+| permuted.false_4k_target | lower is better | 30 | 30 | 30 | 30 | 28 (-2, better) | 28 | 10 (-18, better) | 10 |
+| permuted.findings_full | information only | 318 | 318 | 318 | 318 | 304 (-14) | 304 | 257 (-47) | 215 (-42) |
+| invariance.reverse | lower is better | 199 | 199 | 200 (+1, worse) | 200 | 197 (-3, better) | 185 (-12, better) | 87 (-98, better) | 91 (+4, worse) |
+| invariance.row_shuffle | lower is better | 106 | 106 | 106 | 106 | 105 (-1, better) | 98 (-7, better) | 102 (+4, worse) | 96 (-6, better) |
 | invariance.rename | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| invariance.noise | lower is better | 29 | 29 | 29 | 29 | 29 | 30 (+1, worse) | 30 | 40 (+10, worse) |
-| invariance.scale | lower is better | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 1 (-1, better) |
-| invariance.total | lower is better | 336 | 336 | 336 | 337 (+1, worse) | 337 | 334 (-3, better) | 315 (-19, better) | 230 (-85, better) |
+| invariance.noise | lower is better | 29 | 29 | 29 | 29 | 30 (+1, worse) | 30 | 40 (+10, worse) | 52 (+12, worse) |
+| invariance.scale | lower is better | 2 | 2 | 2 | 2 | 2 | 2 | 1 (-1, better) | 1 |
+| invariance.total | lower is better | 336 | 336 | 337 (+1, worse) | 337 | 334 (-3, better) | 315 (-19, better) | 230 (-85, better) | 240 (+10, worse) |
 | reference.check_failed | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | reference.must_total | information only | 19 | 19 | 19 | 19 | 19 | 19 | 19 | 19 |
-| reference.must_4k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 16 | 16 |
+| reference.must_4k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 16 | 15 (-1, worse) |
 | reference.must_8k_default | higher is better | 16 | 16 | 16 | 16 | 16 | 16 | 16 | 16 |
 | reference.must_full_default | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_4k_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_8k_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_full_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.should_total | information only | 45 | 45 | 45 | 45 | 45 | 45 | 45 | 45 |
-| reference.should_4k_default | higher is better | 29 | 29 | 29 | 29 | 29 | 31 (+2, better) | 31 | 32 (+1, better) |
-| reference.should_8k_default | higher is better | 36 | 36 | 36 | 36 | 36 | 36 | 36 | 35 (-1, worse) |
-| reference.should_full_default | higher is better | 37 | 37 | 37 | 37 | 37 | 38 (+1, better) | 38 | 37 (-1, worse) |
-| reference.should_4k_target | higher is better | 18 | 18 | 18 | 18 | 18 | 19 (+1, better) | 20 (+1, better) | 20 |
-| reference.should_8k_target | higher is better | 23 | 23 | 23 | 23 | 23 | 23 | 24 (+1, better) | 23 (-1, worse) |
-| reference.should_full_target | higher is better | 24 | 24 | 24 | 24 | 24 | 24 | 24 | 23 (-1, worse) |
+| reference.should_4k_default | higher is better | 29 | 29 | 29 | 29 | 31 (+2, better) | 31 | 32 (+1, better) | 33 (+1, better) |
+| reference.should_8k_default | higher is better | 36 | 36 | 36 | 36 | 36 | 36 | 35 (-1, worse) | 35 |
+| reference.should_full_default | higher is better | 37 | 37 | 37 | 37 | 38 (+1, better) | 38 | 37 (-1, worse) | 37 |
+| reference.should_4k_target | higher is better | 18 | 18 | 18 | 18 | 19 (+1, better) | 20 (+1, better) | 20 | 21 (+1, better) |
+| reference.should_8k_target | higher is better | 23 | 23 | 23 | 23 | 23 | 24 (+1, better) | 23 (-1, worse) | 23 |
+| reference.should_full_target | higher is better | 24 | 24 | 24 | 24 | 24 | 24 | 23 (-1, worse) | 23 |
 | reference.must_not_total | information only | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
-| reference.must_not_4k_default | lower is better | 8 | 8 | 8 | 8 | 8 | 0 (-8, better) | 0 | 0 |
-| reference.must_not_8k_default | lower is better | 18 | 18 | 18 | 18 | 18 | 1 (-17, better) | 1 | 0 (-1, better) |
-| reference.must_not_full_default | lower is better | 81 | 81 | 81 | 81 | 81 | 22 (-59, better) | 22 | 0 (-22, better) |
-| reference.must_not_4k_target | lower is better | 3 | 3 | 3 | 3 | 3 | 0 (-3, better) | 0 | 0 |
-| reference.must_not_8k_target | lower is better | 16 | 16 | 16 | 16 | 16 | 1 (-15, better) | 1 | 0 (-1, better) |
-| reference.must_not_full_target | lower is better | 60 | 60 | 60 | 60 | 60 | 14 (-46, better) | 14 | 0 (-14, better) |
+| reference.must_not_4k_default | lower is better | 8 | 8 | 8 | 8 | 0 (-8, better) | 0 | 0 | 0 |
+| reference.must_not_8k_default | lower is better | 18 | 18 | 18 | 18 | 1 (-17, better) | 1 | 0 (-1, better) | 0 |
+| reference.must_not_full_default | lower is better | 81 | 81 | 81 | 81 | 22 (-59, better) | 22 | 0 (-22, better) | 0 |
+| reference.must_not_4k_target | lower is better | 3 | 3 | 3 | 3 | 0 (-3, better) | 0 | 0 | 0 |
+| reference.must_not_8k_target | lower is better | 16 | 16 | 16 | 16 | 1 (-15, better) | 1 | 0 (-1, better) | 0 |
+| reference.must_not_full_target | lower is better | 60 | 60 | 60 | 60 | 14 (-46, better) | 14 | 0 (-14, better) | 0 |
 | redundancy.repeated_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_default | information only | 272 | 272 | 272 | 272 | 272 | 271 (-1) | 272 (+1) | 269 (-3) |
-| redundancy.finding_permille_default | higher is better | 16636 | 16636 | 16636 | 16636 | 16636 | 16631 (-5, worse) | 16632 (+1, better) | 16518 (-114, worse) |
+| redundancy.finding_lines_default | information only | 272 | 272 | 272 | 272 | 271 (-1) | 272 (+1) | 269 (-3) | 249 (-20) |
+| redundancy.finding_permille_default | higher is better | 16636 | 16636 | 16636 | 16636 | 16631 (-5, worse) | 16632 (+1, better) | 16518 (-114, worse) | 15959 (-559, worse) |
 | redundancy.long_decimals_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.repeated_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_target | information only | 193 | 193 | 193 | 193 | 193 | 195 (+2) | 193 (-2) | 191 (-2) |
-| redundancy.finding_permille_target | higher is better | 9406 | 9406 | 9406 | 9406 | 9406 | 9405 (-1, worse) | 9405 | 9386 (-19, worse) |
+| redundancy.finding_lines_target | information only | 193 | 193 | 193 | 193 | 195 (+2) | 193 (-2) | 191 (-2) | 180 (-11) |
+| redundancy.finding_permille_target | higher is better | 9406 | 9406 | 9406 | 9406 | 9405 (-1, worse) | 9405 | 9386 (-19, worse) | 9388 (+2, better) |
 | redundancy.long_decimals_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.mismatch | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.error | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| truth.ok | information only | 907 | 907 | 907 | 907 | 907 | 902 (-5) | 902 | 868 (-34) |
-| truth.not_checkable | information only | 1524 | 1524 | 1524 | 1537 (+13) | 1537 | 1508 (-29) | 1505 (-3) | 1388 (-117) |
-| cost.profile_seconds | lower is better | 14.949 | 11.502 (-3.447, better) | 11.688 (+0.186) | 10.95 | 10.752 (-0.198) | 9.663 (-1.089) | 10.53 | 10.82 |
-| cost.json_chars | information only | 3877987 | 3877987 | 3877987 | 3905682 (+27695) | 3905682 | 3856558 (-49124) | 3845449 (-11109) | 3587335 (-258114) |
-| cost.findings | information only | 1203 | 1203 | 1203 | 1215 (+12) | 1215 | 1204 (-11) | 1201 (-3) | 1097 (-104) |
+| truth.ok | information only | 907 | 907 | 907 | 907 | 902 (-5) | 902 | 868 (-34) | 860 (-8) |
+| truth.not_checkable | information only | 1524 | 1524 | 1537 (+13) | 1537 | 1508 (-29) | 1505 (-3) | 1388 (-117) | 1329 (-59) |
+| cost.profile_seconds | lower is better | 11.502 (-3.447, better) | 11.688 (+0.186) | 10.95 | 10.752 (-0.198) | 9.663 (-1.089) | 10.53 | 10.82 | 10.846 (+0.026) |
+| cost.json_chars | information only | 3877987 | 3877987 | 3905682 (+27695) | 3905682 | 3856558 (-49124) | 3845449 (-11109) | 3587335 (-258114) | 3611452 (+24117) |
+| cost.findings | information only | 1203 | 1203 | 1215 (+12) | 1215 | 1204 (-11) | 1201 (-3) | 1097 (-104) | 1050 (-47) |
 | weighted.must_total | information only | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.must_4k | higher is better | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
-| weighted.must_8k | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
+| weighted.must_8k | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 3 (-1, worse) |
 | weighted.must_full | higher is better | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.should_total | information only | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_4k | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_8k | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | weighted.should_full | higher is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| weighted.weighted_findings | information only | 15 | 15 | 15 | 15 | 15 | 19 (+4) | 19 | 19 |
+| weighted.weighted_findings | information only | 15 | 15 | 15 | 15 | 19 (+4) | 19 | 19 | 20 (+1) |
 
 ## Latest scorecard per dataset
 
 | dataset | kind | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 9 | 0 | 0 | 1.582 |
-| bank-marketing | tabular, mixed types | 3 | 2 | 2 | 0 | 0 | 18 | 0 | 0 | 1.826 |
+| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 26 | 0 | 0 | 1.627 |
+| bank-marketing | tabular, mixed types | 3 | 1 | 2 | 0 | 0 | 18 | 0 | 0 | 1.847 |
 | abalone | tabular, correlated measures | 5 | 3 | 3 | 0 | 0 | 5 | 0 | 0 | 0.102 |
-| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 2 | 0 | 0 | 0 | 0.821 |
-| metro-interstate-traffic | hourly time series | 5 | - | - | - | 2 | 6 | 0 | 0 | 1.32 |
-| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 22 | 0 | 0 | 0.552 |
-| absenteeism-at-work | small business table | 2 | - | - | - | 2 | 55 | 0 | 0 | 0.156 |
-| hospital-dha | wide numeric, 64 columns | 3 | - | - | - | 0 | 17 | 0 | 0 | 0.59 |
-| congressional-voting | categorical votes | 1 | - | - | - | 2 | 49 | 0 | 0 | 0.045 |
-| adventureworks | sales orders | 0 | - | - | - | 6 | 33 | 0 | 0 | 2.136 |
-| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.05 |
-| state-unemployment | wide time series, one column per state | 0 | - | - | - | 4 | 6 | 0 | 0 | 1.116 |
-| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0.083 |
-| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 9 | 0 | 0 | 0.131 |
-| soybean (held out) | categorical agronomy table | 0 | - | - | - | 0 | 35 | 0 | 0 | 0.193 |
-| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 54 | 0 | 0 | 0.18 |
-| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 2 | 20 | 0 | 0 | 0.359 |
+| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 2 | 0 | 0 | 0 | 0.819 |
+| metro-interstate-traffic | hourly time series | 5 | - | - | - | 2 | 6 | 0 | 0 | 1.417 |
+| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 10 | 0 | 0 | 0.464 |
+| absenteeism-at-work | small business table | 2 | - | - | - | 2 | 54 | 0 | 0 | 0.158 |
+| hospital-dha | wide numeric, 64 columns | 4 | - | - | - | 0 | 16 | 0 | 0 | 0.6 |
+| congressional-voting | categorical votes | 1 | - | - | - | 2 | 49 | 0 | 0 | 0.046 |
+| adventureworks | sales orders | 0 | - | - | - | 6 | 39 | 0 | 0 | 2.039 |
+| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.07 |
+| state-unemployment | wide time series, one column per state | 0 | - | - | - | 4 | 6 | 0 | 0 | 1.123 |
+| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0.104 |
+| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 10 | 0 | 0 | 0.13 |
+| soybean (held out) | categorical agronomy table | 0 | - | - | - | 0 | 37 | 0 | 0 | 0.187 |
+| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 53 | 0 | 0 | 0.182 |
+| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 3 | 37 | 0 | 0 | 0.381 |
 | gse15258-expression (held out) | wide table, 86 samples x 5,006 columns | - | 0 | 0 | 0 | - | - | - | - | - |
-| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.139 |
-| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0.121 |
-| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0.027 |
-| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.076 |
-| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.017 |
+| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.137 |
+| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 2 | 0 | 0 | 0.108 |
+| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0.028 |
+| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.075 |
+| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.019 |
 | marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.025 |
 | messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0.011 |
 | weighted_noise | generated control: independent noise weight | 4 | - | - | - | 0 | 0 | 0 | 0 | 0.038 |
-| weighted_large_cell | generated control: merely large cell | 4 | - | - | - | 0 | 1 | 0 | 0 | 0.023 |
+| weighted_large_cell | generated control: merely large cell | 4 | - | - | - | 0 | 1 | 0 | 0 | 0.025 |
 
 ## Held-out datasets
 
@@ -325,6 +254,7 @@ These datasets are scored and left out of the pass/fail comparison. A gain on th
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-18 | `79208eb` | State how targets move, give models the calendar, drop vacuous and mi… | 9 | 4 | 3 | 0 | 8 (+1, worse) | 139 (+19, worse) | 0 | 0 | 0.916 (+0.017) |
 | 2026-11-18 | `e3a2c9c` | Merge pull request #444 from fcela/fix/374-steps-3-5 | 9 (+2, better) | 4 | 3 | 0 | 7 (-9, better) | 120 (-31, better) | 0 | 0 | 0.899 |
 | 2026-11-18 | `4a18255` | Merge pull request #443 from fcela/fix/363-sample-caps | 7 | 4 | 3 | 0 | 16 | 151 (-2, better) | 0 | 0 | 0.834 |
 | 2026-11-18 | `7cc00d4` | Merge pull request #380 from fcela/fix/374-derived-basis | 7 | 4 | 3 | 0 | 16 (+1, worse) | 153 (-15, better) | 0 | 0 | 0.827 (-0.064) |
