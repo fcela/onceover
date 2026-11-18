@@ -3385,7 +3385,18 @@
       "category"
      ],
      "expect": "found",
-     "note": "12 customers reject their group's profile; 11 are planted drifters (the drift statement is a later step of #448). The planted misfits are stated as their own group instead."
+     "note": "12 customers reject their group's profile; 11 are planted drifters. The temporal scan separately reports individual changes in category mix. The planted misfits are stated as their own group instead."
+    },
+    {
+     "kind": "finding",
+     "category": "changes",
+     "type": "joint_distribution_change",
+     "columns_all": [
+      "cust_id",
+      "category"
+     ],
+     "expect": "found",
+     "note": "The July switch moves the fresh share for planted customers relative to the other customers observed on both sides."
     }
    ]
   },

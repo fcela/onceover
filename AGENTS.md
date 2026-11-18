@@ -166,6 +166,11 @@ the `ordered_axis` hint; on a frame with neither, a default run
 records them as skipped in coverage, and naming one in
 `detectors=[...]` runs it along any axis it supports.
 
+Name `entity_fingerprints` to compare each entity's distribution
+over the dimension columns. With a resolved time or ordered axis
+it also looks for changes in entity mix against matched peers.
+Coverage names the periods and the entities tested.
+
 ## Empty and partial results
 
 - No findings + full coverage: the passes ran and found nothing

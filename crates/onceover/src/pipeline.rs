@@ -1908,19 +1908,49 @@ fn profile_inner(
             });
         let info = match entity {
             Some(entity) => {
+                let ordinals = &declared_hints.level_order;
+                let periods = declared_axis
+                    .and_then(|name| {
+                        onceover_mines::axisbreaks::fingerprint_periods(&table, name, ordinals)
+                    })
+                    .or_else(|| {
+                        let axis = frame.info.axis.as_ref()?;
+                        if let Some(ticks) = crate::frame::axis_ticks_micros(&table, &frame) {
+                            let keys = ticks
+                                .into_iter()
+                                .map(|tick| tick.map_or(f64::NAN, |t| t as f64))
+                                .collect();
+                            Some(onceover_mines::FingerprintPeriods::new(
+                                axis.name.clone(),
+                                keys,
+                                |key| onceover_mines::panels::tick_label(key as i64),
+                            ))
+                        } else {
+                            onceover_mines::axisbreaks::fingerprint_periods(
+                                &table, axis.source_column.as_deref()?, ordinals,
+                            )
+                        }
+                    });
                 let input = onceover_mines::FingerprintInput {
                     entity,
                     dimensions: frame
                         .roles
                         .iter()
                         .enumerate()
-                        .filter(|(i, r)| *i != entity && r.as_deref() == Some("dimension"))
+                        .filter(|(i, r)| *i != entity && periods.as_ref().is_none_or(|axis| table.names[*i] != axis.name)
+                                && r.as_deref() == Some("dimension"))
                         .map(|(i, _)| i)
                         .collect(),
+                    periods,
+                    deadline: pass_deadline,
                 };
-                let (mut f, detail) = onceover_mines::entity_fingerprints(&table, &input);
+                let (mut f, detail, capped) = onceover_mines::entity_fingerprints(&table, &input);
                 findings.append(&mut f);
-                PassInfo::ran(detail)
+                if capped {
+                    PassInfo::capped(detail)
+                } else {
+                    PassInfo::ran(detail)
+                }
             }
             None => PassInfo::skipped(
                 "no entity: none declared (hints.entity) and the grain has no single non-axis factor"

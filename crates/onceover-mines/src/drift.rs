@@ -159,7 +159,7 @@ fn column_f64(table: &TypedTable, idx: usize) -> Vec<f64> {
 /// boundaries, aiming for equal row counts, at most `max_periods`.
 /// Returns (first row position, last row position) index ranges into
 /// the sorted order, plus the sorted order itself.
-fn build_periods(
+pub(crate) fn build_periods(
     keys: &[f64],
     max_periods: usize,
     min_period_rows: usize,

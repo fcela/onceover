@@ -1303,6 +1303,30 @@ pub fn declared_ordered_axis_usable(
         .any(|key| key.is_some_and(|v| v.is_finite()))
 }
 
+/// Periods for a caller-selected axis, using the same coordinates
+/// and level labels as the ordered-axis battery.
+pub fn fingerprint_periods(
+    table: &TypedTable,
+    name: &str,
+    ordinals: &BTreeMap<String, Vec<String>>,
+) -> Option<crate::FingerprintPeriods> {
+    let col = table.names.iter().position(|n| n == name)?;
+    let axis = AxisDef {
+        col,
+        name: name.to_string(),
+        kind: axis_kind(table, col, ordinals)?,
+    };
+    let keys = axis_keys(table, &axis, ordinals)
+        .into_iter()
+        .map(|key| key.unwrap_or(f64::NAN))
+        .collect();
+    Some(crate::FingerprintPeriods::new(
+        axis.name.clone(),
+        keys,
+        |key| axis.label(key, ordinals.get(name).map(Vec::as_slice)),
+    ))
+}
+
 /// The battery's primary axis, by the design's precedence: an
 /// axis hint, then the time hint, then the first date/datetime
 /// column, then a year-like integer column, then a strictly
