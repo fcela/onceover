@@ -134,9 +134,10 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             DefaultSet, Always,
         "Rows repeating another on every column but one, rows far from the line two tight columns follow, and rows with two columns' values swapped"),
         make("digit_fingerprints", vec![Formats], &[], DefaultSet, Always, "Heaping, terminal-digit preferences, and eligible Benford deviations"),
-        // Opt-in since the 2026-11-02 battery: zero findings in 40
-        // measured runs across two batteries (2026-10-29, 2026-11-02).
-        make("date_gaps", vec![Gaps, Anomalies], &[], OnRequest, Always, "Inferred calendar gaps and interval irregularity"),
+        // In the default set again since issue #446: on metro traffic
+        // it states a 218-business-day hole in the series (2014-08 to
+        // 2015-06) that no default pass reports.
+        make("date_gaps", vec![Gaps, Anomalies], &[], DefaultSet, Always, "Inferred calendar gaps and interval irregularity"),
         // Hint-gated: a default-set member that engages only on
         // declared hints and otherwise records itself skipped.
         make("expectations", vec![Gaps, Ordering], &[], DefaultSet, Hints, "Declared sequences, calendars, ordering, and panel completeness"),
@@ -300,16 +301,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_set_is_the_30_measured_detectors() {
+    fn default_set_is_the_31_measured_detectors() {
         let active = active_detectors(None);
-        // 45 registered: 30 in the default set (28 always-triggered
+        // 45 registered: 31 in the default set (29 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 15 on request (10 always-triggered, 5 target-triggered).
+        // 14 on request (9 always-triggered, 5 target-triggered).
         assert_eq!(builtin_detectors().len(), 45);
-        assert_eq!(active.len(), 30);
+        assert_eq!(active.len(), 31);
         for id in [
             "row_clusters",
-            "date_gaps",
             "pivot",
             "period_associations",
             "drift",
@@ -349,8 +349,8 @@ mod tests {
             *membership.entry(format!("{:?}", d.membership)).or_insert(0) += 1;
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
-        assert_eq!(membership.get("DefaultSet"), Some(&30));
-        assert_eq!(membership.get("OnRequest"), Some(&15));
+        assert_eq!(membership.get("DefaultSet"), Some(&31));
+        assert_eq!(membership.get("OnRequest"), Some(&14));
         assert_eq!(trigger.get("Always"), Some(&38));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&5));

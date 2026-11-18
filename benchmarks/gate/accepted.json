@@ -8,12 +8,6 @@
    "reason": "Issue #310: the outcome account and contrasts on the planted target joined a report already saturated at the 100-finding cap (191 functional statements past their group cap alone); the target_driver shape statement (interestingness 0.6289) falls just below the head selection cut (0.6387). found_4k total improves 55 -> 56 across the gate. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
   },
   {
-   "metric": "planted.found_full",
-   "scope": "total",
-   "limit": 58,
-   "reason": "Issue #310: the single absenteeism-at-work displacement above; every other dataset's found_full is unchanged or improved, and found_4k total improves. Record: docs/benchmarks/2026-11-17-pointed-mode.md."
-  },
-  {
    "metric": "planted.found_4k",
    "scope": "absenteeism-at-work",
    "limit": 2,
@@ -321,26 +315,8 @@
   },
   {
    "metric": "redundancy.finding_permille_default",
-   "scope": "total",
-   "limit": 15959,
-   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
-  },
-  {
-   "metric": "redundancy.finding_permille_default",
    "scope": "adult-census-income",
    "limit": 888,
-   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
-  },
-  {
-   "metric": "redundancy.finding_permille_default",
-   "scope": "metro-interstate-traffic",
-   "limit": 845,
-   "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
-  },
-  {
-   "metric": "redundancy.finding_permille_default",
-   "scope": "planted_mix",
-   "limit": 912,
    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
   },
   {
@@ -360,6 +336,36 @@
    "scope": "weighted_large_cell",
    "limit": 758,
    "reason": "Issue #374 insight follow-up: predictive claims gain a driver-profile clause and short noise tables lose their false finding lines (weighted_noise keeps none, which the per-mille share scores as 0). Record: docs/benchmarks/2026-11-18-insight-quality.md."
+  },
+  {
+   "metric": "planted.found_full",
+   "scope": "adventureworks",
+   "limit": 1,
+   "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+  },
+  {
+   "metric": "planted.found_full",
+   "scope": "total",
+   "limit": 59,
+   "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "total",
+   "limit": 15947,
+   "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "metro-interstate-traffic",
+   "limit": 838,
+   "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
+  },
+  {
+   "metric": "redundancy.finding_permille_default",
+   "scope": "planted_mix",
+   "limit": 907,
+   "reason": "Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md."
   }
  ]
 }

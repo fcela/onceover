@@ -1444,7 +1444,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 30 of the 45 registered detectors; the other 15 run only when named in `detectors`.
+The default set has 31 of the 45 registered detectors; the other 14 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1464,7 +1464,7 @@ The default set has 30 of the 45 registered detectors; the other 15 run only whe
 | `series` | `gaps`, `changes` | `default_set` | `always` | — | Absent steps on the time axis; trend, cycle and persistence of each measure; grouping levels that appear, end or shift share over time |
 | `row_consistency` | `duplicates`, `anomalies` | `default_set` | `always` | `numeric_dependence` | Rows repeating another on every column but one, rows far from the line two tight columns follow, and rows with two columns' values swapped |
 | `digit_fingerprints` | `formats` | `default_set` | `always` | — | Heaping, terminal-digit preferences, and eligible Benford deviations |
-| `date_gaps` | `gaps`, `anomalies` | `on_request` | `always` | — | Inferred calendar gaps and interval irregularity |
+| `date_gaps` | `gaps`, `anomalies` | `default_set` | `always` | — | Inferred calendar gaps and interval irregularity |
 | `expectations` | `gaps`, `ordering` | `default_set` | `hints` | — | Declared sequences, calendars, ordering, and panel completeness |
 | `panel_coverage` | `gaps` | `default_set` | `always` | — | Per-period row and entity volume on the time axis, against the typical period |
 | `group_contrast` | `associations` | `default_set` | `hints` | — | How one declared subset of the rows differs from the rest of the table |

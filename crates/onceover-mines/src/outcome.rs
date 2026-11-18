@@ -1107,8 +1107,21 @@ fn weaker_contrasts(
         if oq.unwrap_or(1.0) > Q_BAR {
             continue;
         }
+        // A two-level outcome's two shares are mirror images: state the
+        // event a reader asks about, its less frequent level, once
+        // (issue #446).
+        let event_only: Option<usize> = (tlabels.len() == 2).then(|| {
+            if prep.col_total[1] < prep.col_total[0] {
+                1
+            } else {
+                0
+            }
+        });
         for &li in eligible {
             for (ti, col) in prep.col_total.iter().enumerate() {
+                if event_only.is_some_and(|e| e != ti) {
+                    continue;
+                }
                 let rest_n = elig_total - level_n[li];
                 let rest_x: usize = eligible
                     .iter()

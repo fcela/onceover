@@ -177,7 +177,7 @@
     "anomalies"
    ],
    "requires": [],
-   "membership": "on_request",
+   "membership": "default_set",
    "trigger": "always",
    "purpose": "Inferred calendar gaps and interval irregularity"
   },
