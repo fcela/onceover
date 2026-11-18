@@ -271,6 +271,73 @@ Method::new("regimes", "local_linear_model_tree", "bounded M5-style tree: SDR gr
     (findings, coverage)
 }
 
+/// Global linear trend of residuals against the date axis. A one-break
+/// scan confuses a ramp with a step: a step at the midpoint captures much
+/// of a ramp's variance. The trend is used only as a rival explanation —
+/// residuals stay in their original units and the reported offset remains
+/// the break model's — so a step on top of a trend is still reported when
+/// the break explains materially more than the trend on train and holdout.
+const TREND_MARGIN: f64 = 0.02;
+
+struct DateTrend {
+    t0: i64,
+    span: f64,
+    intercept: f64,
+    slope: f64,
+    gain_fraction: f64,
+}
+
+impl DateTrend {
+    fn predict(&self, t: i64) -> f64 {
+        let z = t.saturating_sub(self.t0) as f64 / self.span;
+        self.intercept + self.slope * z
+    }
+}
+
+fn fit_date_trend(points: &[(i64, f64)]) -> Option<DateTrend> {
+    let n = points.len();
+    if n < 3 {
+        return None;
+    }
+    let t0 = points.first()?.0;
+    let span = points.last()?.0.saturating_sub(t0).max(1) as f64;
+    let z: Vec<f64> = points
+        .iter()
+        .map(|(t, _)| t.saturating_sub(t0) as f64 / span)
+        .collect();
+    let mean_z = z.iter().sum::<f64>() / n as f64;
+    let mean_r = points.iter().map(|(_, r)| *r).sum::<f64>() / n as f64;
+    let mut szz = 0.0;
+    let mut szr = 0.0;
+    let mut sst = 0.0;
+    for (&z, (_, r)) in z.iter().zip(points) {
+        let dz = z - mean_z;
+        let dr = *r - mean_r;
+        szz += dz * dz;
+        szr += dz * dr;
+        sst += dr * dr;
+    }
+    let slope = if szz > 1e-12 { szr / szz } else { 0.0 };
+    let intercept = mean_r - slope * mean_z;
+    let sse: f64 = z
+        .iter()
+        .zip(points)
+        .map(|(z, (_, r))| (r - (intercept + slope * z)).powi(2))
+        .sum();
+    let gain_fraction = if sst > 1e-12 {
+        ((sst - sse) / sst).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (intercept.is_finite() && slope.is_finite() && gain_fraction.is_finite()).then_some(DateTrend {
+        t0,
+        span,
+        intercept,
+        slope,
+        gain_fraction,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn residual_shift(
     table: &TypedTable<'_>,
@@ -295,6 +362,7 @@ fn residual_shift(
         })
         .collect();
     ordered.sort_by_key(|v| v.0);
+    let trend = fit_date_trend(&ordered)?;
     let min_segment = cfg.model.min_leaf.max(ordered.len() / 10);
     let shift = single_break_l2(
         &ordered.iter().map(|v| v.1).collect::<Vec<_>>(),
@@ -304,7 +372,11 @@ fn residual_shift(
     if threshold >= ordered[shift.index].0 || shift.gain_fraction < 0.15 {
         return None;
     }
-    let (mut before, mut after, mut base, mut corrected) = (0usize, 0usize, 0.0, 0.0);
+    if trend.gain_fraction >= shift.gain_fraction - TREND_MARGIN {
+        return None;
+    }
+    let (mut before, mut after, mut base, mut corrected, mut trend_error) =
+        (0usize, 0usize, 0.0, 0.0, 0.0);
     for &i in test {
         let Some(t) = time_at(&table.cols[time_col], rows[i] as usize) else {
             continue;
@@ -319,12 +391,14 @@ fn residual_shift(
         };
         base += residual * residual;
         corrected += (residual - correction).powi(2);
+        trend_error += (residual - trend.predict(t)).powi(2);
     }
     if before < cfg.min_leaf_holdout || after < cfg.min_leaf_holdout || base <= 1e-12 {
         return None;
     }
     let gain = (base - corrected) / base;
-    if gain < 0.15 {
+    let trend_gain = ((base - trend_error) / base).clamp(0.0, 1.0);
+    if gain < 0.15 || trend_gain >= gain - TREND_MARGIN {
         return None;
     }
     let display = match &table.cols[time_col] {
@@ -340,9 +414,9 @@ BTreeMap::from([("target".into(), json!(res.name)), ("time_column".into(), json!
 format!("{} shifts after {} along {}: a training-selected residual correction reduces holdout squared error by {:.1}%", res.name, display, table.names[time_col], 100.0 * gain),
 EvidenceBasis::Estimated,
 (0.6 + 0.25 * gain).min(0.9),
-BTreeMap::from([("breakpoint".into(), json!(display)), ("breakpoint_raw".into(), json!(threshold)), ("train_before".into(), json!(shift.index)), ("train_after".into(), json!(ordered.len() - shift.index)), ("holdout_before".into(), json!(before)), ("holdout_after".into(), json!(after)), ("residual_mean_before".into(), json!(shift.left_mean * model.y_scale)), ("residual_mean_after".into(), json!(shift.right_mean * model.y_scale)), ("holdout_error_reduction".into(), json!(gain)), ("baseline".into(), json!("global linear numeric model")), ("reference_model".into(),json!({"form":"linear","intercept":intercept,"coefficients":coefficients})), ("n_train".into(),json!(ordered.len())), ("n_holdout".into(),json!(before+after)), ("validation".into(), json!("breakpoint and offsets learned on training rows; fixed correction evaluated on holdout; no p-value"))]),
+BTreeMap::from([("breakpoint".into(), json!(display)), ("breakpoint_raw".into(), json!(threshold)), ("train_before".into(), json!(shift.index)), ("train_after".into(), json!(ordered.len() - shift.index)), ("holdout_before".into(), json!(before)), ("holdout_after".into(), json!(after)), ("residual_mean_before".into(), json!(shift.left_mean * model.y_scale)), ("residual_mean_after".into(), json!(shift.right_mean * model.y_scale)), ("holdout_error_reduction".into(), json!(gain)), ("trend_train_error_reduction".into(), json!(trend.gain_fraction)), ("trend_holdout_error_reduction".into(), json!(trend_gain)), ("trend_margin".into(), json!(TREND_MARGIN)), ("baseline".into(), json!("global linear numeric model")), ("reference_model".into(),json!({"form":"linear","intercept":intercept,"coefficients":coefficients})), ("n_train".into(),json!(ordered.len())), ("n_holdout".into(),json!(before+after)), ("validation".into(), json!("breakpoint and offsets learned on training rows; fixed correction evaluated on holdout; a linear date trend must not explain residuals as well on train or holdout; no p-value"))]),
 Some("check for changes in collection, processing, or business behavior around this date".into()),
-Method::new("regimes", "residual_breakpoint", "centered cumulative-sum one-break L2 scan of linear-model residuals; holdout validation (onceover)")
+Method::new("regimes", "residual_breakpoint", "centered cumulative-sum one-break L2 scan of linear-model residuals, kept only when it beats a global linear date trend; holdout validation (onceover)")
 ))
 }
 
@@ -742,5 +816,94 @@ mod tests {
                 .0
                 .is_empty()
         );
+    }
+
+    fn trend_frame(n: usize, step: f64, seasonal: f64) -> TypedTable<'static> {
+        use std::f64::consts::TAU;
+        let mut rng = crate::gbm::Lcg(1234);
+        let x: Vec<_> = (0..n).map(|_| rng.next_f64()).collect();
+        TypedTable {
+            n,
+            names: vec!["gate".into(), "x".into(), "y".into(), "date".into()],
+            dtypes: vec![
+                "float64".into(),
+                "float64".into(),
+                "float64".into(),
+                "date".into(),
+            ],
+            cols: vec![
+                TypedCol::F64 {
+                    vals: x.iter().map(|v| Some(v * 2.0)).collect::<Vec<_>>().into(),
+                },
+                TypedCol::F64 {
+                    vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
+                },
+                TypedCol::F64 {
+                    vals: x
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            let noise = 0.02 * (2.0 * rng.next_f64() - 1.0);
+                            Some(
+                                3.0 * v
+                                    + 4.0 * i as f64 / n as f64
+                                    + seasonal * (TAU * i as f64 / 50.0).sin()
+                                    + noise
+                                    + if i < n / 2 { 0.0 } else { step },
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                },
+                TypedCol::Date {
+                    vals: (0..n).map(|i| Some(20000 + i as i32)).collect(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn pure_date_trend_does_not_become_residual_shift() {
+        // A trend with no break must not be read as a level shift at its
+        // midpoint: a one-break model captures most of a ramp's variance.
+        let table = trend_frame(2000, 0.0, 0.0);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        assert!(
+            !f.iter()
+                .any(|f| f.finding_type.as_deref() == Some("residual_shift")),
+            "pure trend stated a shift: {cov}"
+        );
+    }
+
+    #[test]
+    fn trend_plus_seasonality_does_not_become_residual_shift() {
+        // A seasonal wave on top of the trend has no break either.
+        let table = trend_frame(2000, 0.0, 0.5);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        assert!(
+            !f.iter()
+                .any(|f| f.finding_type.as_deref() == Some("residual_shift")),
+            "trend plus seasonality stated a shift: {cov}"
+        );
+    }
+
+    #[test]
+    fn planted_step_on_a_trending_series_still_reports_shift() {
+        // The trend guard must not swallow a real level shift that sits
+        // on top of the trend.
+        let table = trend_frame(2000, 5.0, 0.0);
+        let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        let shift = f
+            .iter()
+            .find(|f| f.finding_type.as_deref() == Some("residual_shift"))
+            .expect("planted step on trend");
+        assert!(
+            shift.metrics()["holdout_error_reduction"].as_f64().unwrap() > 0.9,
+            "{cov}"
+        );
+        assert!((shift.metrics()["breakpoint_raw"].as_i64().unwrap() - 21000).abs() < 10);
     }
 }
