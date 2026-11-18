@@ -368,6 +368,30 @@ mod tests {
     }
 
     #[test]
+    fn selection_policy_detector_caps_are_registered() {
+        // Issue #343: cap keys are free strings in the report crate, so a
+        // detector rename can silently uncap a pass. Check them against the
+        // registry here, where both halves are visible.
+        let registered: BTreeSet<String> =
+            builtin_detectors().iter().map(|d| d.id.clone()).collect();
+        let policy = onceover_report::SelectionPolicy::default();
+        assert!(!policy.max_findings_per_detector.is_empty());
+        assert!(!policy.pressure_detector_caps.is_empty());
+        for key in policy.max_findings_per_detector.keys() {
+            assert!(
+                registered.contains(key),
+                "standing detector cap key {key} is not registered"
+            );
+        }
+        for key in policy.pressure_detector_caps.keys() {
+            assert!(
+                registered.contains(key),
+                "pressure detector cap key {key} is not registered"
+            );
+        }
+    }
+
+    #[test]
     fn registry_and_pipeline_dispatch_agree() {
         let src = include_str!("pipeline.rs");
         let mut dispatched: BTreeSet<String> = BTreeSet::new();
