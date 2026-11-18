@@ -135,9 +135,14 @@ Further evaluation should measure:
 - Runtime and memory at large row counts and widths. The 64-column cap
   selects by pairwise dependence (issue #73), which keeps dependent
   columns in reach regardless of table position; a rare column can still
-  rank below the cut when its sample association is weak (on the Lace
-  Animals table the pre-screen drops `paws`, whose posterior dependence
-  on `claws` is 1.000 but whose 50-row association is not).
+  rank below the cut when its sample association is weak.
+- Grouping recall. The 2026-11-17 deep look
+  ([record](../benchmarks/2026-11-17-views-deep-look.md)) measures the
+  merge score refusing planted column blocks at full rows — on planted
+  tables every split pair is a score refusal, and on the Lace Animals
+  table 29 of 408 both-viewed dependent pairs are recovered — and prices
+  the CrossCat engine as an alternative. Until the score changes, gamma,
+  cap and sample-size tuning do not recover the structure.
 
 The [scale benchmark](../benchmarks/README.md) covers the profiler's existing
 large-table behavior. Its late-column checks do not validate discovery by this
