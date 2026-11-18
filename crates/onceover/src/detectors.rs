@@ -245,7 +245,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
             &[],
             OnRequest, Always,
         "Experimental shared row partitions, cluster differences, and density findings"),
-        make("entity_fingerprints", vec![Associations, Anomalies, Concentration, Changes], &[], OnRequest, Always, "Each entity's mix over each dimension: groups, a continuum, misfits, specialists, and changes along a resolved axis"),
+        make("entity_fingerprints", vec![Associations, Anomalies, Concentration, Changes], &[], OnRequest, Always, "Entity groups, continuums, misfits, specialists, and drift by dimension or pair, using row counts or declared weights"),
     ]
 }
 

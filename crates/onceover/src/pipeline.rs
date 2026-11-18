@@ -1943,9 +1943,11 @@ fn profile_inner(
                         .collect(),
                     periods,
                     deadline: pass_deadline,
+                    weights: &weight_series,
                 };
                 let (mut f, detail, capped) = onceover_mines::entity_fingerprints(&table, &input);
                 findings.append(&mut f);
+                let detail = format!("{detail}{weight_note}");
                 if capped {
                     PassInfo::capped(detail)
                 } else {

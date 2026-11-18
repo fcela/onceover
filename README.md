@@ -64,6 +64,7 @@ probability that a claim is correct.
 | Are values missing, suspicious, or inconsistently recorded? | Nulls, sentinel codes, isolated extremes, rare categorical exceptions, mixed formats, rounding changes, digit patterns | [Column summaries](docs/book/usage/columns.ipynb), [extreme values](docs/book/methodology/extreme_values.ipynb), [digit fingerprints](docs/book/methodology/digit_fingerprints.ipynb) |
 | Which columns contain the same information? | Functional mappings, arithmetic identities, duplicate encodings, rollups, predictable targets | [Dependencies and identities](docs/book/methodology/functional_dependencies.ipynb), [predictability](docs/book/methodology/predictability_screen.ipynb) |
 | What happens within a group? | Conditional rules, decision tables, unexpectedly concentrated combinations, local linear equations | [Rules](docs/book/methodology/rules_tables.ipynb), [hotspots](docs/book/methodology/hotspots.ipynb), [local regimes](docs/book/methodology/local_linear_regimes.ipynb) |
+| How do entities differ in their activity mix? | Groups, continuums, specialists, and changes by category or pair, using row counts or declared weights with the on-request `entity_fingerprints` detector | [Entity fingerprints](docs/book/methodology/entity_fingerprints.ipynb) |
 | How are variables related? | Linear, monotone, and nonlinear dependence; changing associations by period; target shapes and predictor interactions | [Dependence measures](docs/book/methodology/dependence_measures.ipynb), [target shapes](docs/book/methodology/target_shapes.ipynb), [interactions](docs/book/methodology/interactions.ipynb) |
 | Where does behavior change? | Calendar gaps, appended backfills, sustained level/trend/variance changes, temporary excursions, threshold jumps, model-routing drift | [Temporal analysis](docs/book/methodology/temporal_analysis.ipynb), [discontinuities](docs/book/methodology/step_discontinuities.ipynb), [drift](docs/book/methodology/drift.ipynb) |
 | Does the layout hide structure? | Verified long-format layouts and relationships in their wide form; shared row states across column groups | [Long-format reports](docs/book/usage/findings.ipynb), [view and cluster structure](docs/book/methodology/view_clusters.ipynb) |
@@ -115,15 +116,11 @@ Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 
 Use `detectors=[...]` to replace the default selection with named methods.
 Required resource passes may also run; coverage explains that work.
-Thirteen detectors are not in the default set: `row_clusters`
-(experimental), `date_gaps`, `pivot`, `period_associations`, `drift`,
-`granularity`, `distribution_change`, `slice_shifts`, `decision_tables`,
-and `interactions` run only when named, and `target_shapes`, `leakage`,
-and `model_failures` run when named or when a target is designated (a
-default run records each as skipped in coverage).
-Designating `target="response"` adds the target-gated passes
-(`target_shapes`, `leakage`, and `model_failures`) when using the default
-detector selection; with an explicit list, include them yourself.
+The default set includes 31 of the 46 registered detectors.
+The [capability guide](docs/book/usage/capabilities.ipynb) lists which
+detectors run only on request. Designating `target="response"` also
+engages the five target-gated passes with the default selection.
+With an explicit list, include any target passes you need.
 
 Hints declare intended structure, including ordering, complete sequences,
 calendar cadence, and panel dimensions. For example:
@@ -155,7 +152,8 @@ soft limit checked between passes and at work quanta inside five
 searches — the dependence screen, the hotspots scan, the discontinuities
 pass, the surprises scan, and the duplicate-encodings scan — which can
 stop mid-pass; their coverage entries state how much of the search was
-examined. The surprises scan also stops at a deterministic work budget
+examined. The on-request entity fingerprints scan checks the deadline
+between views and drift boundaries. The surprises scan also stops at a deterministic work budget
 over row visits and bitset words; a budget stop marks only that pass
 `capped`, with the contexts and targets examined, and does not suppress
 later passes.

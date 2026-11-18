@@ -167,9 +167,12 @@ records them as skipped in coverage, and naming one in
 `detectors=[...]` runs it along any axis it supports.
 
 Name `entity_fingerprints` to compare each entity's distribution
-over the dimension columns. With a resolved time or ordered axis
-it also looks for changes in entity mix against matched peers.
-Coverage names the periods and the entities tested.
+over single dimensions and pairs that add a joint signal. The pass
+uses row counts or each usable `weights` column separately.
+With a resolved time or ordered axis it also looks for changes
+against matched peers. Coverage names the weight, periods, entities
+tested, and pair cap. The book's entity fingerprints chapter has
+worked examples.
 
 ## Empty and partial results
 

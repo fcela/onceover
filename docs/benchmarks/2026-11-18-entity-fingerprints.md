@@ -1,8 +1,8 @@
-# Entity fingerprints: first step
+# Entity fingerprints
 
 Issue #448.
 
-## What it does
+## Initial detector
 
 `entity_fingerprints` is an on-request detector (name it in `detectors=[...]`). For the entity column, and for each column with the `dimension` role (2 to 30 levels), it builds every entity's row counts over the dimension's levels and asks four questions:
 
@@ -29,7 +29,7 @@ The entity is the declared `entity` hint, else the grain's single non-axis facto
 
 Each run takes 0.1 s or less (400 entities, 20–35k rows).
 
-## Not yet
+## Scope at the first step
 
 - weighting by a measure;
 - joint dimensions;
@@ -95,9 +95,8 @@ territory for each of the 19,119 customers. Only 14 customers have the
 so no boundary has a big enough matched cohort. Coverage records zero
 customers tested for individual changes.
 
-The temporal scan continues to use row counts and separate dimensions.
-Measure weighting and joint dimensions remain open. The detector
-continues to run on request.
+This temporal increment used row counts and separate dimensions.
+See below for the weighted and joint evaluation.
 
 ### Repository checks
 
@@ -106,3 +105,102 @@ on this change, with the additional expectation covering the July
 break. The 11 previously documented misses are present in both runs.
 The full seed-0 gate against main at `0b47836` passed with all 61 scored
 totals unchanged under the gate's tolerances and no exceeded ceilings.
+
+## Weighted and joint views
+
+The fitter uses within-entity measure shares multiplied by Kish
+effective sample size, (sum of weights)² / sum of squared weights.
+It uses those effective counts for the chi-square approximation,
+shrinkage, and partition. Group sizes count entities, while the printed
+group and overall percentages pool the original measure. The weighted
+specialist null draws new levels under a common mix while preserving
+each row's weight. Ten effective rows per entity are required for
+weighted and joint views.
+
+For weighted drift the fixed weights and independent level indicators
+give a two-sided Hoeffding bound on a weighted share difference.
+This replaces the exact conditional count test in the weighted view.
+Static and temporal screens count marginal and joint tests in separate
+Bonferroni families, and include all usable weights in the corresponding
+family. Joint temporal changes must occur with both component shares
+moving by less than 10 percentage points. This conservative rule can
+miss a change that coincides with a change in one of those shares.
+
+The static joint screen subtracts both marginal likelihood-ratio
+deviances from the joint deviance, subtracts the remaining degrees of
+freedom as a noise correction, and requires at least 0.04 excess
+deviance per effective row. This is a screen for extra information
+beyond the marginal views. It is not a test that all entities share
+one pairwise odds ratio. Coverage accounts for the 12-pair and
+30-observed-level caps.
+
+Deterministic probes in `tests/test_entity_fingerprints.py` use the
+same resolved declarations as production calls:
+
+| Probe | Result |
+|---|---|
+| 40 accounts with identical order counts by plan | The count view stays silent. Weighted fitting recovers two groups of 20 with 90% of spend on their preferred plans, compared with independently calculated pooled shares of 70% Basic and 30% Plus. Multiplying spend by 1,000 preserves the result. |
+| One large transaction per account | All 40 accounts fall below 10 effective rows and coverage records the exclusion. No groups are created. |
+| Five accounts reverse their spend mix with unchanged order counts | The weighted temporal view recovers all five and no others at period 2. The count view produces no drift findings. |
+| Two opposite pairings with equal marginals | The joint view recovers two groups of 20 by plan and channel, with each group's characteristic pairings at 50% against 25% overall. The weighted version recovers the joint split when every entity has identical counts on all four pairs. |
+| Both groups reverse their pairings | The full-period mix stays the same for every account. Joint drift identifies all 40 at period 2, with no shared population shift. |
+| Duplicate dimension | The marginal view finds the planted structure. The paired view stays silent. |
+
+### Capital Bikeshare hourly rentals
+
+The bundled [UCI Bike Sharing dataset](../../benchmarks/corpus/data/anomaly/bike-sharing-hourly/ATTRIBUTION.md)
+contains 17,379 observed hours over 731 dates in 2011 and 2012.
+This run treats each day as an entity and asks how its mix
+differs by weather code and six-hour block. It compares the
+count of observed hours with the number of rentals during those hours.
+It uses the registry's CSV (SHA-256
+`e03de4ee4ef4dc376ac6e04bf829673c6269e8eba5c60fa121640fa2f829504f`).
+
+```python
+import polars as pl
+import onceover
+
+raw = pl.read_csv(
+    "benchmarks/corpus/data/anomaly/bike-sharing-hourly/data.csv",
+    try_parse_dates=True,
+)
+days = raw.select(
+    pl.col("dteday").dt.epoch("d").alias("day_index"),
+    (pl.col("hr") // 6)
+    .replace_strict({0: "00–05", 1: "06–11", 2: "12–17", 3: "18–23"})
+    .alias("time_of_day"),
+    pl.col("weathersit").cast(pl.String).alias("weather"),
+    pl.col("cnt").alias("rentals"),
+)
+hints = {
+    "entity": "day_index",
+    "roles": {"time_of_day": "dimension", "weather": "dimension", "rentals": "measure"},
+}
+counts = onceover.profile(days, hints=hints, detectors=["entity_fingerprints"])
+rentals = onceover.profile(
+    days, hints={**hints, "weights": ["rentals"]}, detectors=["entity_fingerprints"]
+)
+```
+
+The count view finds two weather groups. Its larger group covers
+439 dates and spends 88% of the observed hours in weather code 1
+(clear or few clouds), against 66% overall. The rental view finds four
+weather groups among 728 dates with at least 10 effective rows.
+Its largest group covers 310 dates and records 97% of rentals in
+code 1, against 71% overall. Independent aggregation gives
+11,413 of 17,379 observed hours in code 1. The eligible rental cohort
+has 2,337,742 of 3,291,543 rentals in code 1. The pair of time block
+and weather adds structure for observed hours. With rental weighting
+it falls below the joint screen, at −0.197 excess deviance per
+effective row. These are descriptive groups of days.
+
+The detector remains on request while the repository's precision
+ceilings are above zero.
+
+### Repository checks for the weighted and joint views
+
+The corpus retained all 228 machine expectations. The default gate
+against main at `84d830f` used seed 0 and passed with all 61 scored
+totals unchanged under the gate's tolerances. The Python suite
+passed 880 tests. The Rust workspace checks and the strict executed
+book build also passed.

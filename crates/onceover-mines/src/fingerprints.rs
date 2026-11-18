@@ -38,7 +38,8 @@
 //!    under multinomial sampling from the pooled shares, at each
 //!    entity's own support, is at most a third of it.
 //!
-//! Row counts also support a scan for changes in mix when an axis is resolved.
+//! The same scan accepts positive measure weights, using effective sample
+//! sizes for inference, and screens bounded pairs for additional joint signal.
 
 use std::collections::BTreeMap;
 
@@ -49,22 +50,25 @@ use serde_json::json;
 use crate::dep::chi2_sf;
 use crate::fingerprints_drift::{self, DriftInput, FingerprintPeriods};
 use crate::slices::splitmix64;
-use crate::Deadline;
+use crate::{Deadline, WeightSeries};
 
 /// Smallest excess Cramér's V stated (the association passes' floor).
 pub const MIN_EXCESS_V: f64 = 0.1;
 const MAX_K: usize = 8;
 const GAP_REFERENCES: usize = 10;
-const MAX_LEVELS: usize = 30;
+pub(crate) const MAX_LEVELS: usize = 30;
+const MAX_PAIRS: usize = 12;
+const MIN_JOINT_EXCESS: f64 = 0.04;
 const MAX_ENTITIES: usize = 5000;
 pub(crate) const MIN_ENTITIES: usize = 20;
 
 /// The resolved inputs: the entity column and the dimensions.
-pub struct FingerprintInput {
+pub struct FingerprintInput<'a> {
     pub entity: usize,
     pub dimensions: Vec<usize>,
     pub periods: Option<FingerprintPeriods>,
     pub deadline: Deadline,
+    pub weights: &'a [WeightSeries<'a>],
 }
 
 struct Rng(u64);
@@ -266,10 +270,184 @@ fn distinguishing(
     (text, json)
 }
 
+/// Report shares in the weight's units, while evaluating precision
+/// on a row-equivalent scale. Normalize within each entity to avoid
+/// overflow and keep an entity's support independent of its size.
+pub(crate) fn effective_rows(mass: f64, squares: f64) -> f64 {
+    if squares > 0.0 {
+        mass * (mass / squares)
+    } else {
+        0.0
+    }
+}
+
+struct FingerprintWeight<'a> {
+    name: &'a str,
+    /// Weight relative to the largest positive weight for this entity.
+    normalized: Vec<f64>,
+    entity_maxima: Vec<f64>,
+}
+
+impl<'a> FingerprintWeight<'a> {
+    fn new(series: &'a WeightSeries<'a>, codes: &[Option<u32>], n: usize) -> Self {
+        let positive = |value: &Option<f64>| value.filter(|w| w.is_finite() && *w > 0.0);
+        let mut maxima = vec![0.0f64; n];
+        for (&code, value) in codes.iter().zip(series.values) {
+            if let (Some(code), Some(value)) = (code, positive(value)) {
+                maxima[code as usize] = maxima[code as usize].max(value);
+            }
+        }
+        let normalized = codes
+            .iter()
+            .zip(series.values)
+            .map(|(&code, value)| match (code, positive(value)) {
+                (Some(code), Some(value)) => value / maxima[code as usize],
+                _ => 0.0,
+            })
+            .collect();
+        Self {
+            name: series.name,
+            normalized,
+            entity_maxima: maxima,
+        }
+    }
+}
+
+struct MixDimension {
+    columns: Vec<String>,
+    codes: Vec<Option<u32>>,
+    labels: Vec<String>,
+    /// Each observed joint level's two marginal codes.
+    joint: Vec<(usize, usize)>,
+}
+
+impl MixDimension {
+    fn label(&self) -> String {
+        self.columns.join(" × ")
+    }
+
+    fn new(table: &TypedTable, a: usize, b: Option<usize>) -> Result<Self, String> {
+        let mut columns = vec![table.names[a].clone()];
+        if let Some(b) = b {
+            columns.push(table.names[b].clone());
+        }
+        let (left_codes, left_labels) = dimension_codes(table, a)?;
+        let Some(b) = b else {
+            return Ok(Self {
+                columns,
+                codes: left_codes,
+                labels: left_labels,
+                joint: vec![],
+            });
+        };
+        let (right_codes, right_labels) = dimension_codes(table, b)?;
+        let mut index = BTreeMap::new();
+        let mut labels = Vec::new();
+        let mut codes = Vec::with_capacity(table.n);
+        let mut joint = Vec::new();
+        for (a, b) in left_codes.into_iter().zip(right_codes) {
+            let code = match a.zip(b) {
+                Some((a, b)) => {
+                    let pair = (a as usize, b as usize);
+                    let code = *index.entry(pair).or_insert_with(|| {
+                        let code = joint.len() as u32;
+                        joint.push(pair);
+                        labels.push(format!(
+                            "{:?} × {:?}",
+                            left_labels[pair.0], right_labels[pair.1]
+                        ));
+                        code
+                    });
+                    if labels.len() > MAX_LEVELS {
+                        return Err(format!("over {MAX_LEVELS} observed joint levels"));
+                    }
+                    Some(code)
+                }
+                None => None,
+            };
+            codes.push(code);
+        }
+        Ok(Self {
+            columns,
+            codes,
+            labels,
+            joint,
+        })
+    }
+}
+
+fn dimension_codes(
+    table: &TypedTable,
+    column: usize,
+) -> Result<(Vec<Option<u32>>, Vec<String>), String> {
+    let (codes, n, labels) = crate::panels::entity_index(table, column)
+        .map_err(|_| "fewer than two levels or unsupported categorical values".to_string())?;
+    if !(2..=MAX_LEVELS).contains(&n) {
+        return Err(format!("{n} levels, outside 2..={MAX_LEVELS}"));
+    }
+    Ok((codes, labels))
+}
+
+/// Excess joint deviance after subtracting both marginal deviances.
+/// Per effective row this is twice the mean within-entity mutual
+/// information minus the pooled mutual information, with the degrees
+/// of freedom subtracted as a noise correction. It is a conservative
+/// screen, not a test of homogeneous log odds.
+fn joint_excess(rows: &[&Vec<f64>], joint: &[(usize, usize)]) -> f64 {
+    let rows: Vec<_> = rows
+        .iter()
+        .copied()
+        .filter(|r| r.iter().sum::<f64>() >= 10.0)
+        .collect();
+    if rows.len() < MIN_ENTITIES {
+        return 0.0;
+    }
+    let deviance = |rows: &[&Vec<f64>]| {
+        let mut pooled = vec![0.0; rows[0].len()];
+        for r in rows {
+            for (p, v) in pooled.iter_mut().zip(*r) {
+                *p += v;
+            }
+        }
+        let total = pooled.iter().sum::<f64>();
+        let statistic: f64 = rows
+            .iter()
+            .map(|r| {
+                let n = r.iter().sum::<f64>();
+                r.iter()
+                    .zip(&pooled)
+                    .filter(|(&x, _)| x > 0.0)
+                    .map(|(&x, &p)| 2.0 * x * (x * total / (n * p)).ln())
+                    .sum::<f64>()
+            })
+            .sum();
+        let df = (rows.len() - 1) * (pooled.iter().filter(|&&x| x > 0.0).count() - 1);
+        (statistic, df, total)
+    };
+    let (g, df, total) = deviance(&rows);
+    let marginal = |code: fn(&(usize, usize)) -> usize| {
+        let width = joint.iter().map(code).max().unwrap_or(0) + 1;
+        let projected: Vec<_> = rows
+            .iter()
+            .map(|r| {
+                let mut m = vec![0.0; width];
+                for (cell, &x) in joint.iter().zip(*r) {
+                    m[code(cell)] += x;
+                }
+                m
+            })
+            .collect();
+        deviance(&projected.iter().collect::<Vec<_>>())
+    };
+    let (a, da, _) = marginal(|p| p.0);
+    let (b, db, _) = marginal(|p| p.1);
+    (g - a - b - df.saturating_sub(da + db) as f64) / total
+}
+
 /// Run the pass. Returns findings and the coverage detail.
 pub fn entity_fingerprints(
     table: &TypedTable,
-    input: &FingerprintInput,
+    input: &FingerprintInput<'_>,
 ) -> (Vec<Finding>, String, bool) {
     let ename = table.names[input.entity].clone();
     let Ok((ecodes, n_ent, elabels)) = crate::panels::entity_index(table, input.entity) else {
@@ -287,438 +465,113 @@ pub fn entity_fingerprints(
         );
     }
     let mut findings = Vec::new();
-    let mut notes: Vec<String> = Vec::new();
-    let mut limited = false;
-    for (dimension_index, &d) in input.dimensions.iter().enumerate() {
+    let mut notes = Vec::new();
+    let mut dimensions: Vec<_> = input
+        .dimensions
+        .iter()
+        .copied()
+        .filter(|&d| d != input.entity)
+        .collect();
+    dimensions.sort_by_key(|&d| &table.names[d]);
+    let all_pairs = dimensions.len() * dimensions.len().saturating_sub(1) / 2;
+    let pairs: Vec<_> = dimensions
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &a)| dimensions[i + 1..].iter().map(move |&b| (a, Some(b))))
+        .take(MAX_PAIRS)
+        .collect();
+    let pairs_capped = pairs.len() < all_pairs;
+    let mut limited = pairs_capped;
+    let marginal_count = dimensions.len();
+    let pair_count = pairs.len();
+    let universe = marginal_count + pair_count;
+    let weights = input
+        .weights
+        .iter()
+        .map(|w| FingerprintWeight::new(w, &ecodes, n_ent))
+        .collect::<Vec<_>>();
+    let bases: Vec<_> = if weights.is_empty() {
+        vec![None]
+    } else {
+        weights.iter().map(Some).collect()
+    };
+    let basis_count = bases.len();
+    if pairs_capped {
+        notes.push(format!(
+            "joint dimensions: first {} of {all_pairs} pairs in column-name order",
+            pairs.len()
+        ));
+    }
+    let mut considered = 0;
+    'dimensions: for (d, partner) in dimensions.into_iter().map(|d| (d, None)).chain(pairs) {
         if input.deadline.exceeded() {
-            notes.push(format!(
-                "deadline after {dimension_index} of {} dimensions",
-                input.dimensions.len()
-            ));
             limited = true;
             break;
         }
-        if d == input.entity {
-            continue;
-        }
-        let dname = table.names[d].clone();
-        let Ok((dcodes, n_lev, dlabels)) = crate::panels::entity_index(table, d) else {
-            notes.push(format!("{dname}: not a categorical column"));
-            continue;
-        };
-        if !(2..=MAX_LEVELS).contains(&n_lev) {
-            notes.push(format!("{dname}: {n_lev} levels, outside 2..={MAX_LEVELS}"));
-            continue;
-        }
-        // Entity × level counts.
-        let mut counts = vec![vec![0.0f64; n_lev]; n_ent];
-        for (e, l) in ecodes.iter().zip(&dcodes) {
-            if let (Some(e), Some(l)) = (e, l) {
-                counts[*e as usize][*l as usize] += 1.0;
+        considered += 1;
+        let dim = match MixDimension::new(table, d, partner) {
+            Ok(dim) => dim,
+            Err(reason) => {
+                let a = &table.names[d];
+                let name =
+                    partner.map_or_else(|| a.clone(), |b| format!("{a} × {}", table.names[b]));
+                notes.push(format!("{name}: {reason}"));
+                continue;
             }
-        }
-        // Entities with rows on this dimension; the largest by support
-        // when there are more than the cap.
-        let mut ents: Vec<usize> = (0..n_ent)
-            .filter(|&e| counts[e].iter().sum::<f64>() > 0.0)
-            .collect();
-        ents.sort_by(|&a, &b| {
-            counts[b]
-                .iter()
-                .sum::<f64>()
-                .total_cmp(&counts[a].iter().sum::<f64>())
-                .then_with(|| elabels[a].cmp(&elabels[b]))
-        });
-        let capped = ents.len() > MAX_ENTITIES;
-        if capped {
-            limited = true;
-            notes.push(format!(
-                "{dname}: {MAX_ENTITIES} of {} entities with values examined",
-                ents.len()
-            ));
-        }
-        ents.truncate(MAX_ENTITIES);
-        ents.sort_unstable();
-        let e_n = ents.len();
-        if e_n < MIN_ENTITIES {
-            notes.push(format!("{dname}: {e_n} entities with values"));
+        };
+        let dname = dim.label();
+        let dlabels = &dim.labels;
+        let n_lev = dlabels.len();
+        if n_lev < 2 {
+            notes.push(format!("{dname}: fewer than two complete levels"));
             continue;
         }
-        if let Some(periods) = &input.periods {
-            let (mut changes, detail, stopped) = fingerprints_drift::scan(DriftInput {
-                periods,
-                entity: &ename,
-                dimension: &dname,
-                entity_labels: &elabels,
-                level_labels: &dlabels,
-                entities: &ents,
-                entity_codes: &ecodes,
-                level_codes: &dcodes,
-                dimension_count: input.dimensions.len(),
-                deadline: input.deadline,
-            });
-            notes.push(format!("{dname}: {detail}"));
-            findings.append(&mut changes);
-            if stopped {
+        for weight in &bases {
+            let weight_name = weight.map(|w| w.name);
+            if weight_name.is_some_and(|w| dim.columns.iter().any(|d| d == w)) {
+                notes.push(format!("{dname}: weight column is a dimension in this mix"));
+                continue;
+            }
+            if input.deadline.exceeded() {
                 limited = true;
-                break;
+                break 'dimensions;
             }
-        }
-        let rows: Vec<&Vec<f64>> = ents.iter().map(|&e| &counts[e]).collect();
-        let (v, x2, df) = excess_v(&rows);
-        let p = chi2_sf(x2, df);
-        if v < MIN_EXCESS_V || p > 0.05 / input.dimensions.len().max(1) as f64 {
-            notes.push(format!(
-                "{dname}: entities do not differ in mix beyond sampling noise (excess V {v:.3}, chi-square {x2:.0} on {df:.0} df)"
-            ));
-            continue;
-        }
-        let n: Vec<f64> = rows.iter().map(|r| r.iter().sum()).collect();
-        let total: f64 = n.iter().sum();
-        let pooled: Vec<f64> = (0..n_lev)
-            .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / total)
-            .collect();
-        // Dirichlet strength by moments: E[Σ n(s−p)²/p]/(L−1) = 1 + (n−1)/(α+1).
-        let used = pooled.iter().filter(|&&q| q > 0.0).count().max(2);
-        let disp: f64 = rows
-            .iter()
-            .zip(&n)
-            .map(|(r, &ni)| {
-                (0..n_lev)
-                    .filter(|&j| pooled[j] > 0.0)
-                    .map(|j| (r[j] / ni - pooled[j]).powi(2) / pooled[j])
-                    .sum::<f64>()
-                    * ni
-            })
-            .sum::<f64>()
-            / (e_n * (used - 1)) as f64;
-        let nbar = total / e_n as f64;
-        let alpha = if disp > 1.0 {
-            ((nbar - 1.0) / (disp - 1.0) - 1.0).clamp(0.5, 1e6)
-        } else {
-            1e6
-        };
-        let x: Vec<Vec<f64>> = rows
-            .iter()
-            .zip(&n)
-            .map(|(r, &ni)| {
-                (0..n_lev)
-                    .map(|j| ((r[j] + alpha * pooled[j]) / (ni + alpha)).sqrt())
-                    .collect()
-            })
-            .collect();
-        // Principal axes and the signal space.
-        let mean: Vec<f64> = (0..n_lev)
-            .map(|j| x.iter().map(|r| r[j]).sum::<f64>() / e_n as f64)
-            .collect();
-        let xc: Vec<Vec<f64>> = x
-            .iter()
-            .map(|r| r.iter().zip(&mean).map(|(a, b)| a - b).collect())
-            .collect();
-        let cov: Vec<Vec<f64>> = (0..n_lev)
-            .map(|i| {
-                (0..n_lev)
-                    .map(|j| xc.iter().map(|r| r[i] * r[j]).sum::<f64>() / e_n as f64)
-                    .collect()
-            })
-            .collect();
-        let eig = jacobi(cov);
-        let noise: f64 = n
-            .iter()
-            .map(|&ni| (ni / (ni + alpha)).powi(2) / (4.0 * ni))
-            .sum::<f64>()
-            / e_n as f64;
-        let m = eig
-            .iter()
-            .filter(|(ev, _)| *ev > 2.0 * noise)
-            .count()
-            .clamp(1, n_lev - 1);
-        let z: Vec<Vec<f64>> = xc
-            .iter()
-            .map(|r| {
-                eig[..m]
-                    .iter()
-                    .map(|(_, u)| r.iter().zip(u).map(|(a, b)| a * b).sum())
-                    .collect()
-            })
-            .collect();
-        let mut rng = Rng(0x05ee_d448 ^ (d as u64) << 20);
-        let kmax = MAX_K.min(e_n / 5).max(1);
-        let log_w: Vec<f64> = (1..=kmax)
-            .map(|k| kmeans(&z, k, &mut rng, 5).0.max(1e-300).ln())
-            .collect();
-        let lo: Vec<f64> = (0..m)
-            .map(|j| z.iter().map(|r| r[j]).fold(f64::INFINITY, f64::min))
-            .collect();
-        let hi: Vec<f64> = (0..m)
-            .map(|j| z.iter().map(|r| r[j]).fold(f64::NEG_INFINITY, f64::max))
-            .collect();
-        let mut refs = vec![vec![0.0; kmax]; GAP_REFERENCES];
-        for rf in refs.iter_mut() {
-            let sample: Vec<Vec<f64>> = (0..e_n)
-                .map(|_| {
-                    (0..m)
-                        .map(|j| lo[j] + rng.next_f64() * (hi[j] - lo[j]))
-                        .collect()
-                })
-                .collect();
-            for (k, slot) in rf.iter_mut().enumerate() {
-                *slot = kmeans(&sample, k + 1, &mut rng, 2).0.max(1e-300).ln();
-            }
-        }
-        let gap: Vec<f64> = (0..kmax)
-            .map(|k| refs.iter().map(|r| r[k]).sum::<f64>() / GAP_REFERENCES as f64 - log_w[k])
-            .collect();
-        let se: Vec<f64> = (0..kmax)
-            .map(|k| {
-                let mu = refs.iter().map(|r| r[k]).sum::<f64>() / GAP_REFERENCES as f64;
-                (refs.iter().map(|r| (r[k] - mu).powi(2)).sum::<f64>() / GAP_REFERENCES as f64)
-                    .sqrt()
-                    * (1.0 + 1.0 / GAP_REFERENCES as f64).sqrt()
-            })
-            .collect();
-        let kbest = (0..kmax)
-            .max_by(|&a, &b| gap[a].total_cmp(&gap[b]))
-            .unwrap_or(0);
-        let k_gap = (0..kmax)
-            .find(|&k| gap[k] >= gap[kbest] - se[kbest])
-            .unwrap_or(0)
-            + 1;
-        let (_, mut lab) = kmeans(&z, k_gap, &mut rng, 5);
-        // Merge groups whose union is homogeneous.
-        loop {
-            let mut groups: Vec<usize> = lab.clone();
-            groups.sort_unstable();
-            groups.dedup();
-            if groups.len() < 2 {
-                break;
-            }
-            let mut best: Option<(f64, usize, usize)> = None;
-            for (a, &gi) in groups.iter().enumerate() {
-                for &gj in &groups[a + 1..] {
-                    let union: Vec<&Vec<f64>> = rows
-                        .iter()
-                        .zip(&lab)
-                        .filter(|(_, &l)| l == gi || l == gj)
-                        .map(|(r, _)| *r)
-                        .collect();
-                    let (vij, _, _) = excess_v(&union);
-                    if best.is_none_or(|b| vij < b.0) {
-                        best = Some((vij, gi, gj));
-                    }
-                }
-            }
-            match best {
-                Some((vij, gi, gj)) if vij < MIN_EXCESS_V => {
-                    lab.iter_mut().filter(|l| **l == gj).for_each(|l| *l = gi)
-                }
-                _ => break,
-            }
-        }
-        let mut gids: Vec<usize> = lab.clone();
-        gids.sort_unstable();
-        gids.dedup();
-        let lab: Vec<usize> = lab
-            .iter()
-            .map(|l| gids.iter().position(|g| g == l).unwrap_or(0))
-            .collect();
-        let k = gids.len();
-        let share_of = |members: &[usize]| -> Vec<f64> {
-            let t: f64 = members.iter().map(|&i| n[i]).sum();
-            (0..n_lev)
-                .map(|j| members.iter().map(|&i| rows[i][j]).sum::<f64>() / t.max(1.0))
-                .collect()
-        };
-        let scope = format!(
-            "{e_n} {ename} values{}",
-            if capped {
-                format!(" (the {MAX_ENTITIES} with most rows)")
-            } else {
-                String::new()
-            }
-        );
-        let base_metrics = |extra: &[(&str, serde_json::Value)]| {
-            let mut m = BTreeMap::from([
-                ("entity_column".to_string(), json!(ename)),
-                ("dimension".to_string(), json!(dname)),
-                ("entities".to_string(), json!(e_n)),
-                ("excess_cramers_v".to_string(), json!(v)),
-                ("chi_square".to_string(), json!(x2)),
-                ("df".to_string(), json!(df)),
-                ("p_value".to_string(), json!(p)),
-                ("shrinkage_strength".to_string(), json!(alpha)),
-                ("signal_axes".to_string(), json!(m)),
-                ("gap".to_string(), json!(gap)),
-                ("n_rows".to_string(), json!(total as u64)),
-            ]);
-            for (key, val) in extra {
-                m.insert((*key).to_string(), val.clone());
-            }
-            m
-        };
-        let method = || {
-            Method::new("entity_fingerprints", "entity_mix_groups", "entity × level counts; Hellinger embedding, gap-statistic k-means, homogeneity merge (onceover v0.1)")
-        };
-        if k >= 2 {
-            let mut groups: Vec<(Vec<usize>, Vec<f64>)> = (0..k)
-                .map(|g| {
-                    let mem: Vec<usize> = (0..e_n).filter(|&i| lab[i] == g).collect();
-                    let sh = share_of(&mem);
-                    (mem, sh)
-                })
-                .collect();
-            groups.sort_by_key(|g| std::cmp::Reverse(g.0.len()));
-            let mut parts = Vec::new();
-            let mut payload = Vec::new();
-            for (mem, sh) in &groups {
-                let (text, lv) = distinguishing(sh, &pooled, &dlabels);
-                let size = format!(
-                    "{} {ename} ({})",
-                    mem.len(),
-                    pct(mem.len() as f64 / e_n as f64)
-                );
-                parts.push(if text.is_empty() {
-                    format!("{size} near the overall mix")
-                } else {
-                    format!("{size} with {text}")
-                });
-                payload.push(json!({"entities": mem.len(), "levels": lv, "examples": mem.iter().take(5).map(|&i| elabels[ents[i]].clone()).collect::<Vec<_>>()}));
-            }
-            let claim = format!(
-                "{ename} fall into {k} groups by their mix of {dname}: {}",
-                parts.join("; ")
+            let (capped, stopped) = scan_mix(
+                MixInput {
+                    entity: &ename,
+                    entity_codes: &ecodes,
+                    entity_labels: &elabels,
+                    dimension: &dim,
+                    dimension_name: &dname,
+                    weight: *weight,
+                    periods: input.periods.as_ref(),
+                    deadline: input.deadline,
+                    test_count: partner.map_or(marginal_count, |_| pair_count) * basis_count,
+                    seed: d as u64,
+                },
+                &mut findings,
+                &mut notes,
             );
-            findings.push(Finding::new(
-                Pattern::EntityGroups,
-                BTreeMap::from([("columns".into(), json!([ename, dname]))]),
-                claim,
-                EvidenceBasis::Estimated,
-                (0.5 + v).min(1.0),
-                base_metrics(&[("groups", json!(payload)), ("scope", json!(scope))]),
-                Some(format!("each {ename}'s share of rows on each {dname} level was compared; groups differ materially (excess Cramér's V of 0.1 or more between any two), members of one group do not")),
-                method(),
-            ));
-            // Misfits: reject their own group's pooled profile.
-            let bar = 0.05 / e_n as f64;
-            let mut misfits: Vec<(usize, f64)> = Vec::new();
-            for (mem, sh) in &groups {
-                for &i in mem {
-                    let q: Vec<f64> = sh
-                        .iter()
-                        .zip(&pooled)
-                        .map(|(a, b)| 0.98 * a + 0.02 * b)
-                        .collect();
-                    let xe: f64 = (0..n_lev)
-                        .filter(|&j| q[j] > 0.0)
-                        .map(|j| (rows[i][j] - n[i] * q[j]).powi(2) / (n[i] * q[j]))
-                        .sum();
-                    let pe = chi2_sf(xe, (used - 1) as f64);
-                    if pe < bar {
-                        misfits.push((i, pe));
-                    }
-                }
-            }
-            if !misfits.is_empty() {
-                misfits.sort_by(|a, b| a.1.total_cmp(&b.1));
-                let rows_share = misfits.iter().map(|(i, _)| n[*i]).sum::<f64>() / total;
-                let names: Vec<String> = misfits
-                    .iter()
-                    .take(5)
-                    .map(|(i, _)| elabels[ents[*i]].clone())
-                    .collect();
-                let claim = format!(
-                    "{} {ename} ({}) match none of the {k} {dname}-mix groups: each one's counts reject its nearest group's profile (chi-square, Bonferroni over {e_n} {ename}); together they hold {} of rows; for example {}",
-                    misfits.len(), pct(misfits.len() as f64 / e_n as f64), pct(rows_share), names.join(", ")
-                );
-                findings.push(Finding::new(
-                    Pattern::EntityMisfits,
-                    BTreeMap::from([("columns".into(), json!([ename, dname]))]),
-                    claim,
-                    EvidenceBasis::Measured,
-                    0.4 + 0.3 * (misfits.len() as f64 / e_n as f64).min(1.0),
-                    base_metrics(&[
-                        ("misfits", json!(misfits.iter().map(|(i, pe)| json!({"entity": elabels[ents[*i]], "rows": n[*i], "p_value": pe})).collect::<Vec<_>>())),
-                        ("bar", json!(bar)),
-                    ]),
-                    None,
-                    Method::new("entity_fingerprints", "entity_misfit_test", "chi-square of an entity's counts against its group's pooled profile (onceover v0.1)"),
-                ));
-            }
-        } else {
-            let (ev1, u1) = &eig[0];
-            let mut idx: Vec<usize> = (0..n_lev).collect();
-            idx.sort_by(|&a, &b| u1[b].total_cmp(&u1[a]));
-            let (pos, neg) = (idx[0], idx[n_lev - 1]);
-            let claim = format!(
-                "{ename} differ in their mix of {dname} along one continuous axis, not in groups: the share of '{}' against '{}' varies from {ename} to {ename} without clusters (excess Cramér's V {v:.2})",
-                dlabels[pos], dlabels[neg]
-            );
-            findings.push(Finding::new(
-                Pattern::EntityContinuum,
-                BTreeMap::from([("columns".into(), json!([ename, dname]))]),
-                claim,
-                EvidenceBasis::Estimated,
-                (0.4 + v).min(0.9),
-                base_metrics(&[("axis_variance", json!(ev1)), ("axis_levels", json!([dlabels[pos], dlabels[neg]]))]),
-                Some("the gap statistic finds no grouping beyond a uniform spread along the principal axes".into()),
-                method(),
-            ));
-        }
-        // Specialists.
-        let spec_obs = (0..e_n)
-            .filter(|&i| {
-                n[i] >= 10.0
-                    && eff_levels(&rows[i].iter().map(|c| c / n[i]).collect::<Vec<_>>()) <= 1.5
-            })
-            .count();
-        let eligible = (0..e_n).filter(|&i| n[i] >= 10.0).count();
-        if eligible >= MIN_ENTITIES && spec_obs as f64 >= 0.1 * eligible as f64 {
-            // Multinomial draws from the pooled shares at each entity's support.
-            let cum: Vec<f64> = pooled
-                .iter()
-                .scan(0.0, |s, p| {
-                    *s += p;
-                    Some(*s)
-                })
-                .collect();
-            let mut sim = 0usize;
-            for _ in 0..3 {
-                for i in (0..e_n).filter(|&i| n[i] >= 10.0) {
-                    let mut c = vec![0.0; n_lev];
-                    for _ in 0..n[i] as usize {
-                        let r = rng.next_f64();
-                        c[cum.iter().position(|&q| r <= q).unwrap_or(n_lev - 1)] += 1.0;
-                    }
-                    if eff_levels(&c.iter().map(|x| x / n[i]).collect::<Vec<_>>()) <= 1.5 {
-                        sim += 1;
-                    }
-                }
-            }
-            let sim_share = sim as f64 / (3 * eligible) as f64;
-            let obs_share = spec_obs as f64 / eligible as f64;
-            if sim_share <= obs_share / 3.0 {
-                let claim = format!(
-                    "{} of {ename} ({spec_obs} of {eligible} with 10 or more rows) concentrate on essentially one {dname} level (effective number of levels 1.5 or less), against {:.1} effective levels in the overall mix",
-                    pct(obs_share), eff_levels(&pooled)
-                );
-                findings.push(Finding::new(
-                    Pattern::EntitySpecialists,
-                    BTreeMap::from([("columns".into(), json!([ename, dname]))]),
-                    claim,
-                    EvidenceBasis::Measured,
-                    0.4 + 0.4 * obs_share,
-                    base_metrics(&[("specialist_share", json!(obs_share)), ("null_share", json!(sim_share)), ("overall_effective_levels", json!(eff_levels(&pooled)))]),
-                    None,
-                    Method::new("entity_fingerprints", "entity_specialists", "effective number of levels per entity against multinomial sampling (onceover v0.1)"),
-                ));
+            limited |= capped || stopped;
+            if stopped {
+                break 'dimensions;
             }
         }
-        notes.push(format!("{dname}: {k} group(s) over {scope}, excess V {v:.3}, {m} signal axes, gap-statistic k {k_gap}"));
     }
+    notes.push(format!("dimension scans: {considered} of {universe} started ({all_pairs} pair candidates before caps)"));
     (
         findings,
         format!(
-            "entity {ename}; weight: row count; {}; dimensions: {}",
+            "entity {ename}; weight: {}; {}; dimensions: {}",
+            if weights.is_empty() {
+                "row count".to_string()
+            } else {
+                weights
+                    .iter()
+                    .map(|w| w.name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
             input.periods.as_ref().map_or_else(
                 || "drift skipped: no resolved axis with per-row keys".into(),
                 FingerprintPeriods::detail,
@@ -727,4 +580,577 @@ pub fn entity_fingerprints(
         ),
         limited,
     )
+}
+
+struct MixInput<'a> {
+    entity: &'a str,
+    entity_codes: &'a [Option<u32>],
+    entity_labels: &'a [String],
+    dimension: &'a MixDimension,
+    dimension_name: &'a str,
+    weight: Option<&'a FingerprintWeight<'a>>,
+    periods: Option<&'a FingerprintPeriods>,
+    deadline: Deadline,
+    test_count: usize,
+    seed: u64,
+}
+
+/// Scan one view and record whether its cohort was capped or the
+/// deadline interrupted the scan.
+fn scan_mix(
+    cfg: MixInput<'_>,
+    findings: &mut Vec<Finding>,
+    notes: &mut Vec<String>,
+) -> (bool, bool) {
+    let MixInput {
+        entity: ename,
+        entity_codes: ecodes,
+        entity_labels: elabels,
+        dimension: dim,
+        dimension_name: dname,
+        weight,
+        periods,
+        deadline,
+        test_count,
+        seed,
+    } = cfg;
+    let n_ent = elabels.len();
+    let dlabels = &dim.labels;
+    let n_lev = dlabels.len();
+    let partner = dim.columns.get(1);
+    let weight_name = weight.map(|w| w.name);
+    let mix_unit = weight_name.map_or_else(|| "rows".to_string(), |w| format!("'{w}'"));
+    let mix_label = weight_name.map_or_else(
+        || dname.to_string(),
+        |w| format!("{dname} weighted by '{w}'"),
+    );
+    let mut subject_columns = vec![ename.to_string()];
+    subject_columns.extend(dim.columns.iter().cloned());
+    subject_columns.extend(weight_name.map(str::to_string));
+    let subject = || BTreeMap::from([("columns".into(), json!(subject_columns))]);
+    let mut counts = vec![vec![0.0f64; n_lev]; n_ent];
+    let mut squares = vec![0.0; n_ent];
+    let mut row_counts = vec![0usize; n_ent];
+    for (i, (e, l)) in ecodes.iter().zip(&dim.codes).enumerate() {
+        if let (Some(e), Some(l)) = (e, l) {
+            let w = weight.map_or(1.0, |w| w.normalized[i]);
+            if w > 0.0 {
+                counts[*e as usize][*l as usize] += w;
+                squares[*e as usize] += w * w;
+                row_counts[*e as usize] += 1;
+            }
+        }
+    }
+    let mass: Vec<f64> = counts.iter().map(|r| r.iter().sum()).collect();
+    let support: Vec<f64> = mass
+        .iter()
+        .zip(squares)
+        .map(|(&w, w2)| effective_rows(w, w2))
+        .collect();
+    let require_support = weight.is_some() || partner.is_some();
+    let mut ents: Vec<usize> = (0..n_ent)
+        .filter(|&e| mass[e] > 0.0 && (!require_support || support[e] >= 10.0 - 1e-9))
+        .collect();
+    if require_support {
+        let positive = mass.iter().filter(|&&m| m > 0.0).count();
+        if ents.len() < positive {
+            notes.push(format!(
+                "{mix_label}: {} of {positive} entities have fewer than 10 effective rows",
+                positive - ents.len()
+            ));
+        }
+    }
+    ents.sort_by(|&a, &b| {
+        support[b]
+            .total_cmp(&support[a])
+            .then_with(|| elabels[a].cmp(&elabels[b]))
+    });
+    let capped = ents.len() > MAX_ENTITIES;
+    if capped {
+        notes.push(format!(
+            "{mix_label}: {MAX_ENTITIES} of {} entities with values examined",
+            ents.len()
+        ));
+    }
+    ents.truncate(MAX_ENTITIES);
+    if weight.is_some() || partner.is_some() {
+        ents.sort_by_key(|&e| &elabels[e]);
+    } else {
+        ents.sort_unstable();
+    }
+    let e_n = ents.len();
+    if e_n < MIN_ENTITIES {
+        notes.push(format!("{mix_label}: {e_n} entities with values"));
+        return (capped, false);
+    }
+    let scaled;
+    let rows: Vec<&Vec<f64>> = if weight.is_some() {
+        scaled = ents
+            .iter()
+            .map(|&e| counts[e].iter().map(|c| c * support[e] / mass[e]).collect())
+            .collect::<Vec<_>>();
+        scaled.iter().collect()
+    } else {
+        ents.iter().map(|&e| &counts[e]).collect()
+    };
+    if let Some(periods) = periods {
+        let (mut changes, detail, stopped) = fingerprints_drift::scan(DriftInput {
+            periods,
+            entity: ename,
+            dimension: dname,
+            dimension_columns: &dim.columns,
+            joint_levels: &dim.joint,
+            weight: weight.map(|w| (w.name, w.normalized.as_slice())),
+            entity_labels: elabels,
+            level_labels: dlabels,
+            entities: &ents,
+            entity_codes: ecodes,
+            level_codes: &dim.codes,
+            dimension_count: test_count,
+            deadline,
+        });
+        notes.push(format!("{mix_label}: {detail}"));
+        findings.append(&mut changes);
+        if stopped {
+            return (capped, true);
+        }
+    }
+    let joint_gain = if partner.is_some() {
+        let gain = joint_excess(&rows, &dim.joint);
+        if gain < MIN_JOINT_EXCESS {
+            notes.push(format!("{mix_label}: no additional joint signal (excess deviance per effective row {gain:.3})"));
+            return (capped, false);
+        }
+        Some(gain)
+    } else {
+        None
+    };
+    let (v, x2, df) = excess_v(&rows);
+    let p = chi2_sf(x2, df);
+    if v < MIN_EXCESS_V || p > 0.05 / test_count.max(1) as f64 {
+        notes.push(format!(
+        "{mix_label}: entities do not differ in mix beyond sampling noise (excess V {v:.3}, chi-square {x2:.0} on {df:.0} df)"
+    ));
+        return (capped, false);
+    }
+    let n: Vec<f64> = rows.iter().map(|r| r.iter().sum()).collect();
+    let total: f64 = n.iter().sum();
+    let pooled: Vec<f64> = (0..n_lev)
+        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / total)
+        .collect();
+    // Dirichlet strength by moments: E[Σ n(s−p)²/p]/(L−1) = 1 + (n−1)/(α+1).
+    let used = pooled.iter().filter(|&&q| q > 0.0).count().max(2);
+    let disp: f64 = rows
+        .iter()
+        .zip(&n)
+        .map(|(r, &ni)| {
+            (0..n_lev)
+                .filter(|&j| pooled[j] > 0.0)
+                .map(|j| (r[j] / ni - pooled[j]).powi(2) / pooled[j])
+                .sum::<f64>()
+                * ni
+        })
+        .sum::<f64>()
+        / (e_n * (used - 1)) as f64;
+    let nbar = total / e_n as f64;
+    let alpha = if disp > 1.0 {
+        ((nbar - 1.0) / (disp - 1.0) - 1.0).clamp(0.5, 1e6)
+    } else {
+        1e6
+    };
+    let x: Vec<Vec<f64>> = rows
+        .iter()
+        .zip(&n)
+        .map(|(r, &ni)| {
+            (0..n_lev)
+                .map(|j| ((r[j] + alpha * pooled[j]) / (ni + alpha)).sqrt())
+                .collect()
+        })
+        .collect();
+    // Principal axes and the signal space.
+    let mean: Vec<f64> = (0..n_lev)
+        .map(|j| x.iter().map(|r| r[j]).sum::<f64>() / e_n as f64)
+        .collect();
+    let xc: Vec<Vec<f64>> = x
+        .iter()
+        .map(|r| r.iter().zip(&mean).map(|(a, b)| a - b).collect())
+        .collect();
+    let cov: Vec<Vec<f64>> = (0..n_lev)
+        .map(|i| {
+            (0..n_lev)
+                .map(|j| xc.iter().map(|r| r[i] * r[j]).sum::<f64>() / e_n as f64)
+                .collect()
+        })
+        .collect();
+    let eig = jacobi(cov);
+    let noise: f64 = n
+        .iter()
+        .map(|&ni| (ni / (ni + alpha)).powi(2) / (4.0 * ni))
+        .sum::<f64>()
+        / e_n as f64;
+    let m = eig
+        .iter()
+        .filter(|(ev, _)| *ev > 2.0 * noise)
+        .count()
+        .clamp(1, n_lev - 1);
+    let z: Vec<Vec<f64>> = xc
+        .iter()
+        .map(|r| {
+            eig[..m]
+                .iter()
+                .map(|(_, u)| r.iter().zip(u).map(|(a, b)| a * b).sum())
+                .collect()
+        })
+        .collect();
+    let mut rng = Rng(0x05ee_d448 ^ seed << 20);
+    let kmax = MAX_K.min(e_n / 5).max(1);
+    let log_w: Vec<f64> = (1..=kmax)
+        .map(|k| kmeans(&z, k, &mut rng, 5).0.max(1e-300).ln())
+        .collect();
+    let lo: Vec<f64> = (0..m)
+        .map(|j| z.iter().map(|r| r[j]).fold(f64::INFINITY, f64::min))
+        .collect();
+    let hi: Vec<f64> = (0..m)
+        .map(|j| z.iter().map(|r| r[j]).fold(f64::NEG_INFINITY, f64::max))
+        .collect();
+    let mut refs = vec![vec![0.0; kmax]; GAP_REFERENCES];
+    for rf in refs.iter_mut() {
+        let sample: Vec<Vec<f64>> = (0..e_n)
+            .map(|_| {
+                (0..m)
+                    .map(|j| lo[j] + rng.next_f64() * (hi[j] - lo[j]))
+                    .collect()
+            })
+            .collect();
+        for (k, slot) in rf.iter_mut().enumerate() {
+            *slot = kmeans(&sample, k + 1, &mut rng, 2).0.max(1e-300).ln();
+        }
+    }
+    let gap: Vec<f64> = (0..kmax)
+        .map(|k| refs.iter().map(|r| r[k]).sum::<f64>() / GAP_REFERENCES as f64 - log_w[k])
+        .collect();
+    let se: Vec<f64> = (0..kmax)
+        .map(|k| {
+            let mu = refs.iter().map(|r| r[k]).sum::<f64>() / GAP_REFERENCES as f64;
+            (refs.iter().map(|r| (r[k] - mu).powi(2)).sum::<f64>() / GAP_REFERENCES as f64).sqrt()
+                * (1.0 + 1.0 / GAP_REFERENCES as f64).sqrt()
+        })
+        .collect();
+    let kbest = (0..kmax)
+        .max_by(|&a, &b| gap[a].total_cmp(&gap[b]))
+        .unwrap_or(0);
+    let k_gap = (0..kmax)
+        .find(|&k| gap[k] >= gap[kbest] - se[kbest])
+        .unwrap_or(0)
+        + 1;
+    let (_, mut lab) = kmeans(&z, k_gap, &mut rng, 5);
+    // Merge groups whose union is homogeneous.
+    loop {
+        let mut groups: Vec<usize> = lab.clone();
+        groups.sort_unstable();
+        groups.dedup();
+        if groups.len() < 2 {
+            break;
+        }
+        let mut best: Option<(f64, usize, usize)> = None;
+        for (a, &gi) in groups.iter().enumerate() {
+            for &gj in &groups[a + 1..] {
+                let union: Vec<&Vec<f64>> = rows
+                    .iter()
+                    .zip(&lab)
+                    .filter(|(_, &l)| l == gi || l == gj)
+                    .map(|(r, _)| *r)
+                    .collect();
+                let (vij, _, _) = excess_v(&union);
+                if best.is_none_or(|b| vij < b.0) {
+                    best = Some((vij, gi, gj));
+                }
+            }
+        }
+        match best {
+            Some((vij, gi, gj)) if vij < MIN_EXCESS_V => {
+                lab.iter_mut().filter(|l| **l == gj).for_each(|l| *l = gi)
+            }
+            _ => break,
+        }
+    }
+    let mut gids: Vec<usize> = lab.clone();
+    gids.sort_unstable();
+    gids.dedup();
+    let lab: Vec<usize> = lab
+        .iter()
+        .map(|l| gids.iter().position(|g| g == l).unwrap_or(0))
+        .collect();
+    let k = gids.len();
+    let largest = weight.map_or(1.0, |w| {
+        ents.iter().map(|&e| w.entity_maxima[e]).fold(0.0, f64::max)
+    });
+    let relative_maximum = |e: usize| weight.map_or(1.0, |w| w.entity_maxima[e] / largest);
+    let share_of = |members: &[usize]| -> Vec<f64> {
+        let group_max = weight.map_or(1.0, |w| {
+            members
+                .iter()
+                .map(|&i| w.entity_maxima[ents[i]])
+                .fold(0.0, f64::max)
+        });
+        let totals: Vec<f64> = (0..n_lev)
+            .map(|j| {
+                members
+                    .iter()
+                    .map(|&i| {
+                        let e = ents[i];
+                        counts[e][j] * weight.map_or(1.0, |w| w.entity_maxima[e] / group_max)
+                    })
+                    .sum::<f64>()
+            })
+            .collect();
+        let mass = totals.iter().sum::<f64>();
+        totals
+            .into_iter()
+            .map(|c| if mass > 0.0 { c / mass } else { 0.0 })
+            .collect()
+    };
+    let overall_mix = share_of(&(0..e_n).collect::<Vec<_>>());
+    let mass_by_entity: Vec<f64> = ents
+        .iter()
+        .map(|&e| mass[e] * relative_maximum(e))
+        .collect();
+    let whole_mass = mass_by_entity.iter().sum::<f64>();
+    let scope = format!(
+        "{e_n} {ename} values{}",
+        if capped {
+            format!(" (the {MAX_ENTITIES} with greatest support)")
+        } else {
+            String::new()
+        }
+    );
+    let base_metrics = |extra: &[(&str, serde_json::Value)]| {
+        let mut m = BTreeMap::from([
+            ("entity_column".to_string(), json!(ename)),
+            ("dimension".to_string(), json!(dname)),
+            ("entities".to_string(), json!(e_n)),
+            ("excess_cramers_v".to_string(), json!(v)),
+            ("chi_square".to_string(), json!(x2)),
+            ("df".to_string(), json!(df)),
+            ("p_value".to_string(), json!(p)),
+            ("shrinkage_strength".to_string(), json!(alpha)),
+            ("signal_axes".to_string(), json!(m)),
+            ("gap".to_string(), json!(gap)),
+            (
+                "n_rows".to_string(),
+                json!(ents.iter().map(|&e| row_counts[e]).sum::<usize>()),
+            ),
+        ]);
+        if let Some(weight) = weight_name {
+            m.insert("weight".into(), json!(weight));
+            m.insert("effective_rows".into(), json!(total));
+        }
+        if let Some(gain) = joint_gain {
+            m.insert("dimensions".into(), json!(dim.columns));
+            m.insert("joint_excess_deviance_per_row".into(), json!(gain));
+        }
+        for (key, val) in extra {
+            m.insert((*key).to_string(), val.clone());
+        }
+        m
+    };
+    let model = if weight.is_some() {
+        "effective counts"
+    } else {
+        "row counts"
+    };
+    let method = || {
+        Method::new("entity_fingerprints", "entity_mix_groups", &format!("entity × level {model}; Hellinger embedding, gap-statistic k-means, homogeneity merge"))
+    };
+    if k >= 2 {
+        let mut groups: Vec<(Vec<usize>, Vec<f64>)> = (0..k)
+            .map(|g| {
+                let mem: Vec<usize> = (0..e_n).filter(|&i| lab[i] == g).collect();
+                let sh = share_of(&mem);
+                (mem, sh)
+            })
+            .collect();
+        groups.sort_by_key(|g| std::cmp::Reverse(g.0.len()));
+        let mut parts = Vec::new();
+        let mut payload = Vec::new();
+        for (mem, sh) in &groups {
+            let (text, lv) = distinguishing(sh, &overall_mix, dlabels);
+            let size = format!(
+                "{} {ename} ({})",
+                mem.len(),
+                pct(mem.len() as f64 / e_n as f64)
+            );
+            parts.push(if text.is_empty() {
+                format!("{size} near the overall mix")
+            } else {
+                format!("{size} with {text}")
+            });
+            payload.push(json!({"entities": mem.len(), "levels": lv, "examples": mem.iter().take(5).map(|&i| elabels[ents[i]].clone()).collect::<Vec<_>>()}));
+        }
+        let claim = format!(
+            "{ename} fall into {k} groups by their mix of {mix_label}: {}",
+            parts.join("; ")
+        );
+        findings.push(Finding::new(
+        Pattern::EntityGroups,
+        subject(),
+        claim,
+        EvidenceBasis::Estimated,
+        (0.5 + v).min(1.0),
+        base_metrics(&[("groups", json!(payload)), ("scope", json!(scope))]),
+        Some(format!("The model compares each {ename}'s share of {mix_unit} by {dname} level using {model}. Group and overall shares use pooled {mix_unit}.")),
+        method(),
+    ));
+        // Misfits: reject their own group's pooled profile.
+        let bar = 0.05 / e_n as f64;
+        let mut misfits: Vec<(usize, f64)> = Vec::new();
+        for (mem, _) in &groups {
+            let effective_profile: Vec<f64> = (0..n_lev)
+                .map(|j| mem.iter().map(|&i| rows[i][j]).sum::<f64>())
+                .collect();
+            let effective_total = effective_profile.iter().sum::<f64>();
+            for &i in mem {
+                let q: Vec<f64> = effective_profile
+                    .iter()
+                    .zip(&pooled)
+                    .map(|(a, b)| 0.98 * a / effective_total + 0.02 * b)
+                    .collect();
+                let xe: f64 = (0..n_lev)
+                    .filter(|&j| q[j] > 0.0)
+                    .map(|j| (rows[i][j] - n[i] * q[j]).powi(2) / (n[i] * q[j]))
+                    .sum();
+                let pe = chi2_sf(xe, (used - 1) as f64);
+                if pe < bar {
+                    misfits.push((i, pe));
+                }
+            }
+        }
+        if !misfits.is_empty() {
+            misfits.sort_by(|a, b| a.1.total_cmp(&b.1));
+            let rows_share =
+                misfits.iter().map(|(i, _)| mass_by_entity[*i]).sum::<f64>() / whole_mass;
+            let names: Vec<String> = misfits
+                .iter()
+                .take(5)
+                .map(|(i, _)| elabels[ents[*i]].clone())
+                .collect();
+            let claim = format!(
+            "{} {ename} ({}) differ from their assigned group by {mix_label} (chi-square, Bonferroni over {e_n} {ename}). Together they hold {} of {mix_unit}. Examples include {}",
+            misfits.len(), pct(misfits.len() as f64 / e_n as f64), pct(rows_share), names.join(", ")
+        );
+            findings.push(Finding::new(
+            Pattern::EntityMisfits,
+            subject(),
+            claim,
+            EvidenceBasis::Measured,
+            0.4 + 0.3 * (misfits.len() as f64 / e_n as f64).min(1.0),
+            base_metrics(&[
+                ("misfits", json!(misfits.iter().map(|(i, pe)| json!({"entity": elabels[ents[*i]], "rows": row_counts[ents[*i]], "effective_rows": n[*i], "p_value": pe})).collect::<Vec<_>>())),
+                ("bar", json!(bar)),
+            ]),
+            None,
+            Method::new("entity_fingerprints", "entity_misfit_test", &format!("chi-square of an entity's {model} against its group's effective profile")),
+        ));
+        }
+    } else {
+        let (ev1, u1) = &eig[0];
+        let mut idx: Vec<usize> = (0..n_lev).collect();
+        idx.sort_by(|&a, &b| u1[b].total_cmp(&u1[a]));
+        let (pos, neg) = (idx[0], idx[n_lev - 1]);
+        let claim = format!(
+        "{ename} differ in their mix of {mix_label} along one continuous axis, not in groups: the share of '{}' against '{}' varies from {ename} to {ename} without clusters (excess Cramér's V {v:.2})",
+        dlabels[pos], dlabels[neg]
+    );
+        findings.push(Finding::new(
+        Pattern::EntityContinuum,
+        subject(),
+        claim,
+        EvidenceBasis::Estimated,
+        (0.4 + v).min(0.9),
+        base_metrics(&[("axis_variance", json!(ev1)), ("axis_levels", json!([dlabels[pos], dlabels[neg]]))]),
+        Some("the gap statistic finds no grouping beyond a uniform spread along the principal axes".into()),
+        method(),
+    ));
+    }
+    // Specialists.
+    let row_support = if weight.is_some() {
+        "effective rows"
+    } else {
+        "rows"
+    };
+    let spec_obs = (0..e_n)
+        .filter(|&i| {
+            n[i] >= 10.0 && eff_levels(&rows[i].iter().map(|c| c / n[i]).collect::<Vec<_>>()) <= 1.5
+        })
+        .count();
+    let eligible = (0..e_n).filter(|&i| n[i] >= 10.0).count();
+    if eligible >= MIN_ENTITIES && spec_obs as f64 >= 0.1 * eligible as f64 {
+        // Under a common mix each row's level is drawn independently
+        // at its own weight. Preserve the weight distribution in the
+        // null, so one large row cannot manufacture specialists.
+        let mut row_weights = vec![Vec::new(); e_n];
+        if let Some(weight) = weight {
+            let mut positions = vec![None; n_ent];
+            for (i, &e) in ents.iter().enumerate() {
+                positions[e] = Some(i);
+            }
+            for ((e, l), &w) in ecodes.iter().zip(&dim.codes).zip(&weight.normalized) {
+                if let (Some(i), Some(_)) = (e.and_then(|e| positions[e as usize]), l) {
+                    if w > 0.0 {
+                        row_weights[i].push(w);
+                    }
+                }
+            }
+            for weights in &mut row_weights {
+                weights.sort_unstable_by(f64::total_cmp);
+            }
+        }
+        let cum: Vec<f64> = pooled
+            .iter()
+            .scan(0.0, |s, p| {
+                *s += p;
+                Some(*s)
+            })
+            .collect();
+        let mut sim = 0usize;
+        for _ in 0..3 {
+            for i in (0..e_n).filter(|&i| n[i] >= 10.0) {
+                let mut c = vec![0.0; n_lev];
+                let mut draw = |w| {
+                    let r = rng.next_f64();
+                    c[cum.iter().position(|&q| r <= q).unwrap_or(n_lev - 1)] += w;
+                };
+                let draw_mass = if weight.is_some() {
+                    row_weights[i].iter().copied().for_each(&mut draw);
+                    mass[ents[i]]
+                } else {
+                    (0..row_counts[ents[i]]).for_each(|_| draw(1.0));
+                    n[i]
+                };
+                if eff_levels(&c.iter().map(|x| x / draw_mass).collect::<Vec<_>>()) <= 1.5 {
+                    sim += 1;
+                }
+            }
+        }
+        let sim_share = sim as f64 / (3 * eligible) as f64;
+        let obs_share = spec_obs as f64 / eligible as f64;
+        if sim_share <= obs_share / 3.0 {
+            let claim = format!(
+            "{} of {ename} ({spec_obs} of {eligible} with 10 or more {row_support}) concentrate on essentially one level of {mix_label} (effective number of levels 1.5 or less), against {:.1} effective levels in the overall mix",
+            pct(obs_share), eff_levels(&overall_mix)
+        );
+            findings.push(Finding::new(
+            Pattern::EntitySpecialists,
+            subject(),
+            claim,
+            EvidenceBasis::Measured,
+            0.4 + 0.4 * obs_share,
+            base_metrics(&[("specialist_share", json!(obs_share)), ("null_share", json!(sim_share)), ("overall_effective_levels", json!(eff_levels(&overall_mix)))]),
+            None,
+            Method::new("entity_fingerprints", "entity_specialists", "effective number of levels per entity against multinomial sampling (onceover v0.1)"),
+        ));
+        }
+    }
+    notes.push(format!("{mix_label}: {k} group(s) over {scope}, excess V {v:.3}, {m} signal axes, gap-statistic k {k_gap}"));
+    (capped, false)
 }

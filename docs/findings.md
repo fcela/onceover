@@ -1316,15 +1316,13 @@ Callers can declare structure the profiler cannot infer, through the
   column's true rows, or the rows where a column equals a value)
   profiled against the rest of the table by the `group_contrast`
   pass (see "Group contrast" above);
-- `weights`: numeric columns whose values weight the rows for the
-  `hotspots` pass — with weights declared, the pass also judges
-  each cell it examines by the share of each weight its rows carry
-  against the cell's share of rows, and states both shares naming
-  the weight; several weights may be declared and each is judged
-  on its own. A weight that is not a column of the table, is not
-  numeric, carries negative values, totals zero, or is constant
-  (its shares would restate row shares) is not applied, and the
-  `hotspots` coverage entry states each case;
+- `weights`: numeric columns whose values weight rows. The
+  `hotspots` pass compares cell weight shares with cell row shares.
+  The on-request `entity_fingerprints` pass compares each entity's
+  mix using each usable weight separately, or row counts when no
+  weight applies. Missing, nonnumeric, negative, zero-total, and
+  constant weight columns are refused and listed in the relevant
+  pass's coverage. See [Entity fingerprints](#entity-fingerprints).
 - `gloss`: what a column means, in the caller's words — a text per
   column, or, for a categorical column, a map of level label to
   text. Carried unchecked into the report's frame account
@@ -1504,26 +1502,41 @@ The default set has 31 of the 46 registered detectors; the other 15 run only whe
 | `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
 | `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
 | `row_clusters` | `associations`, `changes`, `concentration`, `gaps` | `on_request` | `always` | — | Experimental shared row partitions, cluster differences, and density findings |
-| `entity_fingerprints` | `associations`, `anomalies`, `concentration`, `changes` | `on_request` | `always` | — | Each entity's mix over each dimension: groups, a continuum, misfits, specialists, and changes along a resolved axis |
+| `entity_fingerprints` | `associations`, `anomalies`, `concentration`, `changes` | `on_request` | `always` | — | Entity groups, continuums, misfits, specialists, and drift by dimension or pair, using row counts or declared weights |
 <!-- /generated:detectors -->
 
-### Changes in entity fingerprints
+### Entity fingerprints
 
-The on-request `entity_fingerprints` detector also compares row shares
-over a resolved time or ordered axis. It uses the same entity and
-dimension roles as the static scan. Coverage gives the period starts,
-the number of entities with enough rows for comparisons, and any
-windows excluded because they overlap a shared change.
+Name `entity_fingerprints` in `detectors` to compare entity mixes on
+the resolved dimension columns. The detector uses row shares by
+default. When `weights` resolves to one or more usable numeric
+columns, it compares each weight separately. Missing and zero
+weights contribute no mass. Coverage names the weights used and any
+that were refused. Group sizes count entities, and the group and
+overall weight shares pool the original measure over the entities
+examined. Statistical support uses effective rows, so one large
+weight cannot turn a handful of observations into a large sample.
 
-A change is reported as `joint_distribution_change` with evidence
-method `entity_mix_change`. Read `population_shift` for an entity-weighted
-shared change, and `entity_shifts` for individual examples with their
-before and after shares, the matched peers' shares, window bounds, and
-test sizes. `n_entity_shifts` counts every detected entity on the
-dimension, with up to 100 examples in the evidence. The individual test
-uses a conditional period-label permutation null. Its calibration
-assumes that rows are exchangeable within an entity under that null.
+The pass also screens up to 12 pairs in column-name order, with up
+to 30 observed joint levels in each. Pair evidence names both columns
+in `dimensions`. A static pair must add joint signal beyond its two
+marginal views. A temporal pair can drift even when that signal
+cancels in the full-period mix. It tests each joint level only when
+both of its marginal shares move by less than 10 percentage points.
 
+With a resolved time or ordered axis, drift is reported as
+`joint_distribution_change` with evidence method
+`entity_mix_change`. Read `population_shift` for an entity-weighted
+shared change and `entity_shifts` for individual examples with
+their before and after shares, the matched peers' shares, window
+bounds, and test sizes. `n_entity_shifts` counts all detected
+entities, with up to 100 examples in the evidence. The row-count test
+uses a conditional period-label null. The weighted test uses a
+Hoeffding bound under independent level indicators conditional on
+the weights. Coverage gives the actual period starts, eligible
+entities, and windows excluded around shared changes. See the
+[worked examples](book/methodology/entity_fingerprints.ipynb) for
+the interpretation and limits.
 
 The 2026-11-02 detector battery measured five of the on-request
 detectors producing no findings in 40 runs over 20 datasets, so a
