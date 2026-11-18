@@ -155,7 +155,10 @@ soft limit checked between passes and at work quanta inside five
 searches — the dependence screen, the hotspots scan, the discontinuities
 pass, the surprises scan, and the duplicate-encodings scan — which can
 stop mid-pass; their coverage entries state how much of the search was
-examined.
+examined. The surprises scan also stops at a deterministic work budget
+over row visits and bitset words; a budget stop marks only that pass
+`capped`, with the contexts and targets examined, and does not suppress
+later passes.
 `timing=True` records per-pass elapsed time without changing the findings.
 
 ## Large and wide tables

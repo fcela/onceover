@@ -36,6 +36,12 @@ first; what follows here is only what it does not carry.
   was examined (pairs screened of total, combinations examined
   of total, targets fully screened of total), so a pass stopped
   early reads as `capped`, not as a clean negative.
+- **Work bounds.** The surprises scan also has a deterministic
+  work budget over row visits and bitset words. When that budget
+  binds without a deadline, its coverage entry reads `capped`,
+  states the work spent and the contexts and categorical targets
+  examined, and later passes still run; a truncated search is
+  never a clean negative.
 - **Evidence payloads.** Several detectors attach a bespoke
   evidence payload under a named metric key (for example
   `mapping` on functional dependencies, `segments` on breaks,

@@ -85,7 +85,7 @@ pub use rows::profile_row_consistency;
 pub use series::{profile_series, SeriesInput};
 pub use shapes::{profile_target_shapes, shape_diagnostics, ShapeDiagnostics, ShapesConfig};
 pub use slices::{profile_slice_shifts, SliceConfig, SliceOutcome, SliceStatus};
-pub use surprises::{profile_surprises, SurpriseConfig};
+pub use surprises::{profile_surprises, SurpriseConfig, SurpriseOutcome};
 
 /// Compact float display (for class labels).
 pub fn fmt_float(v: f64) -> String {

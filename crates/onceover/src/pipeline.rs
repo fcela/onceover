@@ -2777,8 +2777,8 @@ fn profile_inner(
             }
             if !deadline_hit && enabled("outliers") {
                 let excluded: &[usize] = &scaffold_excluded;
-                let (f, cov, stopped) = profile_surprises(&table, excluded, &tier.surprises);
-                if stopped {
+                let out = profile_surprises(&table, excluded, &tier.surprises);
+                if out.deadline_stopped {
                     deadline_hit = true;
                 }
                 stamp_insert(
@@ -2786,13 +2786,13 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "outliers".into(),
-                    if stopped {
-                        PassInfo::capped(format!("{cov}{exclusion_note}"))
+                    if out.deadline_stopped || out.work_capped {
+                        PassInfo::capped(format!("{}{}", out.coverage, exclusion_note))
                     } else {
-                        PassInfo::ran(format!("{cov}{exclusion_note}"))
+                        PassInfo::ran(format!("{}{}", out.coverage, exclusion_note))
                     },
                 );
-                findings.extend(f);
+                findings.extend(out.findings);
             }
             if check_deadline(&mut coverage, "slice_shifts") {
                 deadline_hit = true;

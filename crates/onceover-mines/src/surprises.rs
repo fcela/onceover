@@ -89,10 +89,18 @@ pub struct SurpriseConfig {
     /// default runs; explicit selection of the outliers detector
     /// leaves it off.
     pub require_rare_breakers: bool,
+    /// Work budget for the categorical search, in approximate
+    /// row visits and bitset words (row codes are built once per
+    /// column, then each context costs its bitset words). The
+    /// search stops at the next context boundary when the budget
+    /// is exhausted and reports capped coverage; it never turns a
+    /// truncated search into a clean negative (issue #437).
+    pub work_budget: u64,
     /// Cooperative deadline (issue #117, stage 2), polled before
-    /// each numeric and each categorical target: a target is
-    /// either scanned whole or not started, and the coverage
-    /// detail states how many of each were scanned.
+    /// each numeric target and at categorical context boundaries:
+    /// a numeric target is either scanned whole or not started,
+    /// and the coverage detail states how much of each scan was
+    /// completed.
     pub deadline: crate::deadline::Deadline,
 }
 
@@ -114,6 +122,11 @@ impl Default for SurpriseConfig {
             context_beam: 128,
             deep_share_floor: 0.95,
             require_rare_breakers: false,
+            // Same order as the slices, model-failure and views
+            // searches: enough for ordinary tables, bounded on
+            // the wide categorical frames that used to take
+            // minutes in this pass (#437).
+            work_budget: 300_000_000,
             deadline: crate::deadline::Deadline::none(),
         }
     }
@@ -534,14 +547,87 @@ pub(crate) fn code_column(table: &TypedTable, col: usize, cfg: &SurpriseConfig) 
     Some(Coded { codes, labels })
 }
 
-fn bitset_for(codes: &[Option<u32>], level: u32, words: usize) -> Vec<u64> {
-    let mut bs = vec![0u64; words];
-    for (r, c) in codes.iter().enumerate() {
-        if *c == Some(level) {
-            bs[r / 64] |= 1u64 << (r % 64);
+/// Build every level's bitset in one row pass. The old
+/// per-(column, level) scan rebuilt the same bitsets for every
+/// target; they are target-independent and are now cached for the
+/// whole categorical search (issue #437).
+fn bitsets_for_column(codes: &[Option<u32>], levels: usize, words: usize) -> Vec<Vec<u64>> {
+    let mut bits = vec![vec![0u64; words]; levels];
+    for (r, code) in codes.iter().enumerate() {
+        if let Some(level) = *code {
+            bits[level as usize][r / 64] |= 1u64 << (r % 64);
         }
     }
-    bs
+    bits
+}
+
+/// Deterministic work meter for the categorical search. Charges
+/// happen at row-code construction and context boundaries, so a
+/// stop always leaves a prefix of the enumeration examined.
+#[derive(Clone, Debug)]
+struct SurpriseWork {
+    budget: u64,
+    spent: u64,
+    stopped: bool,
+    deadline_stopped: bool,
+}
+
+impl SurpriseWork {
+    fn new(budget: u64) -> Self {
+        Self {
+            budget,
+            spent: 0,
+            stopped: false,
+            deadline_stopped: false,
+        }
+    }
+
+    /// Charge one work quantum. Returns false once the search
+    /// must stop, before doing the charged work.
+    fn charge(&mut self, cost: u64, deadline: &crate::deadline::Deadline) -> bool {
+        if self.stopped {
+            return false;
+        }
+        if deadline.exceeded() {
+            self.stopped = true;
+            self.deadline_stopped = true;
+            return false;
+        }
+        if cost > self.budget.saturating_sub(self.spent) {
+            self.stopped = true;
+            return false;
+        }
+        self.spent = self.spent.saturating_add(cost);
+        true
+    }
+}
+
+struct CategoricalOutcome {
+    findings: Vec<Finding>,
+    targets_total: usize,
+    targets_completed: usize,
+    targets_partial: usize,
+    not_started: usize,
+    contexts: usize,
+    withheld: usize,
+    not_significant: usize,
+    work: SurpriseWork,
+}
+
+impl CategoricalOutcome {
+    fn empty(budget: u64) -> Self {
+        Self {
+            findings: Vec::new(),
+            targets_total: 0,
+            targets_completed: 0,
+            targets_partial: 0,
+            not_started: 0,
+            contexts: 0,
+            withheld: 0,
+            not_significant: 0,
+            work: SurpriseWork::new(budget),
+        }
+    }
 }
 
 /// Lanczos log-gamma (ranking-grade accuracy).
@@ -748,22 +834,25 @@ type BeamState = (Vec<(usize, u32)>, Vec<u64>, f64, usize);
 
 fn profile_categorical_surprises(
     table: &TypedTable,
-    excluded: &[usize],
     cfg: &SurpriseConfig,
-    budget: usize,
-) -> (Vec<Finding>, usize, usize, usize, usize, usize) {
+    finding_budget: usize,
+    coded: &[Option<Coded>],
+) -> CategoricalOutcome {
     let words = table.n.div_ceil(64);
-    // Eligible columns coded once: conditions may be any eligible
-    // column; targets are the text/bool ones.
-    let coded: Vec<Option<Coded>> = (0..table.cols.len())
-        .map(|i| {
-            if excluded.contains(&i) {
-                None
-            } else {
-                code_column(table, i, cfg)
-            }
-        })
-        .collect();
+    let mut work = SurpriseWork::new(cfg.work_budget);
+    // Item bitsets depend only on a column's codes, not on the
+    // target. Build each column's levels once and share them
+    // across every target (issue #437).
+    let mut item_bits: Vec<Option<Vec<Vec<u64>>>> = vec![None; table.cols.len()];
+    for (col, column) in coded.iter().enumerate() {
+        let Some(cc) = column else { continue };
+        let build_cost =
+            (table.n as u64).saturating_add((cc.labels.len() as u64).saturating_mul(words as u64));
+        if !work.charge(build_cost, &cfg.deadline) {
+            break;
+        }
+        item_bits[col] = Some(bitsets_for_column(&cc.codes, cc.labels.len(), words));
+    }
     let is_text_target = |i: usize| {
         matches!(
             table.cols[i],
@@ -773,20 +862,29 @@ fn profile_categorical_surprises(
     let targets: Vec<usize> = (0..table.cols.len())
         .filter(|&i| coded[i].is_some() && is_text_target(i))
         .collect();
+    // A work-cap stop during construction leaves only a prefix
+    // of the columns with cached bitsets; that prefix is still a
+    // deterministic part of the condition enumeration.
     let conditions: Vec<usize> = (0..table.cols.len())
-        .filter(|&i| coded[i].is_some())
+        .filter(|&i| item_bits[i].is_some())
         .collect();
     let mut candidates: Vec<CatCandidate> = Vec::new();
     let mut contexts_evaluated = 0usize;
+    let mut targets_completed = 0usize;
+    let mut targets_partial = 0usize;
     let mut not_started = 0usize;
     // Per-target global level counts, kept for the rare-overall
     // requirement at selection time.
     let mut global_counts: Vec<Option<(Vec<usize>, usize)>> = vec![None; table.cols.len()];
+    // Intersecting two bitsets and evaluating the result each cost
+    // one pass over the bitset words.
+    let context_cost = (words as u64).saturating_mul(2);
 
-    for (at, &t) in targets.iter().enumerate() {
-        // Targets run in column order, so a deadline stop leaves
-        // the scanned targets a prefix of that order.
-        if cfg.deadline.exceeded() {
+    'targets: for (at, &t) in targets.iter().enumerate() {
+        // Targets run in column order. Stops only happen at row,
+        // context or target boundaries, so the examined work is a
+        // prefix of that order.
+        if !work.charge(0, &cfg.deadline) {
             not_started = targets.len() - at;
             break;
         }
@@ -800,25 +898,12 @@ fn profile_categorical_surprises(
             gtotal += 1;
         }
         if gtotal < cfg.min_subset_rows {
+            targets_completed += 1;
             continue;
         }
         global_counts[t] = Some((gcounts.clone(), gtotal));
         let conds: Vec<usize> = conditions.iter().copied().filter(|&c| c != t).collect();
-        // Item bitsets per condition column.
-        let item_bits: Vec<Vec<Vec<u64>>> = conds
-            .iter()
-            .map(|&c| {
-                let cc = coded[c].as_ref().unwrap();
-                (0..cc.labels.len() as u32)
-                    .map(|lvl| bitset_for(&cc.codes, lvl, words))
-                    .collect()
-            })
-            .collect();
-        let consider = |items: Vec<(usize, u32)>,
-                        ctx: &[u64],
-                        cands: &mut Vec<CatCandidate>,
-                        counted: &mut usize| {
-            *counted += 1;
+        let consider = |items: Vec<(usize, u32)>, ctx: &[u64], cands: &mut Vec<CatCandidate>| {
             if let Some((subset, dom, dom_count, breakers)) =
                 eval_context(ctx, &tcoded.codes, tlevels)
             {
@@ -847,11 +932,15 @@ fn profile_categorical_surprises(
         // Level 1: every condition level; record each column's
         // best share for the deep-column ranking.
         let mut best_share = vec![0.0f64; conds.len()];
-        for (ci, _) in conds.iter().enumerate() {
-            let cc = coded[conds[ci]].as_ref().unwrap();
+        for (ci, &c) in conds.iter().enumerate() {
+            let cc = coded[c].as_ref().unwrap();
             for lvl in 0..cc.labels.len() as u32 {
-                let ctx = &item_bits[ci][lvl as usize];
+                if !work.charge(words as u64, &cfg.deadline) {
+                    targets_partial = 1;
+                    break 'targets;
+                }
                 contexts_evaluated += 1;
+                let ctx = &item_bits[c].as_ref().unwrap()[lvl as usize];
                 if let Some((subset, dom, dom_count, breakers)) =
                     eval_context(ctx, &tcoded.codes, tlevels)
                 {
@@ -869,7 +958,7 @@ fn profile_categorical_surprises(
                         let p0 = gcounts[dom as usize] as f64 / gtotal as f64;
                         candidates.push(CatCandidate {
                             target: t,
-                            items: vec![(conds[ci], lvl)],
+                            items: vec![(c, lvl)],
                             dom,
                             share,
                             subset,
@@ -908,8 +997,15 @@ fn profile_categorical_surprises(
                     if ci == cj {
                         continue;
                     }
+                    if !work.charge(context_cost, &cfg.deadline) {
+                        targets_partial = 1;
+                        break 'targets;
+                    }
+                    contexts_evaluated += 1;
+                    let a = &item_bits[conds[ci]].as_ref().unwrap()[li as usize];
+                    let b = &item_bits[conds[cj]].as_ref().unwrap()[lj as usize];
                     for w in 0..words {
-                        scratch[w] = item_bits[ci][li as usize][w] & item_bits[cj][lj as usize][w];
+                        scratch[w] = a[w] & b[w];
                     }
                     let items = vec![(conds[ci], li), (conds[cj], lj)];
                     if let Some((subset, _, dom_count, brk)) =
@@ -925,7 +1021,7 @@ fn profile_categorical_surprises(
                             }
                         }
                     }
-                    consider(items, &scratch, &mut candidates, &mut contexts_evaluated);
+                    consider(items, &scratch, &mut candidates);
                 }
             }
             // Level 3: extend the beam with one more deep item.
@@ -942,16 +1038,23 @@ fn profile_categorical_surprises(
                         if used.contains(&conds[ci]) {
                             continue;
                         }
+                        if !work.charge(context_cost, &cfg.deadline) {
+                            targets_partial = 1;
+                            break 'targets;
+                        }
+                        contexts_evaluated += 1;
+                        let extra = &item_bits[conds[ci]].as_ref().unwrap()[lvl as usize];
                         for w in 0..words {
-                            scratch[w] = bits[w] & item_bits[ci][lvl as usize][w];
+                            scratch[w] = bits[w] & extra[w];
                         }
                         let mut items3 = items.clone();
                         items3.push((conds[ci], lvl));
-                        consider(items3, &scratch, &mut candidates, &mut contexts_evaluated);
+                        consider(items3, &scratch, &mut candidates);
                     }
                 }
             }
         }
+        targets_completed += 1;
     }
 
     // Significance bar: the context must raise the dominant level's
@@ -989,11 +1092,11 @@ fn profile_categorical_surprises(
     let mut shadow_per_target: BTreeMap<usize, usize> = BTreeMap::new();
     let mut shadow_emitted = 0usize;
     for cand in &candidates {
-        if findings.len() >= budget {
+        if findings.len() >= finding_budget {
             break;
         }
         let shadow_seen = shadow_reported.entry(cand.target).or_default();
-        let shadow_selected = shadow_emitted < budget
+        let shadow_selected = shadow_emitted < finding_budget
             && shadow_per_target.get(&cand.target).copied().unwrap_or(0) < 3
             && !cand.breakers.iter().all(|r| shadow_seen.contains(r));
         if shadow_selected {
@@ -1058,14 +1161,17 @@ fn profile_categorical_surprises(
             &cand,
         ));
     }
-    (
+    CategoricalOutcome {
         findings,
-        targets.len() - not_started,
-        contexts_evaluated,
+        targets_total: targets.len(),
+        targets_completed,
+        targets_partial,
         not_started,
+        contexts: contexts_evaluated,
         withheld,
         not_significant,
-    )
+        work,
+    }
 }
 
 struct TargetScan {
@@ -1078,7 +1184,7 @@ struct TargetScan {
 fn scan_target(
     table: &TypedTable,
     t: usize,
-    conditions: &[(usize, Coded)],
+    conditions: &[(usize, &Coded)],
     cfg: &SurpriseConfig,
 ) -> Option<TargetScan> {
     let mut vals = column_values(table, t);
@@ -1117,8 +1223,8 @@ fn scan_target(
     // Subset pass: one categorical condition at a time.
     let mut subset = Vec::new();
     let mut tried = 0usize;
-    for (c, coded) in conditions {
-        if *c == t || tried >= cfg.max_conditions {
+    for &(c, coded) in conditions {
+        if c == t || tried >= cfg.max_conditions {
             continue;
         }
         tried += 1;
@@ -1154,7 +1260,7 @@ fn scan_target(
                     }
                     subset.push(make_finding(
                         tname,
-                        Some((table.names[*c].as_str(), lvl.as_str())),
+                        Some((table.names[c].as_str(), lvl.as_str())),
                         lvals.len(),
                         &ex,
                         high,
@@ -1167,20 +1273,42 @@ fn scan_target(
     Some(TargetScan { global, subset })
 }
 
-/// The surprises pass: findings, the coverage detail, and whether
-/// the deadline stopped the pass before every target was scanned.
+/// Findings, coverage detail and the two reasons a pass can be
+/// partial. A work-cap stop does not consume the profile deadline:
+/// later passes still run, but this pass's coverage entry is
+/// `capped` and says so (#437).
+pub struct SurpriseOutcome {
+    pub findings: Vec<Finding>,
+    pub coverage: String,
+    pub deadline_stopped: bool,
+    pub work_capped: bool,
+}
+
+/// The surprises pass: numeric and categorical scans together.
 pub fn profile_surprises(
     table: &TypedTable,
     excluded: &[usize],
     cfg: &SurpriseConfig,
-) -> (Vec<Finding>, String, bool) {
+) -> SurpriseOutcome {
     let numeric: Vec<usize> = (0..table.cols.len())
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
-    // Compact per-row codes are target-independent. Build each once.
-    let conditions: Vec<(usize, Coded)> = (0..table.cols.len())
-        .filter(|i| !excluded.contains(i))
-        .filter_map(|i| code_column(table, i, cfg).map(|coded| (i, coded)))
+    // Compact per-row codes are target-independent. Build each
+    // column once and share both the codes and the item bitsets
+    // derived from them with every scan.
+    let coded: Vec<Option<Coded>> = (0..table.cols.len())
+        .map(|i| {
+            if excluded.contains(&i) {
+                None
+            } else {
+                code_column(table, i, cfg)
+            }
+        })
+        .collect();
+    let conditions: Vec<(usize, &Coded)> = coded
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| c.as_ref().map(|coded| (i, coded)))
         .collect();
     // Every column gets its whole-column scan. Those statements take the
     // budget first, strongest first, so early columns' subset statements
@@ -1216,20 +1344,30 @@ pub fn profile_surprises(
     findings.append(&mut subset_findings);
     findings.truncate(cfg.max_findings);
     let numeric_findings = findings.len();
-    let (cat_findings, cat_targets, cat_contexts, cat_not_started, cat_withheld, cat_chance) =
-        if findings.len() < cfg.max_findings {
-            profile_categorical_surprises(table, excluded, cfg, cfg.max_findings - findings.len())
-        } else {
-            (Vec::new(), 0, 0, 0, 0, 0)
-        };
+    let cat = if findings.len() < cfg.max_findings {
+        profile_categorical_surprises(table, cfg, cfg.max_findings - findings.len(), &coded)
+    } else {
+        CategoricalOutcome::empty(cfg.work_budget)
+    };
+    let CategoricalOutcome {
+        findings: mut cat_findings,
+        targets_total: cat_total,
+        targets_completed: cat_completed,
+        targets_partial: cat_partial,
+        not_started: cat_not_started,
+        contexts: cat_contexts,
+        withheld: cat_withheld,
+        not_significant: cat_chance,
+        work: cat_work,
+    } = cat;
     let cat_count = cat_findings.len();
-    findings.extend(cat_findings);
+    findings.append(&mut cat_findings);
     let mut detail = format!(
         "{} numeric columns scanned against {} conditioning columns; {} surprise findings; {} categorical columns scanned in {} contexts up to {} conditions; {} categorical surprise findings",
         scanned,
         conditions.len(),
         numeric_findings,
-        cat_targets,
+        cat_completed,
         cat_contexts,
         cfg.max_context_conditions,
         cat_count
@@ -1244,17 +1382,35 @@ pub fn profile_surprises(
             "; {cat_withheld} categorical outlier statements not stated: a deviating level is common in its column overall (a default run requires every deviating level at or below 1% of the column's values); name the outliers detector explicitly to state them"
         ));
     }
-    let stopped = numeric_not_started + cat_not_started > 0;
-    if stopped {
+    let deadline_stopped = numeric_not_started > 0 || cat_work.deadline_stopped;
+    if deadline_stopped {
         detail.push_str(&format!(
             "; deadline reached mid-pass: {} of {} numeric targets and {} of {} categorical targets scanned",
             numeric.len() - numeric_not_started,
             numeric.len(),
-            cat_targets,
-            cat_targets + cat_not_started,
+            cat_completed,
+            cat_total,
         ));
     }
-    (findings, detail, stopped)
+    let work_capped = cat_work.stopped && !cat_work.deadline_stopped;
+    if work_capped {
+        detail.push_str(&format!(
+            "; work budget bound: {} of {} work units spent, {} contexts evaluated, {} of {} categorical targets fully screened, {} stopped mid-scan, {} not started; the examined contexts are a prefix of the deterministic enumeration, so the negative is partial",
+            cat_work.spent,
+            cat_work.budget,
+            cat_contexts,
+            cat_completed,
+            cat_total,
+            cat_partial,
+            cat_not_started,
+        ));
+    }
+    SurpriseOutcome {
+        findings,
+        coverage: detail,
+        deadline_stopped,
+        work_capped,
+    }
 }
 
 #[cfg(test)]
@@ -1300,16 +1456,19 @@ mod tests {
             ),
             ..SurpriseConfig::default()
         };
-        let (findings, detail, stopped) = profile_surprises(&table, &[], &cfg);
-        assert!(stopped);
-        assert!(findings.is_empty());
+        let out = profile_surprises(&table, &[], &cfg);
+        assert!(out.deadline_stopped);
+        assert!(!out.work_capped);
+        assert!(out.findings.is_empty());
         assert!(
-            detail.contains("deadline reached mid-pass: 0 of 1 numeric targets and 0 of 1 categorical targets scanned"),
-            "{detail}"
+            out.coverage.contains("deadline reached mid-pass: 0 of 1 numeric targets and 0 of 1 categorical targets scanned"),
+            "{}",
+            out.coverage
         );
-        let (_, plain, plain_stopped) = profile_surprises(&table, &[], &SurpriseConfig::default());
-        assert!(!plain_stopped);
-        assert!(!plain.contains("deadline"), "{plain}");
+        let plain = profile_surprises(&table, &[], &SurpriseConfig::default());
+        assert!(!plain.deadline_stopped);
+        assert!(!plain.work_capped);
+        assert!(!plain.coverage.contains("deadline"), "{}", plain.coverage);
     }
 
     #[test]
@@ -1473,6 +1632,17 @@ mod tests {
         }
     }
 
+    fn scan_categorical(
+        table: &TypedTable<'static>,
+        cfg: &SurpriseConfig,
+        finding_budget: usize,
+    ) -> CategoricalOutcome {
+        let coded: Vec<Option<Coded>> = (0..table.cols.len())
+            .map(|i| code_column(table, i, cfg))
+            .collect();
+        profile_categorical_surprises(table, cfg, finding_budget, &coded)
+    }
+
     #[test]
     fn categorical_flags_single_breaker() {
         // grp = A (150 rows): outcome is "ok" except row 7.
@@ -1493,7 +1663,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let findings = scan_categorical(&table, &cfg, 20).findings;
         assert_eq!(
             findings.len(),
             1,
@@ -1528,7 +1698,7 @@ mod tests {
             300,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let findings = scan_categorical(&table, &cfg, 20).findings;
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1560,7 +1730,7 @@ mod tests {
             400,
         );
         let cfg = SurpriseConfig::default();
-        let (findings, _, _, _, _, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let findings = scan_categorical(&table, &cfg, 20).findings;
         // The planted context ranks first; the same row is also
         // the breaker from the other two columns' perspectives
         // (one finding per target, by design).
@@ -1613,7 +1783,9 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let out = scan_categorical(&table, &cfg, 20);
+        let withheld = out.withheld;
+        let findings = out.findings;
         assert!(
             findings.is_empty(),
             "claims: {:?}",
@@ -1629,11 +1801,13 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, detail, _) = profile_surprises(&table, &[], &cfg);
-        assert!(findings.is_empty());
+        let out = profile_surprises(&table, &[], &cfg);
+        assert!(out.findings.is_empty());
         assert!(
-            detail.contains("1 categorical outlier statements not stated"),
-            "{detail}"
+            out.coverage
+                .contains("1 categorical outlier statements not stated"),
+            "{}",
+            out.coverage
         );
     }
 
@@ -1662,7 +1836,9 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let out = scan_categorical(&table, &cfg, 20);
+        let withheld = out.withheld;
+        let findings = out.findings;
         assert_eq!(withheld, 0);
         assert_eq!(
             findings.len(),
@@ -1715,7 +1891,9 @@ mod tests {
             require_rare_breakers: true,
             ..SurpriseConfig::default()
         };
-        let (findings, _, _, _, withheld, _) = profile_categorical_surprises(&table, &[], &cfg, 20);
+        let out = scan_categorical(&table, &cfg, 20);
+        let withheld = out.withheld;
+        let findings = out.findings;
         assert_eq!(withheld, 2);
         assert_eq!(
             findings.len(),
@@ -1727,6 +1905,73 @@ mod tests {
             findings[0].claim.contains("rare"),
             "claim: {}",
             findings[0].claim
+        );
+    }
+
+    #[test]
+    fn work_budget_caps_categorical_search_and_says_so() {
+        let table = single_breaker_table();
+        // Two columns x two levels at 300 rows cost 620 units to
+        // build the shared bitsets; the next context exhausts this
+        // budget before the deterministic enumeration ends.
+        let cfg = SurpriseConfig {
+            work_budget: 625,
+            ..SurpriseConfig::default()
+        };
+        let capped = scan_categorical(&table, &cfg, 20);
+        let full = scan_categorical(&table, &SurpriseConfig::default(), 20);
+        assert!(capped.work.stopped);
+        assert!(!capped.work.deadline_stopped);
+        assert!(capped.contexts > 0 && capped.contexts < full.contexts);
+        assert_eq!(capped.targets_partial, 1);
+        assert_eq!(capped.targets_completed, 0);
+
+        let out = profile_surprises(&table, &[], &cfg);
+        assert!(out.work_capped, "{}", out.coverage);
+        assert!(!out.deadline_stopped, "{}", out.coverage);
+        assert!(
+            out.coverage.contains("work budget bound"),
+            "{}",
+            out.coverage
+        );
+        assert!(
+            out.coverage.contains("negative is partial"),
+            "{}",
+            out.coverage
+        );
+    }
+
+    #[test]
+    fn ordinary_frame_is_unchanged_without_a_binding_work_budget() {
+        let table = single_breaker_table();
+        let plain = profile_surprises(&table, &[], &SurpriseConfig::default());
+        let generous = profile_surprises(
+            &table,
+            &[],
+            &SurpriseConfig {
+                work_budget: u64::MAX,
+                ..SurpriseConfig::default()
+            },
+        );
+        assert!(!plain.work_capped);
+        assert!(!generous.work_capped);
+        assert_eq!(plain.coverage, generous.coverage);
+        assert_eq!(
+            plain
+                .findings
+                .iter()
+                .map(|f| f.claim.as_str())
+                .collect::<Vec<_>>(),
+            generous
+                .findings
+                .iter()
+                .map(|f| f.claim.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            !plain.coverage.contains("work budget"),
+            "{}",
+            plain.coverage
         );
     }
 
