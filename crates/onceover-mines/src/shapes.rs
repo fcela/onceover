@@ -88,40 +88,11 @@ impl ShapeDiagnostics {
 }
 
 fn ranks(values: &[f64]) -> Vec<f64> {
-    let n = values.len();
-    let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a, &b| values[a].total_cmp(&values[b]));
-    let mut out = vec![0.0; n];
-    let mut i = 0;
-    while i < n {
-        let mut j = i;
-        while j + 1 < n && values[order[j + 1]] == values[order[i]] {
-            j += 1;
-        }
-        let average = (i + j) as f64 / 2.0;
-        for &k in &order[i..=j] {
-            out[k] = average;
-        }
-        i = j + 1;
-    }
-    out
+    onceover_core::stats::midranks(values)
 }
 
 fn correlation(a: &[f64], b: &[f64]) -> f64 {
-    let n = a.len() as f64;
-    let ma = a.iter().sum::<f64>() / n;
-    let mb = b.iter().sum::<f64>() / n;
-    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
-    for (x, y) in a.iter().zip(b) {
-        sab += (x - ma) * (y - mb);
-        saa += (x - ma).powi(2);
-        sbb += (y - mb).powi(2);
-    }
-    if saa > 0.0 && sbb > 0.0 {
-        sab / (saa * sbb).sqrt()
-    } else {
-        0.0
-    }
+    onceover_core::stats::pearson(a, b).unwrap_or(0.0)
 }
 
 /// Diagnostics of how `y` depends on the column `x` (complete,

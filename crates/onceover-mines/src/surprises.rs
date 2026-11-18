@@ -546,22 +546,7 @@ fn bitset_for(codes: &[Option<u32>], level: u32, words: usize) -> Vec<u64> {
 
 /// Lanczos log-gamma (ranking-grade accuracy).
 fn lgamma(x: f64) -> f64 {
-    const C: [f64; 6] = [
-        76.18009172947146,
-        -86.50532032941677,
-        24.01409824083091,
-        -1.231739572450155,
-        0.001208650973866179,
-        -0.000005395239384953,
-    ];
-    let mut ser = 1.000000000190015;
-    let mut y = x;
-    for &c in &C {
-        y += 1.0;
-        ser += c / y;
-    }
-    let tmp = x + 5.5;
-    tmp.ln() * (x + 0.5) - tmp + (2.5066282746310005 * ser / x).ln()
+    onceover_core::stats::ln_gamma(x)
 }
 
 /// log10 of the binomial survival P(X >= k) for X ~ Bin(n, p):

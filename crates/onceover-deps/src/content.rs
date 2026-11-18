@@ -573,9 +573,7 @@ fn text_findings(name: &str, col: &TypedCol, n_rows: usize) -> Vec<Finding> {
 // ---------------------------------------------------------------------
 
 fn quantile(sorted: &[f64], q: f64) -> f64 {
-    let pos = q * (sorted.len() - 1) as f64;
-    let (lo, hi) = (pos.floor() as usize, pos.ceil() as usize);
-    sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo as f64)
+    onceover_core::stats::quantile_sorted(sorted, q)
 }
 
 /// Runs of equal values, ascending.

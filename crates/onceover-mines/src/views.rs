@@ -96,29 +96,7 @@ pub struct ViewsOutcome {
 
 /// Natural log of the gamma function (Lanczos, g = 7).
 fn ln_gamma(x: f64) -> f64 {
-    // Coefficients from the standard g = 7 Lanczos approximation.
-    const C: [f64; 9] = [
-        0.999_999_999_999_809_9,
-        676.5203681218851,
-        -1259.1392167224028,
-        771.323_428_777_653_1,
-        -176.615_029_162_140_6,
-        12.507343278686905,
-        -0.13857109526572012,
-        9.984_369_578_019_572e-6,
-        1.5056327351493116e-7,
-    ];
-    if x < 0.5 {
-        // Reflection: Gamma(1 - x) * Gamma(x) = pi / sin(pi * x).
-        return (std::f64::consts::PI / (std::f64::consts::PI * x).sin()).ln() - ln_gamma(1.0 - x);
-    }
-    let z = x - 1.0;
-    let mut a = C[0];
-    for (i, c) in C.iter().enumerate().skip(1) {
-        a += c / (z + i as f64);
-    }
-    let t = z + 7.5;
-    0.5 * (2.0 * std::f64::consts::PI).ln() + (z + 0.5) * t.ln() - t + a.ln()
+    onceover_core::stats::ln_gamma(x)
 }
 
 /// Log marginal likelihood of standardized values under NIG(0, 1, 2, 1).

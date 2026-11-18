@@ -1757,9 +1757,7 @@ fn median_of(vals: &[f64]) -> f64 {
     if vals.is_empty() {
         return 0.0;
     }
-    let mut v: Vec<f64> = vals.to_vec();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    crate::dep::median_sorted(&v)
+    onceover_core::stats::median(vals)
 }
 
 /// Points per week implied by the median interval between

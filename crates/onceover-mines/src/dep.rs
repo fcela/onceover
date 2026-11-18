@@ -127,23 +127,7 @@ pub(crate) fn bh_qvalues(pvals: &[Option<f64>]) -> Vec<Option<f64>> {
 
 /// Lanczos approximation of ln Γ(x) for x > 0.
 fn ln_gamma(x: f64) -> f64 {
-    const COEF: [f64; 6] = [
-        76.18009172947146,
-        -86.50532032941677,
-        24.01409824083091,
-        -1.231739572450155,
-        0.001208650973866179,
-        -0.000005395239384953,
-    ];
-    let mut y = x;
-    let mut tmp = x + 5.5;
-    tmp -= (x + 0.5) * tmp.ln();
-    let mut ser = 1.000000000190015;
-    for c in COEF {
-        y += 1.0;
-        ser += c / y;
-    }
-    -tmp + (2.5066282746310005 * ser / x).ln()
+    onceover_core::stats::ln_gamma(x)
 }
 
 /// Regularized lower incomplete gamma P(a, x): series below
@@ -331,7 +315,7 @@ pub(crate) fn fmt_q(q: f64) -> String {
 /// ascending slice: pos = q·(n−1), interpolated between the
 /// bracketing order statistics. NaN on an empty slice.
 pub(crate) fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
-    quantile_at(sorted.len(), q, |i| sorted[i])
+    onceover_core::stats::quantile_sorted(sorted, q)
 }
 
 /// The same quantile over the values of ascending (value, row)
@@ -341,14 +325,7 @@ pub(crate) fn quantile_sorted_pairs(sorted: &[(f64, usize)], q: f64) -> f64 {
 }
 
 fn quantile_at(len: usize, q: f64, at: impl Fn(usize) -> f64) -> f64 {
-    if len == 0 {
-        return f64::NAN;
-    }
-    let pos = q * (len - 1) as f64;
-    let lo = pos.floor() as usize;
-    let hi = (lo + 1).min(len - 1);
-    let frac = pos - lo as f64;
-    at(lo) * (1.0 - frac) + at(hi) * frac
+    onceover_core::stats::quantile_at(len, q, at)
 }
 
 /// Nearest-rank quantile of an ascending slice: the order
@@ -359,12 +336,12 @@ fn quantile_at(len: usize, q: f64, at: impl Fn(usize) -> f64) -> f64 {
 /// use `quantile_sorted` instead. Callers guarantee a non-empty
 /// slice.
 pub(crate) fn quantile_nearest_rank(sorted: &[f64], q: f64) -> f64 {
-    sorted[((q * (sorted.len() - 1) as f64) as usize).min(sorted.len() - 1)]
+    onceover_core::stats::quantile_nearest_rank(sorted, q)
 }
 
 /// Median of an ascending slice.
 pub(crate) fn median_sorted(sorted: &[f64]) -> f64 {
-    quantile_sorted(sorted, 0.5)
+    onceover_core::stats::median_sorted(sorted)
 }
 
 /// Interquartile range of an ascending slice.
@@ -537,57 +514,24 @@ pub fn sampled_pairs(a: &TypedCol, b: &TypedCol, rows: &[u32]) -> Vec<(f64, f64)
 }
 
 pub fn pearson(pairs: &[(f64, f64)]) -> Option<f64> {
-    let n = pairs.len();
-    if n < 30 {
+    if pairs.len() < 30 {
         return None;
     }
-    let mx = pairs.iter().map(|p| p.0).sum::<f64>() / n as f64;
-    let my = pairs.iter().map(|p| p.1).sum::<f64>() / n as f64;
-    let mut cov = 0.0;
-    let mut vx = 0.0;
-    let mut vy = 0.0;
-    for (x, y) in pairs {
-        let (dx, dy) = (x - mx, y - my);
-        cov += dx * dy;
-        vx += dx * dx;
-        vy += dy * dy;
-    }
-    if vx <= 0.0 || vy <= 0.0 {
-        return None;
-    }
-    Some(cov / (vx * vy).sqrt())
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+    onceover_core::stats::pearson(&xs, &ys)
 }
 
 /// Average (mid)ranks of values, ties averaged.
 pub fn midranks(vals: &[f64]) -> Vec<f64> {
-    let mut idx: Vec<usize> = (0..vals.len()).collect();
-    idx.sort_by(|&a, &b| vals[a].total_cmp(&vals[b]));
-    let mut ranks = vec![0.0f64; vals.len()];
-    let mut i = 0;
-    while i < idx.len() {
-        let mut j = i;
-        while j + 1 < idx.len() && vals[idx[j + 1]] == vals[idx[i]] {
-            j += 1;
-        }
-        let avg = (i + j) as f64 / 2.0 + 1.0; // 1-based average rank
-        for &k in &idx[i..=j] {
-            ranks[k] = avg;
-        }
-        i = j + 1;
-    }
-    ranks
+    onceover_core::stats::midranks(vals)
 }
 
 pub fn spearman(pairs: &[(f64, f64)]) -> Option<f64> {
     if pairs.len() < 30 {
         return None;
     }
-    let xs: Vec<f64> = pairs.iter().map(|p| p.0).collect();
-    let ys: Vec<f64> = pairs.iter().map(|p| p.1).collect();
-    let rx = midranks(&xs);
-    let ry = midranks(&ys);
-    let rank_pairs: Vec<(f64, f64)> = rx.into_iter().zip(ry).collect();
-    pearson(&rank_pairs)
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+    onceover_core::stats::spearman(&xs, &ys)
 }
 
 /// Chatterjee's ξ (Ann. Statist. 2021), tie-corrected per Eq. 1.2 — the

@@ -739,40 +739,13 @@ fn spearman_on_sample<T: ScanVal>(a: &[Option<T>], b: &[Option<T>], rows: &[u32]
 /// Average ranks (1-based) of a value vector, ties sharing the
 /// mean of the ranks they span.
 fn midranks(v: &[f64]) -> Vec<f64> {
-    let mut idx: Vec<usize> = (0..v.len()).collect();
-    idx.sort_by(|&p, &q| v[p].partial_cmp(&v[q]).unwrap_or(std::cmp::Ordering::Equal));
-    let mut ranks = vec![0.0; v.len()];
-    let mut i = 0;
-    while i < idx.len() {
-        let mut j = i + 1;
-        while j < idx.len() && v[idx[j]] == v[idx[i]] {
-            j += 1;
-        }
-        let mid = (i + j - 1) as f64 / 2.0 + 1.0;
-        for k in i..j {
-            ranks[idx[k]] = mid;
-        }
-        i = j;
-    }
-    ranks
+    onceover_core::stats::midranks(v)
 }
 
 /// Pearson correlation of two equal-length vectors; None when
 /// either has zero variance.
 fn pearson_xy(xs: &[f64], ys: &[f64]) -> Option<f64> {
-    let n = xs.len() as f64;
-    let (mx, my) = (xs.iter().sum::<f64>() / n, ys.iter().sum::<f64>() / n);
-    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
-    for (x, y) in xs.iter().zip(ys) {
-        let (dx, dy) = (x - mx, y - my);
-        sxy += dx * dy;
-        sxx += dx * dx;
-        syy += dy * dy;
-    }
-    if sxx <= 0.0 || syy <= 0.0 {
-        return None;
-    }
-    Some(sxy / (sxx * syy).sqrt())
+    onceover_core::stats::pearson(xs, ys)
 }
 
 /// The bases a certified or systematic direction can carry
