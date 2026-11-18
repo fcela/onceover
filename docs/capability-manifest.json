@@ -482,6 +482,18 @@
    "membership": "on_request",
    "trigger": "always",
    "purpose": "Experimental shared row partitions, cluster differences, and density findings"
+  },
+  {
+   "id": "entity_fingerprints",
+   "categories": [
+    "associations",
+    "anomalies",
+    "concentration"
+   ],
+   "requires": [],
+   "membership": "on_request",
+   "trigger": "always",
+   "purpose": "Each entity's mix over each dimension, compared across entities: groups of entities with a similar mix, a continuum, entities that match no group, and specialists"
   }
  ]
 }

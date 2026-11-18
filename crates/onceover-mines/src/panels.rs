@@ -144,11 +144,11 @@ pub(crate) fn entity_codes(
 
 /// Per-row entity codes, the distinct count, and each code's
 /// display label, in code order.
-type EntityIndex = (Vec<Option<u32>>, usize, Vec<String>);
+pub(crate) type EntityIndex = (Vec<Option<u32>>, usize, Vec<String>);
 
 /// Entity codes plus the distinct count and each code's display
 /// label, in code order.
-fn entity_index(table: &TypedTable, col: usize) -> Result<EntityIndex, EntitySkip> {
+pub(crate) fn entity_index(table: &TypedTable, col: usize) -> Result<EntityIndex, EntitySkip> {
     let keys: Vec<Option<EntityKey>> = match &table.cols[col] {
         TypedCol::Str { vals } => vals
             .iter()

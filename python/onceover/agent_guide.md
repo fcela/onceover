@@ -86,6 +86,6 @@ statement's rows.
 
 ## 4. Detector selection
 
-The default set runs 31 of the 45 registered detectors;
+The default set runs 31 of the 46 registered detectors;
 `detectors=[...]` restricts a run; `capabilities()` lists
 membership, trigger, and purpose per detector.

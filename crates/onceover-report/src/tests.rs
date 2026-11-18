@@ -474,6 +474,10 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         (OutcomeDistribution, Category::Concentration),
         (ConcentrationOverTime, Category::Concentration),
         (OutlierEntity, Category::Concentration),
+        (EntitySpecialists, Category::Concentration),
+        (EntityGroups, Category::Associations),
+        (EntityContinuum, Category::Associations),
+        (EntityMisfits, Category::Anomalies),
         (CategoricalRole, Category::ColumnRoles),
         (IdentifierRole, Category::ColumnRoles),
         (LongFormat, Category::ColumnRoles),
@@ -1823,10 +1827,11 @@ fn pressure_detector_caps_bind_under_pressure() {
 
 #[test]
 fn pattern_taxonomy_is_complete_and_self_consistent() {
-    // 67 patterns, including the two views-pass patterns
+    // 71 patterns, including the two views-pass patterns
     // (modal_share, spike_cells) that Finding::from_statement
-    // callers name directly.
-    assert_eq!(Pattern::ALL.len(), 67);
+    // callers name directly, and the four entity-fingerprint
+    // patterns.
+    assert_eq!(Pattern::ALL.len(), 71);
     let mut pairs = std::collections::BTreeSet::new();
     for pattern in Pattern::ALL {
         let facets = Facets::for_pattern(
@@ -1843,9 +1848,9 @@ fn pattern_taxonomy_is_complete_and_self_consistent() {
         );
         pairs.insert((category, pattern.subtype()));
     }
-    // 66 distinct (category, type) pairs: "predictive" is shared
+    // 70 distinct (category, type) pairs: "predictive" is shared
     // by two patterns; every other pattern carries its own type.
-    assert_eq!(pairs.len(), 66);
+    assert_eq!(pairs.len(), 70);
 }
 
 #[test]
@@ -1884,7 +1889,9 @@ fn derived_type_lists_match_the_taxonomy() {
             "conditioned_association",
             "slice_shift",
             "axis_shape",
-            "level_contrast"
+            "level_contrast",
+            "entity_groups",
+            "entity_continuum"
         ]
         .into_iter()
         .collect()

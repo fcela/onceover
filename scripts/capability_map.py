@@ -294,6 +294,30 @@ ENTRIES = {
         "states": "An entity's total of a measure over all periods sits far in the tail of the entity totals.",
         "example": "one entity sits far outside the entity distribution of total signups: entity_05 (total 72005.5453, 59.9x the typical entity); it holds 72.9% of all signups; the typical entity totals 1201.279",
     },
+    "entity_groups": {
+        "question": "goes_with",
+        "detector": "entity_fingerprints",
+        "states": "Entities fall into groups by their share of rows on each level of one categorical column; members of one group share a mix, and groups differ from each other.",
+        "example": "cust_id fall into 4 groups by their mix of category: 235 cust_id (59%) with 50% on 'fresh' (against 32% overall); 77 cust_id (19%) with 28% on 'beverages' (against 11% overall), 22% on 'snacks' (against 9% overall); 76 cust_id (19%) with 25% on 'household' (against 11% overall), 21% on 'personal_care' (against 9% overall); 12 cust_id (3%) with 47% on 'frozen' (against 9% overall), 45% on 'dairy' (against 12% overall)",
+    },
+    "entity_continuum": {
+        "question": "goes_with",
+        "detector": "entity_fingerprints",
+        "states": "Entities differ in their mix over one categorical column along one continuous axis, with no separable groups.",
+        "example": "cust_id differ in their mix of category along one continuous axis, not in groups: the share of 'fresh' against 'household' varies from cust_id to cust_id without clusters (excess Cramér's V 0.12)",
+    },
+    "entity_specialists": {
+        "question": "concentrates",
+        "detector": "entity_fingerprints",
+        "states": "A share of entities puts essentially all of its rows on one level of a categorical column, where the overall mix spreads over several levels.",
+        "example": "71% of cust_id (283 of 400 with 10 or more rows) concentrate on essentially one location level (effective number of levels 1.5 or less), against 5.0 effective levels in the overall mix",
+    },
+    "entity_misfits": {
+        "question": "breaks_pattern",
+        "detector": "entity_fingerprints",
+        "states": "An entity's mix over one categorical column is rejected by the pooled profile of every group, so it matches no group.",
+        "example": "12 cust_id (3%) match none of the 4 category-mix groups: each one's counts reject its nearest group's profile (chi-square, Bonferroni over 400 cust_id); together they hold 3% of rows; for example C0083, C0086, C0250, C0309, C0395",
+    },
     # What changed along an order?
     "series_structure": {
         "question": "changed",

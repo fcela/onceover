@@ -1885,6 +1885,57 @@ fn profile_inner(
         }
     }
 
+    // ---------- entity fingerprints (issue #448) ----------
+    // Each entity's mix over each dimension, compared across
+    // entities. Runs from the declared entity, else the grain's one
+    // non-axis factor (the entity infer_spec reports); with neither,
+    // coverage states the pass did not run.
+    if check_deadline(&mut coverage, "entity_fingerprints") {
+        deadline_hit = true;
+    }
+    if !deadline_hit && enabled("entity_fingerprints") {
+        let axis_name = frame.info.axis.as_ref().map_or("", |a| a.name.as_str());
+        let entity =
+            declared_entity_idx.or_else(|| {
+                entity_columns(&table, &frame, &card_facts, axis_name, None)
+                    .into_iter()
+                    .next()
+                    .filter(|&i| {
+                        frame.info.grain.as_ref().is_some_and(|g| {
+                            g.factorization.iter().any(|f| f.column == table.names[i])
+                        })
+                    })
+            });
+        let info = match entity {
+            Some(entity) => {
+                let input = onceover_mines::FingerprintInput {
+                    entity,
+                    dimensions: frame
+                        .roles
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, r)| *i != entity && r.as_deref() == Some("dimension"))
+                        .map(|(i, _)| i)
+                        .collect(),
+                };
+                let (mut f, detail) = onceover_mines::entity_fingerprints(&table, &input);
+                findings.append(&mut f);
+                PassInfo::ran(detail)
+            }
+            None => PassInfo::skipped(
+                "no entity: none declared (hints.entity) and the grain has no single non-axis factor"
+                    .to_string(),
+            ),
+        };
+        stamp_insert(
+            &mut coverage,
+            &mut last_mark,
+            timing_on,
+            "entity_fingerprints".into(),
+            info,
+        );
+    }
+
     // ---------- content ----------
     if check_deadline(&mut coverage, "content_anomalies") {
         deadline_hit = true;
