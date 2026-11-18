@@ -120,33 +120,30 @@ def calendar_df():
     )
 
 
-def test_calendar_restatements_are_demoted_not_removed():
+def test_calendar_columns_are_derived_before_the_passes():
+    # dteday is unique (one row per day), so "the date determines
+    # mnth" is vacuous; mnth is a function of the month of year and
+    # season of the quarter, two calendar keys that repeat. Both get
+    # the timestamp_part role with that evidence, before any pass
+    # runs, and no finding restates the calendar.
     report = onceover.profile(calendar_df())
-    # Calendar dependencies are reported across the selected
-    # findings and the grouped statements (schema 0.6): the exact
-    # calendar derivations consolidate into verified relationship
-    # families, and every restatement stays in the report.
-    fds = [
+    roles = {r["column"]: r for r in report.data["frame"]["roles"]}
+    assert roles["mnth"]["role"] == "timestamp_part"
+    assert "month of year of dteday" in roles["mnth"]["evidence"]
+    assert roles["season"]["role"] == "timestamp_part"
+    assert "quarter of dteday" in roles["season"]["evidence"]
+    # cnt cycles every 9 days, a function of no calendar key, and
+    # keeps its own role.
+    assert roles["cnt"]["role"] != "timestamp_part"
+    calendar = {"dteday", "mnth", "season"}
+    restated = [
         f
         for f in report.data["findings"] + (report.data.get("grouped_findings") or [])
-        if f["category"] == "dependencies" and f.get("type") == "functional"
+        if f["category"] != "uniqueness"
+        and (f["facets"] or {}).get("scope") != "frame"
+        and set(f["subject"]["columns"]) <= calendar
+        and set(f["subject"]["columns"]) & {"mnth", "season"}
     ]
-    assert fds, "the calendar dependencies are still reported"
-    demoted = [
-        f
-        for f in fds
-        if any(
-            (e.get("metrics") or {}).get("triviality") == "calendar_derivation"
-            for e in f["evidence"]
-        )
-    ]
-    assert demoted, "calendar-derived dependencies carry the demotion reason"
-    selection = report.data["coverage"].get("selection", {})
-    frame_model = report.data["coverage"].get("frame_model", {})
-    assert "frame_model" in report.data["coverage"]
+    assert restated == [], [f["claim"] for f in restated]
+    frame_model = report.data["coverage"]["frame_model"]
     assert "grain" in frame_model["detail"]
-    assert (
-        "calendar_derivation" in selection.get("detail", "")
-        or "calendar_derivation" in frame_model.get("detail", "")
-        or demoted
-    )

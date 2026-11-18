@@ -35,6 +35,9 @@ pub struct EncodeConfig {
     pub feature_cap: usize,
     /// Max distinct string levels coded as a nominal feature.
     pub nominal_max_levels: usize,
+    /// Table columns never encoded: the redundant side of a
+    /// one-to-one recoding, whose information the kept side carries.
+    pub skip_columns: Vec<usize>,
 }
 
 impl Default for EncodeConfig {
@@ -43,6 +46,7 @@ impl Default for EncodeConfig {
             row_cap: 20_000,
             feature_cap: 48,
             nominal_max_levels: 32,
+            skip_columns: Vec::new(),
         }
     }
 }
@@ -65,6 +69,9 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
     let mut skipped = 0usize;
 
     for (ci, col) in table.cols.iter().enumerate() {
+        if cfg.skip_columns.contains(&ci) {
+            continue;
+        }
         match col {
             TypedCol::I64 { .. }
             | TypedCol::U64 { .. }

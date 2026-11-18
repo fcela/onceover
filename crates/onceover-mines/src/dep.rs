@@ -921,6 +921,7 @@ fn screen_sampled_impl(
                 row_cap: row_cap.min(2048),
                 feature_cap: usize::MAX,
                 nominal_max_levels: 32,
+                skip_columns: Vec::new(),
             },
         );
         // Direct-index slot lookup (column index -> encoded slot).

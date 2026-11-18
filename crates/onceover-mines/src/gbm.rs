@@ -433,6 +433,7 @@ pub fn screen(
     enc: &EncodedMatrix,
     cfg: &ScreenConfig,
     excluded_targets: &[usize],
+    inputs_allowed: &[usize],
     declared_excluded: &[usize],
 ) -> ScreenOutcome {
     // Frame-role exclusions remove scaffolding columns (index,
@@ -441,7 +442,16 @@ pub fn screen(
     // in coverage. Declared exclusions (issue #310: columns the
     // caller declared recorded after the outcome) are withheld
     // from the predictor pools only — they remain targets of the
-    // screen — and are likewise stated in coverage.
+    // screen — and are likewise stated in coverage. Columns in
+    // `inputs_allowed` are excluded as targets but stay in the
+    // predictor pools: a calendar column the axis determines (an
+    // hour, a working-day flag) restates the calendar as a target
+    // and explains the measures as an input.
+    let excluded_inputs: Vec<usize> = excluded_targets
+        .iter()
+        .copied()
+        .filter(|i| !inputs_allowed.contains(i))
+        .collect();
     let eligible_targets: Vec<usize> = enc
         .feat_cols
         .iter()
@@ -451,7 +461,7 @@ pub fn screen(
 
     let results: Vec<TargetResult> = eligible_targets
         .par_iter()
-        .filter_map(|&ci| screen_target(table, enc, ci, cfg, excluded_targets, declared_excluded))
+        .filter_map(|&ci| screen_target(table, enc, ci, cfg, &excluded_inputs, declared_excluded))
         .collect();
 
     let mut findings = Vec::new();
@@ -1945,7 +1955,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
         let y_res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert!(y_res.metric > 0.9, "r2 = {}", y_res.metric);
         assert!(out.findings.iter().any(|f| (f
@@ -1974,7 +1984,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
         let res = out.results.iter().find(|r| r.name == "class").unwrap();
         assert!(res.metric > 0.85, "acc = {}", res.metric);
         assert!(res.metric > res.baseline + 0.2);
@@ -2059,7 +2069,7 @@ mod tests {
         .unwrap();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
         assert!(out
             .results
             .iter()
@@ -2122,7 +2132,7 @@ mod tests {
         let df = driver_frame();
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[], &[], &[]);
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
         assert_eq!(res.drivers[0].0, "x");
@@ -2156,7 +2166,7 @@ mod tests {
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let x_col = table.names.iter().position(|n| n == "x").unwrap();
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col], &[]);
+        let out = screen(&table, &enc, &ScreenConfig::default(), &[x_col], &[], &[]);
         for r in &out.results {
             assert!(
                 !r.inputs.iter().any(|i| i == "x"),
@@ -2203,7 +2213,14 @@ mod tests {
         let table = extract(&df);
         let (enc, _) = encode(&table, &EncodeConfig::default());
         let excluded = table.names.iter().position(|nm| nm == "n0").unwrap();
-        let out = screen(&table, &enc, &ScreenConfig::default(), &[excluded], &[]);
+        let out = screen(
+            &table,
+            &enc,
+            &ScreenConfig::default(),
+            &[excluded],
+            &[],
+            &[],
+        );
         let res = out.results.iter().find(|r| r.name == "y").unwrap();
         assert_eq!(res.drivers.len(), 1, "drivers: {:?}", res.drivers);
         assert_eq!(res.drivers[0].0, "x");
