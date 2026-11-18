@@ -150,13 +150,14 @@ def test_cli_version(capsys):
 
 
 def test_cli_csv_infers_the_whole_file(tmp_path, capsys):
-    csv = tmp_path / "wide_keys.csv"
+    csv = tmp_path / "late_decimal.csv"
     values = [str(i) for i in range(100)]
-    values += [str(2**63), str(2**63 + 1)]
-    values += [str(i) for i in range(101, 299)]
+    values += ["100.5"]
+    values += [str(i) for i in range(101, 300)]
     csv.write_text("id\n" + "\n".join(values) + "\n", encoding="utf-8")
     # Polars' 100-row inference window types this as Int64 and then
-    # fails on the large values; the CLI reads the whole column.
+    # fails on the late decimal; the CLI reads the whole column.
+    # UInt64 overflow is left to Polars: 1.28 cannot infer it at all.
     assert main([str(csv), "--format", "json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["overview"]["n_rows"] == 300
