@@ -136,13 +136,15 @@ def test_unrelated_counts_crossing_systematically_state_nothing():
     df = pl.DataFrame({"lower": lower, "upper": upper})
     report = onceover.profile(df, detectors=["order_constraints"])
     assert _hits(report) == []
-    detail = report.coverage["order_constraints"]["detail"]
-    assert "not stated: no stated basis" in detail, detail
 
 
-def test_linked_counts_crossing_systematically_still_state_the_violation():
-    # accepted is generated perturbed by a few units: the
-    # systematic violation shape with a predictive basis.
+def test_linked_counts_crossing_both_ways_state_nothing():
+    # accepted is generated perturbed by a few units: accepted
+    # exceeds generated on 24% of rows and falls below it on 65%.
+    # Neither order holds and no decomposition makes accepted a part
+    # of generated, so nothing is stated (issue #374): from the
+    # values alone this pair cannot be told apart from two
+    # differently scaled temperatures.
     n = 2000
     rng = random.Random(3)
     gen = [50.0 + rng.randrange(200) for _ in range(n)]
@@ -154,9 +156,4 @@ def test_linked_counts_crossing_systematically_still_state_the_violation():
             acc[k] -= 3.0
     df = pl.DataFrame({"generated": gen, "accepted": acc})
     report = onceover.profile(df, detectors=["order_constraints"])
-    hits = _hits(report, "accepted", "generated")
-    assert len(hits) == 1
-    m = _payload(hits[0])
-    assert hits[0]["type"] == "order_violation"
-    assert m["violation_kind"] == "systematic"
-    assert m["order_basis"] == "predictive"
+    assert _hits(report, "accepted", "generated") == []

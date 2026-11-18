@@ -464,6 +464,7 @@ pub const FORMS: &[FormSpec] = &[
     FormSpec { form: "scale", finding_type: "level_contrast", definition: "The level's interquartile range of the measure differs from the rest's." },
     FormSpec { form: "location_scale", finding_type: "level_contrast", definition: "The level's median and interquartile range of the measure both differ from the rest's." },
     FormSpec { form: "constant_multiple", finding_type: "level_contrast", definition: "The level's values sit at a near-constant multiple of the rest's distribution." },
+    FormSpec { form: "profile", finding_type: "level_contrast", definition: "Several levels of one grouping differ from their pooled rest on one measure: the measure's profile over the grouping, stated once, with every tested level's median and tests in the evidence's levels table." },
     FormSpec { form: "bias", finding_type: "model_failure", definition: "The model's residuals in the slice are biased: their mean differs from zero beyond the stated bar." },
     FormSpec { form: "accuracy", finding_type: "model_failure", definition: "The model's error in the slice exceeds its table-wide error beyond the stated bar." },
     FormSpec { form: "absorbing_state", finding_type: "one_way_flag", definition: "The flag switches on within entities and never switches off." },

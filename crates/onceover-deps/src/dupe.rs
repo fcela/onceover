@@ -237,6 +237,7 @@ pub fn profile_duplicate_encodings_stopped(
     let mut n_pairs = 0usize;
     let mut n_duplicates = 0usize;
     let mut n_rollups = 0usize;
+    let mut n_chance = 0usize;
     let total_pairs = eligible.len() * (eligible.len() - 1) / 2;
     let mut pairs_examined = 0usize;
     let mut stopped = false;
@@ -292,6 +293,29 @@ pub fn profile_duplicate_encodings_stopped(
             let Some(form) = classify(&stats, cfg) else {
                 continue;
             };
+            // The mapping must carry information beyond what the
+            // marginals give by chance: a near-unique column maps
+            // onto anything, and anything maps onto a near-constant
+            // column (see `fd::MIN_RFI`). A duplicate encoding needs
+            // it in both directions, a rollup from finer to coarser.
+            let (fine, coarse) = if stats.levels_a >= stats.levels_b {
+                (eligible[x], eligible[y])
+            } else {
+                (eligible[y], eligible[x])
+            };
+            let rfi_fc = crate::fd::fd_stats(table, &rows, &[fine], coarse).rfi;
+            let reliable = match form {
+                Form::Rollup => rfi_fc >= crate::fd::MIN_RFI,
+                Form::Duplicate => {
+                    rfi_fc >= crate::fd::MIN_RFI
+                        && crate::fd::fd_stats(table, &rows, &[coarse], fine).rfi
+                            >= crate::fd::MIN_RFI
+                }
+            };
+            if !reliable {
+                n_chance += 1;
+                continue;
+            }
             if findings.len() >= cfg.max_findings {
                 break 'pairs;
             }
@@ -312,6 +336,12 @@ pub fn profile_duplicate_encodings_stopped(
         n_duplicates,
         n_rollups
     );
+    if n_chance > 0 {
+        coverage.push_str(&format!(
+            "; {n_chance} more mapping(s) not stated: reliable fraction of information below {}, the agreement chance predicts",
+            crate::fd::MIN_RFI
+        ));
+    }
     if stopped {
         coverage.push_str(&format!(
             "; deadline reached mid-pass: {pairs_examined} of {total_pairs} column pairs examined"

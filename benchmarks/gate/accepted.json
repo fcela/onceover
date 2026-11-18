@@ -86,16 +86,118 @@
    "reason": "Issue #374 step 2: the base credited subscription-housing-loan through a text-pattern match on a rolled-up 8k digest line that no finding in the full report supports (full default: not matched in base or head). Record: docs/benchmarks/2026-11-18-derived-basis.md."
   },
   {
+   "metric": "reference.must_4k_default",
+   "scope": "bank-marketing",
+   "limit": 1,
+   "reason": "Issue #374 step 3: subscription-duration is stated (8k digest and full report) by a level contrast that now ranks just below the 4k cut: consolidating per-level contrasts into one profile per (grouping, measure) frees the pass's 20-statement cap for more distinct pairs, which score above it under the hand-set level-contrast score (step 6 of #374 replaces that score). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.must_4k_default",
+   "scope": "total",
+   "limit": 15,
+   "reason": "Issue #374 step 3: the bank-marketing entry above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: age-weak (price vs age_years, r = -0.098) falls below the 0.1 minimum effect a stated association now needs; the pair stays in report.associations() with tier none. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_default",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_target",
+   "scope": "dominant_driver",
+   "limit": 2,
+   "reason": "Issue #374 step 3: as should_4k_default. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_default",
+   "scope": "total",
+   "limit": 30,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "total",
+   "limit": 35,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_default",
+   "scope": "total",
+   "limit": 37,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_4k_target",
+   "scope": "total",
+   "limit": 18,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_8k_target",
+   "scope": "total",
+   "limit": 22,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "reference.should_full_target",
+   "scope": "total",
+   "limit": 23,
+   "reason": "Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "planted.found_4k",
+   "scope": "adventureworks",
+   "limit": 0,
+   "reason": "Issue #374 step 3: the base credited the planted customer_id sentinel through a text match on a 4k digest line; the full report never stated it (in_full_report false in base and head). Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "invariance.row_shuffle",
+   "scope": "absenteeism-at-work",
+   "limit": 17,
+   "reason": "Issue #374 step 3: on this 740-row table the drivers named by predictive statements move under row shuffling (pre-existing: 15 in the base), and one level-contrast pair enters or leaves the pass's cap. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "absenteeism-at-work",
+   "limit": 66,
+   "reason": "Issue #374 step 3: the row_shuffle change above. Record: docs/benchmarks/2026-11-18-null-bars.md."
+  },
+  {
    "metric": "redundancy.finding_permille_default",
    "scope": "total",
-   "limit": 16629,
-   "reason": "Issue #374 step 2: finding-line character share moves by 1-4 per mille on four datasets as restatements leave the digest and shorter lines replace them. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   "limit": 16520,
+   "reason": "Issue #374 step 3: finding-line character share falls as statements leave short digests (weighted_noise keeps 1 finding line, so its per-mille share is dominated by the header). Record: docs/benchmarks/2026-11-18-null-bars.md."
   },
   {
    "metric": "redundancy.finding_permille_target",
    "scope": "total",
-   "limit": 9405,
-   "reason": "Issue #374 step 2: same as the default-mode entry. Record: docs/benchmarks/2026-11-18-derived-basis.md."
+   "limit": 9381,
+   "reason": "Issue #374 step 3: as the default-mode entry. Record: docs/benchmarks/2026-11-18-null-bars.md."
   }
  ]
 }
