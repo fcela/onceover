@@ -397,7 +397,7 @@ fn residual_outliers(table: &TypedTable, a: usize, b: usize) -> Option<LineOutli
 }
 
 fn swapped_values(table: &TypedTable, findings: &mut Vec<Finding>, measures: &[usize]) {
-    let sample = crate::stride_rows(table.n, SWAP_SAMPLE_ROWS);
+    let sample = onceover_core::sample_rows(table, SWAP_SAMPLE_ROWS);
     // Each column's usual range is based on the middle 90%, so up to 5% of
     // swapped rows can't widen it.
     let bulk: Vec<Option<(f64, f64)>> = measures

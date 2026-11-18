@@ -32,17 +32,18 @@ finding, and `questions` coverage counts the answers per
 question, including zero.
 
 **Structure.** `roles` overrides a column's semantic role;
-an unknown role is ignored. `labels`: display labels for
-prose (evidence keeps raw names). The expectations pass
-checks `order_by`, `no_gaps`, `cadence` (a named calendar
-cadence or a step count), `hierarchies` (finest to coarsest),
-and `dimensions`/`measures` exactly; unusable entries go to
-coverage. Instructions: `time`, `ordered_axis`, `level_order`
-({column: [levels in order]}, never inferred),
-`exclude_columns`, `contrast` (`{"column": name, "value":
-scalar}`; a boolean column needs no `value`) profiles one
-subset against the rest; `weights` ([columns]): hotspots
-judge cells by weight shares too. Unknown keys raise.
+unusable roles are refused in `declarations` coverage.
+`labels`: display labels for prose; evidence keeps raw names.
+The `expectations` pass checks `order_by`, `no_gaps`, `cadence`
+(named or step count), `hierarchies` (finest first), and
+`dimensions`/`measures` exactly; refusals go to coverage.
+`time`, `ordered_axis`, and `level_order` ({column: [levels
+in order]}) are applied or refused in
+`declarations` coverage. `exclude_columns`, `contrast`
+(`{"column": name, "value": scalar}`; boolean needs no `value`)
+profiles one subset against the rest; `weights`
+([columns]): hotspots judge cells by weight shares too.
+Unknown keys raise.
 
 Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`, `gloss`, `units`, `event`, `entity`, `recorded_after`, `purpose`, `questions`.
 

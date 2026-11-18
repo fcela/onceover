@@ -1243,7 +1243,7 @@ pub fn multiterm_identities(
             "0 multi-term candidates screened, 0 multi-term identities".into(),
         );
     }
-    let sample_rows = crate::stride_rows(table.n, 512);
+    let sample_rows = onceover_core::sample_rows(table, 512);
     let n_rows = table.n;
 
     // Collect usable numeric column indices.
@@ -1686,7 +1686,7 @@ fn one_statement_per_identity(
             .find(|&&c| table.names[c] == name)
             .map(|&c| {
                 let (mut sum, mut n) = (0.0, 0.0);
-                for r in crate::stride_rows(table.n, 512) {
+                for r in onceover_core::sample_rows(table, 512) {
                     if let Some(v) = table.cols[c].numeric_at(r as usize) {
                         sum += v.abs();
                         n += 1.0;
@@ -1753,7 +1753,7 @@ pub fn identities(
         .take(pair_cap)
         .collect();
 
-    let fit_rows = crate::stride_rows(table.n, 20_000);
+    let fit_rows = onceover_core::sample_rows(table, 20_000);
     let checked: Vec<_> = candidates
         .par_iter()
         .filter_map(|d| {

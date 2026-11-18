@@ -92,7 +92,7 @@
 //! on any row set directly.
 
 use crate::dep::{mann_whitney_p, median_sorted, quantile_sorted};
-use onceover_core::{sample_rows, TypedCol, TypedTable};
+use onceover_core::{row_keys, TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -552,7 +552,9 @@ pub fn profile_slice_shifts(
     if cfg.row_cap == 0 || table.n < 100 {
         return na(format!("fewer than 100 rows to search ({} rows)", table.n));
     }
-    let sample: Vec<u32> = sample_rows(table.n, cfg.row_cap);
+    let keys = row_keys(table);
+    let sample: Vec<u32> = keys.sample(cfg.row_cap);
+    let sample_keys = keys.subset(&sample);
     let n_sample = sample.len();
     if n_sample < 100 {
         return na(format!("fewer than 100 rows on the sample ({n_sample})"));
@@ -561,10 +563,11 @@ pub fn profile_slice_shifts(
     let min_support = cfg
         .min_support
         .max((cfg.min_support_frac * n_sample as f64).ceil() as usize);
-    // Deterministic split: the parity of a fixed hash of the
-    // sample position. Independent of the values, so a shuffled
-    // target faces the same split.
-    let half_a = bits_for(n_sample, |i| splitmix64(i as u64).is_multiple_of(2));
+    // Deterministic split: the parity of a fixed mix of each row's
+    // content key, so a shuffled target faces the same split.
+    let half_a = bits_for(n_sample, |i| {
+        splitmix64(sample_keys.key(i) as u64).is_multiple_of(2)
+    });
     let half_b: Vec<u64> = half_a.iter().map(|w| !w).collect();
     let half_b = {
         let mut b = half_b;

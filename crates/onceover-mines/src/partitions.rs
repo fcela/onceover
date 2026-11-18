@@ -671,7 +671,7 @@ fn response_rows(
     let mut sampled = false;
     if rows.len() > cfg.row_cap {
         sampled = true;
-        let pos = crate::stride_rows(rows.len(), cfg.row_cap);
+        let pos = onceover_core::positional_rows(rows.len(), cfg.row_cap);
         rows = pos.iter().map(|&p| rows[p as usize]).collect();
     }
     Some((rows, sampled))

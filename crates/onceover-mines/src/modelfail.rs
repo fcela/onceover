@@ -1060,6 +1060,7 @@ mod tests {
 
     fn enc_for(table: &TypedTable) -> EncodedMatrix {
         EncodedMatrix {
+            row_keys: onceover_core::RowKeys::default(),
             rows: (0..table.n as u32).collect(),
             n: table.n,
             feat_cols: Vec::new(),

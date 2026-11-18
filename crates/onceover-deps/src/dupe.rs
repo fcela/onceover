@@ -32,8 +32,9 @@ use crate::ColInfo;
 
 #[derive(Clone, Debug)]
 pub struct DupeConfig {
-    /// Rows examined per pair (deterministic stride sample above
-    /// this). 0 disables the pass.
+    /// Rows examined per pair (deterministic sample above this). 0
+    /// disables the pass. Above the cap, one-to-one and rollup claims
+    /// are sample-scoped candidates, not full-table facts.
     pub row_cap: usize,
     /// Rows where both columns are present, required per pair.
     pub min_rows: usize,
@@ -198,7 +199,7 @@ pub fn profile_duplicate_encodings_stopped(
     if !cfg.is_enabled() {
         return ((Vec::new(), "disabled at this budget".into()), false);
     }
-    let rows = subsample_rows(table.n, cfg.row_cap);
+    let rows = subsample_rows(table, cfg.row_cap);
     let sampled = rows.len() < table.n;
 
     // Eligible columns: label-like, not an identifier, with a
@@ -323,7 +324,14 @@ pub fn profile_duplicate_encodings_stopped(
                 Form::Duplicate => n_duplicates += 1,
                 Form::Rollup => n_rollups += 1,
             }
-            findings.push(make_finding(table, eligible[x], eligible[y], form, &stats));
+            findings.push(make_finding(
+                table,
+                eligible[x],
+                eligible[y],
+                form,
+                &stats,
+                sampled,
+            ));
         }
     }
 
@@ -332,7 +340,14 @@ pub fn profile_duplicate_encodings_stopped(
         eligible.len(),
         n_pairs,
         rows.len(),
-        if sampled { " (sampled)" } else { "" },
+        if sampled {
+            format!(
+                " (sampled from {} rows; claims are sample-scoped, not full-table facts)",
+                table.n
+            )
+        } else {
+            String::new()
+        },
         n_duplicates,
         n_rollups
     );
@@ -350,7 +365,14 @@ pub fn profile_duplicate_encodings_stopped(
     ((findings, coverage), stopped)
 }
 
-fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &PairStats) -> Finding {
+fn make_finding(
+    table: &TypedTable,
+    i: usize,
+    j: usize,
+    form: Form,
+    stats: &PairStats,
+    sampled: bool,
+) -> Finding {
     let (name_i, name_j) = (&table.names[i], &table.names[j]);
     match form {
         Form::Duplicate => {
@@ -374,13 +396,24 @@ fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &Pair
             );
             metrics.insert("exceptions".into(), json!(stats.exceptions));
             metrics.insert("n_used".into(), json!(stats.n_used));
-            let claim = if exact {
-                format!(
+            // The scope travels with the finding, not just the pass's
+            // coverage entry: `sampled` drives evidence.scope.sampling
+            // and `population_rows` names the table the sample came from.
+            metrics.insert("sampled".into(), json!(sampled));
+            metrics.insert("population_rows".into(), json!(table.n));
+            // "One-to-one on all rows" is reserved for a full-data
+            // check. On a sample the one-to-one reading is a candidate
+            // with both row counts stated in the claim.
+            let claim = match (exact, sampled) {
+                (true, false) => format!(
                     "{} and {} encode the same grouping: {} levels, paired one-to-one on all {} rows",
                     name_i, name_j, stats.levels_a, stats.n_used
-                )
-            } else {
-                format!(
+                ),
+                (true, true) => format!(
+                    "On {} sampled rows out of {} rows: {} and {} encode the same grouping: {} levels, paired one-to-one in the sample; not verified on the full table",
+                    stats.n_used, table.n, name_i, name_j, stats.levels_a
+                ),
+                (false, false) => format!(
                     "{} and {} encode the same grouping: {} and {} levels with {} distinct value pairs; {} of {} rows break the majority pairing",
                     name_i,
                     name_j,
@@ -389,7 +422,18 @@ fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &Pair
                     stats.pairs,
                     stats.exceptions,
                     stats.n_used
-                )
+                ),
+                (false, true) => format!(
+                    "On {} sampled rows out of {} rows: {} and {} encode the same grouping: {} and {} levels with {} distinct value pairs; {} of the sampled rows break the majority pairing",
+                    stats.n_used,
+                    table.n,
+                    name_i,
+                    name_j,
+                    stats.levels_a,
+                    stats.levels_b,
+                    stats.pairs,
+                    stats.exceptions
+                ),
             };
             Finding::new(
                 Pattern::DuplicateEncoding,
@@ -398,9 +442,11 @@ fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &Pair
                 EvidenceBasis::Measured,
                 if exact { 0.62 } else { 0.56 },
                 metrics,
-                Some(format!(
-                    "keep one of {name_i} and {name_j} in models and joins; the other repeats the same grouping and counts it twice"
-                )),
+                Some(if sampled {
+                    format!("if the sample is representative, keep one of {name_i} and {name_j} in models and joins; the other repeats the same grouping in the sample")
+                } else {
+                    format!("keep one of {name_i} and {name_j} in models and joins; the other repeats the same grouping and counts it twice")
+                }),
                 Method::new(
                     "duplicate_encodings",
                     "pair contingency + majority mapping, exact verification",
@@ -452,16 +498,25 @@ fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &Pair
             metrics.insert("violations_second_to_first".into(), json!(v_cf));
             metrics.insert("exceptions".into(), json!(exceptions));
             metrics.insert("n_used".into(), json!(stats.n_used));
-            let claim = if v_fc == 0 {
-                format!(
+            metrics.insert("sampled".into(), json!(sampled));
+            metrics.insert("population_rows".into(), json!(table.n));
+            let claim = match (v_fc == 0, sampled) {
+                (true, false) => format!(
                     "{} rolls up to {}: each of its {} levels maps to one of {} levels, on all {} rows",
                     finer, coarser, lf, lc, stats.n_used
-                )
-            } else {
-                format!(
+                ),
+                (true, true) => format!(
+                    "On {} sampled rows out of {} rows: {} rolls up to {}: each of its {} levels maps to one of {} levels in the sample; not verified on the full table",
+                    stats.n_used, table.n, finer, coarser, lf, lc
+                ),
+                (false, false) => format!(
                     "{} rolls up to {}: {} levels map onto {} levels ({} distinct value pairs); {} of {} rows break the mapping",
                     finer, coarser, lf, lc, stats.pairs, v_fc, stats.n_used
-                )
+                ),
+                (false, true) => format!(
+                    "On {} sampled rows out of {} rows: {} rolls up to {}: {} levels map onto {} levels ({} distinct value pairs); {} of those sampled rows break the mapping",
+                    stats.n_used, table.n, finer, coarser, lf, lc, stats.pairs, v_fc
+                ),
             };
             Finding::new(
                 Pattern::DuplicateEncoding,
@@ -470,9 +525,11 @@ fn make_finding(table: &TypedTable, i: usize, j: usize, form: Form, stats: &Pair
                 EvidenceBasis::Measured,
                 0.5,
                 metrics,
-                Some(format!(
-                    "{coarser} is a coarser grouping of {finer}; keep the level of detail the analysis needs — carrying both counts the grouping twice"
-                )),
+                Some(if sampled {
+                    format!("in the sample, {coarser} is a coarser grouping of {finer}; if confirmed on the full table, keep the level of detail the analysis needs — carrying both counts the grouping twice")
+                } else {
+                    format!("{coarser} is a coarser grouping of {finer}; keep the level of detail the analysis needs — carrying both counts the grouping twice")
+                }),
                 Method::new(
                     "duplicate_encodings",
                     "pair contingency + majority mapping, exact verification",
@@ -536,6 +593,91 @@ mod tests {
         let codes: Vec<i64> = (0..n).map(|r| (r % n_groups) as i64 + 1).collect();
         let labels: Vec<String> = codes.iter().map(|c| format!("group_{c}")).collect();
         (codes, labels)
+    }
+
+    #[test]
+    fn rare_unsampled_violation_is_sample_scoped_not_a_table_fact() {
+        // One row outside the deterministic verification sample breaks
+        // an otherwise exact 50-level encoding. The sampled claim must
+        // not read as a statement about the whole table. The 600-row
+        // sample repeats each level enough to clear the main-line
+        // reliability bar; a near-unique 50-level code on 60 rows would
+        // be suppressed as chance.
+        let n = 6000usize;
+        let cap = 600usize;
+        let (codes, base_labels) = codes_labels(50, n);
+        // Pick a violating row that stays outside the content-keyed
+        // sample of the final frame, not merely outside a sample of the
+        // pristine frame.
+        let mut chosen = None;
+        for candidate in 0..n {
+            let mut labels = base_labels.clone();
+            let other = (codes[candidate] % 50) + 1;
+            labels[candidate] = format!("group_{other}");
+            let frame = df!["code" => &codes, "label" => &labels].unwrap();
+            let table = extract(&frame);
+            let sampled = subsample_rows(&table, cap);
+            if !sampled.contains(&(candidate as u32)) {
+                chosen = Some((candidate, sampled));
+                break;
+            }
+        }
+        let (violation_row, sampled) =
+            chosen.expect("a 600-row content sample of 6000 rows leaves an unsampled row");
+        assert!(!sampled.contains(&(violation_row as u32)));
+        let mut labels = base_labels;
+        let other = (codes[violation_row] % 50) + 1;
+        labels[violation_row] = format!("group_{other}");
+        let frame = df!["code" => &codes, "label" => &labels].unwrap();
+        let table = extract(&frame);
+        let info = info_for(&table);
+
+        let cfg = DupeConfig {
+            row_cap: cap,
+            ..DupeConfig::default()
+        };
+        let (findings, cov) = profile_duplicate_encodings(&table, &info, &cfg);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        let f = &findings[0];
+        assert!(f.claim.contains("sampled"), "{}", f.claim);
+        assert!(f.claim.contains(&format!("of {n} rows")), "{}", f.claim);
+        assert!(f.claim.contains("in the sample"), "{}", f.claim);
+        assert!(!f.claim.contains("on all"), "{}", f.claim);
+        let interpretation = f.interpretation.as_deref().unwrap_or("");
+        assert!(interpretation.contains("in the sample"), "{interpretation}");
+        let m = &f.evidence[0].metrics;
+        assert_eq!(m.get("sampled").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            m.get("population_rows").and_then(|v| v.as_u64()),
+            Some(n as u64)
+        );
+        assert_eq!(
+            f.evidence[0].scope.sampling,
+            onceover_report::Sampling::Sample
+        );
+        assert_eq!(f.evidence[0].scope.population_rows, Some(n));
+        assert!(cov.contains("sampled from 6000 rows"), "{cov}");
+
+        // Checking the same frame in full recounts the rare pair: the
+        // claim no longer reads as a bijection.
+        let full_cfg = DupeConfig {
+            row_cap: n,
+            ..DupeConfig::default()
+        };
+        let (full_findings, _) = profile_duplicate_encodings(&table, &info, &full_cfg);
+        assert_eq!(full_findings.len(), 1, "{full_findings:?}");
+        assert!(
+            !full_findings[0].claim.contains("one-to-one"),
+            "{}",
+            full_findings[0].claim
+        );
+        assert!(
+            full_findings[0]
+                .claim
+                .contains("break the majority pairing"),
+            "{}",
+            full_findings[0].claim
+        );
     }
 
     #[test]

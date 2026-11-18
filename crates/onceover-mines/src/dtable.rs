@@ -185,14 +185,11 @@ pub fn decision_tables(
             continue;
         }
 
-        // Deterministic folds.
+        // Content-keyed folds.
         let fold_of: Vec<u8> = {
-            let mut rng = crate::gbm::Lcg(0xD1CE_B0CA_5EED ^ (res.col as u64));
-            let mut perm: Vec<u32> = positions.clone();
-            for i in (1..perm.len()).rev() {
-                let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-                perm.swap(i, j);
-            }
+            let perm = enc
+                .row_keys
+                .order_from(&positions, 0xD1CE_B0CA_5EED ^ (res.col as u64));
             let mut fold = vec![0u8; enc.n];
             for (i, &p) in perm.iter().enumerate() {
                 fold[p as usize] = (i % cfg.folds) as u8;
@@ -303,13 +300,18 @@ mod tests {
     fn perfect_lookup_with_missing_target_rows_is_emitted() {
         let n = 400;
         let feature: Vec<_> = (0..n).map(|i| if i % 2 == 0 { "a" } else { "b" }).collect();
-        // Missing targets at both ends keep positions sparse, including a
-        // valid row index greater than the number of non-missing targets.
-        let ids: Vec<_> = (0..n)
-            .map(|i| if i % 13 == 0 { MISSING } else { (i % 2) as u8 })
-            .collect();
         let df = df! { "feature" => feature }.unwrap();
         let (enc, _) = encode(&extract(&df), &EncodeConfig::default());
+        // Missing targets on a sparse stride keep positions sparse,
+        // including a valid row index greater than the number of
+        // non-missing targets.
+        // The external label vector follows the encoded row order, which
+        // is content-keyed rather than original row order.
+        let ids: Vec<_> = enc
+            .rows
+            .iter()
+            .map(|&r| if r % 13 == 0 { MISSING } else { (r % 2) as u8 })
+            .collect();
         let target = TargetResult {
             col: 1,
             name: "target".into(),

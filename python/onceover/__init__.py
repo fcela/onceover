@@ -182,7 +182,10 @@ def profile(df, budget: str = "standard", deadline_seconds: float | None = None,
         declared level orders for categorical columns),
         ``roles`` (per-column semantic role override for the frame
         model: one of "identifier", "row_number", "timestamp",
-        "timestamp_part", "dimension", "flag", "measure", "text"),
+        "timestamp_part", "dimension", "flag", "measure", "text").
+        These four structural keys are checked once and their
+        applied/refused status is stated in the ``declarations``
+        coverage entry; an unusable column is refused, not dropped.
         ``exclude_columns`` (columns removed before profiling
         starts: no card, and no finding can name them; the
         ``column_exclusions`` coverage entry states the exclusion

@@ -282,7 +282,7 @@ pub fn changeforest_pass(
     // other capped passes use), so split positions stay
     // interpretable as axis periods.
     if n_complete > cfg.row_cap {
-        let keep = crate::stride_rows(n_complete, cfg.row_cap);
+        let keep = onceover_core::positional_rows(n_complete, cfg.row_cap);
         let mut idx: Vec<usize> = keep.iter().map(|&i| i as usize).collect();
         idx.sort_unstable();
         rows = idx.iter().map(|&i| rows[i].clone()).collect();

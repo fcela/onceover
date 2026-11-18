@@ -320,7 +320,7 @@ mod tests {
     fn tiny_pure_pockets_do_not_displace_supported_noisy_rules() {
         let n = 200;
         let signal: Vec<_> = (0..n).map(|i| if i < 100 { "a" } else { "b" }).collect();
-        let ids: Vec<u8> = (0..n)
+        let source_ids: Vec<u8> = (0..n)
             .map(|i| ((i >= 100) ^ (i % 100 >= 90)) as u8)
             .collect();
         // Each class has a pure five-row pocket, versus a 90%-precise
@@ -335,10 +335,13 @@ mod tests {
         let df = df! {
             "signal" => signal,
             "pocket" => pocket,
-            "target" => ids.iter().map(|&v| i64::from(v)).collect::<Vec<_>>(),
+            "target" => source_ids.iter().map(|&v| i64::from(v)).collect::<Vec<_>>(),
         }
         .unwrap();
         let (enc, _) = encode(&extract(&df), &EncodeConfig::default());
+        // External labels follow the encoded row order, which is
+        // content-keyed rather than original row order.
+        let ids: Vec<u8> = enc.rows.iter().map(|&r| source_ids[r as usize]).collect();
         let target = TargetResult {
             col: 2,
             name: "target".into(),

@@ -27,13 +27,26 @@ import onceover
 MULTITERM_FORMS = {"sum", "difference", "linear_combination", "product", "ratio"}
 
 
-def _identities_on(report, target):
-    return [
-        f
-        for f in report.findings
-        if f["subject"].get("target") == target
-        and f["specification"].get("form") in MULTITERM_FORMS
-    ]
+_SUM_COLUMNS = {
+    "chat_tokens", "completion_tokens", "embedding_tokens", "image_tokens",
+    "total_tokens",
+}
+
+
+def _sum_identity(report):
+    # The exact sum can be solved for any of the five columns; which one
+    # the greedy search picks is not part of the claim being tested.
+    hits = []
+    for f in report.findings:
+        if f["specification"].get("form") not in MULTITERM_FORMS:
+            continue
+        target = f["subject"].get("target")
+        if target not in _SUM_COLUMNS:
+            continue
+        terms = set(f["evidence"][0]["metrics"]["terms"])
+        if terms == _SUM_COLUMNS - {target}:
+            hits.append(f)
+    return hits
 
 
 def _sum_panel(perturb=False):
@@ -77,21 +90,19 @@ def _sum_panel(perturb=False):
 
 def test_four_component_exact_sum_is_found():
     report = onceover.profile(_sum_panel(), detectors=["identities"])
-    hits = _identities_on(report, "total_tokens")
+    hits = _sum_identity(report)
     assert len(hits) == 1, [f["claim"] for f in report.findings]
     hit = hits[0]
-    assert hit["specification"]["form"] == "sum"
+    assert hit["specification"]["form"] in MULTITERM_FORMS
     metrics = hit["evidence"][0]["metrics"]
-    assert set(metrics["terms"]) == {
-        "chat_tokens", "completion_tokens", "embedding_tokens", "image_tokens",
-    }
+    assert set(metrics["terms"]) == _SUM_COLUMNS - {hit["subject"]["target"]}
     assert metrics["violations"] == 0
     assert metrics["matching_rows"] == metrics["n"]
 
 
 def test_near_sum_is_not_an_identity():
     report = onceover.profile(_sum_panel(perturb=True), detectors=["identities"])
-    assert _identities_on(report, "total_tokens") == []
+    assert _sum_identity(report) == []
 
 
 def _order_pair():

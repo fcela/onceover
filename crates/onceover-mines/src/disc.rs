@@ -1204,7 +1204,7 @@ fn kept_rows(target_col: &NumericColumn, axis_cols: &[&NumericColumn], cap: usiz
     let words = target_col.n.div_ceil(64);
     let word = |i: usize| masks.iter().fold(u64::MAX, |bits, m| bits & m[i]);
     let total: usize = (0..words).map(|i| word(i).count_ones() as usize).sum();
-    let ranks = crate::stride_rows(total, cap);
+    let ranks = onceover_core::positional_rows(total, cap);
     let mut rows = Vec::with_capacity(ranks.len());
     let (mut base, mut next) = (0usize, 0usize);
     for w in 0..words {
@@ -1620,7 +1620,7 @@ pub fn profile_discontinuities(
         .filter(|&i| table.cols[i].is_numeric() && !excluded.contains(&i))
         .collect();
     let shared_sample = std::sync::Arc::new(
-        crate::stride_rows(table.n, cfg.row_cap)
+        onceover_core::positional_rows(table.n, cfg.row_cap)
             .into_iter()
             .map(|r| r as usize)
             .collect(),
@@ -1821,7 +1821,7 @@ mod tests {
                     },
                 ];
                 let shared = std::sync::Arc::new(
-                    crate::stride_rows(n, cap)
+                    onceover_core::positional_rows(n, cap)
                         .into_iter()
                         .map(|r| r as usize)
                         .collect(),
@@ -1841,7 +1841,7 @@ mod tests {
                                 target.at(i).is_finite() && axes.iter().all(|c| c.at(i).is_finite())
                             })
                             .collect();
-                        let expected: Vec<_> = crate::stride_rows(complete.len(), cap)
+                        let expected: Vec<_> = onceover_core::positional_rows(complete.len(), cap)
                             .iter()
                             .map(|&i| complete[i as usize])
                             .collect();
@@ -2036,7 +2036,7 @@ mod tests {
             TypedCol::F64 { vals: t2.into() },
         ];
         let shared = std::sync::Arc::new(
-            crate::stride_rows(n, 20_000)
+            onceover_core::positional_rows(n, 20_000)
                 .into_iter()
                 .map(|r| r as usize)
                 .collect::<Vec<usize>>(),
@@ -2095,7 +2095,7 @@ mod tests {
             vals: x.iter().copied().map(Some).collect::<Vec<_>>().into(),
         }];
         let shared = std::sync::Arc::new(
-            crate::stride_rows(n, 20_000)
+            onceover_core::positional_rows(n, 20_000)
                 .into_iter()
                 .map(|r| r as usize)
                 .collect::<Vec<usize>>(),
@@ -2146,7 +2146,7 @@ mod tests {
             },
         ];
         let shared = std::sync::Arc::new(
-            crate::stride_rows(n, 20_000)
+            onceover_core::positional_rows(n, 20_000)
                 .into_iter()
                 .map(|r| r as usize)
                 .collect::<Vec<usize>>(),
@@ -2322,7 +2322,7 @@ mod tests {
         let cfg = DiscConfig::default();
         let numeric: Vec<usize> = (0..8).collect();
         let sample = std::sync::Arc::new(
-            crate::stride_rows(table.n, cfg.row_cap)
+            onceover_core::positional_rows(table.n, cfg.row_cap)
                 .into_iter()
                 .map(|r| r as usize)
                 .collect::<Vec<usize>>(),

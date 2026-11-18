@@ -12,7 +12,7 @@
 //! fixed order; no HashMap iteration; no wall-clock values in findings
 //! or metrics (runtime is the caller's to measure, never embedded).
 
-use onceover_core::{sample_rows, TypedCol, TypedTable};
+use onceover_core::{row_keys, RowKeys, TypedCol, TypedTable};
 use onceover_report::{Category, Evidence, EvidenceBasis, Finding, Method};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -381,6 +381,7 @@ struct ScreenTrace {
 fn select_columns(
     cols: Vec<ViewCol>,
     search_pos: &[usize],
+    search_keys: &RowKeys,
     cfg: &ViewsConfig,
     work: &mut WorkBudget,
     screen: Option<&mut ScreenTrace>,
@@ -395,7 +396,8 @@ fn select_columns(
     // spread across the table). Without the pair bound, a
     // several-thousand-column table makes the screen itself the
     // most expensive part of the pass.
-    let screen_pos: Vec<usize> = sample_rows(search_pos.len(), SCREEN_ROW_LIMIT)
+    let screen_pos: Vec<usize> = search_keys
+        .sample(SCREEN_ROW_LIMIT)
         .iter()
         .map(|&p| search_pos[p as usize])
         .collect();
@@ -1308,10 +1310,10 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     if table.n == 0 {
         return (Vec::new(), empty_outcome("no rows"));
     }
-    let sample: Vec<usize> = sample_rows(table.n, cfg.row_cap)
-        .iter()
-        .map(|&r| r as usize)
-        .collect();
+    let keys = row_keys(table);
+    let sampled = keys.sample(cfg.row_cap);
+    let sample_keys = keys.subset(&sampled);
+    let sample: Vec<usize> = sampled.iter().map(|&r| r as usize).collect();
     let n_sample = sample.len();
     let (all_cols, mut dropped) = extract_columns(table, &sample, cfg);
     // The extraction drops are a separate list from the cap drops
@@ -1333,10 +1335,9 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
             },
         );
     }
-    let search_pos: Vec<usize> = sample_rows(n_sample, cfg.search_rows)
-        .iter()
-        .map(|&r| r as usize)
-        .collect();
+    let search_u32 = sample_keys.sample(cfg.search_rows);
+    let search_keys = sample_keys.subset(&search_u32);
+    let search_pos: Vec<usize> = search_u32.iter().map(|&r| r as usize).collect();
     let mut work = WorkBudget {
         used: 0,
         cap: cfg.work_budget,
@@ -1344,7 +1345,7 @@ pub fn views_pass(table: &TypedTable, cfg: &ViewsConfig) -> (Vec<Finding>, Views
     };
     let n_eligible = all_cols.len();
     let (cols, cap_dropped, prescreened) =
-        select_columns(all_cols, &search_pos, cfg, &mut work, None);
+        select_columns(all_cols, &search_pos, &search_keys, cfg, &mut work, None);
     let cap_dropped_names = cap_dropped.clone();
     dropped.extend(cap_dropped);
     let (views, search_stats) = views_search(&cols, &search_pos, cfg, &mut work);

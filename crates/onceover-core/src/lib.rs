@@ -9,7 +9,7 @@ pub mod dup;
 pub mod sampling;
 pub mod stats;
 pub mod typed;
-pub use sampling::sample_rows;
+pub use sampling::{positional_rows, row_keys, sample_rows, RowKey, RowKeys};
 
 pub use card::{column_card, CardOut};
 pub use counts::{build_counts, ColCounts, VKey};

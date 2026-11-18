@@ -696,6 +696,18 @@ fn profile_inner(
                     .is_some_and(|i| frame.roles[i].as_deref() == Some("measure"))
             })
     });
+    // ---------- structural hint accounting (issue #441) ----------
+    // The four hint keys that steer the frame model and the
+    // along-axis passes are instructions rather than metadata: they
+    // do not ride `frame.declarations`, but every declaration must
+    // still be accounted for. Resolve each one once, here, and add
+    // its applied/refused decision to the same `declarations`
+    // coverage entry as the metadata keys. The resolved values are
+    // what the passes below consume, so a refused declaration does
+    // not silently steer a scan.
+    let declared_hints = crate::declared::account(&table, &frame, cfg.hints.as_ref());
+    decl_notes.extend(declared_hints.notes.iter().cloned());
+    let effective_level_order = declared_hints.level_order.clone();
     let temporal_df = build_temporal_df(df, &frame);
     let temporal_table = temporal_df.as_ref().map(|d| extract(d));
     let ttable: &TypedTable = temporal_table.as_ref().unwrap_or(&table);
@@ -776,8 +788,11 @@ fn profile_inner(
     // already-expired deadline takes precedence over the gate for
     // the discontinuities screen: its dispatch is deadline-exempt
     // by design, and its coverage entry records the stop.
-    let declared_axis = cfg.hints.as_ref().and_then(|h| h.ordered_axis.as_deref());
-    let axis_declared = declared_axis.is_some_and(|name| table.names.iter().any(|n| n == name));
+    // Only a checked and usable declaration opens the default
+    // along-axis gate; an existing but unusable column was refused
+    // above and behaves like a missing one (issue #441).
+    let declared_axis = declared_hints.ordered_axis.as_deref();
+    let axis_declared = declared_axis.is_some();
     let axis_gate_open = frame_time_hint.is_some() || axis_declared;
     let axis_explicit = |id: &str| cfg.detectors.as_ref().is_some_and(|set| set.contains(id));
     let axis_gate_reason = |pass: &str| {
@@ -2693,9 +2708,10 @@ fn profile_inner(
                 // restating the event. Panel grain keys are
                 // excluded from its slice family (the panel passes
                 // own entity statements).
-                let hints = cfg.hints.as_ref();
-                let axis_hint = hints.and_then(|h| h.ordered_axis.as_deref());
-                let ordinals = hints.map(|h| h.level_order.clone()).unwrap_or_default();
+                // The account's resolved values are what the battery
+                // sees: a refused axis or level order is not applied.
+                let axis_hint = declared_axis;
+                let ordinals = &effective_level_order;
                 if !axis_explicit("ordered_axis") && !axis_gate_open {
                     stamp_insert(
                         &mut coverage,
@@ -2732,7 +2748,7 @@ fn profile_inner(
                         &tier.axis_battery,
                         axis_hint,
                         time_arg,
-                        &ordinals,
+                        ordinals,
                         &entity_names,
                         &findings,
                         hinted_only,
@@ -2761,8 +2777,8 @@ fn profile_inner(
             }
             if !deadline_hit && enabled("outliers") {
                 let excluded: &[usize] = &scaffold_excluded;
-                let (f, cov, stopped) = profile_surprises(&table, excluded, &tier.surprises);
-                if stopped {
+                let out = profile_surprises(&table, excluded, &tier.surprises);
+                if out.deadline_stopped {
                     deadline_hit = true;
                 }
                 stamp_insert(
@@ -2770,13 +2786,13 @@ fn profile_inner(
                     &mut last_mark,
                     timing_on,
                     "outliers".into(),
-                    if stopped {
-                        PassInfo::capped(format!("{cov}{exclusion_note}"))
+                    if out.deadline_stopped || out.work_capped {
+                        PassInfo::capped(format!("{}{}", out.coverage, exclusion_note))
                     } else {
-                        PassInfo::ran(format!("{cov}{exclusion_note}"))
+                        PassInfo::ran(format!("{}{}", out.coverage, exclusion_note))
                     },
                 );
-                findings.extend(f);
+                findings.extend(out.findings);
             }
             if check_deadline(&mut coverage, "slice_shifts") {
                 deadline_hit = true;
@@ -3792,9 +3808,10 @@ fn profile_inner(
         }
     }
     // The declarations account: everything the caller declared
-    // under the metadata keys, what was checked, and what was
-    // carried unchecked — one entry, never silent.
-    if frame.info.declarations.is_some() {
+    // under the metadata keys, what was checked, what was carried
+    // unchecked, and the applied/refused decisions for the four
+    // structural keys — one entry, never silent.
+    if frame.info.declarations.is_some() || !decl_notes.is_empty() {
         stamp_insert(
             &mut coverage,
             &mut last_mark,

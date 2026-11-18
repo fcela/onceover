@@ -1112,7 +1112,7 @@ pub fn profile_breaks(
     timed.sort_by_key(|&(t, _)| t);
 
     if timed.len() > cfg.row_cap {
-        let pos = crate::stride_rows(timed.len(), cfg.row_cap);
+        let pos = onceover_core::positional_rows(timed.len(), cfg.row_cap);
         timed = pos.iter().map(|&p| timed[p as usize]).collect();
     }
 
