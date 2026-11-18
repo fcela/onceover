@@ -36,6 +36,12 @@ use crate::ColInfo;
 /// unshuffled dependency lies between 0.18 and 0.35.
 pub const MIN_RFI: f64 = 0.25;
 
+/// Smallest number of violations a random pairing of the target's
+/// values with the determinant's groups must be expected to produce
+/// before an exact mapping counts as evidence (the order pass's bar
+/// for a near-universal order, read the same way).
+pub const MIN_CHANCE_VIOLATIONS: f64 = 20.0;
+
 /// Random values collide unless the tuple space far exceeds n^2 / 2, so a
 /// key this far below that is structure, not chance.
 const KEY_CHANCE_DIVISOR: f64 = 20.0;
@@ -94,6 +100,10 @@ pub struct DepsOutcome {
     /// reliable fraction of information is below `MIN_RFI`: the
     /// agreement chance predicts, not stated.
     pub n_afd_chance: usize,
+    /// Exact dependencies that random pairing would rarely break
+    /// (fewer than `MIN_CHANCE_VIOLATIONS` expected violations): not
+    /// stated.
+    pub n_exact_chance: usize,
     pub n_exact: usize,
     pub n_afd: usize,
     pub coverage: String,
@@ -233,6 +243,13 @@ pub struct FdStats {
     pub expected_fi_chance: f64,
     /// Reliable fraction of information: fi - expected_fi_chance.
     pub rfi: f64,
+    /// Violations a random pairing of the target's values with the
+    /// determinant's groups would produce, to first order: over every
+    /// group, (rows - 1) times the chance two rows differ on the
+    /// target (1 - sum of squared target shares). Near zero when the
+    /// determinant's groups hold one row each or the target is nearly
+    /// constant: an exact mapping then holds by construction.
+    pub expected_violations_chance: f64,
 }
 
 /// Group `rows` by the determinant's canonical encodings (the same
@@ -270,6 +287,16 @@ pub fn fd_stats(table: &TypedTable, rows: &[u32], lhs: &[usize], rhs: usize) -> 
         return stats;
     }
     let n = stats.n_used as f64;
+    let differ: f64 = 1.0
+        - target_totals
+            .values()
+            .map(|&b| (b as f64 / n).powi(2))
+            .sum::<f64>();
+    let extra_rows: f64 = groups
+        .values()
+        .map(|m| m.values().map(|&c| c as f64).sum::<f64>() - 1.0)
+        .sum();
+    stats.expected_violations_chance = extra_rows * differ;
     let hy: f64 = target_totals
         .values()
         .map(|&b| {
@@ -840,6 +867,16 @@ pub fn discover(
         let lhs_orig: Vec<usize> = cand.lhs.clone();
         let rhs_orig = cand.rhs;
         if stats.violations == 0 {
+            // An exact mapping is evidence only where chance could
+            // have broken it: a determinant whose groups hold one row
+            // each, or a target that is nearly constant, satisfies
+            // any mapping. Below MIN_CHANCE_VIOLATIONS expected
+            // violations under random pairing, the mapping is neither
+            // stated nor used as structure downstream.
+            if stats.expected_violations_chance < MIN_CHANCE_VIOLATIONS {
+                out.n_exact_chance += 1;
+                continue;
+            }
             out.findings.push(fd_finding(
                 table, &lhs_orig, rhs_orig, sampled, &rows, &stats,
             ));
@@ -849,7 +886,7 @@ pub fn discover(
             if g1 > cfg.afd_g1_max {
                 continue;
             }
-            if stats.rfi < MIN_RFI {
+            if stats.rfi < MIN_RFI || stats.expected_violations_chance < MIN_CHANCE_VIOLATIONS {
                 out.n_afd_chance += 1;
                 continue;
             }
@@ -927,7 +964,7 @@ pub fn discover(
         n_eligible_lhs, n_eligible_rhs, screened_pairs, screen_rows.len(), cfg.lhs_cap.min(62), cfg.max_lhs_size,
         rows.len(), if sampled { "stratified sample" } else { "full" },
     );
-    cov.push_str(&format!("; {} exact FDs, {} AFDs{}; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, if out.n_afd_chance > 0 { format!(" ({} more within the violation bar not stated: reliable fraction of information below {MIN_RFI}, the agreement chance predicts)", out.n_afd_chance) } else { String::new() }, cfg.key_pair_cap));
+    cov.push_str(&format!("; {} exact FDs, {} AFDs{}; composite keys screen all eligible pairs, verify up to {} candidates (skipped when a single-column key exists); deep triples use up to 12 shortlisted columns", out.n_exact, out.n_afd, if out.n_afd_chance + out.n_exact_chance > 0 { format!(" ({} exact more not stated: random pairing would break them fewer than {MIN_CHANCE_VIOLATIONS} times; {} approximate more not stated: reliable fraction of information below {MIN_RFI}, or the same chance bar)", out.n_exact_chance, out.n_afd_chance) } else { String::new() }, cfg.key_pair_cap));
     if triple_targets > 0 {
         cov.push_str(&format!(
             "; size-3 determinants screened for {} of {} targets with no exact FD at size <= {} (standard-tier step)",

@@ -1500,6 +1500,7 @@ mod tests {
             caps_bound: Vec::new(),
             sampled: false,
             n_afd_chance: 0,
+            n_exact_chance: 0,
         }
     }
 

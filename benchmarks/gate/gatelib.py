@@ -101,7 +101,18 @@ def fact_key(f: dict, rename: dict | None = None) -> tuple:
     """Identity of a stated fact: category, type and the sorted columns,
     after mapping column names back through `rename` (new -> original)."""
     rename = rename or {}
-    cols = sorted(rename.get(c, c) for c in finding_columns(f))
+
+    def original(c: str) -> str:
+        if c in rename:
+            return rename[c]
+        # A calendar feature of the time axis is named after the axis
+        # column ("hour of day of date_time"); map the axis name back.
+        head, sep, col = c.rpartition(" of ")
+        if sep and col in rename:
+            return f"{head} of {rename[col]}"
+        return c
+
+    cols = sorted(original(c) for c in finding_columns(f))
     return (f.get("category"), f.get("type"), tuple(cols))
 
 

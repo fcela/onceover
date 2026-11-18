@@ -473,8 +473,10 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
         ));
     }
 
-    // high concentration
-    if distinct >= 2 && n_nonnull >= 50 {
+    // high concentration. A two-valued column's share of its common
+    // value is its rate (a rare condition is rare by definition), so
+    // only the near-constant case above is stated for it.
+    if distinct >= 3 && n_nonnull >= 50 {
         if let Some(c) = &conc {
             if let Some(t1) = c.top1_share {
                 if t1 >= 0.9 {

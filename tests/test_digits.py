@@ -142,3 +142,15 @@ def test_bounded_column_is_benford_ineligible():
     assert _of_type(report, "benford_deviation") == []
     cov = report.coverage["digit_fingerprints"]["detail"]
     assert "0 Benford-eligible" in cov
+
+
+def test_one_decade_bulk_with_extreme_values_is_benford_ineligible():
+    # Issue #421: a bulk uniform on 100-999 with a handful of values
+    # near 500,000 passes max/min >= 1000, but Benford's law cannot
+    # apply to a one-decade bulk; the central 90% must span two orders
+    # of magnitude.
+    rng = random.Random(421)
+    vals = [rng.uniform(100, 999) for _ in range(4000)] + [500_000.0 + i for i in range(10)]
+    report = onceover.profile(pl.DataFrame({"amount": vals}))
+    assert _of_type(report, "benford_deviation") == []
+    assert "0 Benford-eligible" in report.coverage["digit_fingerprints"]["detail"]

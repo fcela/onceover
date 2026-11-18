@@ -668,8 +668,34 @@ fn profile_inner(
         basis.axis_cols = axis_cols;
         assign_timestamp_parts(&mut frame.roles, &mut frame.info.roles, &derived);
         basis.axis_derived = derived;
+        // Missingness indicators keep their role (a flag) and carry
+        // the indicator evidence; they are no later pass's subject or
+        // input.
+        for (f, x, evidence) in
+            crate::basis::missingness_indicators(&table, &card_facts, cfg.hints.as_ref())
+        {
+            if let Some(r) = frame.info.roles.get_mut(f) {
+                r.evidence = evidence;
+            }
+            basis.indicators.push((f, x));
+        }
+        tier.encode.skip_columns = basis.not_input();
     }
     sync_card_roles(&mut columns, &table, &frame);
+    // A numeric column the frame model reads as a measure (a value
+    // grid too fine to group by) does not "behave like a category":
+    // the card heuristic's statement would contradict the role the
+    // passes use.
+    findings.retain(|f| {
+        f.finding_type.as_deref() != Some("categorical_role")
+            || !f.subject.columns.iter().all(|c| {
+                table
+                    .names
+                    .iter()
+                    .position(|n| n == c)
+                    .is_some_and(|i| frame.roles[i].as_deref() == Some("measure"))
+            })
+    });
     let temporal_df = build_temporal_df(df, &frame);
     let temporal_table = temporal_df.as_ref().map(|d| extract(d));
     let ttable: &TypedTable = temporal_table.as_ref().unwrap_or(&table);
@@ -723,6 +749,11 @@ fn profile_inner(
         .collect();
     let mut scaffold_excluded = role_excluded;
     scaffold_excluded.extend(axis_excluded.iter().copied());
+    for (f, _) in &basis.indicators {
+        if !scaffold_excluded.contains(f) {
+            scaffold_excluded.push(*f);
+        }
+    }
     scaffold_excluded.sort_unstable();
     let mut exclusion_note = scaffold_note(
         &table,
@@ -1144,6 +1175,18 @@ fn profile_inner(
         // the calendar. A sub-period is not determined by the axis
         // (an hour beside a date), so its cells with a derived flag
         // (hour x working day) are real concentrations and stay in.
+        // A native date or datetime axis lends its calendar parts to
+        // the models as features (hour of day, day of week, month of
+        // year), so a measure driven by the hour or the weekday can
+        // name it as a driver.
+        if let [axis] = basis.axis_cols[..] {
+            if matches!(
+                table.cols[axis],
+                onceover_core::TypedCol::Date { .. } | onceover_core::TypedCol::Datetime { .. }
+            ) {
+                tier.encode.calendar_axis = Some(axis);
+            }
+        }
         if !basis.axis_derived.is_empty() {
             let mut related = basis.axis_cols.clone();
             related.extend(basis.axis_derived.iter().map(|d| d.col));
@@ -1565,8 +1608,16 @@ fn profile_inner(
             Budget::Standard => 8,
             Budget::Deep => 16,
         };
-        let (mut f, detail) =
-            onceover_mines::profile_missingness(&table, &scaffold_excluded, axis, indicator_cap);
+        let (mut f, detail) = {
+            // A missingness indicator explains its column's missing
+            // rows once, here: the one statement of that relation.
+            let explainers: Vec<usize> = scaffold_excluded
+                .iter()
+                .copied()
+                .filter(|i| !basis.indicators.iter().any(|(f, _)| f == i))
+                .collect();
+            onceover_mines::profile_missingness(&table, &explainers, axis, indicator_cap)
+        };
         stamp_insert(
             &mut coverage,
             &mut last_mark,
@@ -4141,8 +4192,19 @@ fn scaffold_note(
     let parts: Vec<String> = excluded
         .iter()
         .map(|&i| {
-            let why = match basis.recodings.iter().find(|(d, _)| *d == i) {
-                Some((_, keep)) => format!("recoding of {}", table.names[*keep]),
+            let why = match basis
+                .recodings
+                .iter()
+                .find(|(d, _)| *d == i)
+                .map(|(_, keep)| format!("recoding of {}", table.names[*keep]))
+                .or_else(|| {
+                    basis
+                        .indicators
+                        .iter()
+                        .find(|(d, _)| *d == i)
+                        .map(|(_, of)| format!("missingness indicator of {}", table.names[*of]))
+                }) {
+                Some(why) => why,
                 None => frame.roles[i]
                     .as_deref()
                     .unwrap_or(info[i].card_role.as_str())

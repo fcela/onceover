@@ -1044,6 +1044,8 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             ),
         ));
     }
+    let scored = merge_across_measures(scored);
+    let mut scored = scored;
     scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.claim.cmp(&b.1.claim)));
     let reported = scored.len().min(MAX_FINDINGS);
     scored.truncate(MAX_FINDINGS);
@@ -1097,6 +1099,125 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Measures one level must shift in the same direction on before
+/// its location statements merge into one.
+const MIN_MEASURES_TO_MERGE: usize = 3;
+
+/// One level that sits on the same side of its pooled rest on
+/// several measures (infants are smaller on every size measure) is
+/// one fact: its location statements merge into one statement
+/// naming each measure with its median shift, the per-measure
+/// statements kept in the evidence's `measures` table.
+fn merge_across_measures(scored: Vec<(f64, Finding)>) -> Vec<(f64, Finding)> {
+    let key = |f: &Finding| -> Option<(String, String, bool)> {
+        let m = &f.evidence.first()?.metrics;
+        let form = m.get("form")?.as_str()?;
+        if form != "location" && form != "location_scale" {
+            return None;
+        }
+        if m.get("calendar_part").is_some() {
+            return None;
+        }
+        Some((
+            m.get("grouping_column")?.as_str()?.to_string(),
+            m.get("level")?.as_str()?.to_string(),
+            m.get("shift")?.as_f64()? > 0.0,
+        ))
+    };
+    let mut groups: BTreeMap<(String, String, bool), Vec<usize>> = BTreeMap::new();
+    for (i, (_, f)) in scored.iter().enumerate() {
+        if let Some(k) = key(f) {
+            groups.entry(k).or_default().push(i);
+        }
+    }
+    let mut merged_away: std::collections::BTreeSet<usize> = Default::default();
+    let mut out: Vec<(f64, Finding)> = Vec::new();
+    for ((grouping, level, above), idx) in &groups {
+        if idx.len() < MIN_MEASURES_TO_MERGE {
+            continue;
+        }
+        let mut parts: Vec<String> = Vec::new();
+        let mut rows: Vec<Value> = Vec::new();
+        let mut measures: Vec<String> = Vec::new();
+        let mut effect = 0.0f64;
+        for &i in idx {
+            let (e, f) = &scored[i];
+            effect = effect.max(*e);
+            let m = &f.evidence[0].metrics;
+            let measure = m["measure_column"].as_str().unwrap_or("").to_string();
+            let lm = m["level_median"].as_f64().unwrap_or(f64::NAN);
+            let rm = m["rest_median"].as_f64().unwrap_or(f64::NAN);
+            let pct = if rm != 0.0 {
+                format!("{:+.0}%", 100.0 * (lm - rm) / rm.abs())
+            } else {
+                format!(
+                    "median {} against {}",
+                    crate::fmt_float(lm),
+                    crate::fmt_float(rm)
+                )
+            };
+            parts.push(format!("{measure} ({pct})"));
+            rows.push(
+                json!({"measure": measure, "level_median": lm, "rest_median": rm,
+                             "shift_in_pooled_iqrs": m.get("shift_in_pooled_iqrs"),
+                             "location_q_value": m.get("location_q_value"), "claim": f.claim}),
+            );
+            measures.push(measure);
+            merged_away.insert(i);
+        }
+        let claim = format!(
+            "{grouping} = '{level}' sits {} the rest on {} measures, by median: {}",
+            if *above { "above" } else { "below" },
+            idx.len(),
+            parts.join(", ")
+        );
+        let mut columns = vec![grouping.clone()];
+        columns.extend(measures.iter().cloned());
+        let metrics: BTreeMap<String, Value> = BTreeMap::from([
+            ("grouping_column".into(), json!(grouping)),
+            ("level".into(), json!(level)),
+            ("form".into(), json!("across_measures")),
+            ("measures".into(), Value::Array(rows)),
+            (
+                "n".into(),
+                scored[idx[0]].1.evidence[0]
+                    .metrics
+                    .get("n")
+                    .cloned()
+                    .unwrap_or(json!(null)),
+            ),
+            ("method".into(), json!(METHOD_TEXT)),
+        ]);
+        out.push((
+            effect,
+            Finding::new(
+                Pattern::LevelContrast,
+                BTreeMap::from([("columns".into(), json!(columns))]),
+                claim,
+                EvidenceBasis::Measured,
+                0.5 + 0.25 * effect.min(2.0),
+                metrics,
+                Some(format!(
+                    "the '{level}' rows of {grouping} differ from the rest on every measure named, in the same direction: one property of that group, not several"
+                )),
+                Method::new(
+                    "level_contrasts",
+                    "per_level_quantile_contrast",
+                    "per-level quantile contrasts (onceover v0.1)",
+                ),
+            ),
+        ));
+    }
+    out.extend(
+        scored
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !merged_away.contains(i))
+            .map(|(_, x)| x),
+    );
+    out
+}
+
 /// One statement for a (grouping, measure) pair on which several
 /// levels differ from their pooled rest: the measure's profile over
 /// the grouping, with every tested level's median and every stated

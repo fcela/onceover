@@ -150,6 +150,7 @@ impl TierConfig {
                     feature_cap: 32,
                     nominal_max_levels: 32,
                     skip_columns: Vec::new(),
+                    calendar_axis: None,
                 },
                 screen: ScreenConfig::default(),
                 dtable: DtableConfig::default(),
@@ -195,6 +196,7 @@ impl TierConfig {
                     feature_cap: 48,
                     nominal_max_levels: 32,
                     skip_columns: Vec::new(),
+                    calendar_axis: None,
                 },
                 screen: ScreenConfig::default(),
                 dtable: DtableConfig::default(),
@@ -260,6 +262,7 @@ impl TierConfig {
                     feature_cap: 64,
                     nominal_max_levels: 32,
                     skip_columns: Vec::new(),
+                    calendar_axis: None,
                 },
                 screen: ScreenConfig {
                     max_rounds: 40,

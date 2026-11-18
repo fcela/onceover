@@ -69,6 +69,9 @@ pub struct Basis {
     pub sub_period: Vec<Derived>,
     /// Redundant sides of one-to-one recodings: (redundant, kept).
     pub recodings: Vec<(usize, usize)>,
+    /// Missingness indicators: (indicator, the column whose missing
+    /// rows one of its levels marks exactly).
+    pub indicators: Vec<(usize, usize)>,
 }
 
 impl Basis {
@@ -87,12 +90,15 @@ impl Basis {
         let mut out: BTreeSet<usize> = self.axis_derived.iter().map(|d| d.col).collect();
         out.extend(self.sub_period.iter().map(|d| d.col));
         out.extend(self.recodings.iter().map(|r| r.0));
+        out.extend(self.indicators.iter().map(|r| r.0));
         out.into_iter().collect()
     }
 
     /// Columns that are no pass's input either.
     pub fn not_input(&self) -> Vec<usize> {
-        self.recodings.iter().map(|r| r.0).collect()
+        let mut out: Vec<usize> = self.recodings.iter().map(|r| r.0).collect();
+        out.extend(self.indicators.iter().map(|r| r.0));
+        out
     }
 }
 
@@ -428,4 +434,72 @@ fn level_code(table: &TypedTable, col: usize) -> bool {
         (Some(lo), Some(hi)) => (hi - lo + 1) as usize == values.len(),
         _ => false,
     }
+}
+
+/// Most two-valued columns tested as missingness indicators.
+const MAX_INDICATOR_CANDIDATES: usize = 64;
+
+/// Phase A: missingness indicators. A two-valued column with no
+/// missing values of its own, one of whose levels occurs on exactly
+/// the rows where another column is missing (a `t3_measured` flag
+/// beside `t3`), restates that column's missingness. Returns
+/// (indicator, column, evidence).
+pub fn missingness_indicators(
+    table: &TypedTable,
+    facts: &[CardFacts],
+    hints: Option<&ProfileHints>,
+) -> Vec<(usize, usize, String)> {
+    let with_nulls: Vec<usize> = (0..table.cols.len())
+        .filter(|&c| facts[c].null_count > 0 && facts[c].null_count < table.n)
+        .collect();
+    if with_nulls.is_empty() {
+        return Vec::new();
+    }
+    let candidates: Vec<usize> = (0..table.cols.len())
+        .filter(|&c| {
+            facts[c].distinct == 2
+                && facts[c].null_count == 0
+                && !declared_role(hints, &table.names[c])
+        })
+        .take(MAX_INDICATOR_CANDIDATES)
+        .collect();
+    let mut out = Vec::new();
+    for f in candidates {
+        // The flag's per-row level, as the encoding of its value.
+        let mut first: Option<Vec<u8>> = None;
+        let level: Vec<bool> = (0..table.n)
+            .map(|r| {
+                let mut buf = Vec::new();
+                hashutil::encode_value(&table.cols[f], r, &mut buf);
+                match &first {
+                    Some(v) => *v == buf,
+                    None => {
+                        first = Some(buf);
+                        true
+                    }
+                }
+            })
+            .collect();
+        for &x in &with_nulls {
+            if x == f || facts[x].null_count < 2 {
+                continue;
+            }
+            // One level of the flag must coincide with x missing.
+            let null_at = |r: usize| table.cols[x].is_null_at(r);
+            let same = (0..table.n).all(|r| level[r] == null_at(r));
+            let opposite = (0..table.n).all(|r| level[r] != null_at(r));
+            if same || opposite {
+                out.push((
+                    f,
+                    x,
+                    format!(
+                        "missingness indicator of {}: one of its two values occurs on exactly the {} rows where {} is missing",
+                        table.names[x], facts[x].null_count, table.names[x]
+                    ),
+                ));
+                break;
+            }
+        }
+    }
+    out
 }
