@@ -36,6 +36,7 @@ project:
         - file: methodology/sampling.ipynb
         - file: methodology/expectations.ipynb
         - file: methodology/group_contrast.ipynb
+        - file: methodology/entity_fingerprints.ipynb
         - file: methodology/level_contrasts.ipynb
         - file: methodology/column_cards.ipynb
         - file: methodology/sentinel_values.ipynb

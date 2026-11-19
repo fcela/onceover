@@ -42,8 +42,7 @@ in order]}) are applied or refused in
 `declarations` coverage. `exclude_columns`, `contrast`
 (`{"column": name, "value": scalar}`; boolean needs no `value`)
 profiles one subset against the rest; `weights`
-([columns]): hotspots judge cells by weight shares too.
-Unknown keys raise.
+([columns]): measure shares in hotspots and entity fingerprints.
 
 Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`, `gloss`, `units`, `event`, `entity`, `recorded_after`, `purpose`, `questions`.
 

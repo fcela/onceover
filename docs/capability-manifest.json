@@ -494,7 +494,7 @@
    "requires": [],
    "membership": "on_request",
    "trigger": "always",
-   "purpose": "Each entity's mix over each dimension: groups, a continuum, misfits, specialists, and changes along a resolved axis"
+   "purpose": "Entity groups, continuums, misfits, specialists, and drift by dimension or pair, using row counts or declared weights"
   }
  ]
 }
