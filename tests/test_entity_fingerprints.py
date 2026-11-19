@@ -31,11 +31,10 @@ def test_planted_groups_and_specialists():
     ev = misfits["evidence"]
     ev = ev[0] if isinstance(ev, list) else ev
     stated = {m["entity"] for m in ev["metrics"]["misfits"]}
-    # The stated misfits are planted drifters, whose annual mix sits
-    # between two profiles; at the Bonferroni bar at most one other
-    # customer is stated (11 of 12 are drifters on this seed).
-    assert len(stated & set(truth["drift"]["ids"])) >= 10
-    assert len(stated - set(truth["drift"]["ids"])) <= 1
+    # The annual mix of a planted drifter can sit between the two
+    # profiles. None of the customers who did not drift is a misfit.
+    assert len(stated) >= 15
+    assert stated <= set(truth["drift"]["ids"])
 
 
 @pytest.mark.parametrize("name", ["entity_profiles_null_shuffled", "entity_profiles_null_one_profile"])
@@ -244,3 +243,29 @@ def test_redundant_dimension_pair_stays_silent():
     assert result.select(type="entity_groups")
     assert all(len(f["subject"]["columns"]) == 2 for f in result.findings)
     assert "copy × plan: no additional joint signal" in result.coverage["entity_fingerprints"]["detail"]
+
+
+def test_misfit_matches_no_supported_group():
+    rows = []
+    for account in range(41):
+        if account < 20:
+            counts = {"basic": 90, "plus": 8, "legacy": 2}
+        elif account < 40:
+            counts = {"basic": 8, "plus": 90, "legacy": 2}
+        else:
+            counts = {"basic": 5, "plus": 5, "legacy": 90}
+        for plan, count in counts.items():
+            rows.extend([(account, plan)] * count)
+    df = pl.DataFrame(rows, schema=["account", "plan"], orient="row")
+    result = _run_account_mix(df)
+    [group] = result.select(type="entity_groups")
+    assert sorted(g["entities"] for g in group["evidence"][0]["metrics"]["groups"]) == [20, 20]
+    [finding] = result.select(type="entity_misfits")
+    metrics = finding["evidence"][0]["metrics"]
+    assert metrics["groups_tested"] == 2
+    [misfit] = metrics["misfits"]
+    assert misfit["entity"] == "40"
+    assert misfit["p_value"] < metrics["bar"]
+    assert misfit["level"] == "legacy"
+    assert misfit["share"] == pytest.approx(0.90)
+    assert misfit["reference_share"] == pytest.approx(0.02)

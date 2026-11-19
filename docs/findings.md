@@ -1517,6 +1517,14 @@ overall weight shares pool the original measure over the entities
 examined. Statistical support uses effective rows, so one large
 weight cannot turn a handful of observations into a large sample.
 
+A group needs at least five members with ten effective rows each.
+An entity matches no group only when its mix differs materially
+from every supported group's profile and every chi-square test
+rejects. The fit uses a median-share reference with the entity
+held out. Printed group shares still pool actual mass. The
+`misfits` metric records the highest p-value across those tests and
+the level with the largest share difference from that reference.
+
 The pass also screens up to 12 pairs in column-name order, with up
 to 30 observed joint levels in each. Pair evidence names both columns
 in `dimensions`. A static pair must add joint signal beyond its two

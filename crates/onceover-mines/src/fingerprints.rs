@@ -28,9 +28,10 @@
 //!    (V of the excess below 0.1) are merged. One group with
 //!    material differences is a continuum: entities spread along the
 //!    first principal axis rather than falling into groups.
-//! 3. **Which entities match no group?** With two or more groups, an
-//!    entity whose counts reject its group's pooled profile by the
-//!    chi-square test at a Bonferroni bar over entities (0.05 / E).
+//! 3. **Which entities match no group?** Test each entity's counts
+//!    against every supported group, omitting the entity itself from
+//!    the reference. It is a misfit only if every test rejects at the
+//!    Bonferroni bar over entities (0.05 / E).
 //! 4. **Specialists.** The share of entities with an effective number
 //!    of levels (exp of the entropy of their shares) of 1.5 or less,
 //!    against the pooled distribution's effective number, stated
@@ -55,6 +56,9 @@ use crate::{Deadline, WeightSeries};
 /// Smallest excess Cramér's V stated (the association passes' floor).
 pub const MIN_EXCESS_V: f64 = 0.1;
 const MAX_K: usize = 8;
+const MIN_GROUP_ENTITIES: usize = 5;
+const MIN_MISFIT_ROWS: f64 = 10.0;
+const MIN_MISFIT_DISTANCE: f64 = 0.10;
 const GAP_REFERENCES: usize = 10;
 pub(crate) const MAX_LEVELS: usize = 30;
 const MAX_PAIRS: usize = 12;
@@ -582,6 +586,166 @@ pub fn entity_fingerprints(
     )
 }
 
+struct Misfit {
+    entity: usize,
+    group: usize,
+    p: f64,
+    level: usize,
+    reference_share: f64,
+}
+
+/// Middle values of one share coordinate. These are enough to
+/// evaluate the median with or without one group member in O(1).
+struct ShareMedian {
+    count: usize,
+    lower: f64,
+    middle: f64,
+    upper: f64,
+}
+
+impl ShareMedian {
+    fn from_values(mut values: Vec<f64>) -> Self {
+        values.sort_unstable_by(f64::total_cmp);
+        let count = values.len();
+        let mid = count / 2;
+        Self {
+            count,
+            lower: values[mid - 1],
+            middle: values[mid],
+            upper: values[mid + 1],
+        }
+    }
+
+    fn estimate(&self, omit: Option<f64>) -> f64 {
+        let even = self.count.is_multiple_of(2);
+        match omit {
+            None if even => 0.5 * (self.lower + self.middle),
+            None => self.middle,
+            Some(x) if even => {
+                if x <= self.lower {
+                    self.middle
+                } else {
+                    self.lower
+                }
+            }
+            Some(x) if x < self.middle => 0.5 * (self.middle + self.upper),
+            Some(x) if x > self.middle => 0.5 * (self.lower + self.middle),
+            Some(_) => 0.5 * (self.lower + self.upper),
+        }
+    }
+}
+
+/// The null is compatibility with at least one supported profile,
+/// so use the highest p-value across profiles. An individual
+/// contributes neither to its own group reference nor to the
+/// pooled smoothing distribution used for that test.
+fn profile_misfits(
+    rows: &[&Vec<f64>],
+    n: &[f64],
+    pooled: &[f64],
+    groups: &[Vec<usize>],
+    used: usize,
+    bar: f64,
+) -> Vec<Misfit> {
+    let n_lev = pooled.len();
+    let total: f64 = n.iter().sum();
+    let mut references = Vec::with_capacity(groups.len());
+    let mut membership = vec![None; n.len()];
+    for (g, members) in groups.iter().enumerate() {
+        let supported: Vec<_> = members
+            .iter()
+            .copied()
+            .filter(|&i| n[i] >= MIN_MISFIT_ROWS)
+            .collect();
+        let mut sums = vec![0.0; n_lev];
+        for &i in &supported {
+            membership[i] = Some(g);
+            for (sum, &value) in sums.iter_mut().zip(rows[i]) {
+                *sum += value;
+            }
+        }
+        let medians: Vec<_> = (0..n_lev)
+            .map(|j| {
+                ShareMedian::from_values(supported.iter().map(|&i| rows[i][j] / n[i]).collect())
+            })
+            .collect();
+        let sum = sums.iter().sum::<f64>();
+        references.push((medians, sums, sum));
+    }
+    let mut out = Vec::new();
+    for (i, &ni) in n.iter().enumerate() {
+        if ni < MIN_MISFIT_ROWS {
+            continue;
+        }
+        let mut best = None::<Misfit>;
+        let mut material = true;
+        for (g, (medians, sums, reference_total)) in references.iter().enumerate() {
+            let own = membership[i] == Some(g);
+            let ng = reference_total - if own { ni } else { 0.0 };
+            let center: Vec<_> = medians
+                .iter()
+                .enumerate()
+                .map(|(j, median)| median.estimate(own.then(|| rows[i][j] / ni)))
+                .collect();
+            let center_total = center.iter().sum::<f64>();
+            let mut x2 = 0.0;
+            let mut level = 0;
+            let mut reference_share = 0.0;
+            let mut difference: f64 = -1.0;
+            let mut distance = 0.0;
+            for (j, (&group_count, &base)) in sums.iter().zip(pooled).enumerate() {
+                let observed = rows[i][j];
+                let group_share = if center_total > 0.0 {
+                    center[j] / center_total
+                } else {
+                    (group_count - if own { observed } else { 0.0 }).max(0.0) / ng
+                };
+                let baseline = ((total * base - observed) / (total - ni)).max(0.0);
+                let q = 0.98 * group_share + 0.02 * baseline;
+                if q > 0.0 {
+                    x2 += (observed - ni * q).powi(2) / (ni * q);
+                } else if observed > 0.0 {
+                    x2 = f64::INFINITY;
+                }
+                let delta = (observed / ni - q).abs();
+                distance += delta / 2.0;
+                if delta > difference {
+                    difference = delta;
+                    level = j;
+                    reference_share = q;
+                }
+            }
+            if distance < MIN_MISFIT_DISTANCE {
+                // Rare cells can make the test significant even when
+                // the difference in the overall mix is immaterial.
+                material = false;
+                break;
+            }
+            let p = if x2.is_infinite() {
+                0.0
+            } else {
+                chi2_sf(x2, (used - 1) as f64)
+            };
+            if best.as_ref().is_none_or(|b| p > b.p) {
+                best = Some(Misfit {
+                    entity: i,
+                    group: g,
+                    p,
+                    level,
+                    reference_share,
+                });
+            }
+            if p >= bar {
+                break;
+            }
+        }
+        if let Some(best) = best.filter(|best| material && best.p < bar) {
+            out.push(best);
+        }
+    }
+    out
+}
+
 struct MixInput<'a> {
     entity: &'a str,
     entity_codes: &'a [Option<u32>],
@@ -963,94 +1127,95 @@ fn scan_mix(
         Method::new("entity_fingerprints", "entity_mix_groups", &format!("entity × level {model}; Hellinger embedding, gap-statistic k-means, homogeneity merge"))
     };
     if k >= 2 {
-        let mut groups: Vec<(Vec<usize>, Vec<f64>)> = (0..k)
-            .map(|g| {
-                let mem: Vec<usize> = (0..e_n).filter(|&i| lab[i] == g).collect();
-                let sh = share_of(&mem);
-                (mem, sh)
+        let mut groups: Vec<Vec<usize>> = (0..k)
+            .map(|g| (0..e_n).filter(|&i| lab[i] == g).collect::<Vec<_>>())
+            .filter(|members| {
+                members.iter().filter(|&&i| n[i] >= MIN_MISFIT_ROWS).count() >= MIN_GROUP_ENTITIES
             })
             .collect();
-        groups.sort_by_key(|g| std::cmp::Reverse(g.0.len()));
-        let mut parts = Vec::new();
-        let mut payload = Vec::new();
-        for (mem, sh) in &groups {
-            let (text, lv) = distinguishing(sh, &overall_mix, dlabels);
-            let size = format!(
-                "{} {ename} ({})",
-                mem.len(),
-                pct(mem.len() as f64 / e_n as f64)
-            );
-            parts.push(if text.is_empty() {
-                format!("{size} near the overall mix")
-            } else {
-                format!("{size} with {text}")
-            });
-            payload.push(json!({"entities": mem.len(), "levels": lv, "examples": mem.iter().take(5).map(|&i| elabels[ents[i]].clone()).collect::<Vec<_>>()}));
+        groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
+        let supported = groups.len();
+        if supported < k {
+            notes.push(format!(
+                "{mix_label}: {supported} of {k} candidate groups have at least {MIN_GROUP_ENTITIES} entities with {MIN_MISFIT_ROWS:.0} effective rows each"
+            ));
         }
-        let claim = format!(
-            "{ename} fall into {k} groups by their mix of {mix_label}: {}",
-            parts.join("; ")
-        );
-        findings.push(Finding::new(
-        Pattern::EntityGroups,
-        subject(),
-        claim,
-        EvidenceBasis::Estimated,
-        (0.5 + v).min(1.0),
-        base_metrics(&[("groups", json!(payload)), ("scope", json!(scope))]),
-        Some(format!("The model compares each {ename}'s share of {mix_unit} by {dname} level using {model}. Group and overall shares use pooled {mix_unit}.")),
-        method(),
-    ));
-        // Misfits: reject their own group's pooled profile.
-        let bar = 0.05 / e_n as f64;
-        let mut misfits: Vec<(usize, f64)> = Vec::new();
-        for (mem, _) in &groups {
-            let effective_profile: Vec<f64> = (0..n_lev)
-                .map(|j| mem.iter().map(|&i| rows[i][j]).sum::<f64>())
-                .collect();
-            let effective_total = effective_profile.iter().sum::<f64>();
-            for &i in mem {
-                let q: Vec<f64> = effective_profile
-                    .iter()
-                    .zip(&pooled)
-                    .map(|(a, b)| 0.98 * a / effective_total + 0.02 * b)
-                    .collect();
-                let xe: f64 = (0..n_lev)
-                    .filter(|&j| q[j] > 0.0)
-                    .map(|j| (rows[i][j] - n[i] * q[j]).powi(2) / (n[i] * q[j]))
-                    .sum();
-                let pe = chi2_sf(xe, (used - 1) as f64);
-                if pe < bar {
-                    misfits.push((i, pe));
-                }
+        if supported >= 2 {
+            let mut parts = Vec::new();
+            let mut payload = Vec::new();
+            for mem in &groups {
+                let (text, lv) = distinguishing(&share_of(mem), &overall_mix, dlabels);
+                let size = format!(
+                    "{} {ename} ({})",
+                    mem.len(),
+                    pct(mem.len() as f64 / e_n as f64)
+                );
+                parts.push(if text.is_empty() {
+                    format!("{size} near the overall mix")
+                } else {
+                    format!("{size} with {text}")
+                });
+                payload.push(json!({"entities": mem.len(), "levels": lv, "examples": mem.iter().take(5).map(|&i| elabels[ents[i]].clone()).collect::<Vec<_>>()}));
             }
-        }
-        if !misfits.is_empty() {
-            misfits.sort_by(|a, b| a.1.total_cmp(&b.1));
-            let rows_share =
-                misfits.iter().map(|(i, _)| mass_by_entity[*i]).sum::<f64>() / whole_mass;
-            let names: Vec<String> = misfits
-                .iter()
-                .take(5)
-                .map(|(i, _)| elabels[ents[*i]].clone())
-                .collect();
-            let claim = format!(
-            "{} {ename} ({}) differ from their assigned group by {mix_label} (chi-square, Bonferroni over {e_n} {ename}). Together they hold {} of {mix_unit}. Examples include {}",
-            misfits.len(), pct(misfits.len() as f64 / e_n as f64), pct(rows_share), names.join(", ")
-        );
+            let claim = if supported == k {
+                format!(
+                    "{ename} fall into {supported} groups by their mix of {mix_label}: {}",
+                    parts.join("; ")
+                )
+            } else {
+                let assigned: usize = groups.iter().map(Vec::len).sum();
+                format!("{assigned} of {e_n} {ename} fall into {supported} supported groups by their mix of {mix_label}: {}", parts.join("; "))
+            };
             findings.push(Finding::new(
-            Pattern::EntityMisfits,
-            subject(),
-            claim,
-            EvidenceBasis::Measured,
-            0.4 + 0.3 * (misfits.len() as f64 / e_n as f64).min(1.0),
-            base_metrics(&[
-                ("misfits", json!(misfits.iter().map(|(i, pe)| json!({"entity": elabels[ents[*i]], "rows": row_counts[ents[*i]], "effective_rows": n[*i], "p_value": pe})).collect::<Vec<_>>())),
-                ("bar", json!(bar)),
-            ]),
-            None,
-            Method::new("entity_fingerprints", "entity_misfit_test", &format!("chi-square of an entity's {model} against its group's effective profile")),
-        ));
+                Pattern::EntityGroups,
+                subject(),
+                claim,
+                EvidenceBasis::Estimated,
+                (0.5 + v).min(1.0),
+                base_metrics(&[("groups", json!(payload)), ("scope", json!(scope))]),
+                Some(format!("The model compares each {ename}'s share of {mix_unit} by {dname} level using {model}. Group and overall shares use pooled {mix_unit}.")),
+                method(),
+            ));
+        }
+        let bar = 0.05 / e_n as f64;
+        if !groups.is_empty() {
+            let mut misfits = profile_misfits(&rows, &n, &pooled, &groups, used, bar);
+            if !misfits.is_empty() {
+                misfits.sort_by(|a, b| {
+                    a.p.total_cmp(&b.p)
+                        .then_with(|| elabels[ents[a.entity]].cmp(&elabels[ents[b.entity]]))
+                });
+                let rows_share = misfits
+                    .iter()
+                    .map(|m| mass_by_entity[m.entity])
+                    .sum::<f64>()
+                    / whole_mass;
+                let names = misfits
+                    .iter()
+                    .take(5)
+                    .map(|m| elabels[ents[m.entity]].as_str())
+                    .collect::<Vec<_>>();
+                let claim = format!(
+                    "{} {ename} ({}) match none of the {supported} supported groups by {mix_label}. Together they hold {} of {mix_unit}. Examples include {}",
+                    misfits.len(), pct(misfits.len() as f64 / e_n as f64), pct(rows_share), names.join(", ")
+                );
+                let details = misfits.iter().map(|m| json!({
+                    "entity": elabels[ents[m.entity]], "rows": row_counts[ents[m.entity]],
+                    "effective_rows": n[m.entity], "p_value": m.p, "closest_group": m.group + 1,
+                    "level": dlabels[m.level], "share": rows[m.entity][m.level] / n[m.entity],
+                    "reference_share": m.reference_share,
+                })).collect::<Vec<_>>();
+                findings.push(Finding::new(
+                    Pattern::EntityMisfits,
+                    subject(),
+                    claim,
+                    EvidenceBasis::Estimated,
+                    0.4 + 0.3 * (misfits.len() as f64 / e_n as f64).min(1.0),
+                    base_metrics(&[("misfits", json!(details)), ("bar", json!(bar)), ("groups_tested", json!(supported))]),
+                    Some("Each entity rejects every supported profile at the Bonferroni threshold. The evidence shows the level with the largest share difference from its best-fitting reference.".into()),
+                    Method::new("entity_fingerprints", "entity_misfit_test", &format!("chi-square of an entity's {model} against each group’s median-share profile with the entity left out")),
+                ));
+            }
         }
     } else {
         let (ev1, u1) = &eig[0];
@@ -1153,4 +1318,28 @@ fn scan_mix(
     }
     notes.push(format!("{mix_label}: {k} group(s) over {scope}, excess V {v:.3}, {m} signal axes, gap-statistic k {k_gap}"));
     (capped, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::profile_misfits;
+
+    #[test]
+    fn a_misfit_must_reject_every_supported_profile() {
+        let mut counts = vec![vec![90.0, 10.0, 0.0]; 5];
+        counts.extend(vec![vec![10.0, 90.0, 0.0]; 5]);
+        counts.extend([
+            vec![10.0, 90.0, 0.0], // Assigned to the first group, fits the second.
+            vec![89.0, 10.0, 1.0], // Rare extra level, still close to the first group.
+            vec![50.0, 50.0, 0.0], // Fits neither group.
+        ]);
+        let rows: Vec<_> = counts.iter().collect();
+        let n = vec![100.0; rows.len()];
+        let pooled: Vec<_> = (0..3)
+            .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / n.iter().sum::<f64>())
+            .collect();
+        let groups = [vec![0, 1, 2, 3, 4, 10], vec![5, 6, 7, 8, 9]];
+        let misfits = profile_misfits(&rows, &n, &pooled, &groups, 3, 0.05 / n.len() as f64);
+        assert_eq!(misfits.iter().map(|m| m.entity).collect::<Vec<_>>(), [12]);
+    }
 }

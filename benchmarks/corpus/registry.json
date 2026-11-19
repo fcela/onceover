@@ -3385,7 +3385,7 @@
       "category"
      ],
      "expect": "found",
-     "note": "12 customers reject their group's profile; 11 are planted drifters. The temporal scan separately reports individual changes in category mix. The planted misfits are stated as their own group instead."
+     "note": "19 customers reject all four supported profiles. All 19 are planted drifters. The planted misfits with the same frozen-and-dairy profile form their own supported group."
     },
     {
      "kind": "finding",

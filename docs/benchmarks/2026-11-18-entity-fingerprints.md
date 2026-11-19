@@ -204,3 +204,47 @@ against main at `84d830f` used seed 0 and passed with all 61 scored
 totals unchanged under the gate's tolerances. The Python suite
 passed 880 tests. The Rust workspace checks and the strict executed
 book build also passed.
+
+### Activation audit
+
+An explicit `entity_fingerprints` run over each of the 27 datasets
+in the gate registry, with the registry's existing hints, produced
+no findings on the source data or on the seed-0 independently
+shuffled versions. On the unshuffled inputs, 26 lacked a resolved
+entity. The state unemployment panel resolved `state` as its entity
+but had no dimension columns to compare. All shuffled inputs lacked
+a resolved entity. This checks the activation path and shows that
+the general gate alone would give little evidence for default
+inclusion. The entity fixtures above supply the missing positive
+and null controls. The broader default gate still records 38 false
+relationships in full reports on shuffled data and 21 in the 4k
+digest. The precision ceilings remain in force.
+
+### Misfit validation
+
+The original misfit check compared each entity against its assigned
+group, with its own rows included in that reference. The revised
+check keeps a group only when at least five members each have ten
+effective rows. For each entity, a reference uses per-level medians
+of the other supported members' shares, normalized and smoothed
+toward the pooled mix. This protects the test against one misplaced
+entity. Published characterization percentages still use the
+observed pooled measure or row counts. The test requires a total
+variation distance of at least 0.10 and chi-square rejection
+at 0.05 / (number of entities) against every supported profile.
+
+The planted annual case now reports 19 misfits, all planted
+drifters, compared with 11 planted drifters and one other customer
+under the previous check. Seven of the 19 also clear the distinct
+temporal reporting bar. The 12 customers with the same planted
+frozen-and-dairy mix form a supported group. In a separate probe
+with two 20-account groups and one isolated legacy-plan account,
+only the isolated account is a misfit. Its legacy share is 90%
+against 2% in the best-fitting reference. The Rust regression
+also checks that a group assignment cannot force a misfit when
+another group fits and that a rare extra level alone is insufficient.
+
+The follow-up passed 881 Python tests, the Rust workspace checks,
+the strict executed book build, and all 228 corpus expectations.
+The full seed-0 gate kept all 61 scored totals unchanged against
+the weighted-and-joint PR at `c98a694`.
