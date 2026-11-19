@@ -1944,6 +1944,7 @@ fn profile_inner(
                     periods,
                     deadline: pass_deadline,
                     weights: &weight_series,
+                    hierarchies: cfg.hints.as_ref().map_or(&[][..], |h| h.hierarchies.as_slice()),
                 };
                 let (mut f, detail, capped) = onceover_mines::entity_fingerprints(&table, &input);
                 findings.append(&mut f);

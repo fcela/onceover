@@ -1302,8 +1302,10 @@ Callers can declare structure the profiler cannot infer, through the
   `measure`, or `text`; an
   entry naming a column the table does not have, or a role outside
   that vocabulary, is ignored;
-- `hierarchies`: known hierarchies — each entry is one hierarchy's
-  level columns, ordered finest to coarsest;
+- `hierarchies`: known hierarchies, one list of column names per
+  path, finest to coarsest. `infer_spec()` proposes observed paths in
+  `hierarchy_candidates`. Pass the paths you want as hints. Entity
+  fingerprints uses checked paths for peer comparisons;
 - `exclude_columns`: columns to leave out of the profile entirely;
 - `labels`: display labels for individual columns — where a label is
   declared, finding claims and interpretations name the column by its
@@ -1524,6 +1526,33 @@ rejects. The fit uses a median-share reference with the entity
 held out. Printed group shares still pool actual mass. The
 `misfits` metric records the highest p-value across those tests and
 the level with the largest share difference from that reference.
+
+With a hierarchy hint, the detector checks each adjacent mapping
+before selecting peers. It considers every applicable level in
+every checked path. A host must have a complete, stable affiliation
+at that level. When the hierarchy contains the entity column, only
+its ancestors are eligible as peer groups. The comparison uses the
+smallest supported pool, with declaration order breaking ties.
+Sparse child groups can use a supported parent. Membership columns
+from checked paths are peer keys and are excluded from the mix.
+
+A static comparison requires ten effective rows in the subject and
+each of at least five other entities. It reports an `entity_misfits`
+finding when a level's share clears the peer range by ten percentage
+points and passes the corrected probability bound. Pools with ten or
+more peers omit the most extreme peer in that direction from the
+range. The bound compares equally weighted peer shares, leaving the
+subject out, and assumes independent observations conditional on the
+weights. The evidence identifies the peer column, value and count.
+A refused or unsupported declaration cannot silently become a
+table-wide peer test. Without hierarchy hints, the original
+comparison against fitted profiles applies.
+
+Temporal peers must have support in both windows. The detector
+applies its shared-change guard within each selected pool and
+records the peer group with the individual comparison. With
+hierarchies, `population_shifts` lists the shared changes across
+pools, and `population_shift` remains the strongest one.
 
 The pass also screens up to 12 pairs in column-name order, with up
 to 30 observed joint levels in each. Pair evidence names both columns

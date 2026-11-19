@@ -30,6 +30,7 @@ project:
         - file: case_studies/churn_shift.ipynb
         - file: case_studies/delivery_drift.ipynb
         - file: case_studies/unemployment_panel.ipynb
+        - file: case_studies/library_craft_kits.ipynb
     - title: Part III — Methodology
       children:
         - file: methodology/evidence.ipynb

@@ -19,6 +19,7 @@ pub mod encode;
 pub mod expectations;
 pub mod fingerprints;
 mod fingerprints_drift;
+mod fingerprints_peers;
 pub mod gbm;
 pub mod hotspots;
 pub mod hstat;

@@ -60,6 +60,10 @@ settings, coverage, selection counts, and individual check outcomes:
 [0.1.2](../../benchmarks/results/2m-200-0.1.2.json) and
 [0.1.3](../../benchmarks/results/2m-200-0.1.3.json).
 
+## Release check for 0.1.7
+
+The installed macOS arm64 wheel passed all 9 checks on 200,000 rows × 200 columns, using Python 3.13.7, Polars 2.0.0, four Rayon threads, and the standard budget. This included both exact cardinalities and all planted relationships in the final columns. Profiling took 78.93 seconds and peak process RSS was 1.16 GiB. This used the same seed and column layout as the large fixture, with one tenth of the rows. A full-size run was active on the same host, so the timing is a release check and is unsuitable for direct comparison with the table above. See the [0.1.7 record](../../benchmarks/results/200k-200-0.1.7.json).
+
 ## Reproducing the benchmark
 
 From a checkout of the version to measure, install its package and benchmark

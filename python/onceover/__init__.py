@@ -19,7 +19,7 @@ from onceover._many import MultiTableReport, profile_many
 from onceover._native import ProfileReport as _NativeProfileReport
 from onceover._native import profile as _profile_native
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __all__ = [
     "profile",
     "ProfileReport",
@@ -385,12 +385,19 @@ def infer_spec(df, hints: dict | None = None, target: str | None = None) -> dict
     - ``entity``: the entity column (null when none);
     - ``target`` and ``weights``: as declared (inference does not
       choose an outcome or a weight).
+    - ``hierarchy_candidates``: observed finest-to-coarsest paths.
+      Review them and pass the selected paths in ``hints["hierarchies"]``
+      to use them. Suggestions alone do not change a profile.
 
     Only the frame model and the cheap structural passes it needs
     run. Edit the document and pass it back as
     ``profile(df, spec=...)``: the run then uses every entry
     exactly as written, each as a declaration.
     """
+    return _resolve_spec(df, hints, target, discover_hierarchies=True)
+
+
+def _resolve_spec(df, hints, target, *, discover_hierarchies=False):
     import polars as _pl
 
     if not isinstance(df, _pl.DataFrame):
@@ -434,7 +441,7 @@ def infer_spec(df, hints: dict | None = None, target: str | None = None) -> dict
                     and 2 * factors[0]["distinct"] <= nonnull):
                 entity = {"column": col, "source": "inferred",
                           "evidence": f"the grain's non-axis factor: {grain.get('statement')}"}
-    return {
+    spec = {
         "spec_version": _SPEC_VERSION,
         "columns": columns,
         "time_axis": time_axis,
@@ -443,6 +450,14 @@ def infer_spec(df, hints: dict | None = None, target: str | None = None) -> dict
         "weights": {"columns": list(hints.get("weights") or []),
                     "source": "declared" if hints.get("weights") else "none"},
     }
+    if discover_hierarchies:
+        from ._hierarchies import candidates
+
+        excluded = set(hints.get("exclude_columns") or [])
+        excluded.update((target, time_axis["column"], hints.get("ordered_axis")))
+        excluded.update(spec["weights"]["columns"])
+        spec["hierarchy_candidates"] = candidates(df, columns, entity["column"], excluded)
+    return spec
 
 
 def _apply_spec(df, spec: dict, hints: dict | None, target: str | None):
@@ -498,7 +513,7 @@ def _apply_spec(df, spec: dict, hints: dict | None, target: str | None):
         trial = dict(hints)
         if declared_roles:
             trial["roles"] = dict(declared_roles)
-        resolved = infer_spec(df, hints=trial, target=target)
+        resolved = _resolve_spec(df, trial, target)
         if axis != resolved["time_axis"]["column"] and "time" not in hints:
             if not axis:
                 raise ValueError("the spec states no time axis, but the frame has one the run would use; "

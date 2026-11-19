@@ -50,6 +50,7 @@ use serde_json::json;
 
 use crate::dep::chi2_sf;
 use crate::fingerprints_drift::{self, DriftInput, FingerprintPeriods};
+use crate::fingerprints_peers::{self, HierarchyPeers, PeerInput, MIN_PEERS};
 use crate::slices::splitmix64;
 use crate::{Deadline, WeightSeries};
 
@@ -73,6 +74,7 @@ pub struct FingerprintInput<'a> {
     pub periods: Option<FingerprintPeriods>,
     pub deadline: Deadline,
     pub weights: &'a [WeightSeries<'a>],
+    pub hierarchies: &'a [Vec<String>],
 }
 
 struct Rng(u64);
@@ -461,20 +463,33 @@ pub fn entity_fingerprints(
             false,
         );
     };
-    if n_ent < MIN_ENTITIES {
+    let min_entities = if input.hierarchies.is_empty() {
+        MIN_ENTITIES
+    } else {
+        MIN_PEERS + 1
+    };
+    if n_ent < min_entities {
         return (
             vec![],
-            format!("{n_ent} entities in {ename}; the pass needs at least {MIN_ENTITIES}"),
+            format!("{n_ent} entities in {ename}; the pass needs at least {min_entities}"),
             false,
         );
     }
     let mut findings = Vec::new();
     let mut notes = Vec::new();
+    let peers = HierarchyPeers::resolve(
+        table,
+        input.entity,
+        &ecodes,
+        n_ent,
+        input.hierarchies,
+        &mut notes,
+    );
     let mut dimensions: Vec<_> = input
         .dimensions
         .iter()
         .copied()
-        .filter(|&d| d != input.entity)
+        .filter(|&d| d != input.entity && peers.as_ref().is_none_or(|p| !p.columns.contains(&d)))
         .collect();
     dimensions.sort_by_key(|&d| &table.names[d]);
     let all_pairs = dimensions.len() * dimensions.len().saturating_sub(1) / 2;
@@ -549,6 +564,7 @@ pub fn entity_fingerprints(
                     dimension_name: &dname,
                     weight: *weight,
                     periods: input.periods.as_ref(),
+                    peers: peers.as_ref(),
                     deadline: input.deadline,
                     test_count: partner.map_or(marginal_count, |_| pair_count) * basis_count,
                     seed: d as u64,
@@ -754,6 +770,7 @@ struct MixInput<'a> {
     dimension_name: &'a str,
     weight: Option<&'a FingerprintWeight<'a>>,
     periods: Option<&'a FingerprintPeriods>,
+    peers: Option<&'a HierarchyPeers>,
     deadline: Deadline,
     test_count: usize,
     seed: u64,
@@ -774,6 +791,7 @@ fn scan_mix(
         dimension_name: dname,
         weight,
         periods,
+        peers,
         deadline,
         test_count,
         seed,
@@ -843,8 +861,15 @@ fn scan_mix(
         ents.sort_unstable();
     }
     let e_n = ents.len();
-    if e_n < MIN_ENTITIES {
-        notes.push(format!("{mix_label}: {e_n} entities with values"));
+    let min_entities = if peers.is_some() {
+        MIN_PEERS + 1
+    } else {
+        MIN_ENTITIES
+    };
+    if e_n < min_entities {
+        notes.push(format!(
+            "{mix_label}: {e_n} entities with values; at least {min_entities} needed"
+        ));
         return (capped, false);
     }
     let scaled;
@@ -857,7 +882,7 @@ fn scan_mix(
     } else {
         ents.iter().map(|&e| &counts[e]).collect()
     };
-    if let Some(periods) = periods {
+    if let Some(periods) = periods.filter(|_| e_n >= MIN_ENTITIES) {
         let (mut changes, detail, stopped) = fingerprints_drift::scan(DriftInput {
             periods,
             entity: ename,
@@ -871,6 +896,7 @@ fn scan_mix(
             entity_codes: ecodes,
             level_codes: &dim.codes,
             dimension_count: test_count,
+            peers,
             deadline,
         });
         notes.push(format!("{mix_label}: {detail}"));
@@ -878,6 +904,11 @@ fn scan_mix(
         if stopped {
             return (capped, true);
         }
+    }
+    if periods.is_some() && e_n < MIN_ENTITIES {
+        notes.push(format!(
+            "{mix_label}: fewer than {MIN_ENTITIES} entities for drift"
+        ));
     }
     let joint_gain = if partner.is_some() {
         let gain = joint_excess(&rows, &dim.joint);
@@ -889,6 +920,28 @@ fn scan_mix(
     } else {
         None
     };
+    if let Some(hierarchy) = peers {
+        let (finding, detail) = fingerprints_peers::outliers(PeerInput {
+            hierarchy,
+            entity: ename,
+            entities: &ents,
+            entity_labels: elabels,
+            dimension: dname,
+            dimension_columns: &dim.columns,
+            level_labels: dlabels,
+            rows: &rows,
+            weight: weight_name,
+            test_count,
+        });
+        findings.extend(finding);
+        notes.push(format!("{mix_label}: {detail}"));
+    }
+    if e_n < MIN_ENTITIES {
+        notes.push(format!(
+            "{mix_label}: fewer than {MIN_ENTITIES} entities for group discovery"
+        ));
+        return (capped, false);
+    }
     let (v, x2, df) = excess_v(&rows);
     let p = chi2_sf(x2, df);
     if v < MIN_EXCESS_V || p > 0.05 / test_count.max(1) as f64 {
@@ -1178,7 +1231,7 @@ fn scan_mix(
             ));
         }
         let bar = 0.05 / e_n as f64;
-        if !groups.is_empty() {
+        if peers.is_none() && !groups.is_empty() {
             let mut misfits = profile_misfits(&rows, &n, &pooled, &groups, used, bar);
             if !misfits.is_empty() {
                 misfits.sort_by(|a, b| {

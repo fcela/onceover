@@ -86,3 +86,28 @@ def test_spec_keys_are_not_also_accepted_as_hints():
     with pytest.raises(ValueError, match="differs from the spec's target"):
         spec = onceover.infer_spec(df, target="sales")
         onceover.profile(df, spec=spec, target="units")
+
+
+def test_infer_spec_suggests_separate_exact_hierarchies():
+    df = pl.DataFrame([
+        (f"H{i:02}", f"T{i // 4}", f"D{i // 8}", f"S{i % 4}", f"R{(i % 4) // 2}",
+         day, 4 * i + day)
+        for i in range(32) for day in range(4)
+    ], schema=["host", "team", "department", "site", "region", "period", "serial"],
+       orient="row")
+    hints = {"entity": "host", "ordered_axis": "period",
+             "roles": {c: "dimension" for c in ["team", "department", "site", "region"]}}
+    spec = onceover.infer_spec(df, hints=hints)
+    paths = {tuple(h["levels"]) for h in spec["hierarchy_candidates"]}
+    assert paths == {
+        ("host", "team", "department"),
+        ("host", "site", "region"),
+    }
+    assert all(h["evidence"]["rows"] == df.height for h in spec["hierarchy_candidates"])
+    shuffled = df.sample(fraction=1, shuffle=True, seed=448).select(reversed(df.columns))
+    assert onceover.infer_spec(shuffled, hints=hints)["hierarchy_candidates"] == spec["hierarchy_candidates"]
+
+    # Candidates are advisory, so saving/reusing the spec doesn't
+    # introduce hierarchical peer comparisons into a plain run.
+    run = onceover.profile(df, spec=spec, detectors=["entity_fingerprints"])
+    assert "checked peer hierarchy" not in run.coverage["entity_fingerprints"]["detail"]

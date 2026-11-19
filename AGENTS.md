@@ -30,6 +30,10 @@ first; what follows here is only what it does not carry.
 
 `onceover.infer_spec(df)` returns the frame's resolved interpretation without profiling it: every column's role, the time axis, the entity, the target and the weights. Each entry is marked `declared` or `inferred` and carries its evidence. Edit it and pass it back as `profile(df, spec=...)`: an unedited spec reproduces the plain run, and every edited entry is held exactly.
 
+`hierarchy_candidates` lists observed finest-to-coarsest paths
+for review. Pass the paths you accept in
+`hints={"hierarchies": [...]}` to use them for peer comparisons.
+
 ## What the guide states only in brief
 
 - **Deadline reach.** A `deadline_seconds=` bound also applies

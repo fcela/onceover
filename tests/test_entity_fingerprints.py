@@ -269,3 +269,111 @@ def test_misfit_matches_no_supported_group():
     assert misfit["level"] == "legacy"
     assert misfit["share"] == pytest.approx(0.90)
     assert misfit["reference_share"] == pytest.approx(0.02)
+
+
+def _hierarchy_report(df, hierarchies):
+    return onceover.profile(
+        df, detectors=["entity_fingerprints"],
+        hints={"entity": "host", "hierarchies": hierarchies,
+               "ordered_axis": "period", "roles": {"kit": "dimension"}},
+    )
+
+
+def test_hierarchy_pooling_uses_local_peers_and_falls_back_for_small_groups():
+    rows = []
+    for team, n, normal in [("A", 12, 20), ("B", 12, 120), ("C", 3, 20)]:
+        for i in range(n):
+            host = f"{team}{i:02}"
+            featured = 195 if host in {"A00", "C00"} else normal
+            rows.extend(
+                [(host, team, "North", "featured")] * featured
+                + [(host, team, "North", "simple")] * (200 - featured)
+            )
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "kit"], orient="row")
+    report = _hierarchy_report(df, [["host", "team", "region"]])
+    [finding] = report.select(type="entity_misfits")
+    ev = finding["evidence"][0]
+    assert ev["method"]["algorithm"] == "hierarchy_peer_mix"
+    hits = {m["entity"]: m["peer_group"] for m in ev["metrics"]["misfits"]}
+    assert hits == {
+        "A00": {"column": "team", "value": "A", "entities": 11},
+        "C00": {"column": "region", "value": "North", "entities": 26},
+    }
+    assert "hierarchy peers: 27 of 27 entities" in report.coverage["entity_fingerprints"]["detail"]
+
+
+def test_multiple_peer_hierarchies_can_supply_the_smallest_supported_pool():
+    rows = []
+    for i in range(32):
+        featured = 195 if i == 0 else 20
+        rows.extend(
+            [(f"H{i:02}", f"T{i // 16}", "North", f"S{i % 4}", "Metro", "featured")] * featured
+            + [(f"H{i:02}", f"T{i // 16}", "North", f"S{i % 4}", "Metro", "simple")] * (200 - featured)
+        )
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "site", "area", "kit"], orient="row")
+    report = _hierarchy_report(df, [["host", "team", "region"], ["host", "site", "area"]])
+    [finding] = report.select(type="entity_misfits")
+    [hit] = finding["evidence"][0]["metrics"]["misfits"]
+    assert hit["entity"] == "H00"
+    assert hit["peer_group"] == {"column": "site", "value": "S0", "entities": 7}
+
+
+def test_hierarchy_drift_distinguishes_shared_local_change_from_individual_change():
+    rows = []
+    for i in range(48):
+        team = "Gallery" if i < 24 else "Workshop"
+        for period in (1, 2):
+            featured = 108 if period == 2 and (i < 24 or i == 24) else 12
+            rows.extend(
+                [(f"H{i:02}", team, "North", period, "featured")] * featured
+                + [(f"H{i:02}", team, "North", period, "simple")] * (120 - featured)
+            )
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "period", "kit"], orient="row")
+    report = _hierarchy_report(df, [["team", "region"]])
+    [change] = _changes(report)
+    metrics = change["evidence"][0]["metrics"]
+    [shared] = metrics["population_shifts"]
+    assert shared["peer_group"]["value"] == "Gallery"
+    assert shared["matched_entities"] == 24
+    [individual] = metrics["entity_shifts"]
+    assert individual["entity"] == "H24"
+    assert individual["peer_group"] == {"column": "team", "value": "Workshop", "entities": 23}
+
+
+def test_broken_peer_path_is_refused_without_unscoped_misfits():
+    rows = [(f"H{i:02}", "T", f"R{i % 2}", "special" if i == 0 else "usual")
+            for i in range(24) for _ in range(80)]
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "kit"], orient="row")
+    report = _hierarchy_report(df, [["team", "region"]])
+    assert report.select(type="entity_misfits") == []
+    assert "a mapping is broken" in report.coverage["entity_fingerprints"]["detail"]
+
+
+def test_static_peers_can_run_on_a_small_but_supported_pool():
+    rows = [(f"H{i}", "A", "North", "featured" if i == 0 else "simple")
+            for i in range(6) for _ in range(100)]
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "kit"], orient="row")
+    report = _hierarchy_report(df, [["team", "region"]])
+    [finding] = report.select(type="entity_misfits")
+    [hit] = finding["evidence"][0]["metrics"]["misfits"]
+    assert hit["entity"] == "H0"
+    assert hit["peer_group"] == {"column": "team", "value": "A", "entities": 5}
+
+
+def test_weighted_hierarchy_peer_outlier_with_equal_order_counts():
+    rows = [
+        (f"H{i:02}", "Workshop", "North", kit, 9 if i == 0 and kit == "featured" else 1)
+        for i in range(24) for kit in ("featured", "simple") for _ in range(80)
+    ]
+    df = pl.DataFrame(rows, schema=["host", "team", "region", "kit", "cost"], orient="row")
+    hints = {"entity": "host", "hierarchies": [["team", "region"]],
+             "roles": {"kit": "dimension", "cost": "measure"}}
+    assert onceover.profile(df, hints=hints, detectors=["entity_fingerprints"]).select(type="entity_misfits") == []
+    weighted = onceover.profile(df, hints={**hints, "weights": ["cost"]}, detectors=["entity_fingerprints"])
+    [finding] = weighted.select(type="entity_misfits")
+    metrics = finding["evidence"][0]["metrics"]
+    assert metrics["weight"] == "cost"
+    [hit] = metrics["misfits"]
+    assert hit["entity"] == "H00"
+    assert hit["peer_group"]["entities"] == 23
+    assert hit["reference_share"] == pytest.approx(0.5)

@@ -406,7 +406,7 @@ fn sequence_check(
 /// The canonical JSON value of one cell, for group keys and ordering
 /// comparisons. Dates and datetimes stay numeric (days / microseconds)
 /// so ordering is chronological; display formatting happens later.
-fn cell_value(col: &TypedCol, row: usize) -> Option<Value> {
+pub(crate) fn cell_value(col: &TypedCol, row: usize) -> Option<Value> {
     match col {
         TypedCol::I64 { vals } => vals.get(row).flatten().map(|v| json!(v)),
         TypedCol::U64 { vals } => vals.get(row).flatten().map(|v| json!(v)),
@@ -870,41 +870,40 @@ fn panel_check(table: &TypedTable, hints: &ProfileHints, notes: &mut Vec<String>
     vec![finding]
 }
 
-/// Declared-hierarchy verification over one `hierarchies` entry:
-/// the level columns, ordered finest to coarsest, must satisfy
-/// "each level determines the next" exactly. Every adjacent
-/// mapping is checked on the rows where both levels are present
-/// (the functional-dependency pass's incomplete-row handling).
-/// A hierarchy that holds yields one structural statement —
-/// the ledger groups the inferred restatements of the chain
-/// under it. A hierarchy that does not hold yields one deviation
-/// statement naming every broken mapping. Unusable declarations
-/// are noted, not raised, like every other hint.
-fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String>) -> Vec<Finding> {
+pub(crate) struct HierarchyEdge {
+    finer: String,
+    coarser: String,
+    rows_evaluated: usize,
+    pub(crate) violating_rows: usize,
+    split_levels: usize,
+    finer_levels: usize,
+}
+
+pub(crate) fn inspect_hierarchy(
+    table: &TypedTable,
+    levels: &[String],
+) -> Result<(Vec<usize>, Vec<HierarchyEdge>), String> {
     let joined = levels.join(", ");
     if levels.len() < 2 {
-        notes.push(format!(
+        return Err(format!(
             "hierarchy check on ({joined}) ignored: a hierarchy needs at least two levels"
         ));
-        return Vec::new();
     }
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for name in levels {
         if !seen.insert(name.as_str()) {
-            notes.push(format!(
+            return Err(format!(
                 "hierarchy check on ({joined}) ignored: column '{name}' is listed twice"
             ));
-            return Vec::new();
         }
     }
     let mut cols: Vec<usize> = Vec::with_capacity(levels.len());
     for name in levels {
         match col_index(table, name) {
             None => {
-                notes.push(format!(
+                return Err(format!(
                     "hierarchy check on ({joined}) ignored: column '{name}' not in table"
                 ));
-                return Vec::new();
             }
             Some(i) => {
                 if !matches!(
@@ -918,24 +917,15 @@ fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String
                         | TypedCol::Date { .. }
                         | TypedCol::Datetime { .. }
                 ) {
-                    notes.push(format!(
+                    return Err(format!(
                         "hierarchy check on ({joined}) skipped: column '{name}' has an unsupported type"
                     ));
-                    return Vec::new();
                 }
                 cols.push(i);
             }
         }
     }
-    struct Edge {
-        finer: String,
-        coarser: String,
-        rows_evaluated: usize,
-        violating_rows: usize,
-        split_levels: usize,
-        finer_levels: usize,
-    }
-    let mut edges: Vec<Edge> = Vec::new();
+    let mut edges: Vec<HierarchyEdge> = Vec::new();
     for (j, w) in cols.windows(2).enumerate() {
         let (fi, ci) = (w[0], w[1]);
         // First coarser value seen per finer value, and every
@@ -967,7 +957,7 @@ fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String
             all.entry(fk).or_default().insert(ck);
         }
         let split_levels = all.values().filter(|s| s.len() > 1).count();
-        edges.push(Edge {
+        edges.push(HierarchyEdge {
             finer: levels[j].clone(),
             coarser: levels[j + 1].clone(),
             rows_evaluated,
@@ -977,18 +967,38 @@ fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String
         });
     }
     if edges.iter().any(|e| e.rows_evaluated == 0) {
-        notes.push(format!(
+        return Err(format!(
             "hierarchy check on ({joined}) skipped: no rows where adjacent levels are both present"
         ));
-        return Vec::new();
     }
+    Ok((cols, edges))
+}
+
+/// Declared-hierarchy verification over one `hierarchies` entry:
+/// the level columns, ordered finest to coarsest, must satisfy
+/// "each level determines the next" exactly. Every adjacent
+/// mapping is checked on the rows where both levels are present
+/// (the functional-dependency pass's incomplete-row handling).
+/// A hierarchy that holds yields one structural statement —
+/// the ledger groups the inferred restatements of the chain
+/// under it. A hierarchy that does not hold yields one deviation
+/// statement naming every broken mapping. Unusable declarations
+/// are noted, not raised, like every other hint.
+fn hierarchy_check(table: &TypedTable, levels: &[String], notes: &mut Vec<String>) -> Vec<Finding> {
+    let edges = match inspect_hierarchy(table, levels) {
+        Ok((_, edges)) => edges,
+        Err(note) => {
+            notes.push(note);
+            return Vec::new();
+        }
+    };
     let chain = levels.join(" → ");
     let raw_subject = BTreeMap::from([
         ("columns".into(), json!(levels)),
         ("column".into(), json!(levels[0])),
     ]);
     let min_support = edges.iter().map(|e| e.rows_evaluated).min().unwrap_or(0);
-    let broken: Vec<&Edge> = edges.iter().filter(|e| e.violating_rows > 0).collect();
+    let broken: Vec<&HierarchyEdge> = edges.iter().filter(|e| e.violating_rows > 0).collect();
     if broken.is_empty() {
         let edge_labels: Vec<String> = edges
             .iter()

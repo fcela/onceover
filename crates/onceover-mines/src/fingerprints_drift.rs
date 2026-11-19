@@ -6,6 +6,7 @@ use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use serde_json::json;
 
 use crate::fingerprints::{effective_rows, pct, MAX_LEVELS, MIN_ENTITIES};
+use crate::fingerprints_peers::HierarchyPeers;
 use crate::Deadline;
 
 const MAX_PERIODS: usize = 24;
@@ -115,6 +116,8 @@ fn permutation_p(before: u32, after: u32, n: u32, m: u32, log_fact: &[f64], bar:
 struct Shift {
     cut: usize,
     level: usize,
+    pool: usize,
+    peers: usize,
     before: f64,
     after: f64,
     peer_before: f64,
@@ -158,6 +161,7 @@ pub(crate) struct DriftInput<'a> {
     pub entity_codes: &'a [Option<u32>],
     pub level_codes: &'a [Option<u32>],
     pub dimension_count: usize,
+    pub peers: Option<&'a HierarchyPeers>,
     pub deadline: Deadline,
 }
 
@@ -175,6 +179,7 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
         entity_codes,
         level_codes,
         dimension_count,
+        peers,
         deadline,
     } = input;
     let n_periods = periods.labels.len();
@@ -241,10 +246,11 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
     }
     let bar = 0.05 / ((n_periods - 1) * l * entities.len() * dimension_count) as f64;
     let mut picks: Vec<Vec<Shift>> = vec![Vec::new(); entities.len()];
-    let mut global: Option<(Shift, usize, usize)> = None;
+    let pool_count = peers.map_or(1, |p| p.groups.len());
+    let mut global: Vec<Option<(Shift, usize, usize)>> = vec![None; pool_count];
     let mut completed = 0;
-    let mut tested = vec![0u32; entities.len()];
-    let mut shared_cuts = Vec::new();
+    let mut tested = vec![Vec::new(); entities.len()];
+    let mut shared_cuts = vec![Vec::new(); pool_count];
     for cut in 1..n_periods {
         if deadline.exceeded() {
             break;
@@ -253,7 +259,6 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
         let mid = cut * l;
         let right = (cut + WINDOW).min(n_periods) * l;
         let mut matched = Vec::new();
-        let mut shares = vec![(0.0, 0.0, 0, 0); l];
         for (i, row) in prefix.chunks_exact(stride).enumerate() {
             let windows = &support[i * support_stride..(i + 1) * support_stride];
             let n = windows[cut].since(windows[cut.saturating_sub(WINDOW)]);
@@ -285,109 +290,142 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
                 }
             }
             matched.push((i, row, n, m, ne, me, stable));
-            for (j, (b, a, up, down)) in shares.iter_mut().enumerate() {
-                let before = ((row[mid + j] - row[left + j]) / n.mass).clamp(0.0, 1.0);
-                let after = ((row[right + j] - row[mid + j]) / m.mass).clamp(0.0, 1.0);
-                *b += before;
-                *a += after;
-                if stable & (1 << j) != 0 {
-                    *up += usize::from(after - before >= 0.10);
-                    *down += usize::from(before - after >= 0.10);
-                }
-            }
         }
         completed += 1;
-        let n_matched = matched.len();
-        if n_matched < MIN_ENTITIES {
-            continue;
-        }
-        let population_shift = shares
-            .iter()
-            .enumerate()
-            .filter_map(|(j, &(b, a, up, down))| {
-                let (before, after) = (b / n_matched as f64, a / n_matched as f64);
-                let concordant = if after > before { up } else { down };
-                ((after - before).abs() >= 0.15 && 3 * concordant >= 2 * n_matched).then_some((
-                    Shift {
-                        cut,
-                        level: j,
-                        before,
-                        after,
-                        peer_before: 0.0,
-                        peer_after: 0.0,
-                        before_support: Support::default(),
-                        after_support: Support::default(),
-                        p: 1.0,
-                    },
-                    concordant,
-                    n_matched,
-                ))
-            })
-            .max_by(|(a, _, _), (b, _, _)| {
-                (a.after - a.before)
-                    .abs()
-                    .total_cmp(&(b.after - b.before).abs())
-                    .then_with(|| level_labels[b.level].cmp(&level_labels[a.level]))
-            });
-        if let Some(candidate) = population_shift {
-            shared_cuts.push(cut);
-            if global.is_none_or(|(g, _, _)| {
-                (candidate.0.after - candidate.0.before).abs() > (g.after - g.before).abs()
-            }) {
-                global = Some(candidate);
+        // Build each declared pool from all its members supported on
+        // both sides, even when some of those peers have a narrower
+        // pool of their own. Only use pools selected by a subject.
+        let mut pools = vec![Vec::new(); pool_count];
+        for row in &matched {
+            if let Some(hierarchy) = peers {
+                for &g in &hierarchy.membership[entities[row.0]] {
+                    pools[g].push(row);
+                }
+            } else {
+                pools[0].push(row);
             }
-            // A compositional change can move every other share as
-            // well. Do not interpret this window as individual drift.
-            continue;
         }
-        for (i, row, n, m, ne, me, stable) in matched {
-            if stable == 0 {
+        let mut choices = vec![None; entities.len()];
+        let mut active = vec![false; pool_count];
+        for &(i, _, _, _, _, _, _) in &matched {
+            let pool = if let Some(hierarchy) = peers {
+                hierarchy.select(entities[i], MIN_ENTITIES - 1, |g| pools[g].len())
+            } else {
+                (pools[0].len() >= MIN_ENTITIES).then_some(0)
+            };
+            if let Some(g) = pool {
+                choices[i] = Some(g);
+                active[g] = true;
+            }
+        }
+        for (pool, cohort) in pools.into_iter().enumerate().filter(|(g, _)| active[*g]) {
+            let n_matched = cohort.len();
+            let mut shares = vec![(0.0, 0.0, 0, 0); l];
+            for &&(_, row, n, m, _, _, stable) in &cohort {
+                for (j, (b, a, up, down)) in shares.iter_mut().enumerate() {
+                    let before = ((row[mid + j] - row[left + j]) / n.mass).clamp(0.0, 1.0);
+                    let after = ((row[right + j] - row[mid + j]) / m.mass).clamp(0.0, 1.0);
+                    *b += before;
+                    *a += after;
+                    if stable & (1 << j) != 0 {
+                        *up += usize::from(after - before >= 0.10);
+                        *down += usize::from(before - after >= 0.10);
+                    }
+                }
+            }
+            let population_shift = shares
+                .iter()
+                .enumerate()
+                .filter_map(|(j, &(b, a, up, down))| {
+                    let (before, after) = (b / n_matched as f64, a / n_matched as f64);
+                    let concordant = if after > before { up } else { down };
+                    ((after - before).abs() >= 0.15 && 3 * concordant >= 2 * n_matched).then_some((
+                        Shift {
+                            cut,
+                            level: j,
+                            pool,
+                            peers: n_matched - 1,
+                            before,
+                            after,
+                            peer_before: 0.0,
+                            peer_after: 0.0,
+                            before_support: Support::default(),
+                            after_support: Support::default(),
+                            p: 1.0,
+                        },
+                        concordant,
+                        n_matched,
+                    ))
+                })
+                .max_by(|(a, _, _), (b, _, _)| {
+                    (a.after - a.before)
+                        .abs()
+                        .total_cmp(&(b.after - b.before).abs())
+                        .then_with(|| level_labels[b.level].cmp(&level_labels[a.level]))
+                });
+            if let Some(candidate) = population_shift {
+                shared_cuts[pool].push(cut);
+                if global[pool].is_none_or(|(g, _, _)| {
+                    (candidate.0.after - candidate.0.before).abs() > (g.after - g.before).abs()
+                }) {
+                    global[pool] = Some(candidate);
+                }
+                // A compositional change can move every other share as
+                // well. Do not interpret this window as individual drift.
                 continue;
             }
-            tested[i] |= 1 << cut;
-            let mut best: Option<Shift> = None;
-            for (j, &(b, a, _, _)) in shares.iter().enumerate() {
-                if stable & (1 << j) == 0 {
+            for &(i, row, n, m, ne, me, stable) in cohort {
+                if choices[i] != Some(pool) || stable == 0 {
                     continue;
                 }
-                let (x, y) = (row[mid + j] - row[left + j], row[right + j] - row[mid + j]);
-                let (before, after) = ((x / n.mass).clamp(0.0, 1.0), (y / m.mass).clamp(0.0, 1.0));
-                let peer_before = (b - before) / (n_matched - 1) as f64;
-                let peer_after = (a - after) / (n_matched - 1) as f64;
-                let change = after - before;
-                // Require the entity's own move to exceed the
-                // contemporaneous peer move in its direction.
-                if change.abs() < MIN_CHANGE
-                    || change.abs() - change.signum() * (peer_after - peer_before) < MIN_CHANGE
-                {
-                    continue;
+                tested[i].push((cut, pool));
+                let mut best: Option<Shift> = None;
+                for (j, &(b, a, _, _)) in shares.iter().enumerate() {
+                    if stable & (1 << j) == 0 {
+                        continue;
+                    }
+                    let (x, y) = (row[mid + j] - row[left + j], row[right + j] - row[mid + j]);
+                    let (before, after) =
+                        ((x / n.mass).clamp(0.0, 1.0), (y / m.mass).clamp(0.0, 1.0));
+                    let peer_before = (b - before) / (n_matched - 1) as f64;
+                    let peer_after = (a - after) / (n_matched - 1) as f64;
+                    let change = after - before;
+                    // Require the entity's own move to exceed the
+                    // contemporaneous peer move in its direction.
+                    if change.abs() < MIN_CHANGE
+                        || change.abs() - change.signum() * (peer_after - peer_before) < MIN_CHANGE
+                    {
+                        continue;
+                    }
+                    let p = if weight.is_some() {
+                        // Hoeffding's two-sided bound for independent
+                        // level indicators with fixed, normalized weights.
+                        (2.0 * (-2.0 * change.powi(2) / (1.0 / ne + 1.0 / me)).exp()).min(1.0)
+                    } else {
+                        permutation_p(x as u32, y as u32, n.rows, m.rows, &log_fact, bar)
+                    };
+                    if p <= bar
+                        && best.is_none_or(|s| {
+                            p < s.p || (p == s.p && level_labels[j] < level_labels[s.level])
+                        })
+                    {
+                        best = Some(Shift {
+                            cut,
+                            level: j,
+                            pool,
+                            peers: n_matched - 1,
+                            before,
+                            after,
+                            peer_before,
+                            peer_after,
+                            before_support: n,
+                            after_support: m,
+                            p,
+                        });
+                    }
                 }
-                let p = if weight.is_some() {
-                    // Hoeffding's two-sided bound for independent
-                    // level indicators with fixed, normalized weights.
-                    (2.0 * (-2.0 * change.powi(2) / (1.0 / ne + 1.0 / me)).exp()).min(1.0)
-                } else {
-                    permutation_p(x as u32, y as u32, n.rows, m.rows, &log_fact, bar)
-                };
-                if p <= bar
-                    && best.is_none_or(|s| {
-                        p < s.p || (p == s.p && level_labels[j] < level_labels[s.level])
-                    })
-                {
-                    best = Some(Shift {
-                        cut,
-                        level: j,
-                        before,
-                        after,
-                        peer_before,
-                        peer_after,
-                        before_support: n,
-                        after_support: m,
-                        p,
-                    });
-                }
+                picks[i].extend(best);
             }
-            picks[i].extend(best);
         }
     }
 
@@ -406,16 +444,26 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
     }
     // Windows that overlap a detected population break can also
     // contain the same shift, diluted across more periods.
-    let excluded_mask = (1..n_periods)
-        .filter(|&cut| {
-            shared_cuts.iter().any(|&shared| {
-                cut.saturating_sub(WINDOW) < shared && shared < (cut + WINDOW).min(n_periods)
-            })
+    let excluded: Vec<u32> = shared_cuts
+        .iter()
+        .map(|cuts| {
+            (1..n_periods)
+                .filter(|&cut| {
+                    cuts.iter().any(|&shared| {
+                        cut.saturating_sub(WINDOW) < shared
+                            && shared < (cut + WINDOW).min(n_periods)
+                    })
+                })
+                .fold(0, |mask, cut| mask | (1 << cut))
         })
-        .fold(0u32, |mask, cut| mask | (1 << cut));
+        .collect();
     let n_tested = tested
         .into_iter()
-        .filter(|mask| mask & !excluded_mask != 0)
+        .filter(|windows| {
+            windows
+                .iter()
+                .any(|&(cut, pool)| excluded[pool] & (1 << cut) == 0)
+        })
         .count();
     let mut found: Vec<_> = picks
         .into_iter()
@@ -423,7 +471,7 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
         .filter_map(|(i, shifts)| {
             shifts
                 .into_iter()
-                .filter(|s| excluded_mask & (1 << s.cut) == 0)
+                .filter(|s| excluded[s.pool] & (1 << s.cut) == 0)
                 .min_by(|a, b| a.p.total_cmp(&b.p).then_with(|| a.cut.cmp(&b.cut)))
                 .map(|s| (i, s))
         })
@@ -433,29 +481,66 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
             .total_cmp(&b.1.p)
             .then_with(|| entity_labels[entities[a.0]].cmp(&entity_labels[entities[b.0]]))
     });
+    let mut global: Vec<_> = global.into_iter().flatten().collect();
+    global.sort_by(|(a, _, _), (b, _, _)| {
+        (b.after - b.before)
+            .abs()
+            .total_cmp(&(a.after - a.before).abs())
+            .then_with(|| {
+                peers.map_or(std::cmp::Ordering::Equal, |h| {
+                    let (a, b) = (&h.groups[a.pool], &h.groups[b.pool]);
+                    a.column
+                        .cmp(&b.column)
+                        .then_with(|| a.value.to_string().cmp(&b.value.to_string()))
+                })
+            })
+    });
     let note = format!(
-        "drift: {completed} boundaries screened, {} overlapping a shared change excluded from individual comparisons, {n_tested} of {} entities tested for individual changes, {} detected, {} population-wide statement(s)",
-        excluded_mask.count_ones(), entities.len(), found.len(), usize::from(global.is_some())
+        "drift: {completed} boundaries screened, {} overlapping a shared change excluded from individual comparisons, {n_tested} of {} entities tested for individual changes, {} detected, {} population-wide statement(s){}",
+        excluded.iter().map(|x| x.count_ones()).sum::<u32>(), entities.len(), found.len(),
+        global.len(), if peers.is_some() { " in hierarchy peer pools" } else { "" }
     );
-    if found.is_empty() && global.is_none() {
+    if found.is_empty() && global.is_empty() {
         return (vec![], note, false);
     }
     let level = |s: Shift| level_labels[s.level].as_str();
     let period = |s: Shift| periods.labels[s.cut].as_str();
+    let peer_group = |s: Shift| {
+        peers.map(|h| {
+            let g = &h.groups[s.pool];
+            json!({"column":g.column, "value":g.value, "entities":s.peers})
+        })
+    };
+    let describe_group = |s: Shift| {
+        peers.map_or_else(String::new, |h| {
+            let g = &h.groups[s.pool];
+            format!(" with {} = {}", g.column, g.value)
+        })
+    };
     let mut claims = Vec::new();
-    let shared = global.map(|(s, n, matched)| {
-        claims.push(format!(
-            "A population-wide change in {dimension_label} around {}: across {matched} matched {entity} values, the mean share of '{}' moved from {} to {} ({n} moved in that direction by at least 10 percentage points)",
-            period(s), level(s), pct(s.before), pct(s.after)
-        ));
-        json!({"period": period(s), "level": level(s), "before_share": s.before,
-            "after_share": s.after, "matched_entities": matched, "concordant_entities": n})
-    });
+    if let Some(&(s, n, matched)) = global.first() {
+        if peers.is_some() {
+            claims.push(format!("{} shared {} shifts across hierarchy peer pools. For example, across {matched} matched {entity} values{} around {}, the mean share of '{}' moved from {} to {}", global.len(), dimension_label, describe_group(s), period(s), level(s), pct(s.before), pct(s.after)));
+        } else {
+            claims.push(format!(
+                "A population-wide change in {dimension_label} around {}: across {matched} matched {entity} values, the mean share of '{}' moved from {} to {} ({n} moved in that direction by at least 10 percentage points)",
+                period(s), level(s), pct(s.before), pct(s.after)
+            ));
+        }
+    }
+    let shared: Vec<_> = global.into_iter().map(|(s, n, matched)| {
+        let mut detail = json!({"period": period(s), "level": level(s), "before_share": s.before,
+            "after_share": s.after, "matched_entities": matched, "concordant_entities": n});
+        if let Some(group) = peer_group(s) {
+            detail["peer_group"] = group;
+        }
+        detail
+    }).collect();
     if let Some(&(i, s)) = found.first() {
         claims.push(format!(
-            "{} of {n_tested} tested {entity} values changed their {dimension_label} mix beyond the change among peers. For example, {} moved from {} to {} on '{}' around {} (peers: {} to {})",
+            "{} of {n_tested} tested {entity} values changed their {dimension_label} mix beyond the change among peers. For example, {} moved from {} to {} on '{}' around {} (peers{}: {} to {})",
             found.len(), entity_labels[entities[i]], pct(s.before), pct(s.after), level(s),
-            period(s), pct(s.peer_before), pct(s.peer_after)
+            period(s), describe_group(s), pct(s.peer_before), pct(s.peer_after)
         ));
     }
     let examples: Vec<_> = found
@@ -472,11 +557,14 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
                 example["before_effective_rows"] = json!(s.before_support.effective());
                 example["after_effective_rows"] = json!(s.after_support.effective());
             }
+            if let Some(group) = peer_group(s) {
+                example["peer_group"] = group;
+            }
             example
         })
         .collect();
     let mut metrics = BTreeMap::from([
-        ("population_shift".into(), json!(shared)),
+        ("population_shift".into(), json!(shared.first())),
         ("entity_shifts".into(), json!(examples)),
         ("n_entity_shifts".into(), json!(found.len())),
         ("n_entities_tested".into(), json!(n_tested)),
@@ -484,6 +572,9 @@ pub(crate) fn scan(input: DriftInput<'_>) -> (Vec<Finding>, String, bool) {
         ("window_periods".into(), json!(WINDOW)),
         ("p_value_threshold".into(), json!(bar)),
     ]);
+    if peers.is_some() {
+        metrics.insert("population_shifts".into(), json!(shared));
+    }
     let mut columns = vec![entity.to_string()];
     columns.extend_from_slice(dimension_columns);
     if dimension_columns.len() > 1 {
