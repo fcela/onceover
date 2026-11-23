@@ -39,7 +39,7 @@ from onceover._spec import (  # noqa: F401
     infer_spec,
 )
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 __all__ = [
     "profile",
     "ALL_DETECTORS",
