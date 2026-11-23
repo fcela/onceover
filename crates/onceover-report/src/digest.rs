@@ -1161,7 +1161,9 @@ pub fn render_digest_value(
     for fact in &facts {
         let claim = str_field(fact.rep, "claim").unwrap_or_default();
         if matches_grain_statement(claim, grain_stmt) {
-            if grain_tag.is_none() {
+            if grain_tag.is_none()
+                && (compact || str_field(fact.rep, "category") == Some("uniqueness"))
+            {
                 grain_tag = Some(tag_of(fact.rep));
             }
             continue;

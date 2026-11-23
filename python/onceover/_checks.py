@@ -749,12 +749,7 @@ def _resolve_row_positions(
             f"source rows, which does not match a {frame_height}-row frame; pass either "
             f"the original {src_rows}-row source or the {prof_rows}-row sampled frame"
         )
-    if m.get("row_index_basis") == "sample" or (
-        scope.get("sampling") == "sample"
-        and scope.get("rows_evaluated") is not None
-        and frame_height is not None
-        and frame_height != scope.get("rows_evaluated")
-    ):
+    if m.get("row_index_basis") == "sample":
         raise ValueError(
             "finding row positions are sample-relative and no source sampling spec was "
             "supplied to translate them; call report.rows(finding_id, source_df) or pass "
@@ -872,18 +867,10 @@ def verify(
         if missing:
             add(f, "not_checkable", note=f"not columns of this frame: {missing}")
             continue
-        scope = (f.get("evidence") or [{}])[0].get("scope") or {}
         if (
             algorithm in ROW_INDEXED_ALGORITHMS
             and not (source and source.get("basis") == "sampled")
-            and (
-                m.get("row_index_basis") == "sample"
-                or (
-                    scope.get("sampling") == "sample"
-                    and scope.get("rows_evaluated") is not None
-                    and work_df.height != scope.get("rows_evaluated")
-                )
-            )
+            and m.get("row_index_basis") == "sample"
         ):
             add(
                 f,
