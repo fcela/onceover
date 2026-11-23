@@ -237,10 +237,29 @@ pub(super) fn finalize_report(
 
     if let Some(source) = &state.cfg.source {
         if source.basis == "sampled" {
+            const ROW_INDEX_KEYS: &[&str] = &[
+                "extreme_rows",
+                "outlier_rows",
+                "example_rows",
+                "first_row",
+                "last_row",
+                "worst_violation_row",
+                "first_descent_row",
+                "change_row",
+                "split_row",
+            ];
             for finding in findings.iter_mut().chain(grouped.iter_mut()) {
                 for evidence in &mut finding.evidence {
                     evidence.scope.sampling = Sampling::Sample;
                     evidence.scope.population_rows = Some(source.rows);
+                    if ROW_INDEX_KEYS
+                        .iter()
+                        .any(|k| evidence.metrics.contains_key(*k))
+                    {
+                        evidence
+                            .metrics
+                            .insert("row_index_basis".into(), serde_json::json!("sample"));
+                    }
                 }
             }
         }
@@ -469,12 +488,17 @@ pub(super) fn finalize_report(
     }
     if state.deadline_hit {
         let elapsed = state.start.elapsed().as_secs_f64();
-        state.stamp(
-            "deadline",
-            PassInfo::skipped(format!(
-                "wall-clock deadline {elapsed:.1}s reached; later passes skipped"
-            )),
-        );
+        let detail = match state.cfg.deadline {
+            Some(limit) => format!(
+                "wall-clock deadline of {:.3}s reached (elapsed {:.3}s); later passes skipped",
+                limit.as_secs_f64(),
+                elapsed,
+            ),
+            None => {
+                format!("wall-clock deadline reached (elapsed {elapsed:.3}s); later passes skipped")
+            }
+        };
+        state.stamp("deadline", PassInfo::skipped(detail));
     }
 
     ProfileReport {

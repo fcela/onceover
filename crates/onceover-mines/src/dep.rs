@@ -1169,7 +1169,7 @@ fn screen_sampled_impl(
     // those pairs keep their detailed statistics and findings,
     // and the coverage entry states how many of the selected
     // pairs were completed.
-    const DETAILED_CHUNK: usize = 64;
+    const DETAILED_CHUNK: usize = 16;
     let mut deps: Vec<PairDep> = if capped {
         Vec::new()
     } else {
@@ -1198,7 +1198,7 @@ fn screen_sampled_impl(
                 detailed_stopped = true;
                 break;
             }
-            let end = (start + PAIR_CHUNK).min(total_pairs);
+            let end = (start + DETAILED_CHUNK).min(total_pairs);
             let chunk: Vec<PairDep> = (start..end)
                 .into_par_iter()
                 .map(|k| {
@@ -1906,8 +1906,8 @@ mod tests {
         // 30 columns -> 435 pairs; pair_cap 200 takes the
         // capped route with an in-place stage 1 (no checkpoints
         // there), so the stop predicate's consultations are the
-        // detailed-statistics blocks of 64: firing on the third
-        // leaves exactly 128 completed pairs.
+        // detailed-statistics blocks of 16: firing on the third
+        // leaves exactly 32 completed pairs.
         let table = numeric_table(30, 200);
         let calls = std::cell::Cell::new(0usize);
         let out = screen_sampled_impl(&table, 200, 20_000, &[], &|| {
@@ -1915,10 +1915,10 @@ mod tests {
             calls.get() > 2
         });
         assert!(out.deadline_stopped);
-        assert_eq!(out.deps.len(), 128);
+        assert_eq!(out.deps.len(), 32);
         assert!(
             out.coverage.contains(
-                "deadline reached during detailed statistics: 128 of 200 selected pairs completed"
+                "deadline reached during detailed statistics: 32 of 200 selected pairs completed"
             ),
             "coverage: {}",
             out.coverage

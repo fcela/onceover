@@ -54,33 +54,53 @@ def _value_expr(df: pl.DataFrame, col: str, value) -> pl.Expr:
     return pl.col(col) == value
 
 
-def _residual_within(m: dict, target: str, predicted: pl.Expr) -> pl.Expr:
+def _residual_within(m: dict, target: str, predicted: pl.Expr, residual: pl.Expr | None = None) -> pl.Expr:
     absolute = m.get("absolute_tolerance", 1e-9)
     relative = m.get("relative_tolerance", 1e-9)
     y = pl.col(target).cast(pl.Float64)
-    if relative:
-        # Detectors allow tolerance * (1 + |y|).
+    if "tolerance_scale" in m:
+        bar = pl.lit(float(absolute) + float(relative) * float(m["tolerance_scale"]))
+    elif relative:
+        # Legacy detectors allow tolerance * (1 + |y|).
         bar = absolute * (y.abs() + 1.0)
     else:
         bar = pl.lit(absolute) * (1.0 + 1e-9)
-    return (y - predicted).abs() <= bar
+    diff = residual if residual is not None else (y - predicted).abs()
+    return diff <= bar
 
 
-def _identity_parts(f: dict) -> tuple[str, list[str], pl.Expr, pl.Expr]:
-    """Target, terms, the predicted value, and which rows are comparable."""
+def _anchored_delta_expr(col: str, origin) -> pl.Expr:
+    if isinstance(origin, int) and not isinstance(origin, bool):
+        return (pl.col(col) - pl.lit(origin)).cast(pl.Float64)
+    return pl.col(col).cast(pl.Float64) - pl.lit(float(origin))
+
+
+def _identity_parts(f: dict) -> tuple[str, list[str], pl.Expr, pl.Expr, pl.Expr | None]:
+    """Target, terms, the predicted value, comparable filter, and optional anchored residual."""
     m = _metrics(f)
     target = f["subject"]["target"]
     if _algorithm(f) == "ols_residual_scan":
         terms = f["subject"]["inputs"]
+        if (
+            "x_origin" in m
+            and "y_origin" in m
+            and "x_center_offset" in m
+            and "y_center_offset" in m
+        ):
+            dx = _anchored_delta_expr(terms[0], m["x_origin"]) - pl.lit(float(m["x_center_offset"]))
+            dy = _anchored_delta_expr(target, m["y_origin"]) - pl.lit(float(m["y_center_offset"]))
+            residual = (dy - pl.lit(float(m["a"])) * dx).abs()
+            x = pl.col(terms[0]).cast(pl.Float64)
+            return target, terms, m["a"] * x + m["b"], pl.lit(True), residual
         x = pl.col(terms[0]).cast(pl.Float64)
-        return target, terms, m["a"] * x + m["b"], pl.lit(True)
+        return target, terms, m["a"] * x + m["b"], pl.lit(True), None
     terms = m["terms"]
     columns = [pl.col(t).cast(pl.Float64) for t in terms]
     form = m["form"]
     if form == "product":
-        return target, terms, columns[0] * columns[1], pl.lit(True)
+        return target, terms, columns[0] * columns[1], pl.lit(True), None
     if form == "ratio":
-        return target, terms, columns[0] / columns[1], columns[1] != 0
+        return target, terms, columns[0] / columns[1], columns[1] != 0, None
     coefficients = m["coefficients"]
     if form == "linear_combination":
         predicted = pl.lit(coefficients[0])
@@ -90,7 +110,7 @@ def _identity_parts(f: dict) -> tuple[str, list[str], pl.Expr, pl.Expr]:
         weights = coefficients
     for c, w in zip(columns, weights):
         predicted = predicted + w * c
-    return target, terms, predicted, pl.lit(True)
+    return target, terms, predicted, pl.lit(True), None
 
 
 # Each checker returns (quantity, expected, actual) triples.
@@ -145,9 +165,9 @@ def _check_fd(f, m, df) -> list[Triple] | None:
 
 
 def _check_identity(f, m, df) -> list[Triple]:
-    target, terms, predicted, comparable = _identity_parts(f)
+    target, terms, predicted, comparable, residual = _identity_parts(f)
     rows = df.drop_nulls([target, *terms]).filter(comparable)
-    within = rows.select(_residual_within(m, target, predicted).sum()).item()
+    within = rows.select(_residual_within(m, target, predicted, residual).sum()).item()
     return [
         ("comparable rows", m["n"], rows.height),
         ("rows within tolerance", m["matching_rows"], within),
@@ -546,22 +566,51 @@ def _swap_expr(f: dict, m: dict) -> pl.Expr:
     )
 
 
+def _order_predicates(
+    lo_dtype: pl.DataType, hi_dtype: pl.DataType, lo_col: str, hi_col: str
+) -> tuple[pl.Expr, pl.Expr, pl.Expr]:
+    """Exact comparison predicates (comparable, lower > upper, lower == upper).
+
+    Preserves integer precision beyond 2^53 (signed, unsigned, and mixed
+    signed/unsigned integer pairs) instead of casting integers to Float64
+    (issue #466), while retaining finite filtering for floats.
+    """
+    lo = pl.col(lo_col)
+    hi = pl.col(hi_col)
+    if lo_dtype.is_integer() and hi_dtype.is_integer():
+        lo_signed = lo_dtype.is_signed_integer()
+        hi_signed = hi_dtype.is_signed_integer()
+        if lo_signed == hi_signed:
+            return pl.lit(True), lo > hi, lo == hi
+        if lo_signed and not hi_signed:
+            return (
+                pl.lit(True),
+                (lo >= 0) & (lo.cast(pl.UInt64) > hi.cast(pl.UInt64)),
+                (lo >= 0) & (lo.cast(pl.UInt64) == hi.cast(pl.UInt64)),
+            )
+        return (
+            pl.lit(True),
+            (hi < 0) | (lo.cast(pl.UInt64) > hi.cast(pl.UInt64)),
+            (hi >= 0) & (lo.cast(pl.UInt64) == hi.cast(pl.UInt64)),
+        )
+    if lo_dtype.is_numeric() and hi_dtype.is_numeric():
+        lo_f = lo.cast(pl.Float64)
+        hi_f = hi.cast(pl.Float64)
+        return lo_f.is_finite() & hi_f.is_finite(), lo_f > hi_f, lo_f == hi_f
+    return pl.lit(True), lo > hi, lo == hi
+
+
 def _check_order_constraint(f, m, df) -> list[Triple] | None:
     lower = m.get("lower")
     upper = m.get("upper")
     if not lower or not upper or lower not in df.columns or upper not in df.columns:
         return None
+    lo_dt, hi_dt = df.schema[lower], df.schema[upper]
     complete = df.select(pl.col(lower).alias("_lo"), pl.col(upper).alias("_hi")).drop_nulls()
-    if df.schema[lower].is_numeric() and df.schema[upper].is_numeric():
-        complete = complete.filter(
-            pl.col("_lo").cast(pl.Float64).is_finite()
-            & pl.col("_hi").cast(pl.Float64).is_finite()
-        )
-        viol = complete.filter(pl.col("_lo").cast(pl.Float64) > pl.col("_hi").cast(pl.Float64)).height
-        eq = complete.filter(pl.col("_lo").cast(pl.Float64) == pl.col("_hi").cast(pl.Float64)).height
-    else:
-        viol = complete.filter(pl.col("_lo") > pl.col("_hi")).height
-        eq = complete.filter(pl.col("_lo") == pl.col("_hi")).height
+    comparable, gt_expr, eq_expr = _order_predicates(lo_dt, hi_dt, "_lo", "_hi")
+    complete = complete.filter(comparable)
+    viol = complete.filter(gt_expr).height
+    eq = complete.filter(eq_expr).height
     out: list[Triple] = [
         ("evaluated rows", m["n"], complete.height),
         ("violations", m["violations"], viol),
@@ -634,6 +683,86 @@ CHECKS: dict[str, Callable] = {
 }
 
 
+ROW_INDEXED_ALGORITHMS = (
+    "robust isolation gap vs the subset bulk",
+    "near-degenerate conditional distribution",
+)
+
+
+def _stratified_source_indices(source: dict | None) -> list[int] | None:
+    if not source or source.get("basis") != "sampled":
+        return None
+    sample = source.get("sample") or {}
+    if sample.get("method") != "stratified":
+        return None
+    rows = source.get("rows")
+    cap = sample.get("cap")
+    if rows is None or cap is None:
+        return None
+    from . import _source
+
+    return _source._stratified_indices(int(rows), int(cap), int(sample.get("seed", 0)))
+
+
+def _resolve_row_positions(
+    f: dict,
+    raw_rows: list[int],
+    frame_height: int | None,
+    source: dict | None,
+) -> list[int]:
+    """Translate sample-relative row positions to the passed frame's row basis.
+
+    - Full-basis reports return `raw_rows` unchanged.
+    - Sampled-basis reports map sample offsets to source row indices when the
+      original source frame (or a LazyFrame) is passed, keep them as-is when
+      the materialized sampled frame is passed, and reject frames whose height
+      matches neither basis instead of silently indexing unrelated rows
+      (issue #467).
+    """
+    m = _metrics(f)
+    scope = (f.get("evidence") or [{}])[0].get("scope") or {}
+    if source and source.get("basis") == "sampled":
+        src_rows = source.get("rows")
+        prof_rows = source.get("rows_profiled")
+        if frame_height is not None and prof_rows is not None and frame_height == prof_rows:
+            return [int(r) for r in raw_rows]
+        if frame_height is None or (src_rows is not None and frame_height == src_rows):
+            indices = _stratified_source_indices(source)
+            if indices is None:
+                raise ValueError(
+                    f"finding row positions are sample-relative ({prof_rows} of {src_rows} "
+                    "source rows) and this sample cannot be mapped back to source positions; "
+                    f"pass the {prof_rows}-row sampled frame"
+                )
+            out: list[int] = []
+            for r in raw_rows:
+                idx = int(r)
+                if idx < 0 or idx >= len(indices):
+                    raise ValueError(
+                        f"sample row position {idx} is out of range for the "
+                        f"{len(indices)}-row sample"
+                    )
+                out.append(indices[idx])
+            return out
+        raise ValueError(
+            f"finding row positions refer to a {prof_rows}-row sample from {src_rows} "
+            f"source rows, which does not match a {frame_height}-row frame; pass either "
+            f"the original {src_rows}-row source or the {prof_rows}-row sampled frame"
+        )
+    if m.get("row_index_basis") == "sample" or (
+        scope.get("sampling") == "sample"
+        and scope.get("rows_evaluated") is not None
+        and frame_height is not None
+        and frame_height != scope.get("rows_evaluated")
+    ):
+        raise ValueError(
+            "finding row positions are sample-relative and no source sampling spec was "
+            "supplied to translate them; call report.rows(finding_id, source_df) or pass "
+            "the exact sampled frame"
+        )
+    return [int(r) for r in raw_rows]
+
+
 def _agrees(expected, actual) -> bool:
     if isinstance(expected, list):
         return (
@@ -643,13 +772,20 @@ def _agrees(expected, actual) -> bool:
         )
     if isinstance(expected, bool) or isinstance(actual, bool):
         return expected == actual
+    if isinstance(expected, int) and isinstance(actual, int):
+        return expected == actual
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
         return abs(expected - actual) <= FLOAT_TOLERANCE * max(1.0, abs(expected))
     return str(expected) == str(actual)
 
 
-def verify(findings: Iterable[dict], df: pl.DataFrame) -> pl.DataFrame:
+def verify(
+    findings: Iterable[dict],
+    df: pl.DataFrame | pl.LazyFrame,
+    source: dict | None = None,
+) -> pl.DataFrame:
     """One row per checked quantity, and one per statement with nothing to check."""
+    findings_list = list(findings)
     rows = []
 
     def add(f, status, quantity=None, expected=None, actual=None, note=None):
@@ -663,20 +799,100 @@ def verify(findings: Iterable[dict], df: pl.DataFrame) -> pl.DataFrame:
             "note": note,
         })
 
-    for f in findings:
-        if f["evidence"][0]["metrics"].get("source_form"):
+    basis_note: str | None = None
+    work_df: pl.DataFrame
+    if source and source.get("basis") == "sampled":
+        src_rows = source.get("rows")
+        prof_rows = source.get("rows_profiled")
+        indices = _stratified_source_indices(source)
+        if isinstance(df, pl.LazyFrame):
+            if indices is None:
+                for f in findings_list:
+                    add(
+                        f,
+                        "not_checkable",
+                        note=(
+                            f"report was profiled on a {prof_rows}-row sample from {src_rows} "
+                            f"source rows; pass the {prof_rows}-row sampled DataFrame"
+                        ),
+                    )
+                schema = {
+                    k: pl.String
+                    for k in ("id", "type", "status", "quantity", "expected", "actual", "note")
+                }
+                return pl.DataFrame(rows, schema=schema)
+            from . import _source
+
+            work_df = (
+                df.with_row_index(_source._SOURCE_ROW_INDEX)
+                .filter(pl.col(_source._SOURCE_ROW_INDEX).is_in(indices))
+                .drop(_source._SOURCE_ROW_INDEX)
+                .collect()
+            )
+            basis_note = (
+                f"verified on deterministic stratified sample ({prof_rows} of {src_rows} source rows)"
+            )
+        elif df.height == prof_rows:
+            work_df = df
+        elif df.height == src_rows and indices is not None:
+            work_df = df[indices]
+            basis_note = (
+                f"verified on deterministic stratified sample ({prof_rows} of {src_rows} source rows)"
+            )
+        else:
+            for f in findings_list:
+                add(
+                    f,
+                    "not_checkable",
+                    note=(
+                        f"frame has {df.height} rows, but report was profiled on a {prof_rows}-row "
+                        f"sample from {src_rows} source rows; pass either the original "
+                        f"{src_rows}-row source or the {prof_rows}-row sampled frame"
+                    ),
+                )
+            schema = {
+                k: pl.String
+                for k in ("id", "type", "status", "quantity", "expected", "actual", "note")
+            }
+            return pl.DataFrame(rows, schema=schema)
+    else:
+        work_df = df.collect() if isinstance(df, pl.LazyFrame) else df
+
+    for f in findings_list:
+        m = _metrics(f)
+        if m.get("source_form"):
             add(f, "not_checkable", note="stated on the pivoted wide form")
             continue
-        checker = CHECKS.get(_algorithm(f))
-        missing = [c for c in f["subject"].get("columns", []) if c not in df.columns]
+        algorithm = _algorithm(f)
+        checker = CHECKS.get(algorithm)
+        missing = [c for c in f["subject"].get("columns", []) if c not in work_df.columns]
         if checker is None:
             add(f, "not_checkable", note="estimated or fitted on a sample")
             continue
         if missing:
             add(f, "not_checkable", note=f"not columns of this frame: {missing}")
             continue
+        scope = (f.get("evidence") or [{}])[0].get("scope") or {}
+        if (
+            algorithm in ROW_INDEXED_ALGORITHMS
+            and not (source and source.get("basis") == "sampled")
+            and (
+                m.get("row_index_basis") == "sample"
+                or (
+                    scope.get("sampling") == "sample"
+                    and scope.get("rows_evaluated") is not None
+                    and work_df.height != scope.get("rows_evaluated")
+                )
+            )
+        ):
+            add(
+                f,
+                "not_checkable",
+                note="row-indexed finding is sample-relative and its frame basis does not match df",
+            )
+            continue
         try:
-            triples = checker(f, _metrics(f), df)
+            triples = checker(f, m, work_df)
         except (KeyError, IndexError, ValueError, TypeError, pl.exceptions.PolarsError) as err:
             add(f, "error", note=f"{type(err).__name__}: {err}")
             continue
@@ -685,22 +901,39 @@ def verify(findings: Iterable[dict], df: pl.DataFrame) -> pl.DataFrame:
             continue
         for quantity, expected, actual in triples:
             status = "ok" if _agrees(expected, actual) else "mismatch"
-            add(f, status, quantity, expected, actual)
+            add(f, status, quantity, expected, actual, note=basis_note)
     schema = {k: pl.String for k in ("id", "type", "status", "quantity", "expected", "actual", "note")}
     return pl.DataFrame(rows, schema=schema)
 
 
-def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
+def rows_of(
+    f: dict,
+    df: pl.DataFrame | pl.LazyFrame,
+    source: dict | None = None,
+) -> pl.DataFrame:
     """The rows a statement is about, with their positions in `__row`."""
     m = _metrics(f)
-    indexed = df.with_row_index(ROW)
     algorithm = _algorithm(f)
     cols = f["subject"].get("columns", [])
+
+    if algorithm in ROW_INDEXED_ALGORITHMS:
+        key = "extreme_rows" if algorithm == "robust isolation gap vs the subset bulk" else "outlier_rows"
+        raw_rows = m[key]
+        if isinstance(df, pl.LazyFrame):
+            target_rows = _resolve_row_positions(f, raw_rows, None, source)
+            return df.with_row_index(ROW).filter(pl.col(ROW).is_in(target_rows)).collect()
+        target_rows = _resolve_row_positions(f, raw_rows, df.height, source)
+        return df.with_row_index(ROW).filter(pl.col(ROW).is_in(target_rows))
+
+    if isinstance(df, pl.LazyFrame):
+        df = df.collect()
+
+    indexed = df.with_row_index(ROW)
     if algorithm == "value_mapping":
         return _violators_fd(f, df)
     if algorithm in ("ols_residual_scan", "multiterm_scan"):
-        target, terms, predicted, comparable = _identity_parts(f)
-        within = _residual_within(m, target, predicted)
+        target, terms, predicted, comparable, residual = _identity_parts(f)
+        within = _residual_within(m, target, predicted, residual)
         return indexed.drop_nulls([target, *terms]).filter(comparable).filter(~within)
     if algorithm == "missing_rate_scan":
         return indexed.filter(pl.col(cols[0]).is_null())
@@ -724,18 +957,14 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
         lower, upper = m.get("lower"), m.get("upper")
         if lower and upper and lower in df.columns and upper in df.columns:
             complete = indexed.drop_nulls([lower, upper])
-            if df.schema[lower].is_numeric() and df.schema[upper].is_numeric():
-                lo, hi = pl.col(lower).cast(pl.Float64), pl.col(upper).cast(pl.Float64)
-                return complete.filter(lo.is_finite() & hi.is_finite() & (lo > hi))
-            return complete.filter(pl.col(lower) > pl.col(upper))
+            comparable, gt_expr, _ = _order_predicates(
+                df.schema[lower], df.schema[upper], lower, upper
+            )
+            return complete.filter(comparable & gt_expr)
     if algorithm == "near_uniqueness":
         return indexed.drop_nulls(cols).filter(pl.col(cols[0]).is_duplicated())
     if algorithm in ("boundary_mass_scan", "sentinel_window_scan"):
         return indexed.filter(_value_expr(df, cols[0], m["value"]))
-    if algorithm == "robust isolation gap vs the subset bulk":
-        return indexed.filter(pl.col(ROW).is_in(m["extreme_rows"]))
-    if algorithm == "near-degenerate conditional distribution":
-        return indexed.filter(pl.col(ROW).is_in(m["outlier_rows"]))
     if algorithm == "column_content_scan":
         kind = m["kind"]
         s = pl.col(cols[0])
@@ -879,7 +1108,7 @@ def constraints(findings: Iterable[dict]) -> list[dict]:
                 "polars": f"(pl.col({subject['target']!r}).n_unique().over({subject['inputs']!r}) == 1).all()",
             })
         elif algorithm in ("ols_residual_scan", "multiterm_scan") and m.get("violations") == 0:
-            target, terms, predicted, _ = _identity_parts(f)
+            target, terms, predicted, _, _ = _identity_parts(f)
             out.append({
                 "finding": f["id"], "kind": "identity",
                 "target": target, "terms": terms,
@@ -895,8 +1124,21 @@ def _identity_text(f: dict) -> str:
     m = _metrics(f)
     target = f["subject"]["target"]
     y = f"pl.col({target!r})"
+    absolute = m.get("absolute_tolerance", 1e-9)
+    relative = m.get("relative_tolerance", 1e-9)
     if _algorithm(f) == "ols_residual_scan":
         x = f["subject"]["inputs"][0]
+        if (
+            "x_origin" in m
+            and "y_origin" in m
+            and "x_center_offset" in m
+            and "y_center_offset" in m
+            and "tolerance_scale" in m
+        ):
+            dx = f"((pl.col({x!r}) - {m['x_origin']!r}).cast(pl.Float64) - {m['x_center_offset']!r})"
+            dy = f"((pl.col({target!r}) - {m['y_origin']!r}).cast(pl.Float64) - {m['y_center_offset']!r})"
+            tol = float(absolute) + float(relative) * float(m["tolerance_scale"])
+            return f"({dy} - {m['a']!r} * {dx}).abs() <= {tol!r}"
         predicted = f"{m['a']!r} * pl.col({x!r}) + {m['b']!r}"
     else:
         terms = m["terms"]
@@ -911,8 +1153,10 @@ def _identity_text(f: dict) -> str:
             predicted = base + "".join(
                 f" + {w!r} * pl.col({t!r})" for w, t in zip(weights, terms)
             )
-    absolute = m.get("absolute_tolerance", 1e-9)
-    if m.get("relative_tolerance"):
+    if "tolerance_scale" in m:
+        tol = float(absolute) + float(relative) * float(m["tolerance_scale"])
+        return f"({y} - ({predicted})).abs() <= {tol!r}"
+    if relative:
         return f"({y} - ({predicted})).abs() <= {absolute!r} * (1 + {y}.abs())"
     return f"({y} - ({predicted})).abs() <= {absolute!r}"
 

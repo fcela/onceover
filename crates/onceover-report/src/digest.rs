@@ -1146,7 +1146,7 @@ pub fn render_digest_value(
         fixed.extend(schema_summary_lines(data, 32));
     }
 
-    let r_lines = row_lines(data.get("frame"));
+    let mut r_lines = row_lines(data.get("frame"));
     let not_ex = not_examined_line(data, on_request_detectors);
     let designated = designated_target(findings);
     let (facts, weak) = digest_facts(findings);
@@ -1157,9 +1157,13 @@ pub fn render_digest_value(
 
     let mut next_entry_id = 0usize;
     let mut sections: BTreeMap<&'static str, Vec<Entry<'_>>> = BTreeMap::new();
+    let mut grain_tag: Option<String> = None;
     for fact in &facts {
         let claim = str_field(fact.rep, "claim").unwrap_or_default();
         if matches_grain_statement(claim, grain_stmt) {
+            if grain_tag.is_none() {
+                grain_tag = Some(tag_of(fact.rep));
+            }
             continue;
         }
         let sec = fact_section(fact.rep, &fact.columns, designated);
@@ -1169,6 +1173,13 @@ pub fn render_digest_value(
             rep: Some(fact.rep),
         });
         next_entry_id += 1;
+    }
+    if let (Some(tag), Some(gs)) = (grain_tag, grain_stmt) {
+        if let Some(first) = r_lines.first_mut() {
+            if first == gs {
+                first.push_str(&format!(" [{tag}]"));
+            }
+        }
     }
 
     for entries in sections.values_mut() {

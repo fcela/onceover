@@ -713,9 +713,9 @@ fn is_block(count: usize, typical: usize, entities: usize) -> bool {
 /// as a cohort block.
 fn find_blocks(
     counts: &[usize],
-    expected: &[f64],
     offset: usize,
     entities: usize,
+    expected_at: impl Fn(usize) -> f64,
 ) -> (Vec<(usize, usize)>, usize) {
     let typical = median_count(counts);
     let mut blocks: Vec<(usize, usize)> = counts
@@ -725,7 +725,7 @@ fn find_blocks(
             if !is_block(c, typical, entities) {
                 return false;
             }
-            let exp = expected[i];
+            let exp = expected_at(i + offset);
             (c as f64) >= 2.0 * exp && (c as f64 - exp) >= 4.0 * exp.max(1.0).sqrt()
         })
         .map(|(i, &c)| (i + offset, c))
@@ -774,12 +774,49 @@ struct DynamicsScan {
     without_period: usize,
     entries: Vec<usize>,
     exits: Vec<usize>,
-    /// Null-expected entries and exits per period under a random
-    /// permutation of the time column.
-    expected_entries: Vec<f64>,
-    expected_exits: Vec<f64>,
+    /// Cumulative row counts `c_ge[p]` (rows at period >= p) and `c_le[p]`
+    /// (rows at period <= p), total rows on the axis, and the entity row-count
+    /// histogram `(row_count, multiplicity)`. Used to evaluate the time-shuffled
+    /// null expectation lazily only for periods that clear the observed-count
+    /// block gate (issue #468).
+    total_rows: usize,
+    c_ge: Vec<usize>,
+    c_le: Vec<usize>,
+    row_count_hist: Vec<(usize, usize)>,
     /// (entity code, first period, last period) per observed entity.
     spans: Vec<(u32, usize, usize)>,
+}
+
+impl DynamicsScan {
+    fn expected_entries_at(&self, p: usize) -> f64 {
+        if self.total_rows == 0 || self.row_count_hist.is_empty() {
+            return 0.0;
+        }
+        let mut ee = 0.0f64;
+        let ge_p = self.c_ge[p];
+        let gt_p = self.c_ge[p + 1];
+        for &(r, mult) in &self.row_count_hist {
+            let p_ge = prob_all_in(ge_p, self.total_rows, r);
+            let p_gt = prob_all_in(gt_p, self.total_rows, r);
+            ee += mult as f64 * (p_ge - p_gt).max(0.0);
+        }
+        ee
+    }
+
+    fn expected_exits_at(&self, p: usize) -> f64 {
+        if self.total_rows == 0 || self.row_count_hist.is_empty() {
+            return 0.0;
+        }
+        let mut ex = 0.0f64;
+        let le_p = self.c_le[p];
+        let prev_le = if p == 0 { 0 } else { self.c_le[p - 1] };
+        for &(r, mult) in &self.row_count_hist {
+            let p_le = prob_all_in(le_p, self.total_rows, r);
+            let p_lt = prob_all_in(prev_le, self.total_rows, r);
+            ex += mult as f64 * (p_le - p_lt).max(0.0);
+        }
+        ex
+    }
 }
 
 fn scan_dynamics(
@@ -810,8 +847,10 @@ fn scan_dynamics(
         without_period: 0,
         entries: vec![0; periods],
         exits: vec![0; periods],
-        expected_entries: vec![0.0; periods],
-        expected_exits: vec![0.0; periods],
+        total_rows,
+        c_ge: Vec::new(),
+        c_le: Vec::new(),
+        row_count_hist: Vec::new(),
         spans: Vec::new(),
     };
     for code in 0..distinct {
@@ -837,21 +876,9 @@ fn scan_dynamics(
             run += period_rows[p];
             c_le[p] = run;
         }
-        for p in 0..periods {
-            let mut ee = 0.0f64;
-            let mut ex = 0.0f64;
-            let prev_le = if p == 0 { 0 } else { c_le[p - 1] };
-            for (&r, &mult) in &row_count_hist {
-                let p_ge = prob_all_in(c_ge[p], total_rows, r);
-                let p_gt = prob_all_in(c_ge[p + 1], total_rows, r);
-                ee += mult as f64 * (p_ge - p_gt).max(0.0);
-                let p_le = prob_all_in(c_le[p], total_rows, r);
-                let p_lt = prob_all_in(prev_le, total_rows, r);
-                ex += mult as f64 * (p_le - p_lt).max(0.0);
-            }
-            scan.expected_entries[p] = ee;
-            scan.expected_exits[p] = ex;
-        }
+        scan.c_ge = c_ge;
+        scan.c_le = c_le;
+        scan.row_count_hist = row_count_hist.into_iter().collect();
     }
     scan
 }
@@ -1219,18 +1246,14 @@ pub fn panel_dynamics(table: &TypedTable, input: &PanelInput) -> (Vec<Finding>, 
         }
         let mut grain_findings: Vec<Finding> = Vec::new();
         let mut block_carriers: Vec<(usize, usize)> = Vec::new(); // (finding index, count)
-        let (entry_blocks, entry_typical) = find_blocks(
-            &scan.entries[1..],
-            &scan.expected_entries[1..],
-            1,
-            scan.entities,
-        );
-        let (exit_blocks, exit_typical) = find_blocks(
-            &scan.exits[..periods - 1],
-            &scan.expected_exits[..periods - 1],
-            0,
-            scan.entities,
-        );
+        let (entry_blocks, entry_typical) =
+            find_blocks(&scan.entries[1..], 1, scan.entities, |p| {
+                scan.expected_entries_at(p)
+            });
+        let (exit_blocks, exit_typical) =
+            find_blocks(&scan.exits[..periods - 1], 0, scan.entities, |p| {
+                scan.expected_exits_at(p)
+            });
         for (period, count) in entry_blocks.iter().take(MAX_BLOCKS_PER_DIRECTION) {
             block_carriers.push((grain_findings.len(), *count));
             grain_findings.push(build_block_finding(

@@ -389,6 +389,15 @@ pub fn screen_leakage(
     target_name: &str,
     declared_after: &[String],
 ) -> (Vec<Finding>, String) {
+    screen_leakage_with_entity(table, target_name, declared_after, None)
+}
+
+pub fn screen_leakage_with_entity(
+    table: &TypedTable,
+    target_name: &str,
+    declared_after: &[String],
+    declared_entity: Option<&str>,
+) -> (Vec<Finding>, String) {
     let Some(tci) = table.names.iter().position(|n| n == target_name) else {
         return (
             Vec::new(),
@@ -471,6 +480,7 @@ pub fn screen_leakage(
                         true,
                         determiners.len(),
                         true,
+                        false,
                     ));
                 }
                 Some(s) if s.value >= STRENGTH_BAR => {
@@ -487,6 +497,7 @@ pub fn screen_leakage(
                         false,
                         0,
                         true,
+                        false,
                     ));
                 }
                 Some(s) => {
@@ -513,6 +524,7 @@ pub fn screen_leakage(
                 .filter(|s| !declared_cols.contains(&s.ci))
                 .take(MAX_DETERMINATION_FINDINGS)
                 .map(|s| {
+                    let is_entity = declared_entity == Some(table.names[s.ci].as_str());
                     make_finding(
                         table,
                         s,
@@ -522,6 +534,7 @@ pub fn screen_leakage(
                         true,
                         determiners.len(),
                         false,
+                        is_entity,
                     )
                 })
                 .collect();
@@ -548,6 +561,7 @@ pub fn screen_leakage(
             .iter()
             .take(MAX_DETERMINATION_FINDINGS)
             .map(|s| {
+                let is_entity = declared_entity == Some(table.names[s.ci].as_str());
                 make_finding(
                     table,
                     s,
@@ -557,6 +571,7 @@ pub fn screen_leakage(
                     true,
                     determiners.len(),
                     false,
+                    is_entity,
                 )
             })
             .collect();
@@ -575,6 +590,7 @@ pub fn screen_leakage(
     // Dwarfing path.
     let dwarfs = runner.is_none_or(|r| top.value >= DWARF_RATIO * r.value);
     if top.value >= STRENGTH_BAR && dwarfs {
+        let is_entity = declared_entity == Some(table.names[top.ci].as_str());
         let f = make_finding(
             table,
             top,
@@ -584,6 +600,7 @@ pub fn screen_leakage(
             false,
             0,
             false,
+            is_entity,
         );
         return (
             vec![f],
@@ -620,6 +637,7 @@ fn make_finding(
     determination: bool,
     n_determiners: usize,
     declared: bool,
+    declared_entity: bool,
 ) -> Finding {
     let pred = &table.names[s.ci];
     let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -635,6 +653,13 @@ fn make_finding(
     metrics.insert("determination".into(), json!(determination));
     if declared {
         metrics.insert("declared_suspect".into(), json!(true));
+    }
+    if declared_entity {
+        metrics.insert("declared_entity".into(), json!(true));
+        metrics.insert(
+            "evaluation_basis".into(),
+            json!("between_entity_association"),
+        );
     }
     if let Some(v) = s.violations {
         metrics.insert("violations".into(), json!(v));
@@ -694,6 +719,13 @@ fn make_finding(
                 ),
                 0.97,
             )
+        } else if declared_entity {
+            (
+                format!(
+                    "'{pred}' — declared by the caller as an entity — determines the target '{target_name}' on the observed entities: {exact_clause}. Because '{pred}' is a declared entity identifier, this reflects entity-level structure rather than post-outcome derivation: use group-held-out (unseen-entity) splits rather than random row splits when modelling.{co}"
+                ),
+                0.82,
+            )
         } else {
             (
                 format!(
@@ -709,12 +741,28 @@ fn make_finding(
             ),
             0.9,
         )
+    } else if declared_entity {
+        (
+            format!(
+                "'{pred}' — declared by the caller as an entity — accounts for most of the variation in '{target_name}': {strength_clause} ({runner_clause}). Because '{pred}' is a declared entity identifier, this reflects between-entity structure rather than post-outcome derivation: evaluate models with group-held-out (unseen-entity) splits rather than random row splits."
+            ),
+            0.78,
+        )
     } else {
         (
             format!(
                 "'{pred}' nearly determines the target '{target_name}': {strength_clause} ({runner_clause}). A column this strong, out of line with the rest of the field, is usually derived from the outcome or recorded after it — check it before modelling."
             ),
             0.88,
+        )
+    };
+    let interpretation = if declared_entity {
+        format!(
+            "'{pred}' is declared as an entity identifier: random row splits will leak entity-level means into validation; use group-held-out splits by '{pred}' to measure generalization to unseen entities"
+        )
+    } else {
+        format!(
+            "before modelling '{target_name}', establish when '{pred}' becomes known: a column recorded after the outcome, or computed from it, must not be used as a predictor"
         )
     };
     Finding::new(
@@ -724,9 +772,7 @@ fn make_finding(
         EvidenceBasis::Measured,
         score,
         metrics,
-        Some(format!(
-            "before modelling '{target_name}', establish when '{pred}' becomes known: a column recorded after the outcome, or computed from it, must not be used as a predictor"
-        )),
+        Some(interpretation),
         Method::new(
             "leakage",
             "univariate strength screen against the designated target (chance-corrected entropy fraction / Chatterjee xi / adjusted eta-squared)",

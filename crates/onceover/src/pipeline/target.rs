@@ -3,7 +3,8 @@
 
 use onceover_core::TypedTable;
 use onceover_mines::{
-    encode, profile_target_shapes, screen_leakage, screen_model_failures, EncodedMatrix, ModelBasis,
+    encode, profile_target_shapes, screen_leakage_with_entity, screen_model_failures,
+    EncodedMatrix, ModelBasis,
 };
 use onceover_report::PassInfo;
 
@@ -116,7 +117,15 @@ pub(super) fn run_target_passes(
     if !state.check_deadline("leakage") && state.enabled("leakage") {
         match state.cfg.target.clone() {
             Some(target) => {
-                let (f, cov) = screen_leakage(table, &target, &meta.recorded_after_names);
+                let declared_entity = meta
+                    .declared_entity_idx
+                    .map(|idx| table.names[idx].as_str());
+                let (f, cov) = screen_leakage_with_entity(
+                    table,
+                    &target,
+                    &meta.recorded_after_names,
+                    declared_entity,
+                );
                 state.stamp("leakage", PassInfo::ran(cov));
                 state.findings.extend(f);
             }
