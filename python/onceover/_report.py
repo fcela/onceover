@@ -254,7 +254,9 @@ class ProfileReport:
 
         data = self.data
         return _checks.verify(
-            [*data["findings"], *(data.get("grouped_findings") or [])], df
+            [*data["findings"], *(data.get("grouped_findings") or [])],
+            df,
+            source=data.get("source"),
         )
 
     def rows(self, finding_id: str, df):
@@ -263,7 +265,7 @@ class ProfileReport:
         finding = self.finding(finding_id)
         if finding is None:
             raise ValueError(f"no finding with id {finding_id}")
-        return _checks.rows_of(finding, df)
+        return _checks.rows_of(finding, df, source=self.data.get("source"))
 
     def to_checks(self, fmt: str = "polars", name: str = "onceover"):
         from . import _checks

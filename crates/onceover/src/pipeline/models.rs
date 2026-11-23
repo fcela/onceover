@@ -150,7 +150,7 @@ fn run_dependence_and_identities(
         );
         state.findings.extend(dep_findings);
 
-        if state.enabled("row_consistency") {
+        if state.enabled("row_consistency") && !state.check_deadline("row_consistency") {
             let measures: Vec<usize> = prep
                 .frame
                 .roles
@@ -169,7 +169,10 @@ fn run_dependence_and_identities(
             state.findings.append(&mut f);
         }
 
-        if state.tier.ident_pair_cap > 0 && state.enabled("identities") {
+        if state.tier.ident_pair_cap > 0
+            && state.enabled("identities")
+            && !state.check_deadline("arithmetic_identities")
+        {
             let (id_f, id_cov) = identities(
                 table,
                 &deps_pair,
@@ -184,7 +187,7 @@ fn run_dependence_and_identities(
             state.findings.extend(id_f);
         }
 
-        if state.enabled("period_associations") {
+        if state.enabled("period_associations") && !state.check_deadline("period_associations") {
             let out =
                 onceover_mines::period_associations(ttable, &deps_pair, state.tier.encode.row_cap);
             let info = match out.status {
@@ -196,7 +199,10 @@ fn run_dependence_and_identities(
             state.findings.extend(out.findings);
         }
 
-        if state.tier.ident_multiterm_cap > 0 && state.enabled("identities") {
+        if state.tier.ident_multiterm_cap > 0
+            && state.enabled("identities")
+            && !state.check_deadline("multiterm_identities")
+        {
             let (mt_f, mt_cov) = onceover_mines::multiterm_identities(
                 table,
                 state.tier.ident_multiterm_cap,
@@ -227,7 +233,14 @@ fn run_predictability_and_rules(
     identity_groups: &[Vec<usize>],
 ) -> onceover_mines::ScreenOutcome {
     let mut screen = if state.enabled("predictability") {
-        screen_predictability(
+        if state.check_deadline("predictability_screen") {
+            return onceover_mines::ScreenOutcome {
+                findings: Vec::new(),
+                results: Vec::new(),
+                coverage: "deadline reached".into(),
+            };
+        }
+        let s = screen_predictability(
             table,
             enc,
             &state.tier.screen,
@@ -235,18 +248,24 @@ fn run_predictability_and_rules(
             calendar_inputs,
             &meta.recorded_after_idx,
             identity_groups,
-        )
+        );
+        state.stamp(
+            "predictability_screen",
+            PassInfo::sampled(s.coverage.clone()),
+        );
+        s
     } else {
-        onceover_mines::ScreenOutcome {
+        let s = onceover_mines::ScreenOutcome {
             findings: Vec::new(),
             results: Vec::new(),
             coverage: "not selected".into(),
-        }
+        };
+        state.stamp(
+            "predictability_screen",
+            PassInfo::sampled(s.coverage.clone()),
+        );
+        s
     };
-    state.stamp(
-        "predictability_screen",
-        PassInfo::sampled(screen.coverage.clone()),
-    );
     state.findings.extend(std::mem::take(&mut screen.findings));
 
     let designated_name = state.cfg.target.as_deref();
@@ -266,32 +285,30 @@ fn run_predictability_and_rules(
             .then_with(|| a.name.cmp(&b.name))
     });
     let dtable_eligible = cat_targets.len();
-    cat_targets.truncate(if state.enabled("decision_tables") {
-        state.tier.dtable_top_targets
-    } else {
-        0
-    });
-    if !cat_targets.is_empty() {
-        let (f, cov) = decision_tables(enc, &cat_targets, &state.tier.dtable);
-        let detail = format!(
-            "{cov}; {} of {dtable_eligible} eligible targets selected (cap {})",
-            cat_targets.len(),
-            state.tier.dtable_top_targets
-        );
-        state.stamp(
-            "decision_tables",
-            if cat_targets.len() < dtable_eligible {
-                PassInfo::capped(detail)
-            } else {
-                PassInfo::sampled(detail)
-            },
-        );
-        state.findings.extend(f);
-    } else if state.enabled("decision_tables") {
-        state.stamp(
-            "decision_tables",
-            PassInfo::na("no categorical targets with predictive signal above baseline"),
-        );
+    if state.enabled("decision_tables") && !state.check_deadline("decision_tables") {
+        cat_targets.truncate(state.tier.dtable_top_targets);
+        if !cat_targets.is_empty() {
+            let (f, cov) = decision_tables(enc, &cat_targets, &state.tier.dtable);
+            let detail = format!(
+                "{cov}; {} of {dtable_eligible} eligible targets selected (cap {})",
+                cat_targets.len(),
+                state.tier.dtable_top_targets
+            );
+            state.stamp(
+                "decision_tables",
+                if cat_targets.len() < dtable_eligible {
+                    PassInfo::capped(detail)
+                } else {
+                    PassInfo::sampled(detail)
+                },
+            );
+            state.findings.extend(f);
+        } else {
+            state.stamp(
+                "decision_tables",
+                PassInfo::na("no categorical targets with predictive signal above baseline"),
+            );
+        }
     }
 
     let mut prism_targets: Vec<&onceover_mines::TargetResult> = screen
@@ -315,6 +332,9 @@ fn run_predictability_and_rules(
             .then_with(|| a.name.cmp(&b.name))
     });
     let prism_eligible = prism_targets.len();
+    if state.enabled("covering_rules") && state.check_deadline("prism_rules") {
+        return screen;
+    }
     prism_targets.truncate(if state.enabled("covering_rules") {
         state.tier.prism_top_targets
     } else {

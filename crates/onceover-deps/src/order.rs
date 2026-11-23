@@ -317,6 +317,8 @@ enum ColPrep {
         vals: Vec<Option<i128>>,
         min: f64,
         max: f64,
+        min_i128: i128,
+        max_i128: i128,
         distinct: usize,
         nonnull: usize,
         f64_exact: bool,
@@ -394,6 +396,8 @@ impl ColPrep {
                 vals,
                 min,
                 max,
+                min_i128,
+                max_i128,
                 distinct,
                 nonnull,
                 f64_exact,
@@ -401,6 +405,8 @@ impl ColPrep {
                 vals: pick(&vals, rows),
                 min,
                 max,
+                min_i128,
+                max_i128,
                 distinct,
                 nonnull,
                 f64_exact,
@@ -443,6 +449,7 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
             let mut out = Vec::with_capacity(vals.len());
             let mut seen: HashSet<i128> = HashSet::new();
             let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut min_i128, mut max_i128) = (i128::MAX, i128::MIN);
             let mut exact = true;
             for v in vals.iter() {
                 match v {
@@ -454,6 +461,8 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
+                        min_i128 = min_i128.min(x);
+                        max_i128 = max_i128.max(x);
                         if x.abs() > F64_EXACT_LIMIT {
                             exact = false;
                         }
@@ -468,6 +477,8 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 vals: out,
                 min,
                 max,
+                min_i128,
+                max_i128,
                 f64_exact: exact,
             })
         }
@@ -475,6 +486,7 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
             let mut out = Vec::with_capacity(vals.len());
             let mut seen: HashSet<i128> = HashSet::new();
             let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut min_i128, mut max_i128) = (i128::MAX, i128::MIN);
             let mut exact = true;
             for v in vals.iter() {
                 match v {
@@ -486,6 +498,8 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                         let f = x as f64;
                         min = min.min(f);
                         max = max.max(f);
+                        min_i128 = min_i128.min(x);
+                        max_i128 = max_i128.max(x);
                         if x > F64_EXACT_LIMIT {
                             exact = false;
                         }
@@ -500,6 +514,8 @@ fn prep_column(col: &TypedCol) -> Option<ColPrep> {
                 vals: out,
                 min,
                 max,
+                min_i128,
+                max_i128,
                 f64_exact: exact,
             })
         }
@@ -627,9 +643,37 @@ fn pair_domain(a: &ColPrep, b: &ColPrep) -> Option<bool> {
 /// ratio cap. Widths are in each column's own units (ticks for
 /// temporal columns, which only pair within one unit).
 fn ranges_compatible(a: &ColPrep, b: &ColPrep) -> bool {
-    let (amin, amax) = (a.min(), a.max());
-    let (bmin, bmax) = (b.min(), b.max());
-    let (wa, wb) = (amax - amin, bmax - bmin);
+    let (wa, wb, overlap) = match (a, b) {
+        (
+            ColPrep::Ints {
+                min_i128: amin,
+                max_i128: amax,
+                ..
+            },
+            ColPrep::Ints {
+                min_i128: bmin,
+                max_i128: bmax,
+                ..
+            },
+        ) => {
+            if amin >= amax || bmin >= bmax {
+                return false;
+            }
+            let wa = (*amax - *amin) as f64;
+            let wb = (*bmax - *bmin) as f64;
+            let hi = (*amax).min(*bmax);
+            let lo = (*amin).max(*bmin);
+            let overlap = if hi > lo { (hi - lo) as f64 } else { 0.0 };
+            (wa, wb, overlap)
+        }
+        _ => {
+            let (amin, amax) = (a.min(), a.max());
+            let (bmin, bmax) = (b.min(), b.max());
+            let (wa, wb) = (amax - amin, bmax - bmin);
+            let overlap = amax.min(bmax) - amin.max(bmin);
+            (wa, wb, overlap)
+        }
+    };
     if wa <= 0.0 || wb <= 0.0 {
         return false;
     }
@@ -637,17 +681,18 @@ fn ranges_compatible(a: &ColPrep, b: &ColPrep) -> bool {
     if wide > MAX_WIDTH_RATIO * narrow {
         return false;
     }
-    let overlap = amax.min(bmax) - amin.max(bmin);
     overlap > 0.0 && overlap >= MIN_OVERLAP_SHARE * narrow
 }
 
 trait ScanVal: Copy + PartialOrd + std::ops::Sub<Output = Self> + Default {
+    const IS_INT: bool;
     fn as_f64(self) -> f64;
-    /// The exact integer value, for temporal scans whose values
-    /// are ticks; zero for float scans (never temporal).
+    /// The exact integer value, for integer and temporal scans;
+    /// zero for float scans.
     fn as_ticks(self) -> i128;
 }
 impl ScanVal for f64 {
+    const IS_INT: bool = false;
     fn as_f64(self) -> f64 {
         self
     }
@@ -656,6 +701,7 @@ impl ScanVal for f64 {
     }
 }
 impl ScanVal for i128 {
+    const IS_INT: bool = true;
     fn as_f64(self) -> f64 {
         self as f64
     }
@@ -966,6 +1012,11 @@ struct Candidate {
     /// The rank correlation certifying a predictive basis.
     basis_spearman: Option<f64>,
     temporal: bool,
+    /// True when both compared columns are integers (scanned as `i128`)
+    /// rather than floats or timestamps, so exact integer bounds and worst
+    /// values are preserved in claims and metrics without `f64` rounding
+    /// (issue #466).
+    exact_int: bool,
     unit_ns: u64,
     example_rows: Vec<usize>,
     first_row: Option<usize>,
@@ -1366,6 +1417,7 @@ fn dispatch<T: ScanVal>(
             equal: d.equal,
             derived,
             temporal,
+            exact_int: T::IS_INT && !temporal,
             unit_ns,
             example_rows: dir.example_rows.clone(),
             first_row: dir.first_row,
@@ -1786,6 +1838,15 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
     let fmt_gap = |v: f64, ticks: i128| -> String {
         if c.temporal {
             fmt_duration(ticks, c.unit_ns)
+        } else if c.exact_int {
+            format!("{ticks}")
+        } else {
+            fmt_num(v)
+        }
+    };
+    let fmt_bound = |v: f64, ticks: i128| -> String {
+        if c.exact_int {
+            format!("{ticks}")
         } else {
             fmt_num(v)
         }
@@ -1804,9 +1865,9 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
                 "the worst violation is at row {}, where {} = {} against {} = {}",
                 c.worst_row.unwrap_or(0),
                 lower_name,
-                fmt_num(c.worst_lower),
+                fmt_bound(c.worst_lower, c.worst_lower_ticks),
                 upper_name,
-                fmt_num(c.worst_upper),
+                fmt_bound(c.worst_upper, c.worst_upper_ticks),
             )
         };
         let reverse = c.reverse_violations();
@@ -1847,7 +1908,7 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             lower_name, upper_name, c.n, c.equal,
         );
         if let (Some(s), Some(st)) = (c.min_slack, c.min_slack_ticks) {
-            if s > 0.0 {
+            if (c.exact_int && st > 0) || (!c.exact_int && s > 0.0) {
                 claim.push_str(&format!("; the tightest margin is {}", fmt_gap(s, st)));
             }
         }
@@ -1874,9 +1935,9 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
                 "the worst violation is at row {}, where {} = {} against {} = {}",
                 c.worst_row.unwrap_or(0),
                 lower_name,
-                fmt_num(c.worst_lower),
+                fmt_bound(c.worst_lower, c.worst_lower_ticks),
                 upper_name,
-                fmt_num(c.worst_upper),
+                fmt_bound(c.worst_upper, c.worst_upper_ticks),
             )
         };
         let claim = format!(
@@ -1964,19 +2025,41 @@ fn build_finding(table: &TypedTable, c: &Candidate) -> Finding {
             );
         }
     }
+    let int_json = |v: i128| -> serde_json::Value {
+        if let Ok(x) = i64::try_from(v) {
+            json!(x)
+        } else if let Ok(x) = u64::try_from(v) {
+            json!(x)
+        } else {
+            json!(v as f64)
+        }
+    };
     if c.temporal {
-        metrics.insert("lower_min".into(), json!(c.lo_min_ticks));
-        metrics.insert("lower_max".into(), json!(c.lo_max_ticks));
-        metrics.insert("upper_min".into(), json!(c.hi_min_ticks));
-        metrics.insert("upper_max".into(), json!(c.hi_max_ticks));
+        metrics.insert("lower_min".into(), int_json(c.lo_min_ticks));
+        metrics.insert("lower_max".into(), int_json(c.lo_max_ticks));
+        metrics.insert("upper_min".into(), int_json(c.hi_min_ticks));
+        metrics.insert("upper_max".into(), int_json(c.hi_max_ticks));
         metrics.insert("tick_unit_ns".into(), json!(c.unit_ns));
         if c.violations > 0 {
-            metrics.insert("worst_violation".into(), json!(c.worst_ticks));
-            metrics.insert("worst_lower_value".into(), json!(c.worst_lower_ticks));
-            metrics.insert("worst_upper_value".into(), json!(c.worst_upper_ticks));
+            metrics.insert("worst_violation".into(), int_json(c.worst_ticks));
+            metrics.insert("worst_lower_value".into(), int_json(c.worst_lower_ticks));
+            metrics.insert("worst_upper_value".into(), int_json(c.worst_upper_ticks));
         }
         if let Some(s) = c.min_slack_ticks {
-            metrics.insert("min_slack".into(), json!(s));
+            metrics.insert("min_slack".into(), int_json(s));
+        }
+    } else if c.exact_int {
+        metrics.insert("lower_min".into(), int_json(c.lo_min_ticks));
+        metrics.insert("lower_max".into(), int_json(c.lo_max_ticks));
+        metrics.insert("upper_min".into(), int_json(c.hi_min_ticks));
+        metrics.insert("upper_max".into(), int_json(c.hi_max_ticks));
+        if c.violations > 0 {
+            metrics.insert("worst_violation".into(), int_json(c.worst_ticks));
+            metrics.insert("worst_lower_value".into(), int_json(c.worst_lower_ticks));
+            metrics.insert("worst_upper_value".into(), int_json(c.worst_upper_ticks));
+        }
+        if let Some(s) = c.min_slack_ticks {
+            metrics.insert("min_slack".into(), int_json(s));
         }
     } else {
         metrics.insert("lower_min".into(), json!(c.lo_min));

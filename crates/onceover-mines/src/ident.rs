@@ -12,29 +12,52 @@ use crate::dep::PairDep;
 
 /// Fit and check y = a·x + b; returns (a, b, exact_frac) when the fit is
 /// strong enough to report.
+///
+/// Uses anchored centering and variation-scaled tolerance (`1e-9 * (1 + y_range)`)
+/// so shifting both columns by a large constant does not inflate the tolerance
+/// or lose floating-point precision (issue #470).
 pub fn fit_affine(pairs: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
     let n = pairs.len();
     if n < 100 {
         return None;
     }
-    let mx = pairs.iter().map(|p| p.0).sum::<f64>() / n as f64;
-    let my = pairs.iter().map(|p| p.1).sum::<f64>() / n as f64;
+    let x0 = pairs
+        .iter()
+        .map(|p| p.0)
+        .min_by(f64::total_cmp)
+        .unwrap_or(0.0);
+    let y0 = pairs
+        .iter()
+        .map(|p| p.1)
+        .min_by(f64::total_cmp)
+        .unwrap_or(0.0);
+    let dmx = pairs.iter().map(|p| p.0 - x0).sum::<f64>() / n as f64;
+    let dmy = pairs.iter().map(|p| p.1 - y0).sum::<f64>() / n as f64;
     let mut cov = 0.0;
     let mut vx = 0.0;
-    for (x, y) in pairs {
-        cov += (x - mx) * (y - my);
-        vx += (x - mx) * (x - mx);
+    let (mut dy_min, mut dy_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &(x, y) in pairs {
+        let dx = (x - x0) - dmx;
+        let dy = (y - y0) - dmy;
+        cov += dx * dy;
+        vx += dx * dx;
+        dy_min = dy_min.min(dy);
+        dy_max = dy_max.max(dy);
     }
     if vx <= 0.0 {
         return None;
     }
     let a = cov / vx;
-    let b = my - a * mx;
-    let tol = 1e-9;
+    let mx = x0 + dmx;
+    let my = y0 + dmy;
+    let b = (y0 - a * x0) + (dmy - a * dmx);
+    let y_scale = (dy_max - dy_min).max(0.0);
+    let tol = 1e-9 * (1.0 + y_scale);
     let exact = pairs
         .iter()
-        .filter(|(x, y)| (y - (a * x + b)).abs() <= tol * (1.0 + y.abs()))
+        .filter(|&&(x, y)| (((y - y0) - dmy) - a * ((x - x0) - dmx)).abs() <= tol)
         .count();
+    let _ = (mx, my);
     Some((a, b, exact as f64 / n as f64))
 }
 
@@ -1740,6 +1763,95 @@ fn one_statement_per_identity(
         .collect()
 }
 
+/// Largest integer magnitude exactly representable in IEEE-754 `f64`.
+const AFFINE_F64_EXACT_LIMIT: i128 = 1i128 << 53;
+
+#[derive(Clone, Copy)]
+enum AffineOrigin {
+    Int(i128),
+    Float(f64),
+}
+
+impl AffineOrigin {
+    fn as_f64(self) -> f64 {
+        match self {
+            AffineOrigin::Int(v) => v as f64,
+            AffineOrigin::Float(v) => v,
+        }
+    }
+
+    fn to_json(self) -> serde_json::Value {
+        match self {
+            AffineOrigin::Int(v) => {
+                if let Ok(x) = i64::try_from(v) {
+                    json!(x)
+                } else if let Ok(x) = u64::try_from(v) {
+                    json!(x)
+                } else {
+                    json!(v as f64)
+                }
+            }
+            AffineOrigin::Float(v) => json!(v),
+        }
+    }
+}
+
+/// Extract a translation-anchored `f64` view of a numeric column.
+///
+/// For `I64`/`U64` columns, subtracting the first observed integer in `i128`
+/// preserves exact variation even when raw values exceed `2^53` (issue #470).
+/// Returns `None` if an integer column's spread from its anchor exceeds `2^53`
+/// so `f64` residual evaluation would not be safe.
+fn anchor_numeric_col(col: &onceover_core::TypedCol) -> Option<(AffineOrigin, Vec<Option<f64>>)> {
+    use onceover_core::TypedCol;
+    match col {
+        TypedCol::I64 { vals } => {
+            let origin = *vals.iter().flatten().min()? as i128;
+            let mut deltas = Vec::with_capacity(vals.len());
+            for v in vals.iter() {
+                match v {
+                    Some(&x) => {
+                        let d = x as i128 - origin;
+                        if d.abs() > AFFINE_F64_EXACT_LIMIT {
+                            return None;
+                        }
+                        deltas.push(Some(d as f64));
+                    }
+                    None => deltas.push(None),
+                }
+            }
+            Some((AffineOrigin::Int(origin), deltas))
+        }
+        TypedCol::U64 { vals } => {
+            let origin = *vals.iter().flatten().min()? as i128;
+            let mut deltas = Vec::with_capacity(vals.len());
+            for v in vals.iter() {
+                match v {
+                    Some(&x) => {
+                        let d = x as i128 - origin;
+                        if d.abs() > AFFINE_F64_EXACT_LIMIT {
+                            return None;
+                        }
+                        deltas.push(Some(d as f64));
+                    }
+                    None => deltas.push(None),
+                }
+            }
+            Some((AffineOrigin::Int(origin), deltas))
+        }
+        _ => {
+            let len = col.len();
+            let origin = (0..len)
+                .filter_map(|r| col.numeric_at(r))
+                .min_by(f64::total_cmp)?;
+            let deltas = (0..len)
+                .map(|r| col.numeric_at(r).map(|v| v - origin))
+                .collect();
+            Some((AffineOrigin::Float(origin), deltas))
+        }
+    }
+}
+
 /// Build identity findings from strong pairs. A pair whose fitted
 /// target (the pair's second column) is frame-role scaffolding is
 /// skipped: an identity *on* a counter or timestamp part restates
@@ -1766,25 +1878,71 @@ pub fn identities(
     let checked: Vec<_> = candidates
         .par_iter()
         .filter_map(|d| {
-            let x = &table.cols[d.a];
-            let y = &table.cols[d.b];
-            let pairs = crate::dep::sampled_pairs(x, y, &fit_rows);
-            let (a, b, _) = fit_affine(&pairs)?;
+            let (x_origin, dx_col) = anchor_numeric_col(&table.cols[d.a])?;
+            let (y_origin, dy_col) = anchor_numeric_col(&table.cols[d.b])?;
+            let mut fit_pairs: Vec<(f64, f64)> = Vec::new();
+            for &r in &fit_rows {
+                let r = r as usize;
+                if let (Some(dx), Some(dy)) = (dx_col[r], dy_col[r]) {
+                    fit_pairs.push((dx, dy));
+                }
+            }
+            if fit_pairs.len() < 100 {
+                return None;
+            }
+            let nf = fit_pairs.len() as f64;
+            let dmx = fit_pairs.iter().map(|p| p.0).sum::<f64>() / nf;
+            let dmy = fit_pairs.iter().map(|p| p.1).sum::<f64>() / nf;
+            let mut cov = 0.0;
+            let mut vx = 0.0;
+            for &(dx, dy) in &fit_pairs {
+                let cx = dx - dmx;
+                let cy = dy - dmy;
+                cov += cx * cy;
+                vx += cx * cx;
+            }
+            if vx <= 0.0 {
+                return None;
+            }
+            let a = cov / vx;
+            let b = match (x_origin, y_origin) {
+                (AffineOrigin::Int(xo), AffineOrigin::Int(yo)) if (a - 1.0).abs() <= 1e-12 => {
+                    (yo - xo) as f64 + (dmy - a * dmx)
+                }
+                _ => (y_origin.as_f64() - a * x_origin.as_f64()) + (dmy - a * dmx),
+            };
             let mut n = 0usize;
+            let (mut dy_min, mut dy_max) = (f64::INFINITY, f64::NEG_INFINITY);
+            for row in 0..table.n {
+                if let (Some(_), Some(dy)) = (dx_col[row], dy_col[row]) {
+                    n += 1;
+                    dy_min = dy_min.min(dy);
+                    dy_max = dy_max.max(dy);
+                }
+            }
+            if n < 100 {
+                return None;
+            }
+            let y_scale = (dy_max - dy_min).max(0.0);
+            if y_scale <= 0.0 {
+                return None;
+            }
+            let tol = 1e-9 + 1e-9 * y_scale;
             let mut matched = 0usize;
             for row in 0..table.n {
-                if let (Some(x), Some(y)) = (x.numeric_at(row), y.numeric_at(row)) {
-                    n += 1;
-                    matched += usize::from((y - (a * x + b)).abs() <= 1e-9 * (1.0 + y.abs()));
+                if let (Some(dx), Some(dy)) = (dx_col[row], dy_col[row]) {
+                    matched += usize::from(((dy - dmy) - a * (dx - dmx)).abs() <= tol);
                 }
             }
             let frac = matched as f64 / n.max(1) as f64;
-            (frac >= 0.999).then_some((d.a, d.b, a, b, frac, n, matched))
+            (frac >= 0.999).then_some((
+                d.a, d.b, a, b, x_origin, y_origin, dmx, dmy, y_scale, frac, n, matched,
+            ))
         })
         .collect();
 
     let mut out = Vec::new();
-    for (a_idx, b_idx, a, b, frac, n, matched) in checked {
+    for (a_idx, b_idx, a, b, x_origin, y_origin, dmx, dmy, y_scale, frac, n, matched) in checked {
         let x = &table.names[a_idx];
         let y = &table.names[b_idx];
         let violations = n - matched;
@@ -1813,8 +1971,13 @@ BTreeMap::from([
                 ("violations".into(), json!(violations)),
                 ("a".into(), json!(a)),
                 ("b".into(), json!(b)),
+                ("x_origin".into(), x_origin.to_json()),
+                ("y_origin".into(), y_origin.to_json()),
+                ("x_center_offset".into(), json!(dmx)),
+                ("y_center_offset".into(), json!(dmy)),
+                ("tolerance_scale".into(), json!(y_scale)),
                 ("exact_fraction".into(), json!(frac)),
-                ("tolerance".into(), json!("1e-9 absolute + 1e-9 relative")),
+                ("tolerance".into(), json!("1e-9 absolute + 1e-9 relative to target range")),
                 ("absolute_tolerance".into(),json!(1e-9)),
                 ("relative_tolerance".into(),json!(1e-9)),
             ]),
