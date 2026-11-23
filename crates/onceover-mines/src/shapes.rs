@@ -222,27 +222,6 @@ pub fn profile_target_shapes(
             format!("designated target '{target_name}' is not numeric; shape decomposition needs a numeric target"),
         );
     };
-    let mut distinct_y: Vec<u64> = Vec::new();
-    for v in target_vals.iter().flatten() {
-        if v.is_finite() {
-            let bits = v.to_bits();
-            if !distinct_y.contains(&bits) {
-                distinct_y.push(bits);
-                if distinct_y.len() >= 3 {
-                    break;
-                }
-            }
-        }
-    }
-    if distinct_y.len() <= 2 {
-        return (
-            Vec::new(),
-            format!(
-                "designated target '{target_name}' has {} distinct value(s); shape decomposition needs a continuous numeric target",
-                distinct_y.len()
-            ),
-        );
-    }
 
     let mut scored: Vec<(f64, Finding)> = Vec::new();
     let mut n_predictors = 0usize;

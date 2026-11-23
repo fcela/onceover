@@ -402,6 +402,42 @@
    "scope": "column_order_stress",
    "limit": 2,
    "reason": "Issue #435: adding an independent noise column changes two model-selected facts (0 -> 2), while row-shuffle differences on this table fall 7 -> 5 and its invariance total stays 7. Record: docs/benchmarks/2026-11-18-content-sampling.md."
+  },
+  {
+   "metric": "reference.should_8k_default",
+   "scope": "total",
+   "limit": 34,
+   "reason": "Release 0.1.8: permutation-null calibration in breaks and axisbreaks cuts permuted false positives 82% (38 -> 7 full, 21 -> 4 4k, and 2 -> 0 on daily_regime_break); on daily_regime_break the planted 2023-06-15 spike is still flagged by extreme_value (visits reaches 3344.9), but extreme_value names only [visits] rather than [date, visits]. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md."
+  },
+  {
+   "metric": "reference.should_full_default",
+   "scope": "total",
+   "limit": 36,
+   "reason": "Release 0.1.8: same daily_regime_break spike-day calibration trade-off as reference.should_8k_default while permuted false positives fall 38 -> 7. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md."
+  },
+  {
+   "metric": "invariance.total",
+   "scope": "congressional-voting",
+   "limit": 14,
+   "reason": "Release 0.1.8: follows congressional-voting invariance.noise (11 -> 12, already accepted at limit 14), while gate-wide invariance.total improves 130 -> 118."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "congressional-voting",
+   "limit": 900,
+   "reason": "Release 0.1.8: calibrated single-logit binary model_failures and native 0/1 binary outcome statements shift digest finding-char density by 0.2% (903 -> 901), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "planted_mix",
+   "limit": 890,
+   "reason": "Release 0.1.8: calibrated binary model_failures and native 0/1 binary outcome statements shift digest finding-char density by 0.7% (901 -> 895), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392."
+  },
+  {
+   "metric": "redundancy.finding_permille_target",
+   "scope": "dominant_driver",
+   "limit": 860,
+   "reason": "Release 0.1.8: calibrated model_failures and outcome statements shift digest finding-char density by 0.8% (870 -> 863), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392."
   }
  ]
 }
