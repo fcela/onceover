@@ -1,6 +1,6 @@
 # Agent guide: profiling a table with onceover
 
-Reviewed for onceover 0.1.8.
+Reviewed for onceover 0.1.9.
 `onceover.capabilities()` lists every detector, its purpose,
 requirements, and activation rules.
 

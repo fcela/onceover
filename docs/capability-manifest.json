@@ -1,6 +1,6 @@
 {
  "library": "onceover",
- "version": "0.1.8",
+ "version": "0.1.9",
  "generated_by": "scripts/capability_manifest.py",
  "detectors": [
   {
