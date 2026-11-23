@@ -30,6 +30,7 @@ pub mod missingness;
 pub mod modelfail;
 pub mod outcome;
 pub mod panels;
+pub mod partition_scagnostics;
 pub mod partitions;
 pub mod periods;
 pub mod prism;
@@ -79,7 +80,8 @@ pub use levels::{profile_level_contrasts, LevelContrastInput, LevelsOutcome};
 pub use missingness::{profile_missingness, MissingnessAxis};
 pub use modelfail::{screen_model_failures, ModelFailureConfig};
 pub use outcome::{
-    event_label_of, outcome_account, outcome_contrasts, target_event_label, OutcomeDecl,
+    event_label_of, outcome_account, outcome_contrasts, target_event_label,
+    target_event_label_with_role, OutcomeDecl,
 };
 pub use panels::{panel_concentration, panel_dynamics, panel_flags, PanelInput};
 pub use partitions::{ordered_partitions, PartitionsConfig, PartitionsOutcome, PartitionsStatus};
@@ -94,11 +96,17 @@ pub use surprises::{profile_surprises, SurpriseConfig, SurpriseOutcome};
 
 /// Compact float display (for class labels).
 pub fn fmt_float(v: f64) -> String {
+    let v = if v == 0.0 { 0.0 } else { v };
     if v == v.trunc() && v.abs() < 1e15 {
         format!("{}", v as i64)
     } else {
         let s = format!("{:.6}", v);
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        if trimmed == "-0" {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        }
     }
 }
 

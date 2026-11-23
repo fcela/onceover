@@ -292,6 +292,9 @@ pub fn scan_product_ratio(
     // Phase 2: full scan with strict tolerance.
     let mut n = 0usize;
     let mut matched = 0usize;
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    let mut y_nonzero = 0usize;
     for row in 0..n_rows {
         let predicted = match eval(cols, row) {
             Some(v) => v,
@@ -302,11 +305,17 @@ pub fn scan_product_ratio(
             None => continue,
         };
         n += 1;
+        y_min = y_min.min(y);
+        y_max = y_max.max(y);
+        if y.abs() > 1e-12 {
+            y_nonzero += 1;
+        }
         if within_tol(y, predicted) {
             matched += 1;
         }
     }
-    if n == 0 {
+    // Reject constant-target or trivial 0 = 0 / nonzero (or 0 = 0 * x) artifacts.
+    if n == 0 || (y_max - y_min) <= 1e-12 || y_nonzero < 2 {
         return None;
     }
     let fraction = matched as f64 / n as f64;
@@ -2010,6 +2019,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 200_000, &[]);
         assert!(
@@ -2111,6 +2121,7 @@ mod tests {
             names,
             dtypes: vec!["float64".to_string(); 8],
             cols: cols.iter().map(|c| owned_col(c)).collect(),
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -2193,6 +2204,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 200_000, &[]);
         assert!(
@@ -2223,6 +2235,7 @@ mod tests {
                     vals: c.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings
@@ -2255,6 +2268,7 @@ mod tests {
                     vals: c.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[2]);
         assert!(findings
@@ -2283,6 +2297,7 @@ mod tests {
                     vals: c.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, coverage) = multiterm_identities(&table, 0, &[]);
         assert!(findings.is_empty());
@@ -2313,6 +2328,7 @@ mod tests {
                     vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (f1, cov1) = multiterm_identities(&table, 1, &[]);
         let (f2, _) = multiterm_identities(&table, 1, &[]);
@@ -2343,6 +2359,7 @@ mod tests {
                     vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let c_findings: Vec<&Finding> = findings
@@ -2375,6 +2392,7 @@ mod tests {
                     vals: b.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings
@@ -2411,6 +2429,7 @@ mod tests {
                     vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         assert!(findings.is_empty(), "{findings:?}");
@@ -2444,6 +2463,7 @@ mod tests {
                     vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let y_findings: Vec<&Finding> = findings
@@ -2483,6 +2503,7 @@ mod tests {
                     vals: y.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (findings, _) = multiterm_identities(&table, 2000, &[]);
         let y_findings: Vec<&Finding> = findings

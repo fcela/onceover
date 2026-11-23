@@ -767,6 +767,7 @@ mod tests {
                 },
                 TypedCol::StrOwned { vals: b },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
 
         let (findings, coverage) = screen_leakage(&table, "y", &[]);

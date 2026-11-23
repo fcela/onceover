@@ -91,13 +91,41 @@ collapses candidate and overlap records into a truncation summary;
 below the reduced skeleton's size it raises `ValueError` rather than
 emitting invalid JSON.
 
+## Partitioned scatterplot diagnostics
+
+`onceover.partition_scagnostics(df, pairs=[("x", "y")],
+partition_by=["protocol"])` searches observed context columns for rules
+that sharpen 2D scatterplot geometry on held-out rows using content-keyed
+sampling and Bonferroni-adjusted label permutations. `profile(df,
+detectors=["partition_scagnostics"])` runs the same search integrated with
+the frame model (excluding identifiers, row numbers, timestamp parts, and
+exact identities), budget tiers, and cooperative deadlines. Omit `pairs` or
+`partition_by` to search eligible columns under the caps. `metrics` selects any non-empty subset of `monotonic`, `functional`,
+`binned_striated`, `binned_stringy`, and `binned_clumpy` (all five by
+default). Both whole-partition gain and exceptional single-subgroup
+(`standout_subgroup`, including minority sign reversals down to 5% share)
+rules are supported, guarded against range-restriction and flat-axis-collapse
+artifacts; `report.rows(id, df)` extracts the annotated partition rows. Read `findings`
+for the rules and labeled per-group effects and `coverage` for sampling,
+caps, and validation outcomes.
+
 ## Getting findings back out
 
-The guide covers `report.finding(id)`, `report.select(...)`,
-`report.to_digest()`, `report.to_json()`, `report.verify(df)`,
-and `report.rows(id, df)`. The rest of the surface:
+The guide covers `report.finding(id)` (accepts full ids or short
+report-local handles `"f1"`, `"g1"`), `report.select(...)`,
+`report.to_brief(2_500)`, `report.to_digest()`, `report.to_json()`,
+`report.verify(df)`, and `report.rows(id, df)`. All digest/brief
+rendering, JSON compacting/budgeting, lookup, filtering, diffing,
+`infer_spec`, and `profile_many` execute in Rust. The rest of the
+surface:
 
 ```python
+report.to_brief(2_500)                       # token-compact LLM brief:
+        # dense role-grouped schema+range strip plus section-budgeted
+        # findings tagged with short [f1] handles
+report.to_digest(4_000, compact=True, include_schema=True)
+report.to_json(compact=True)                 # compact JSON: short handles,
+        # collapsed skipped on-request coverage, trimmed bulky arrays
 report.to_html()                             # self-contained HTML
         # rendering of the same report (needs the `html` extra:
         # pip install 'onceover[html]'); charts are Altair with
@@ -130,8 +158,9 @@ Installing the package also installs an `onceover` command:
 
 ```sh
 onceover data.parquet                  # digest of the file's profile
-onceover data.parquet --digest 4000    # digest with a character budget
-onceover data.parquet --format json    # the full report as JSON
+onceover data.parquet --format brief   # compact LLM brief with schema strip
+onceover data.parquet --digest 4000 --compact
+onceover data.parquet --format json --compact
 onceover data.parquet --format html -o report.html
 onceover orders.parquet customers.parquet   # several files: the
         # multi-table report (candidate foreign keys), digest or JSON
@@ -150,11 +179,13 @@ no sampling controls, and `--target` applies to one file only.
 categories each produces and each detector's `membership`
 (`default_set` or `on_request`) and `trigger` (`always`, `hints`,
 or `target`) (also frozen in `docs/capability-manifest.json`).
-`detectors=[...]` restricts a run to named detectors. The
-default set has 31 of the 46 registered detectors; the rest run
-only when named in `detectors`, and a default run records each
-as skipped in coverage, naming it on-request. The full category
-and type reference is `docs/findings.md`.
+`detectors=[...]` restricts a run to named detectors.
+`onceover.RECOMMENDED_DETECTORS` is the default selection, with 31 of
+the 47 registered detectors. Pass `detectors=onceover.ALL_DETECTORS`
+to request every registered detector. Eligibility still depends on
+the budget, hints, target, and data. With the default selection, a
+designated target also activates target-triggered detectors. The full
+category and type reference is `docs/findings.md`.
 
 The `outliers` pass is in the default set, but a default run
 states a `categorical_outlier` finding only when every level
@@ -163,12 +194,11 @@ its pattern-breaking rows carry is rare in the column overall
 by that requirement are counted in the pass's coverage entry,
 and naming `outliers` in `detectors=[...]` states them.
 
-The along-axis passes (`breaks`, `ordered_partitions`,
-`ordered_axis`, `discontinuities`) are in the default set but
-scan only along the frame's time axis or an axis declared with
-the `ordered_axis` hint; on a frame with neither, a default run
-records them as skipped in coverage, and naming one in
-`detectors=[...]` runs it along any axis it supports.
+`breaks`, `ordered_partitions`, and `ordered_axis` ordinarily scan
+the frame's time axis or an axis declared with `ordered_axis`.
+`discontinuities` requires a usable declared numeric axis in a
+recommended run. Naming one of these detectors in `detectors=[...]`
+allows it to scan any axis it supports. Coverage records skips.
 
 Name `entity_fingerprints` to compare each entity's distribution
 over single dimensions and pairs that add a joint signal. The pass

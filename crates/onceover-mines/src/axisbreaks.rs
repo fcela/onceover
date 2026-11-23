@@ -446,6 +446,26 @@ pub fn window_contrast(
     } else {
         0.0
     };
+    let exceed = null.iter().filter(|&&c| c.abs() >= contrast.abs()).count();
+    let p_norm = (2.0 * crate::dep::norm_sf(z.abs())).clamp(1e-12, 1.0);
+    let p_emp = if exceed > 0 {
+        (1.0 + exceed as f64) / (1.0 + shuffles as f64)
+    } else {
+        0.0
+    };
+    // Guard against zero-inflated or heavy-tailed single spikes that
+    // move the 24-point window mean without shifting the window's
+    // distribution: require the rank-sum test to agree as well.
+    let p_rank = if win >= 6 {
+        let mut bs = before.to_vec();
+        let mut af = after.to_vec();
+        bs.sort_by(|a, b| a.total_cmp(b));
+        af.sort_by(|a, b| a.total_cmp(b));
+        crate::dep::rank_sum_p(&bs, &af)
+    } else {
+        0.0
+    };
+    let p = p_norm.max(p_emp).max(p_rank).clamp(1e-12, 1.0);
     Some(ContrastHit {
         boundary,
         win,
@@ -453,7 +473,7 @@ pub fn window_contrast(
         mean_before: mean(before),
         mean_after: mean(after),
         z,
-        p: (2.0 * crate::dep::norm_sf(z.abs())).clamp(1e-12, 1.0),
+        p,
     })
 }
 
@@ -2937,8 +2957,9 @@ fn build_cluster_finding(
             );
             let verb = if hit.jump >= 0.0 { "spikes" } else { "dips" };
             let claim = format!(
-                "{} {verb} over {} to {}: {} against a {} baseline of {} ({}), reverting to {} in the following window",
+                "{} {verb} along {} over {} to {}: {} against a {} baseline of {} ({}), reverting to {} in the following window",
                 ctx.response,
+                ctx.axis.name,
                 label_of(ctx, hit.start),
                 label_of(ctx, (hit.start + hit.len - 1).min(ctx.series.y.len() - 1)),
                 fmt(hit.window_mean),

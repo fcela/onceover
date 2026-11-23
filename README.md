@@ -15,6 +15,10 @@ partial overlaps with exact orphan counts.
 [Explore the capabilities](docs/book/usage/capabilities.ipynb) ·
 [Work through the analysis notebook](notebooks/onceover_analysis.ipynb)
 
+**For agents:** Start with `onceover.agent_guide()` for the packaged
+quickstart and `onceover.capabilities()` for the detector inventory and
+activation rules. Both describe the installed version.
+
 ## Start with a table
 
 ```bash
@@ -75,30 +79,63 @@ Each method documents the statement it supports, its assumptions, and what
 it can miss. Association and predictive findings describe observed
 structure; they do not establish causation.
 
+## Find scatterplot structure within groups
+
+Select `partition_scagnostics` when a pooled scatterplot may hide
+different relationships in different populations:
+
+```python
+report = onceover.profile(df, detectors=["partition_scagnostics"])
+print(report.to_digest(4_000))
+```
+
+Call `onceover.partition_scagnostics()` directly to choose pairs,
+candidate columns, or metrics:
+
+```python
+result = onceover.partition_scagnostics(
+    df, pairs=[("x", "y")], partition_by=["protocol"], metrics=["monotonic"],
+)
+for finding in result["findings"]:
+    print(finding["rule"], finding["validation"])
+```
+
+`partition_by` gives the search candidate columns. It chooses the rule
+on discovery rows and scores it on held-out rows. Read `result["coverage"]`
+to see how much of the search ran. This experimental standalone call
+accepts a Polars DataFrame. [Usage and runnable example](docs/book/usage/find_partitioned_shapes.ipynb)
+
 ## Read and use the report
 
 ```python
-report.columns                         # All-row summaries, keyed by column name
-report.findings_frame()                 # Searchable index of the selected findings
+report.to_brief(2_500)                 # Token-compact LLM brief: schema strip + [f1] handles
+report.to_digest(4_000)                # Section-budgeted plain-text briefing
+report.finding("f1")                   # One finding by short handle ("f1"/"g1") or full ID
 report.select(column="region_name")    # Complete findings about one column
-report.finding(report.findings[0]["id"])  # One finding, including all its evidence
+report.columns                         # All-row summaries, keyed by column name
+report.findings_frame()                # Searchable index of the selected findings
 report.coverage                        # Completed, sampled, capped, or skipped work
 report.data                            # Complete JSON-compatible report
 report.save("profile.json")
 
-report.verify(df)                # Recount statements through Polars
-report.rows(finding_id, df)      # The rows behind a statement
-report.to_checks()               # Exact statements as constraints for new data
+report.verify(df)                      # Recount statements through Polars
+report.rows("f1", df)                  # The rows behind a statement (short handle or full ID)
+report.to_checks()                     # Exact statements as constraints for new data
 ```
 
-Use `report.to_digest(4_000)` for a short reading budget, or
-`report.to_json(max_chars=24_000)` for a budgeted JSON view. The latter
-raises `ValueError` if the requested size cannot hold its minimal index.
-Both keep the full report available. `report.diff(other)` compares two
-reports by finding ID, records coverage-status changes, and compares
-the column cards — columns added, removed, or retyped, and the card
-quantities that moved; it is separate from the statistical drift
-detector.
+For agent/LLM context windows, `report.to_brief(2_500)` (or
+`report.to_digest(4_000, compact=True, include_schema=True)`) combines a
+role-grouped schema+range strip with short `[f1]` handles resolvable via
+`report.finding("f1")` and `report.rows("f1", df)`. For structured JSON,
+`report.to_json(compact=True)` trims boilerplate coverage and oversized
+repeated payloads, and `report.to_json(max_chars=24_000)` returns a
+size-budgeted view (raising `ValueError` if the requested size cannot hold
+its minimal index). Both keep the full report available. `report.diff(other)`
+compares two reports by finding ID, records coverage-status changes, and
+compares the column cards — columns added, removed, or retyped, and the
+card quantities that moved; it is separate from the statistical drift
+detector. All digest/brief rendering, JSON compacting/budgeting, lookup,
+filtering, diffing, `infer_spec`, and `profile_many` execute in Rust.
 
 Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 [reading findings](docs/book/usage/findings.ipynb) and
@@ -108,6 +145,10 @@ Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 
 ## Choose the work and declare what you know
 
+`onceover.RECOMMENDED_DETECTORS` lists the recommended detector IDs and
+appears in the `profile()` signature. Pass a list of registered IDs to
+choose a different set for one call.
+
 | Budget | Work |
 |---|---|
 | `quick` | All-row column summaries and integrity checks; no model-based relationship search |
@@ -116,11 +157,12 @@ Start with the [quickstart](docs/book/usage/quickstart.ipynb), then follow
 
 Use `detectors=[...]` to replace the default selection with named methods.
 Required resource passes may also run; coverage explains that work.
-The default set includes 31 of the 46 registered detectors.
-The [capability guide](docs/book/usage/capabilities.ipynb) lists which
-detectors run only on request. Designating `target="response"` also
-engages the five target-gated passes with the default selection.
-With an explicit list, include any target passes you need.
+The recommended set includes 31 of the 47 registered detectors. To
+request the whole registry, pass `detectors=onceover.ALL_DETECTORS`.
+Budget, required hints, target, and data eligibility still apply.
+Designating `target="response"` also engages the five target-gated
+passes with the default selection. With an explicit list, include any
+target passes you need. [Capability guide](docs/book/usage/capabilities.ipynb)
 
 Hints declare intended structure, including ordering, complete sequences,
 calendar cadence, and panel dimensions. For example:
@@ -176,20 +218,30 @@ visible only through interactions can escape a shortlist.
 The [large-table guide](docs/book/usage/large_tables.ipynb) explains those
 tradeoffs. The [scale benchmark](docs/benchmarks/large-table-performance.md)
 reports runtime, memory, and recovery together on 2,000,000 rows × 200
-columns, with planted relationships beyond column 64.
+columns, with planted relationships beyond column 64; the
+[2-core / 8 GiB overhaul record](docs/benchmarks/2026-11-22-architecture-performance-precision.md)
+documents 200,000 × 200 profiling in 17.2s at 1.05 GiB peak RSS on 2 threads
+alongside the precision gate reductions.
 
 ## Rust and development
 
-The Rust API uses Polars 0.55:
+All core profiling (`profile`, `profile_many`, `infer_spec`,
+`partition_scagnostics`) and report operations (`to_brief`, `to_digest`,
+`to_json`, `to_json_compact`, `to_json_budgeted`, `finding`, `diff`) live
+in Rust (Polars 0.55), keeping Python a thin wrapper and making other
+language bindings straightforward:
 
 ```rust
-use onceover::{profile, ProfileConfig};
+use onceover::{on_request_detector_ids, profile, ProfileConfig};
 use polars::prelude::*;
 
 fn main() -> PolarsResult<()> {
     let df = df!("id" => [1i64, 2, 3], "value" => [4.0, 5.0, 6.0])?;
     let report = profile(&df, &ProfileConfig::default());
-    println!("{}", report.to_json());
+    let on_req = on_request_detector_ids();
+    let on_req_refs: Vec<&str> = on_req.iter().map(String::as_str).collect();
+    println!("{}", report.to_brief(2_500, &on_req_refs));
+    println!("{}", report.to_json_compact());
     Ok(())
 }
 ```

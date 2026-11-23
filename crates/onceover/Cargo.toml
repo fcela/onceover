@@ -16,6 +16,7 @@ polars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rayon = { workspace = true }
+rustc-hash = { workspace = true }
 
 [dev-dependencies]
 polars = { workspace = true, features = ["fmt"] }

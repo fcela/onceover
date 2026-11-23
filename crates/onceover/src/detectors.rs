@@ -224,6 +224,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // docs/benchmarks/2026-11-16-detector-audit.md.
         make("hotspots", vec![Concentration], &[], DefaultSet, Always, "Combinations concentrated beyond their marginal frequencies, in rows or in a declared weight"),
         make("numeric_dependence", vec![Associations], &[], DefaultSet, Always, "Pearson, Spearman, and both directions of Chatterjee's xi"),
+        make("partition_scagnostics", vec![Associations], &[], OnRequest, Always, "Scatterplot structure that strengthens within an observed partition, confirmed on held-out rows"),
         make(
             "identities",
             vec![Dependencies],
@@ -304,11 +305,11 @@ mod tests {
     #[test]
     fn default_set_is_the_31_measured_detectors() {
         let active = active_detectors(None);
-        // 46 registered: 31 in the default set (29 always-triggered
+        // 47 registered: 31 in the default set (29 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 15 on request (9 always-triggered, 5 target-triggered, and
+        // 16 on request (10 always-triggered, 5 target-triggered, and
         // entity_fingerprints, hint-triggered).
-        assert_eq!(builtin_detectors().len(), 46);
+        assert_eq!(builtin_detectors().len(), 47);
         assert_eq!(active.len(), 31);
         for id in [
             "row_clusters",
@@ -325,6 +326,7 @@ mod tests {
             "target_shapes",
             "leakage",
             "model_failures",
+            "partition_scagnostics",
         ] {
             assert!(!active.contains(id), "{id} must not be in the default set");
         }
@@ -352,8 +354,8 @@ mod tests {
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
         assert_eq!(membership.get("DefaultSet"), Some(&31));
-        assert_eq!(membership.get("OnRequest"), Some(&15));
-        assert_eq!(trigger.get("Always"), Some(&39));
+        assert_eq!(membership.get("OnRequest"), Some(&16));
+        assert_eq!(trigger.get("Always"), Some(&40));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&5));
     }
@@ -395,26 +397,36 @@ mod tests {
 
     #[test]
     fn registry_and_pipeline_dispatch_agree() {
-        let src = include_str!("pipeline.rs");
+        let sources = [
+            include_str!("pipeline/mod.rs"),
+            include_str!("pipeline/setup.rs"),
+            include_str!("pipeline/structural.rs"),
+            include_str!("pipeline/temporal.rs"),
+            include_str!("pipeline/models.rs"),
+            include_str!("pipeline/target.rs"),
+            include_str!("pipeline/finalize.rs"),
+        ];
         let mut dispatched: BTreeSet<String> = BTreeSet::new();
-        let mut rest = src;
-        while let Some(i) = rest.find("enabled(\"") {
-            let after = &rest[i + "enabled(\"".len()..];
-            let end = after.find('"').expect("dispatch literal terminates");
-            dispatched.insert(after[..end].to_string());
-            rest = &after[end..];
+        for src in sources {
+            let mut rest = src;
+            while let Some(i) = rest.find("enabled(\"") {
+                let after = &rest[i + "enabled(\"".len()..];
+                let end = after.find('"').expect("dispatch literal terminates");
+                dispatched.insert(after[..end].to_string());
+                rest = &after[end..];
+            }
         }
         let registered: BTreeSet<String> =
             builtin_detectors().iter().map(|d| d.id.clone()).collect();
         assert_eq!(
             dispatched, registered,
-            "every registry entry must have a dispatch site in pipeline.rs and every dispatch site must name a registry entry"
+            "every registry entry must have a dispatch site in pipeline/ and every dispatch site must name a registry entry"
         );
     }
 
     #[test]
     fn pipeline_statement_wording_keys_are_registered() {
-        let src = include_str!("pipeline.rs");
+        let src = include_str!("pipeline/finalize.rs");
         let region = src
             .split("missing_values=match")
             .nth(1)

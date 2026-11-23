@@ -80,7 +80,116 @@ impl<'a, T: NumericScalar> NumericValues<'a, T> {
     pub fn iter<'s>(
         &'s self,
     ) -> impl DoubleEndedIterator<Item = Option<&'s T>> + Clone + use<'a, 's, T> {
-        (0..self.len()).map(move |i| self.get_ref(i))
+        NumericValuesIter::new(self)
+    }
+}
+
+impl<T: NumericScalar> NumericValues<'_, T> {
+    /// Count nulls without scanning dense borrowed buffers.
+    pub fn null_count_fast(&self, check_non_finite: bool) -> usize {
+        match self {
+            Self::Borrowed(_) => 0,
+            Self::Owned(v) => v.iter().filter(|x| x.is_none()).count(),
+            Self::Chunked(chunks) => {
+                if !check_non_finite {
+                    chunks
+                        .iter()
+                        .map(|c| c.validity.map_or(0, |b| b.unset_bits()))
+                        .sum()
+                } else {
+                    self.iter().filter(|v| v.is_none()).count()
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct NumericValuesIter<'a, 's, T> {
+    vals: &'s NumericValues<'a, T>,
+    front: usize,
+    back: usize,
+    front_chunk: usize,
+    back_chunk: usize,
+}
+
+impl<'a, 's, T: NumericScalar> NumericValuesIter<'a, 's, T> {
+    fn new(vals: &'s NumericValues<'a, T>) -> Self {
+        let len = vals.len();
+        let back_chunk = match vals {
+            NumericValues::Chunked(chunks) => chunks.len().saturating_sub(1),
+            _ => 0,
+        };
+        Self {
+            vals,
+            front: 0,
+            back: len,
+            front_chunk: 0,
+            back_chunk,
+        }
+    }
+}
+
+impl<'a, 's, T: NumericScalar> Iterator for NumericValuesIter<'a, 's, T> {
+    type Item = Option<&'s T>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.front >= self.back {
+            return None;
+        }
+        let i = self.front;
+        self.front += 1;
+        Some(match self.vals {
+            NumericValues::Borrowed(v) => Some(&v[i]),
+            NumericValues::Owned(v) => v[i].as_ref(),
+            NumericValues::Chunked(chunks) => {
+                while self.front_chunk < chunks.len() && chunks[self.front_chunk].end <= i {
+                    self.front_chunk += 1;
+                }
+                let c = &chunks[self.front_chunk];
+                let local = i - (c.end - c.values.len());
+                if c.validity.is_some_and(|valid| !valid.get_bit(local)) {
+                    None
+                } else {
+                    c.values[local].canonical_ref()
+                }
+            }
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.back.saturating_sub(self.front);
+        (rem, Some(rem))
+    }
+}
+
+impl<'a, 's, T: NumericScalar> DoubleEndedIterator for NumericValuesIter<'a, 's, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.front >= self.back {
+            return None;
+        }
+        self.back -= 1;
+        let i = self.back;
+        Some(match self.vals {
+            NumericValues::Borrowed(v) => Some(&v[i]),
+            NumericValues::Owned(v) => v[i].as_ref(),
+            NumericValues::Chunked(chunks) => {
+                while self.back_chunk > 0
+                    && i < chunks[self.back_chunk].end - chunks[self.back_chunk].values.len()
+                {
+                    self.back_chunk -= 1;
+                }
+                let c = &chunks[self.back_chunk];
+                let local = i - (c.end - c.values.len());
+                if c.validity.is_some_and(|valid| !valid.get_bit(local)) {
+                    None
+                } else {
+                    c.values[local].canonical_ref()
+                }
+            }
+        })
     }
 }
 
@@ -185,9 +294,9 @@ impl<'a> TypedCol<'a> {
 
     pub fn null_count(&self) -> usize {
         match self {
-            TypedCol::I64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
-            TypedCol::U64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
-            TypedCol::F64 { vals } => vals.iter().filter(|v| v.is_none()).count(),
+            TypedCol::I64 { vals } => vals.null_count_fast(false),
+            TypedCol::U64 { vals } => vals.null_count_fast(false),
+            TypedCol::F64 { vals } => vals.null_count_fast(true),
             TypedCol::Decimal { vals, .. } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::Str { vals } => vals.iter().filter(|v| v.is_none()).count(),
             TypedCol::StrOwned { vals } => vals.iter().filter(|v| v.is_none()).count(),
@@ -403,7 +512,9 @@ pub fn two_valued_flag_states(table: &TypedTable, col: usize) -> Option<Vec<Opti
     }
 }
 
-/// The extracted table. Borrows string data from the source DataFrame.
+/// The extracted table. Borrows string and dense numeric data from the
+/// source DataFrame and lazily caches its content-derived [`crate::RowKeys`]
+/// so sampled passes share one computation across the run.
 #[derive(Debug)]
 pub struct TypedTable<'a> {
     pub n: usize,
@@ -411,6 +522,26 @@ pub struct TypedTable<'a> {
     /// Friendly dtype names for reporting: int64, float64, string, ...
     pub dtypes: Vec<String>,
     pub cols: Vec<TypedCol<'a>>,
+    #[doc(hidden)]
+    pub row_keys_cache: std::sync::OnceLock<crate::RowKeys>,
+}
+
+impl<'a> TypedTable<'a> {
+    pub fn new(n: usize, names: Vec<String>, dtypes: Vec<String>, cols: Vec<TypedCol<'a>>) -> Self {
+        Self {
+            n,
+            names,
+            dtypes,
+            cols,
+            row_keys_cache: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Content-derived row keys for this table, computed once and cached.
+    pub fn row_keys(&self) -> &crate::RowKeys {
+        self.row_keys_cache
+            .get_or_init(|| crate::RowKeys::for_table(self))
+    }
 }
 
 /// Friendly, stable dtype names for the report.
@@ -454,27 +585,29 @@ fn norm_f64(v: f64) -> Option<f64> {
 
 /// Extract all columns of a DataFrame into `TypedTable`.
 pub fn extract(df: &DataFrame) -> TypedTable<'_> {
+    use rayon::prelude::*;
+
     let n = df.height();
-    let mut names = Vec::with_capacity(df.width());
-    let mut dtypes = Vec::with_capacity(df.width());
-    let mut cols = Vec::with_capacity(df.width());
+    let raw_cols = df.columns();
+    let width = raw_cols.len();
+    let mut names = Vec::with_capacity(width);
+    let mut dtypes = Vec::with_capacity(width);
+    let mut series_refs = Vec::with_capacity(width);
 
-    for col in df.columns() {
+    for col in raw_cols {
         let s = col.as_materialized_series();
-        let name = s.name().to_string();
-        let dtype = dtype_name(s.dtype());
-        let tc = extract_series(s);
-        names.push(name);
-        dtypes.push(dtype);
-        cols.push(tc);
+        names.push(s.name().to_string());
+        dtypes.push(dtype_name(s.dtype()));
+        series_refs.push(s);
     }
 
-    TypedTable {
-        n,
-        names,
-        dtypes,
-        cols,
-    }
+    let cols: Vec<TypedCol<'_>> = if width >= 4 && n >= 4_096 {
+        series_refs.par_iter().map(|s| extract_series(s)).collect()
+    } else {
+        series_refs.iter().map(|s| extract_series(s)).collect()
+    };
+
+    TypedTable::new(n, names, dtypes, cols)
 }
 
 /// Extract a single Series into a TypedCol. Categorical/Enum columns are
@@ -557,34 +690,71 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
     }
     match s.dtype() {
         DataType::Boolean => {
-            let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::Boolean(b) => Some(b),
-                    AnyValue::Null => None,
-                    _ => None,
-                });
+            if let Ok(ca) = s.bool() {
+                let mut vals = Vec::with_capacity(s.len());
+                for arr in ca.downcast_iter() {
+                    vals.extend(arr.iter());
+                }
+                TypedCol::Bool { vals }
+            } else {
+                TypedCol::Bool {
+                    vals: vec![None; s.len()],
+                }
             }
-            TypedCol::Bool { vals }
         }
-        DataType::Int8
-        | DataType::Int16
-        | DataType::Int32
-        | DataType::Int64
-        | DataType::UInt8
-        | DataType::UInt16
-        | DataType::UInt32 => {
+        DataType::Int8 => {
+            let ca = s.i8().expect("int8 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::Int16 => {
+            let ca = s.i16().expect("int16 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::Int32 => {
+            let ca = s.i32().expect("int32 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::UInt8 => {
+            let ca = s.u8().expect("uint8 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::UInt16 => {
+            let ca = s.u16().expect("uint16 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::UInt32 => {
+            let ca = s.u32().expect("uint32 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.map(|x| *x as i64)));
+            }
+            TypedCol::I64 { vals: vals.into() }
+        }
+        DataType::Int64 => {
             let mut vals = Vec::with_capacity(s.len());
             for av in s.iter() {
                 vals.push(match av {
-                    AnyValue::Int8(v) => Some(v as i64),
-                    AnyValue::Int16(v) => Some(v as i64),
-                    AnyValue::Int32(v) => Some(v as i64),
                     AnyValue::Int64(v) => Some(v),
-                    AnyValue::UInt8(v) => Some(v as i64),
-                    AnyValue::UInt16(v) => Some(v as i64),
-                    AnyValue::UInt32(v) => Some(v as i64),
-                    AnyValue::Null => None,
                     _ => None,
                 });
             }
@@ -600,26 +770,39 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
                 .collect::<Vec<_>>()
                 .into(),
         },
-        DataType::Float32 | DataType::Float64 => {
+        DataType::Float32 => {
+            let ca = s.f32().expect("float32 dtype");
+            let mut vals = Vec::with_capacity(s.len());
+            for arr in ca.downcast_iter() {
+                vals.extend(arr.iter().map(|v| v.and_then(|x| norm_f64(*x as f64))));
+            }
+            TypedCol::F64 { vals: vals.into() }
+        }
+        DataType::Float64 => {
             let mut vals = Vec::with_capacity(s.len());
             for av in s.iter() {
                 vals.push(match av {
-                    AnyValue::Float32(v) => norm_f64(v as f64),
                     AnyValue::Float64(v) => norm_f64(v),
-                    AnyValue::Null => None,
                     _ => None,
                 });
             }
             TypedCol::F64 { vals: vals.into() }
         }
         DataType::Decimal(_, scale) => {
-            let vals = s
-                .iter()
-                .map(|av| match av {
-                    AnyValue::Decimal(v, _, _) => Some(v),
-                    _ => None,
-                })
-                .collect();
+            let vals = if let Ok(ca) = s.decimal() {
+                let mut out = Vec::with_capacity(s.len());
+                for arr in ca.physical().downcast_iter() {
+                    out.extend(arr.iter().map(|v| v.copied()));
+                }
+                out
+            } else {
+                s.iter()
+                    .map(|av| match av {
+                        AnyValue::Decimal(v, _, _) => Some(v),
+                        _ => None,
+                    })
+                    .collect()
+            };
             TypedCol::Decimal {
                 vals,
                 scale: *scale,
@@ -636,23 +819,36 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
             // as with the u64 -> f64 projection.
             let per_second = crate::dateutil::ticks_per_second(*unit) as f64;
             let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::Duration(v, _) => norm_f64(v as f64 / per_second),
-                    AnyValue::Null => None,
-                    _ => None,
-                });
+            if let Ok(ca) = s.duration() {
+                for arr in ca.physical().downcast_iter() {
+                    vals.extend(
+                        arr.iter()
+                            .map(|v| v.and_then(|x| norm_f64(*x as f64 / per_second))),
+                    );
+                }
+            } else {
+                for av in s.iter() {
+                    vals.push(match av {
+                        AnyValue::Duration(v, _) => norm_f64(v as f64 / per_second),
+                        _ => None,
+                    });
+                }
             }
             TypedCol::F64 { vals: vals.into() }
         }
         DataType::String => {
             let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::String(v) => Some(v),
-                    AnyValue::Null => None,
-                    _ => None,
-                });
+            if let Ok(ca) = s.str() {
+                for arr in ca.downcast_iter() {
+                    vals.extend(arr.iter());
+                }
+            } else {
+                for av in s.iter() {
+                    vals.push(match av {
+                        AnyValue::String(v) => Some(v),
+                        _ => None,
+                    });
+                }
             }
             TypedCol::Str { vals }
         }
@@ -663,34 +859,51 @@ pub fn extract_series(s: &Series) -> TypedCol<'_> {
                 Series::full_null(s.name().clone(), s.len(), &DataType::String)
             });
             let mut vals = Vec::with_capacity(casted.len());
-            for av in casted.iter() {
-                vals.push(match av {
-                    AnyValue::String(v) => Some(v.to_string()),
-                    AnyValue::Null => None,
-                    _ => None,
-                });
+            if let Ok(ca) = casted.str() {
+                for arr in ca.downcast_iter() {
+                    vals.extend(arr.iter().map(|v| v.map(str::to_string)));
+                }
+            } else {
+                for av in casted.iter() {
+                    vals.push(match av {
+                        AnyValue::String(v) => Some(v.to_string()),
+                        _ => None,
+                    });
+                }
             }
             TypedCol::StrOwned { vals }
         }
         DataType::Date => {
             let mut vals = Vec::with_capacity(s.len());
-            for av in s.iter() {
-                vals.push(match av {
-                    AnyValue::Date(d) => Some(d),
-                    AnyValue::Null => None,
-                    _ => None,
-                });
+            if let Ok(ca) = s.date() {
+                for arr in ca.physical().downcast_iter() {
+                    vals.extend(arr.iter().map(|v| v.copied()));
+                }
+            } else {
+                for av in s.iter() {
+                    vals.push(match av {
+                        AnyValue::Date(d) => Some(d),
+                        _ => None,
+                    });
+                }
             }
             TypedCol::Date { vals }
         }
         DataType::Datetime(unit, _) => {
-            let vals = s
-                .iter()
-                .map(|v| match v {
-                    AnyValue::Datetime(v, _, _) => Some(v),
-                    _ => None,
-                })
-                .collect();
+            let vals = if let Ok(ca) = s.datetime() {
+                let mut out = Vec::with_capacity(s.len());
+                for arr in ca.physical().downcast_iter() {
+                    out.extend(arr.iter().map(|v| v.copied()));
+                }
+                out
+            } else {
+                s.iter()
+                    .map(|v| match v {
+                        AnyValue::Datetime(v, _, _) => Some(v),
+                        _ => None,
+                    })
+                    .collect()
+            };
             TypedCol::Datetime { vals, unit: *unit }
         }
         DataType::Null => TypedCol::Null { n: s.len() },

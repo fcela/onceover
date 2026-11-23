@@ -86,6 +86,30 @@ pub struct OutcomeDecl {
     /// declared recorded-after columns, the axis): the outcome
     /// screen does not organise the outcome by them.
     pub excluded: Vec<usize>,
+    /// True when the frame model or caller role override marks a
+    /// discrete integer target as categorical (`flag` or declared
+    /// `dimension`), so the outcome account and contrasts use level
+    /// shares / event rates instead of numeric medians.
+    pub target_is_categorical: bool,
+}
+
+/// Whether `tci` should be treated as a categorical outcome rather
+/// than a continuous numeric measure: non-numeric columns always are;
+/// integer columns are when explicitly marked categorical via
+/// `decl_categorical` (role `flag` or declared `dimension`) or when
+/// they carry exactly two distinct values (a 0/1 binary flag, matching
+/// `column_profile`, `leakage`, and `model_failures`).
+fn is_categorical_target(table: &TypedTable, tci: usize, decl_categorical: bool) -> bool {
+    if !table.cols[tci].is_numeric() {
+        return true;
+    }
+    if !matches!(table.cols[tci], TypedCol::I64 { .. } | TypedCol::U64 { .. }) {
+        return false;
+    }
+    match crate::levels::code_levels(table, tci) {
+        Some((_, labels)) => decl_categorical || labels.len() == 2,
+        None => false,
+    }
 }
 
 /// Render a declared event value as the level label the profiler
@@ -103,13 +127,23 @@ pub fn event_label_of(value: &Value) -> Option<String> {
 
 /// Resolve a declared event against the target column: the
 /// rendered label, when the target is a codable categorical
-/// column and the rendered value names one of its levels. The
+/// column (including a 0/1 integer flag or a role-declared integer
+/// dimension) and the rendered value names one of its levels. The
 /// pipeline checks the declaration once through here and states
 /// the result in the declarations coverage entry; the passes
 /// consume the resolved label.
 pub fn target_event_label(table: &TypedTable, target_name: &str, event: &Value) -> Option<String> {
+    target_event_label_with_role(table, target_name, event, false)
+}
+
+pub fn target_event_label_with_role(
+    table: &TypedTable,
+    target_name: &str,
+    event: &Value,
+    decl_categorical: bool,
+) -> Option<String> {
     let tci = table.names.iter().position(|n| n == target_name)?;
-    if table.cols[tci].is_numeric() {
+    if !is_categorical_target(table, tci, decl_categorical) {
         return None;
     }
     let label = event_label_of(event)?;
@@ -222,7 +256,7 @@ pub fn outcome_account(
         );
     };
     let col = &table.cols[tci];
-    if col.is_numeric() {
+    if !is_categorical_target(table, tci, decl.target_is_categorical) {
         let mut values: Vec<f64> = (0..col.len())
             .filter_map(|r| col.numeric_at(r))
             .filter(|v| v.is_finite())
@@ -580,7 +614,6 @@ pub fn outcome_contrasts(
             format!("designated target '{target_name}' is not a column of the frame"),
         );
     };
-    let target_col = &table.cols[tci];
     // Prepare the groupings once: every codable column that is
     // neither the target nor an excluded column.
     let mut groupings: Vec<(Vec<Option<u32>>, Grouping)> = Vec::new();
@@ -663,7 +696,7 @@ pub fn outcome_contrasts(
             ));
         }
     }
-    if target_col.is_numeric() {
+    if !is_categorical_target(table, tci, decl.target_is_categorical) {
         numeric_contrasts(table, target_name, decl, &groupings)
     } else {
         categorical_contrasts(table, target_name, tci, decl, &groupings)

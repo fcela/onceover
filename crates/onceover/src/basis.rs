@@ -192,6 +192,16 @@ fn calendar_keys(ticks: &[Option<i64>]) -> Vec<(&'static str, Vec<Option<i64>>)>
             civil(&|day, _, _, _| dateutil::weekday(day) as i64),
         ),
         ("week", civil(&|day, _, _, _| day.div_euclid(7))),
+        // Calendar weeks scoped to year (Sunday-start and Monday-start) so
+        // week-of-year columns (1..53) are recognized under either convention.
+        (
+            "calendar week",
+            civil(&|day, y, _, _| y * 1000 + (day + 4).div_euclid(7)),
+        ),
+        (
+            "ISO calendar week",
+            civil(&|day, y, _, _| y * 1000 + (day + 3).div_euclid(7)),
+        ),
     ];
     let sub_day = ticks
         .iter()
@@ -249,17 +259,31 @@ pub fn axis_derived(
             break;
         }
         tested += 1;
-        // A measure the axis or a calendar key determines is a time
-        // pattern of the data, not a derivation: only non-measures
-        // are tested.
-        if axis_repeats && role.as_deref() != Some("measure") && key_determines(table, &ticks, i) {
+        // A measure the axis or a calendar key determines is normally a time
+        // pattern of the data, not a derivation. The one exception is a
+        // bounded-cardinality integer column (e.g., week-of-year 1..53,
+        // which exceeds the 50-value dimension cutoff) that is an exact
+        // function of a repeating calendar key (like calendar week).
+        if role.as_deref() == Some("measure") {
+            let calendar_int = facts[i].integral
+                && (20..=54).contains(&facts[i].distinct)
+                && matches!(facts[i].numeric_min, Some(lo) if (0.0..=2.0).contains(&lo))
+                && matches!(facts[i].numeric_max, Some(hi) if (20.0..=54.0).contains(&hi));
+            if calendar_int {
+                if let Some((name, _)) = keys.iter().find(|(_, k)| key_determines(table, k, i)) {
+                    out.push(Derived {
+                        col: i,
+                        evidence: format!("determined by the {name} of {axis_name}"),
+                    });
+                }
+            }
+            continue;
+        }
+        if axis_repeats && key_determines(table, &ticks, i) {
             out.push(Derived {
                 col: i,
                 evidence: format!("determined by {axis_name}: one value per {axis_name} value"),
             });
-            continue;
-        }
-        if role.as_deref() == Some("measure") {
             continue;
         }
         if let Some((name, _)) = keys.iter().find(|(_, k)| key_determines(table, k, i)) {

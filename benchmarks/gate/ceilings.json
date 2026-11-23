@@ -40,26 +40,26 @@
   {
    "metric": "permuted.false_full",
    "scope": "total",
-   "limit": 39,
-   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; seeded on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md), lowered by the derived-column basis (docs/benchmarks/2026-11-18-derived-basis.md) and the null bars (docs/benchmarks/2026-11-18-null-bars.md). Lower the limit as fixes merge; the target is 0."
+   "limit": 7,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; lowered from 39 to 7 by permutation-null calibrations in breaks, panels, surprises, and axisbreaks (docs/benchmarks/2026-11-22-architecture-performance-precision.md). Lower the limit as fixes merge; the target is 0."
   },
   {
    "metric": "permuted.false_4k",
    "scope": "total",
-   "limit": 22,
-   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; seeded on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md), lowered by the derived-column basis (docs/benchmarks/2026-11-18-derived-basis.md) and the null bars (docs/benchmarks/2026-11-18-null-bars.md). Lower the limit as fixes merge; the target is 0."
+   "limit": 4,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; lowered from 22 to 4 by permutation-null calibrations in breaks, panels, surprises, and axisbreaks (docs/benchmarks/2026-11-22-architecture-performance-precision.md). Lower the limit as fixes merge; the target is 0."
   },
   {
    "metric": "permuted.false_full_target",
    "scope": "total",
-   "limit": 17,
-   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; seeded on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md), lowered by the derived-column basis (docs/benchmarks/2026-11-18-derived-basis.md) and the null bars (docs/benchmarks/2026-11-18-null-bars.md). Lower the limit as fixes merge; the target is 0."
+   "limit": 1,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; lowered from 17 to 1 by permutation-null calibrations in breaks, panels, surprises, and axisbreaks (docs/benchmarks/2026-11-22-architecture-performance-precision.md). Lower the limit as fixes merge; the target is 0."
   },
   {
    "metric": "permuted.false_4k_target",
    "scope": "total",
-   "limit": 10,
-   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; seeded on main 3ea33b1 (docs/benchmarks/2026-11-18-precision-gate.md), lowered by the derived-column basis (docs/benchmarks/2026-11-18-derived-basis.md) and the null bars (docs/benchmarks/2026-11-18-null-bars.md). Lower the limit as fixes merge; the target is 0."
+   "limit": 1,
+   "reason": "Issue #374: statements about two or more columns on tables with every column shuffled independently, false by construction; lowered from 10 to 1 by permutation-null calibrations in breaks, panels, surprises, and axisbreaks (docs/benchmarks/2026-11-22-architecture-performance-precision.md). Lower the limit as fixes merge; the target is 0."
   }
  ]
 }

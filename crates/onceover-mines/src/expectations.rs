@@ -1302,6 +1302,7 @@ mod tests {
             names: names.iter().map(|s| s.to_string()).collect(),
             dtypes: vec!["int64".into(); names.len()],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 

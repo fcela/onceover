@@ -576,6 +576,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let input = ChangeforestInput {
             axis_name: "date".to_string(),

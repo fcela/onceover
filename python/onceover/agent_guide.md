@@ -1,90 +1,88 @@
 # Agent guide: profiling a table with onceover
 
-Ships in the package, version-matched;
-`onceover.capabilities()` is the machine-readable companion.
+Reviewed for onceover 0.1.8.
+`onceover.capabilities()` lists every detector, its purpose,
+requirements, and activation rules.
 
 ## 1. Hand over what you know before the call
 
-What you know decides what runs: declare it in the call.
+`target="<column>"` names the response and engages five passes:
+`outcome_account`, `outcome_contrasts`, `target_shapes`, `leakage`,
+`model_failures`. `event` names the positive target level.
+`entity` names the unit that can repeat across rows.
 
-**The outcome.** `target="<column>"` designates the response
-and engages five passes otherwise skipped: `outcome_account`
-(the outcome's distribution), `outcome_contrasts`
-(per-level event rates, or medians, against the pooled
-outcome; absences stated as nulls), `target_shapes`,
-`leakage`, `model_failures`. Unknown targets go to coverage.
+**Meaning.** `gloss` maps columns or levels to their meanings.
+`units` names the units, and `labels` changes display names.
+`recorded_after` lists columns recorded after the outcome for the
+leakage screen. `purpose` and `questions` describe the task.
+Coverage accounts for the declarations and identifies refusals.
 
-**Meaning and purpose.** These ride the frame account;
-`declarations` coverage states what was checked and what was
-carried unchecked. `gloss` ({column: text, or {level: text}}): a column's
-meaning. `units`
-({column: unit}): magnitudes, via the findings' `unit`
-field. `event`: the target level counting as the event —
-contrasts and nulls are stated against it, else in a weaker
-per-level form. `entity`: the panel entity column.
-`recorded_after` ([columns]): recorded after the outcome;
-leakage checks them first, as declared suspects; model
-screens exclude them as predictors. `purpose` and
-`questions` ([strings]): what the data is for — a finding
-answering a declared question (matched by the columns it
-names) is admitted ahead of an equal-score unmatched
-finding, and `questions` coverage counts the answers per
-question, including zero.
-
-**Structure.** `roles` overrides a column's semantic role;
-unusable roles are refused in `declarations` coverage.
-`labels`: display labels for prose; evidence keeps raw names.
-The `expectations` pass checks `order_by`, `no_gaps`, `cadence`
-(named or step count), `hierarchies` (finest first), and
-`dimensions`/`measures` exactly; refusals go to coverage.
-`time`, `ordered_axis`, and `level_order` ({column: [levels
-in order]}) are applied or refused in
-`declarations` coverage. `exclude_columns`, `contrast`
-(`{"column": name, "value": scalar}`; boolean needs no `value`)
-profiles one subset against the rest; `weights`
-([columns]): measure shares in hotspots and entity fingerprints.
+**Structure.** `roles` overrides semantic roles. The `expectations`
+pass checks `order_by`, `no_gaps`, `cadence`, `hierarchies` (finest
+first), and `dimensions`/`measures`. `time`, `ordered_axis`, and
+`level_order` select order. `exclude_columns` drops fields.
+`contrast` (column and value, or a boolean column) compares a
+subset with the rest. `weights` lists measures for hotspots and
+entity fingerprints.
 
 Hint keys: `time`, `ordered_axis`, `level_order`, `order_by`, `no_gaps`, `cadence`, `dimensions`, `measures`, `weights`, `roles`, `hierarchies`, `exclude_columns`, `labels`, `contrast`, `gloss`, `units`, `event`, `entity`, `recorded_after`, `purpose`, `questions`.
 
+**Peer hierarchies.** `infer_spec()` shows how the frame will be read.
+Review its `hierarchy_candidates`: multiple paths may hold. Choose
+paths relevant to the comparison, then pass them as hints. For
+example, when the observed path is host → program_session → program:
+
 ```python
-report = onceover.profile(df, target="is_canceled",
-    hints={"event": 1, "recorded_after": ["reservation_status"],
-           "questions": ["what drives cancellations?"]})
+spec = onceover.infer_spec(df, hints={"entity": "host"})
+print(spec["hierarchy_candidates"])
+report = onceover.profile(
+    df, spec=spec, detectors=["entity_fingerprints"],
+    hints={"hierarchies": [["host", "program_session", "program"]]},
+)
 ```
+
+Discovery alone leaves the profile unchanged. With accepted hints,
+fingerprints chooses the smallest supported pool and can use a
+broader ancestor. Read `peer_group` in the `misfits` or
+`entity_shifts` evidence and `population_shifts` for shared changes.
+See the [craft-kit case study](https://fcela.github.io/onceover/library-craft-kits)
+for a worked audit.
 
 ## 2. The call and the budgets
 
-`profile()` accepts a LazyFrame or a file path too, sampled
-above 200,000 rows unless `exact=True`; `source` states the basis.
+`profile(df)` accepts a Polars frame, LazyFrame, or file path.
+Lazy or file inputs above 200,000 rows are sampled unless
+`exact=True`; `source` states the basis. Edit a spec and pass it
+as `spec=...` to hold the interpretation.
 
 Budgets: `quick`, `standard`, `deep`.
 
-`quick`: summaries and integrity checks. `standard`
-(default): the default set, capped. `deep`: wider caps,
-deeper search. `deadline_seconds=` bounds the run. Bad
-budgets, detectors, or hint keys raise errors listing the
-valid values.
+`quick`: summaries and integrity checks. `standard` (default):
+the default set, capped. `deep`: wider search.
+`deadline_seconds=` bounds the run.
 
 ## 3. Reading the answer
 
-The digest, `report.to_digest()`, is a briefing in sections
-by reader question, one line per fact; `report.finding(id)`
-expands one.
-`report.coverage` records each pass as run, skipped, capped,
-or ineligible; empty findings with skipped or capped coverage
-mean the table was not fully examined, not clean data.
+Start with `report.to_brief(2_500)` (schema strip + `[f1]` handles)
+or `report.to_digest(4_000)`. Expand via `report.finding(id)`
+(`"f1"`, `"g1"`, or full id) or filter via
+`report.select(category=..., type=..., column=..., target=...)`.
+Findings carry `claim`, `subject`, `evidence[0]` (`metrics`, `basis`).
+`report.coverage` (dict by pass) states what ran, skipped, or capped;
+silence only speaks for work that ran.
 
-`report.select(category=..., type=..., column=..., target=...)`
-filters the findings. The `claim` is a statement with evidence
-attached: read its `metrics` payload and `basis` (`measured`,
-`estimated`, `inferred`) before quoting it. `interestingness`
-is the selection score that orders the report, not a
-probability. Verify before acting: `report.verify(df)`
-recounts the statements; `report.rows(id, df)` returns one
-statement's rows.
+`report.verify(df)` returns a DataFrame recounting checkable findings;
+`report.rows(id, df)` extracts supporting rows.
+`report.to_json(max_chars=..., compact=True)` gives compact JSON.
+`profile_many({...})` checks foreign keys across tables.
+`detectors=["partition_scagnostics"]` adds group shapes; standalone
+`partition_scagnostics(df)` returns a `dict`.
+`report.diff(other)` compares runs; `report.to_checks()` exports
+constraints; `report.to_html()` (`html` extra) renders HTML.
 
 ## 4. Detector selection
 
-The default set runs 31 of the 46 registered detectors;
-`detectors=[...]` restricts a run; `capabilities()` lists
-membership, trigger, and purpose per detector.
+The recommended set runs 31 of the 47 registered detectors.
+Pass `detectors=[...]` (or `onceover.ALL_DETECTORS`) to focus a
+wide table if `selection` caps findings. `entity_fingerprints`
+compares entity mixes by rows or weights along an axis.

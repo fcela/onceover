@@ -380,6 +380,7 @@ mod tests {
             dtypes: names.iter().map(|_| "test".to_string()).collect(),
             names: names.iter().map(|s| s.to_string()).collect(),
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 

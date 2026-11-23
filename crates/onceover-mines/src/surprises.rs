@@ -1176,7 +1176,11 @@ fn profile_categorical_surprises(
 
 struct TargetScan {
     global: Vec<Finding>,
-    subset: Vec<Finding>,
+    /// Candidate subset findings paired with their binomial log10
+    /// significance (testing whether the subset's bulk compression
+    /// is surprising against the column's global distribution).
+    subset: Vec<(Finding, f64)>,
+    subsets_tested: usize,
 }
 
 /// Whole-column and subset extremes of one numeric column, or None when the
@@ -1222,6 +1226,7 @@ fn scan_target(
     }
     // Subset pass: one categorical condition at a time.
     let mut subset = Vec::new();
+    let mut subsets_tested = 0usize;
     let mut tried = 0usize;
     for &(c, coded) in conditions {
         if c == t || tried >= cfg.max_conditions {
@@ -1244,6 +1249,7 @@ fn scan_target(
             if lvals.len() < cfg.min_subset_rows {
                 continue;
             }
+            subsets_tested += 2;
             for high in [true, false] {
                 let ex = peel_presorted(lvals, high, cfg.min_subset_rows, cfg);
                 // The statement describes the subset's whole isolated
@@ -1255,22 +1261,42 @@ fn scan_target(
                     .iter()
                     .all(|e| e.value >= global_lo && e.value <= global_hi);
                 if adds_a_row && all_ordinary {
-                    for e in &ex {
-                        reported_rows.insert(e.row);
-                    }
-                    subset.push(make_finding(
-                        tname,
-                        Some((table.names[c].as_str(), lvl.as_str())),
-                        lvals.len(),
-                        &ex,
-                        high,
-                        cfg,
+                    // Calibration against the global column: how likely is
+                    // a random draw of `lvals.len()` rows from the column
+                    // to place at least `n_bulk` values on the bulk side of
+                    // `bulk_edge`? An ordinary value in a small random slice
+                    // fails this check; a genuine conditional surprise (e.g.
+                    // an age-75 pregnant patient where globally half of
+                    // patients are > 42) clears it by orders of magnitude.
+                    let bulk_edge = ex[0].bulk_edge;
+                    let global_bulk = if high {
+                        vals.partition_point(|&(v, _)| v <= bulk_edge)
+                    } else {
+                        vals.len() - vals.partition_point(|&(v, _)| v < bulk_edge)
+                    };
+                    let p_bulk = global_bulk as f64 / vals.len() as f64;
+                    let n_bulk = lvals.len().saturating_sub(ex.len());
+                    let log10_p = log10_binomial_tail(lvals.len(), n_bulk, p_bulk);
+                    subset.push((
+                        make_finding(
+                            tname,
+                            Some((table.names[c].as_str(), lvl.as_str())),
+                            lvals.len(),
+                            &ex,
+                            high,
+                            cfg,
+                        ),
+                        log10_p,
                     ));
                 }
             }
         }
     }
-    Some(TargetScan { global, subset })
+    Some(TargetScan {
+        global,
+        subset,
+        subsets_tested,
+    })
 }
 
 /// Findings, coverage detail and the two reasons a pass can be
@@ -1325,6 +1351,12 @@ pub fn profile_surprises(
         .map(|&t| (!cfg.deadline.exceeded()).then(|| scan_target(table, t, &conditions, cfg)))
         .collect();
     let numeric_not_started = scans.iter().filter(|s| s.is_none()).count();
+    let total_subsets_tested: usize = scans
+        .iter()
+        .filter_map(|s| s.as_ref().and_then(|o| o.as_ref()))
+        .map(|s| s.subsets_tested)
+        .sum();
+    let subset_bar = (CONTEXT_ALPHA / total_subsets_tested.max(1) as f64).log10();
     let mut global_findings: Vec<Finding> = Vec::new();
     let mut subset_findings: Vec<Finding> = Vec::new();
     let mut scanned = 0usize;
@@ -1336,7 +1368,28 @@ pub fn profile_surprises(
         let share = (remaining / (numeric.len() - at)).max(2);
         global_findings.extend(scan.global);
         if spent < cfg.max_findings {
-            subset_findings.extend(scan.subset.into_iter().take(share));
+            let mut seen_rows: std::collections::BTreeSet<u64> = Default::default();
+            let mut kept = 0usize;
+            for (f, log10_p) in scan.subset {
+                if kept >= share {
+                    break;
+                }
+                if log10_p > subset_bar {
+                    continue;
+                }
+                let rows: Vec<u64> = f.evidence[0]
+                    .metrics
+                    .get("extreme_rows")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                    .unwrap_or_default();
+                if !rows.is_empty() && rows.iter().all(|r| seen_rows.contains(r)) {
+                    continue;
+                }
+                seen_rows.extend(rows);
+                subset_findings.push(f);
+                kept += 1;
+            }
         }
     }
     global_findings.sort_by(|a, b| b.interestingness.total_cmp(&a.interestingness));
@@ -1629,6 +1682,7 @@ mod tests {
             names: names.iter().map(|s| s.to_string()).collect(),
             dtypes: vec!["string".into(); names.len()],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 

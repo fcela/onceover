@@ -748,6 +748,57 @@ const MAX_FRACTIONAL_DIMENSION_LEVELS: usize = 12;
 /// this many times the row count.
 const MAX_ISSUED_ID_SPREAD: f64 = 20.0;
 
+/// True when a string column holds short, whitespace-free structured
+/// codes (e.g., `E001`, `CUST-0042`, `R000123`, UUIDs, tickers) rather
+/// than free-form prose or multi-word labels. Sampled with a bounded
+/// stride so wide/long frames stay fast.
+fn looks_like_structured_code(col: &TypedCol) -> bool {
+    let n = col.len();
+    if n < MIN_SUPPORT {
+        return false;
+    }
+    let stride = (n / 2048).max(1);
+    let mut checked = 0usize;
+    let mut with_digit = 0usize;
+    let mut min_len = usize::MAX;
+    let mut max_len = 0usize;
+    let mut all_code_chars = true;
+    let mut r = 0usize;
+    while r < n {
+        if let Some(s) = col.str_at(r) {
+            checked += 1;
+            let bytes = s.as_bytes();
+            if bytes.is_empty() || bytes.len() > 36 {
+                return false;
+            }
+            if bytes
+                .iter()
+                .any(|b| b.is_ascii_whitespace() || *b < 0x21 || *b > 0x7e)
+            {
+                return false;
+            }
+            if bytes.iter().any(|b| b.is_ascii_digit()) {
+                with_digit += 1;
+            }
+            if !bytes
+                .iter()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.'))
+            {
+                all_code_chars = false;
+            }
+            min_len = min_len.min(bytes.len());
+            max_len = max_len.max(bytes.len());
+        }
+        r += stride;
+    }
+    if checked < MIN_SUPPORT {
+        return false;
+    }
+    let digit_share = with_digit as f64 / checked as f64;
+    (digit_share >= 0.95 && all_code_chars)
+        || (all_code_chars && max_len <= 12 && max_len.saturating_sub(min_len) <= 2)
+}
+
 /// True when the name's last word marks a key: `customer_id`, `orderId`,
 /// `sku`. Splits on `_`, `-`, spaces and lower-to-upper case changes.
 fn key_like_name(name: &str) -> bool {
@@ -963,6 +1014,29 @@ pub fn analyze_frame(
                 "whole-number column named like a key ({} distinct values)",
                 fact.distinct
             );
+            continue;
+        }
+        // (h2) identifier: a high-cardinality string column of
+        // structured codes (e.g. `E001`, `ORD-1234`) or named like a
+        // key. Without this rule, entity columns above the card's
+        // categorical distinctness cap fall into free text, blinding
+        // the panel passes to the table's entity axis.
+        if col.is_string()
+            && fact.distinct >= MIN_SUPPORT
+            && (key_like_name(name) || looks_like_structured_code(col))
+        {
+            roles[i] = Some("identifier".into());
+            evidence[i] = if key_like_name(name) {
+                format!(
+                    "string column named like a key ({} distinct values)",
+                    fact.distinct
+                )
+            } else {
+                format!(
+                    "structured code column ({} distinct values in {} non-null rows)",
+                    fact.distinct, n_nonnull
+                )
+            };
             continue;
         }
         // (i2) a numeric column named as a weight is not a

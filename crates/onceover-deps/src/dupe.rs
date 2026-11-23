@@ -95,6 +95,8 @@ struct PairStats {
     n_used: usize,
     levels_a: usize,
     levels_b: usize,
+    top_a: usize,
+    top_b: usize,
     pairs: usize,
     violations_ab: usize,
     violations_ba: usize,
@@ -139,6 +141,8 @@ fn stats_from_joint<K: Copy + Eq + std::hash::Hash>(joint: &FxHashMap<(K, K), u6
         n_used,
         levels_a: totals_a.len(),
         levels_b: totals_b.len(),
+        top_a: totals_a.values().copied().max().unwrap_or(0) as usize,
+        top_b: totals_b.values().copied().max().unwrap_or(0) as usize,
         pairs: joint.len(),
         ..PairStats::default()
     };
@@ -299,11 +303,21 @@ pub fn profile_duplicate_encodings_stopped(
             // onto anything, and anything maps onto a near-constant
             // column (see `fd::MIN_RFI`). A duplicate encoding needs
             // it in both directions, a rollup from finer to coarser.
-            let (fine, coarse) = if stats.levels_a >= stats.levels_b {
-                (eligible[x], eligible[y])
+            let (fine, coarse, coarse_top) = if stats.levels_a >= stats.levels_b {
+                (eligible[x], eligible[y], stats.top_b)
             } else {
-                (eligible[y], eligible[x])
+                (eligible[y], eligible[x], stats.top_a)
             };
+            // Reject rollups into near-constant columns (e.g. 99.9% one level
+            // or fewer than 5 non-modal rows): any high-cardinality column
+            // trivially appears to "roll up" onto a near-constant target.
+            if matches!(form, Form::Rollup)
+                && (stats.n_used.saturating_sub(coarse_top) < 5
+                    || (coarse_top as f64 / stats.n_used.max(1) as f64) >= 0.99)
+            {
+                n_chance += 1;
+                continue;
+            }
             let rfi_fc = crate::fd::fd_stats(table, &rows, &[fine], coarse).rfi;
             let reliable = match form {
                 Form::Rollup => rfi_fc >= crate::fd::MIN_RFI,

@@ -7,8 +7,29 @@ sync when the public surface changes.
 ## What this project is
 
 onceover profiles Polars DataFrames and reports ranked,
-evidence-backed findings. Rust workspace (`crates/`) with Python
-bindings (`python/onceover/`, PyO3/maturin).
+evidence-backed findings. All core computation lives in the Rust
+workspace (`crates/`) so Python (`python/onceover/`, PyO3/maturin)
+and any future host-language bindings (e.g. R) remain thin wrappers
+over one implementation:
+
+- `crates/onceover-core`: typed column extraction, streaming cached
+  `RowKeys`, column cards, exact duplicate rows, elementary stats.
+- `crates/onceover-deps`: keys, FDs, duplicate encodings, order
+  constraints, boundary mass, sentinels, digits, content, pivot.
+- `crates/onceover-mines`: predictability screen (GBM), dependence,
+  level contrasts, breaks, ordered-axis battery, panels, surprises,
+  hotspots, regimes, views, slices, partition scagnostics.
+- `crates/onceover-report`: report schema (`0.8`), ledger selection
+  and family grouping, Markdown rendering, briefing digest & compact
+  brief (`digest.rs`), compact & size-budgeted JSON (`compact.rs`),
+  and finding lookup/select/diff (`diff.rs`).
+- `crates/onceover`: modular pipeline (`src/pipeline/`), frame model,
+  panel coverage, multi-table profiling (`many.rs`), and frame spec /
+  hierarchy discovery (`spec.rs`).
+- `crates/onceover-py` & `python/onceover/`: thin PyO3 binding layer,
+  Polars `LazyFrame`/file intake (`_source.py`), Polars expression /
+  Great Expectations checks (`_checks.py`), optional Altair HTML
+  rendering (`_html.py`), and CLI (`_cli.py`).
 
 ## Build and test
 
@@ -30,6 +51,10 @@ bindings (`python/onceover/`, PyO3/maturin).
 
 ## Benchmarks
 
+Register every shipped profiling detector so callers can select it by
+ID. Shared resources and subchecks belong to their parent detector.
+Recommendation is a separate, evidence-based decision.
+
 - Corpus: `benchmarks/corpus/` — run
   `python benchmarks/corpus/run_benchmarks.py` before and after
   detector changes. Registry expectations are the contract; a
@@ -37,11 +62,16 @@ bindings (`python/onceover/`, PyO3/maturin).
   the expectation, do not delete it.
 - Gate: `benchmarks/gate/` (README there). `compare.py` must pass
   against the base build, including the absolute limits in
-  `benchmarks/gate/ceilings.json`. While any ceiling is above zero,
-  no new detectors, finding types, hint keys or report fields are
-  added: work goes into removing false and restated findings. A
-  change that brings a metric below its ceiling lowers the ceiling
-  in the same pull request.
+  `benchmarks/gate/ceilings.json` for changes to the recommended set.
+  A new on-request detector can enter the registry with documented
+  evidence, targeted positive and negative controls, and coverage for
+  its bounds. Choose controls for the claim it makes. Its registration
+  must preserve the recommended findings.
+  To promote a detector, benchmark the proposed recommended set against
+  the current one, including false findings on shuffled data, useful
+  findings retained in short digests, and runtime. Record what the new
+  detector adds on real or planted data. A change that brings a metric
+  below its ceiling lowers the ceiling in the same pull request.
 - Every benchmark result gets a write-up in `docs/benchmarks/`
   (protocol, numbers, provenance). If it is not in the docs, it
   does not exist.

@@ -26,6 +26,7 @@
 
 use std::collections::BinaryHeap;
 
+use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
 use crate::typed::{TypedCol, TypedTable};
@@ -43,18 +44,150 @@ pub struct RowKeys {
 
 impl RowKeys {
     /// Compute one key per row from its canonical values in every column.
+    ///
+    /// Processes columns in parallel with bounded memory: all-distinct
+    /// columns are folded directly into a running per-row minimum (used
+    /// only if every column is all-distinct) and immediately freed, while
+    /// included columns store compact `Const`/`u8`/`u16`/`u32` ranks.
+    /// Produces bit-for-bit identical keys to the canonical multiset
+    /// specification.
     pub fn for_table(table: &TypedTable) -> Self {
-        let plan = ColumnPlan::for_table(table);
+        let n = table.n;
+        if n == 0 {
+            return Self { keys: Vec::new() };
+        }
+        let n_cols = table.cols.len();
+        if n_cols == 0 {
+            let empty_base = content_hash_fields(&[0]);
+            let keys = (0..n as u64)
+                .map(|ord| key_with_ordinal(empty_base, ord))
+                .collect();
+            return Self { keys };
+        }
+
+        // Process columns in parallel; fold all-distinct columns into a
+        // per-worker running minimum so we never retain O(P * N) ranks for
+        // unique columns (e.g. 197 noise columns on a 2M-row table).
+        struct Acc {
+            included: Vec<CompactColumn>,
+            min_all_distinct: Vec<u64>,
+            has_all_distinct: bool,
+        }
+
+        let acc = table
+            .cols
+            .par_iter()
+            .fold(
+                || Acc {
+                    included: Vec::new(),
+                    min_all_distinct: Vec::new(),
+                    has_all_distinct: false,
+                },
+                |mut acc, col| {
+                    match build_column_plan(col, n) {
+                        ColPlanOutcome::Included(c) => {
+                            acc.included.push(c);
+                            // Once any column is included, the all-distinct
+                            // fallback will never be used; release its buffer.
+                            if !acc.min_all_distinct.is_empty() {
+                                acc.min_all_distinct = Vec::new();
+                            }
+                        }
+                        ColPlanOutcome::AllDistinct { sig, row_of_rank } => {
+                            if acc.included.is_empty() {
+                                if acc.min_all_distinct.is_empty() {
+                                    acc.min_all_distinct = vec![u64::MAX; n];
+                                }
+                                for (rank, &row) in row_of_rank.iter().enumerate() {
+                                    let f = column_field(sig, rank as u64);
+                                    let slot = &mut acc.min_all_distinct[row as usize];
+                                    if f < *slot {
+                                        *slot = f;
+                                    }
+                                }
+                                acc.has_all_distinct = true;
+                            }
+                        }
+                    }
+                    acc
+                },
+            )
+            .reduce(
+                || Acc {
+                    included: Vec::new(),
+                    min_all_distinct: Vec::new(),
+                    has_all_distinct: false,
+                },
+                |mut a, b| {
+                    a.included.extend(b.included);
+                    if !a.included.is_empty() {
+                        a.min_all_distinct = Vec::new();
+                        a.has_all_distinct = false;
+                    } else if b.has_all_distinct {
+                        if !a.has_all_distinct {
+                            a.min_all_distinct = b.min_all_distinct;
+                            a.has_all_distinct = true;
+                        } else {
+                            for (dst, src) in
+                                a.min_all_distinct.iter_mut().zip(b.min_all_distinct.iter())
+                            {
+                                if *src < *dst {
+                                    *dst = *src;
+                                }
+                            }
+                        }
+                    }
+                    a
+                },
+            );
+
+        // Compute base RowKey per row in parallel, reusing one scratch
+        // `fields` vector per chunk with zero per-row heap allocations.
+        let bases: Vec<RowKey> = if !acc.included.is_empty() {
+            let included = &acc.included;
+            let k = included.len();
+            let mut bases = vec![0u128; n];
+            let chunk = (n / (rayon::current_num_threads().max(1) * 4)).clamp(1024, 16_384);
+            bases
+                .par_chunks_mut(chunk)
+                .enumerate()
+                .for_each(|(ci, out_chunk)| {
+                    let start = ci * chunk;
+                    let mut fields = Vec::with_capacity(k);
+                    for (offset, slot) in out_chunk.iter_mut().enumerate() {
+                        let row = start + offset;
+                        fields.clear();
+                        for col in included {
+                            fields.push(col.field_at(row));
+                        }
+                        fields.sort_unstable();
+                        *slot = content_hash_fields(&fields);
+                    }
+                });
+            bases
+        } else {
+            let mins = &acc.min_all_distinct;
+            let has = acc.has_all_distinct;
+            (0..n)
+                .into_par_iter()
+                .map(|row| {
+                    let f = if has { mins[row] } else { 0 };
+                    content_hash_fields(&[f])
+                })
+                .collect()
+        };
+
+        // Release column rank buffers before allocating the duplicate-ordinal map.
+        drop(acc);
+
         let mut counts: FxHashMap<RowKey, u64> = FxHashMap::default();
-        let keys = (0..table.n)
-            .map(|row| {
-                let base = content_hash(&canonical_row(&plan, row));
-                let ordinal = counts.entry(base).or_insert(0);
-                let key = key_with_ordinal(base, *ordinal);
-                *ordinal += 1;
-                key
-            })
-            .collect();
+        counts.reserve(n.min(65_536));
+        let mut keys = Vec::with_capacity(n);
+        for base in bases {
+            let ordinal = counts.entry(base).or_insert(0);
+            keys.push(key_with_ordinal(base, *ordinal));
+            *ordinal += 1;
+        }
         Self { keys }
     }
 
@@ -131,14 +264,15 @@ impl RowKeys {
     }
 }
 
-/// Keys for a whole table.
+/// Keys for a whole table (cached on `table`).
 pub fn row_keys(table: &TypedTable) -> RowKeys {
-    RowKeys::for_table(table)
+    table.row_keys().clone()
 }
 
 /// Content-keyed sample of original row indices, down to `cap`.
+/// Uses the `RowKeys` cached on `table` without cloning.
 pub fn sample_rows(table: &TypedTable, cap: usize) -> Vec<u32> {
-    row_keys(table).sample(cap)
+    table.row_keys().sample(cap)
 }
 
 /// The former positional sampler, retained for passes that read the row
@@ -162,27 +296,11 @@ pub fn positional_rows(n: usize, cap: usize) -> Vec<u32> {
         .collect()
 }
 
-/// A value that can be ranked within one column. Floats use a total-order
-/// bit pattern so `f64` remains `Ord`; the variant itself is never mixed
-/// across columns, only nulls and the column's own value kind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum RankValue<'a> {
-    Null,
-    Opaque,
-    Bool(bool),
-    I64(i64),
-    U64(u64),
-    Decimal(i128),
-    Float(OrderedF64),
-    Date(i32),
-    Datetime(i64),
-    Str(&'a str),
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OrderedF64(u64);
 
 impl OrderedF64 {
+    #[inline]
     fn new(value: f64) -> Self {
         let value = if value == 0.0 { 0.0 } else { value };
         let bits = value.to_bits();
@@ -196,127 +314,301 @@ impl OrderedF64 {
     }
 }
 
-fn rank_value<'a>(col: &'a TypedCol<'a>, row: usize) -> RankValue<'a> {
-    match col {
-        TypedCol::I64 { vals } => vals.at(row).map(RankValue::I64).unwrap_or(RankValue::Null),
-        TypedCol::U64 { vals } => vals.at(row).map(RankValue::U64).unwrap_or(RankValue::Null),
-        TypedCol::F64 { vals } => vals
-            .at(row)
-            .filter(|v| v.is_finite())
-            .map(|v| RankValue::Float(OrderedF64::new(v)))
-            .unwrap_or(RankValue::Null),
-        TypedCol::Decimal { vals, .. } => {
-            vals[row].map(RankValue::Decimal).unwrap_or(RankValue::Null)
+/// Compact per-column rank representation for included columns (`distinct < n`).
+/// Precomputes `column_field(sig, rank)` lookup tables for `distinct <= 65536`
+/// so row hashing is a single table lookup with 1–2 bytes/row RAM.
+enum CompactColumn {
+    Const(u64),
+    U8 { lut: Vec<u64>, ranks: Vec<u8> },
+    U16 { lut: Vec<u64>, ranks: Vec<u16> },
+    U32 { sig: u64, ranks: Vec<u32> },
+}
+
+impl CompactColumn {
+    #[inline]
+    fn field_at(&self, row: usize) -> u64 {
+        match self {
+            CompactColumn::Const(f) => *f,
+            CompactColumn::U8 { lut, ranks } => lut[ranks[row] as usize],
+            CompactColumn::U16 { lut, ranks } => lut[ranks[row] as usize],
+            CompactColumn::U32 { sig, ranks } => column_field(*sig, ranks[row] as u64),
         }
-        TypedCol::Str { vals } => vals[row].map(RankValue::Str).unwrap_or(RankValue::Null),
-        TypedCol::StrOwned { vals } => vals[row]
-            .as_deref()
-            .map(RankValue::Str)
-            .unwrap_or(RankValue::Null),
-        TypedCol::Bool { vals } => vals[row].map(RankValue::Bool).unwrap_or(RankValue::Null),
-        TypedCol::Date { vals } => vals[row].map(RankValue::Date).unwrap_or(RankValue::Null),
-        TypedCol::Datetime { vals, .. } => vals[row]
-            .map(RankValue::Datetime)
-            .unwrap_or(RankValue::Null),
-        TypedCol::Null { .. } => RankValue::Null,
-        TypedCol::Other { .. } => RankValue::Opaque,
     }
 }
 
-/// One column's contribution to a row key. `ranks[row]` is the ordinal of
-/// that row's value among this column's distinct values; `signature` is a
-/// row-order-free fingerprint of the column's rank histogram, used both to
-/// distinguish fields and to decide whether the column anchors a key.
-#[derive(Clone, Debug)]
-struct ColumnPlan {
-    ranks: Vec<u64>,
-    signature: u64,
-    include: bool,
+enum ColPlanOutcome {
+    Included(CompactColumn),
+    AllDistinct { sig: u64, row_of_rank: Vec<u32> },
 }
 
-impl ColumnPlan {
-    fn for_table(table: &TypedTable) -> Vec<Self> {
-        let n = table.n;
-        let mut plans = Vec::with_capacity(table.cols.len());
-        for col in &table.cols {
-            let values: Vec<RankValue<'_>> = (0..n).map(|row| rank_value(col, row)).collect();
-            let mut sorted = values.clone();
-            sorted.sort_unstable();
-            sorted.dedup();
-            let distinct = sorted.len();
-            let ranks: Vec<u64> = values
-                .iter()
-                .map(|v| sorted.binary_search(v).expect("value was just sorted") as u64)
-                .collect();
-            let mut counts = vec![0u64; distinct];
-            for &rank in &ranks {
-                counts[rank as usize] += 1;
-            }
-            let mut sig_bytes = Vec::with_capacity(8 + counts.len() * 8);
-            sig_bytes.extend_from_slice(&(distinct as u64).to_le_bytes());
-            for count in &counts {
-                sig_bytes.extend_from_slice(&count.to_le_bytes());
-            }
-            let signature = fnv64(&sig_bytes, 0x8a5c_d7d3_1d2c_9f41);
-            // An all-distinct column carries no grouping information: an
-            // independent added column is all-distinct, so including such
-            // columns would redraw the sample of the unchanged table.
-            plans.push(Self {
-                ranks,
-                signature,
-                include: distinct < n,
-            });
-        }
-        plans
-    }
-}
+const SIG_SEED: u64 = 0x8a5c_d7d3_1d2c_9f41;
 
-/// Length-prefixed canonical bytes for one cell.
-fn push_field(out: &mut Vec<u8>, value: &[u8]) {
-    out.extend_from_slice(&(value.len() as u64).to_le_bytes());
-    out.extend_from_slice(value);
-}
-
-fn canonical_row(plan: &[ColumnPlan], row: usize) -> Vec<u8> {
-    let mut fields: Vec<u64> = plan
-        .iter()
-        .filter(|col| col.include)
-        .map(|col| column_field(col.signature, col.ranks[row]))
-        .collect();
-    if fields.is_empty() {
-        // Every column is all-distinct: using the minimum field keeps the
-        // key content-derived and order-free without letting one added
-        // all-distinct column redraw every row.
-        fields.push(
-            plan.iter()
-                .map(|col| column_field(col.signature, col.ranks[row]))
-                .min()
-                .unwrap_or(0),
-        );
-    }
-    // A multiset: column reordering cannot change a row's key, even when
-    // two columns share a signature.
-    fields.sort_unstable();
-    let mut out = Vec::with_capacity((fields.len() + 1) * 16);
-    push_field(&mut out, &(fields.len() as u64).to_le_bytes());
-    for field in fields {
-        push_field(&mut out, &field.to_le_bytes());
-    }
-    out
-}
-
-fn fnv64(bytes: &[u8], seed: u64) -> u64 {
-    let mut h = seed;
-    for &b in bytes {
+#[inline]
+fn fnv64_u64(mut h: u64, v: u64) -> u64 {
+    for b in v.to_le_bytes() {
         h = (h ^ b as u64).wrapping_mul(0x100_0000_01B3);
     }
     h
 }
 
-fn content_hash(bytes: &[u8]) -> RowKey {
-    let first = fnv64(bytes, 0xcbf2_9ce4_8422_2325);
-    let second = fnv64(bytes, 0x9E37_79B9_7F4A_7C15);
-    (first as RowKey) << 64 | second as RowKey
+fn build_from_sorted<K: Ord>(mut items: Vec<(K, u32)>, n: usize) -> ColPlanOutcome {
+    items.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+    // Count distinct values in one sequential pass over sorted keys.
+    let mut distinct = 1usize;
+    for i in 1..n {
+        if items[i].0 != items[i - 1].0 {
+            distinct += 1;
+        }
+    }
+
+    if distinct == n {
+        let mut sig = fnv64_u64(SIG_SEED, n as u64);
+        for _ in 0..n {
+            sig = fnv64_u64(sig, 1);
+        }
+        let row_of_rank: Vec<u32> = items.into_iter().map(|(_, r)| r).collect();
+        return ColPlanOutcome::AllDistinct { sig, row_of_rank };
+    }
+
+    if distinct == 1 {
+        let sig = fnv64_u64(fnv64_u64(SIG_SEED, 1), n as u64);
+        return ColPlanOutcome::Included(CompactColumn::Const(column_field(sig, 0)));
+    }
+
+    let mut sig = fnv64_u64(SIG_SEED, distinct as u64);
+    if distinct <= 256 {
+        let mut ranks = vec![0u8; n];
+        let mut rank = 0usize;
+        let mut run = 0u64;
+        for i in 0..n {
+            if i > 0 && items[i].0 != items[i - 1].0 {
+                sig = fnv64_u64(sig, run);
+                rank += 1;
+                run = 0;
+            }
+            ranks[items[i].1 as usize] = rank as u8;
+            run += 1;
+        }
+        sig = fnv64_u64(sig, run);
+        let lut: Vec<u64> = (0..distinct).map(|r| column_field(sig, r as u64)).collect();
+        ColPlanOutcome::Included(CompactColumn::U8 { lut, ranks })
+    } else if distinct <= 65_536 {
+        let mut ranks = vec![0u16; n];
+        let mut rank = 0usize;
+        let mut run = 0u64;
+        for i in 0..n {
+            if i > 0 && items[i].0 != items[i - 1].0 {
+                sig = fnv64_u64(sig, run);
+                rank += 1;
+                run = 0;
+            }
+            ranks[items[i].1 as usize] = rank as u16;
+            run += 1;
+        }
+        sig = fnv64_u64(sig, run);
+        let lut: Vec<u64> = (0..distinct).map(|r| column_field(sig, r as u64)).collect();
+        ColPlanOutcome::Included(CompactColumn::U16 { lut, ranks })
+    } else {
+        let mut ranks = vec![0u32; n];
+        let mut rank = 0u32;
+        let mut run = 0u64;
+        for i in 0..n {
+            if i > 0 && items[i].0 != items[i - 1].0 {
+                sig = fnv64_u64(sig, run);
+                rank += 1;
+                run = 0;
+            }
+            ranks[items[i].1 as usize] = rank;
+            run += 1;
+        }
+        sig = fnv64_u64(sig, run);
+        ColPlanOutcome::Included(CompactColumn::U32 { sig, ranks })
+    }
+}
+
+fn build_column_plan(col: &TypedCol<'_>, n: usize) -> ColPlanOutcome {
+    match col {
+        TypedCol::Null { .. } | TypedCol::Other { .. } => {
+            let sig = fnv64_u64(fnv64_u64(SIG_SEED, 1), n as u64);
+            if n <= 1 {
+                ColPlanOutcome::AllDistinct {
+                    sig,
+                    row_of_rank: (0..n as u32).collect(),
+                }
+            } else {
+                ColPlanOutcome::Included(CompactColumn::Const(column_field(sig, 0)))
+            }
+        }
+        TypedCol::Bool { vals } => {
+            let (mut c_null, mut c_false, mut c_true) = (0u64, 0u64, 0u64);
+            for v in vals {
+                match v {
+                    None => c_null += 1,
+                    Some(false) => c_false += 1,
+                    Some(true) => c_true += 1,
+                }
+            }
+            let counts = [c_null, c_false, c_true];
+            let mut present_counts = [0u64; 3];
+            let mut rank_of = [0u8; 3];
+            let mut distinct = 0usize;
+            for (i, &c) in counts.iter().enumerate() {
+                if c > 0 {
+                    rank_of[i] = distinct as u8;
+                    present_counts[distinct] = c;
+                    distinct += 1;
+                }
+            }
+            let mut sig = fnv64_u64(SIG_SEED, distinct as u64);
+            for &c in &present_counts[..distinct] {
+                sig = fnv64_u64(sig, c);
+            }
+            if distinct == n {
+                let mut row_of_rank = vec![0u32; n];
+                for (r, v) in vals.iter().enumerate() {
+                    let k = match v {
+                        None => rank_of[0],
+                        Some(false) => rank_of[1],
+                        Some(true) => rank_of[2],
+                    };
+                    row_of_rank[k as usize] = r as u32;
+                }
+                return ColPlanOutcome::AllDistinct { sig, row_of_rank };
+            }
+            if distinct == 1 {
+                return ColPlanOutcome::Included(CompactColumn::Const(column_field(sig, 0)));
+            }
+            let ranks: Vec<u8> = vals
+                .iter()
+                .map(|v| match v {
+                    None => rank_of[0],
+                    Some(false) => rank_of[1],
+                    Some(true) => rank_of[2],
+                })
+                .collect();
+            let lut: Vec<u64> = (0..distinct).map(|r| column_field(sig, r as u64)).collect();
+            ColPlanOutcome::Included(CompactColumn::U8 { lut, ranks })
+        }
+        TypedCol::I64 { vals } => match vals {
+            crate::typed::NumericValues::Borrowed(slice) => {
+                let items: Vec<(i64, u32)> = slice
+                    .iter()
+                    .enumerate()
+                    .map(|(r, &v)| (v, r as u32))
+                    .collect();
+                build_from_sorted(items, n)
+            }
+            _ => {
+                let items: Vec<(Option<i64>, u32)> = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(r, v)| (v.copied(), r as u32))
+                    .collect();
+                build_from_sorted(items, n)
+            }
+        },
+        TypedCol::U64 { vals } => match vals {
+            crate::typed::NumericValues::Borrowed(slice) => {
+                let items: Vec<(u64, u32)> = slice
+                    .iter()
+                    .enumerate()
+                    .map(|(r, &v)| (v, r as u32))
+                    .collect();
+                build_from_sorted(items, n)
+            }
+            _ => {
+                let items: Vec<(Option<u64>, u32)> = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(r, v)| (v.copied(), r as u32))
+                    .collect();
+                build_from_sorted(items, n)
+            }
+        },
+        TypedCol::F64 { vals } => match vals {
+            crate::typed::NumericValues::Borrowed(slice) => {
+                let items: Vec<(OrderedF64, u32)> = slice
+                    .iter()
+                    .enumerate()
+                    .map(|(r, &v)| (OrderedF64::new(v), r as u32))
+                    .collect();
+                build_from_sorted(items, n)
+            }
+            _ => {
+                let items: Vec<(Option<OrderedF64>, u32)> = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(r, v)| {
+                        (
+                            v.copied().filter(|x| x.is_finite()).map(OrderedF64::new),
+                            r as u32,
+                        )
+                    })
+                    .collect();
+                build_from_sorted(items, n)
+            }
+        },
+        TypedCol::Decimal { vals, .. } => {
+            let items: Vec<(Option<i128>, u32)> = vals
+                .iter()
+                .enumerate()
+                .map(|(r, &v)| (v, r as u32))
+                .collect();
+            build_from_sorted(items, n)
+        }
+        TypedCol::Date { vals } => {
+            let items: Vec<(Option<i32>, u32)> = vals
+                .iter()
+                .enumerate()
+                .map(|(r, &v)| (v, r as u32))
+                .collect();
+            build_from_sorted(items, n)
+        }
+        TypedCol::Datetime { vals, .. } => {
+            let items: Vec<(Option<i64>, u32)> = vals
+                .iter()
+                .enumerate()
+                .map(|(r, &v)| (v, r as u32))
+                .collect();
+            build_from_sorted(items, n)
+        }
+        TypedCol::Str { vals } => {
+            let items: Vec<(Option<&str>, u32)> = vals
+                .iter()
+                .enumerate()
+                .map(|(r, &v)| (v, r as u32))
+                .collect();
+            build_from_sorted(items, n)
+        }
+        TypedCol::StrOwned { vals } => {
+            let items: Vec<(Option<&str>, u32)> = vals
+                .iter()
+                .enumerate()
+                .map(|(r, v)| (v.as_deref(), r as u32))
+                .collect();
+            build_from_sorted(items, n)
+        }
+    }
+}
+
+/// Stream length-prefixed canonical bytes for `fields` directly into both
+/// FNV-1a accumulators (zero heap allocation, bit-identical to `push_field`).
+#[inline]
+fn content_hash_fields(fields: &[u64]) -> RowKey {
+    let mut h1: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut h2: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut feed = |v: u64| {
+        h1 = fnv64_u64(h1, v);
+        h2 = fnv64_u64(h2, v);
+    };
+    feed(8);
+    feed(fields.len() as u64);
+    for &field in fields {
+        feed(8);
+        feed(field);
+    }
+    (h1 as RowKey) << 64 | h2 as RowKey
 }
 
 fn splitmix64(mut x: u64) -> u64 {
@@ -464,6 +756,36 @@ mod tests {
             assert_eq!(row as usize / 100, stratum);
         }
         assert!(positional_rows(10, 0).is_empty());
+    }
+
+    #[test]
+    fn all_distinct_only_table_is_deterministic_and_order_free() {
+        let df1 = df! {
+            "x" => (0..200i64).collect::<Vec<_>>(),
+            "y" => (0..200).map(|i| (i as f64) * 1.5 - 50.0).collect::<Vec<_>>(),
+        }
+        .unwrap();
+        let df2 = df! {
+            "y" => (0..200).rev().map(|i| (i as f64) * 1.5 - 50.0).collect::<Vec<_>>(),
+            "x" => (0..200i64).rev().collect::<Vec<_>>(),
+        }
+        .unwrap();
+        let t1 = extract(&df1);
+        let t2 = extract(&df2);
+        let s1 = sample_rows(&t1, 40);
+        let s2 = sample_rows(&t2, 40);
+        assert_eq!(s1.len(), 40);
+        // Same content rows in the same key order, despite reversed rows & columns.
+        assert_eq!(
+            s1.iter()
+                .map(|&r| t1.cols[0].render_cell(r as usize))
+                .collect::<Vec<_>>(),
+            s2.iter()
+                .map(|&r| t2.cols[1].render_cell(r as usize))
+                .collect::<Vec<_>>(),
+        );
+        // Cache returns identical pointer/values on repeat calls.
+        assert!(std::ptr::eq(t1.row_keys(), t1.row_keys()));
     }
 
     use crate::typed::extract;

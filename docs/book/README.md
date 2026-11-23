@@ -50,6 +50,12 @@ Charts are Altair and tables are Great Tables, both rendered to static
 HTML assets. The deploy workflow in
 `.github/workflows/pages.yml` uses the same command.
 
+Render prose such as a report headline as a paragraph. For printed
+structured evidence, use readable fields or pretty-print the mapping.
+The book wraps long text output within the reading pane while preserving
+its line breaks and indentation. Wide result tables show labelled values
+on narrow screens. Check the result at a narrow width as well as on desktop.
+
 ## Fresh execution
 
 MyST can reuse notebook execution results. To run every book notebook and the

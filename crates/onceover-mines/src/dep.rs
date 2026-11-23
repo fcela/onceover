@@ -1871,6 +1871,7 @@ mod tests {
                         .into(),
                 })
                 .collect(),
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 

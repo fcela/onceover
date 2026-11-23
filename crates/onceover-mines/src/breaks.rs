@@ -1444,6 +1444,7 @@ mod tests {
             names,
             dtypes: vec!["float64".to_string(); n_shifted + n_flat + 1],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -1612,6 +1613,7 @@ mod tests {
                     vals: values.iter().map(|v| Some(*v)).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -1964,11 +1966,42 @@ fn excursion_scan(points: &[(Tick, u32, f64)], axis: Axis, cfg: &BreaksConfig) -
         i = last + 1;
     }
     let lone_points = runs.iter().filter(|r| r.2 == 1).count();
-    let background_points: usize = runs.iter().filter(|r| r.2 <= 2).map(|r| r.2).sum();
+    let total_flagged: usize = runs.iter().map(|r| r.2).sum();
+    // Global robust baseline for lone-point gating: a single point that
+    // is already an extreme marginal outlier of the whole column has no
+    // temporal evidence (shuffling timestamps leaves it unchanged, and
+    // the outliers pass owns marginal extremes). A lone point that sits
+    // inside the column's normal range but spikes relative to its local
+    // or seasonal baseline IS a genuine temporal event.
+    let (global_med, global_scale) = if lone_points > 0 {
+        let g_med = median_of(&ys);
+        let g_abs: Vec<f64> = ys.iter().map(|&v| (v - g_med).abs()).collect();
+        let mut g_sc = 1.4826 * median_of(&g_abs);
+        if g_sc <= 0.0 {
+            let mut sorted = ys.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let p = |q: f64| sorted[((q * (n - 1) as f64) as usize).min(n - 1)];
+            g_sc = 0.01 * (p(0.99) - p(0.01));
+        }
+        (g_med, g_sc)
+    } else {
+        (0.0, 0.0)
+    };
     let mut events: Vec<Excursion> = Vec::new();
     for &(start, last, in_run) in &runs {
+        // Leave-one-run-out background rate: in a heavy-tailed i.i.d.
+        // series, flagged points cluster into runs of size >= 3 by
+        // Poisson chance alone; excluding other runs from the
+        // background understates the true marginal rate by 10-50x.
+        let other_flagged = total_flagged.saturating_sub(in_run);
         if last - start >= max_span
-            || !event_is_temporal(last - start + 1, in_run, n, background_points, lone_points)
+            || !event_is_temporal(last - start + 1, in_run, n, other_flagged, lone_points)
+        {
+            continue;
+        }
+        if in_run == 1
+            && global_scale > 0.0
+            && (ys[start] - global_med).abs() / global_scale >= 0.75 * cfg.excursion_z
         {
             continue;
         }

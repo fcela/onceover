@@ -1,6 +1,6 @@
 {
  "library": "onceover",
- "version": "0.1.7",
+ "version": "0.1.8",
  "generated_by": "scripts/capability_manifest.py",
  "detectors": [
   {
@@ -445,6 +445,16 @@
    "membership": "default_set",
    "trigger": "always",
    "purpose": "Pearson, Spearman, and both directions of Chatterjee's xi"
+  },
+  {
+   "id": "partition_scagnostics",
+   "categories": [
+    "associations"
+   ],
+   "requires": [],
+   "membership": "on_request",
+   "trigger": "always",
+   "purpose": "Scatterplot structure that strengthens within an observed partition, confirmed on held-out rows"
   },
   {
    "id": "identities",

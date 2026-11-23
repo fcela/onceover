@@ -607,7 +607,7 @@ pub fn panel_coverage(
         let mut clauses: Vec<String> = Vec::new();
         if f.row_flag && counts_admit {
             clauses.push(format!(
-                "holds {} {} against a typical {} rows per period ({}% of typical)",
+                "holds {} {} (typical {}, {}%)",
                 fmt_count(rows as f64),
                 if rows == 1 { "row" } else { "rows" },
                 fmt_count(typical_rows),
@@ -620,7 +620,7 @@ pub fn panel_coverage(
             // The clause carries its own verb when it stands alone.
             let verb = if clauses.is_empty() { "has " } else { "" };
             clauses.push(format!(
-                "{verb}{} {} present against a typical {} ({}% of typical)",
+                "{verb}{} {} (typical {}, {}%)",
                 fmt_count(e as f64),
                 if e == 1 { "entity" } else { "entities" },
                 fmt_count(te),
@@ -642,14 +642,14 @@ pub fn panel_coverage(
         for (j, &m) in collapsed.iter().enumerate() {
             if j == MAX_CLAIM_MEASURES {
                 clauses.push(format!(
-                    "and {} more principal measure(s) below 75% of typical",
+                    "+{} more measures <75%",
                     collapsed.len() - MAX_CLAIM_MEASURES
                 ));
                 break;
             }
             let verb = if clauses.is_empty() { "shows " } else { "" };
             clauses.push(format!(
-                "{verb}total {} {} against a typical {} per period ({}% of typical)",
+                "{verb}total {} {} (typical {}, {}%)",
                 measure_names[m],
                 fmt_total(totals_per[m][idx]),
                 fmt_total(typical_totals[m]),
@@ -662,7 +662,7 @@ pub fn panel_coverage(
             _ => "an interior period",
         };
         let claim = format!(
-            "{} ({}) on the '{}' axis {}",
+            "{} ({}) on '{}': {}",
             position_phrase,
             labels[idx],
             axis_name,

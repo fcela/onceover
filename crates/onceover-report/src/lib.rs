@@ -8,9 +8,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+pub mod compact;
+pub mod diff;
+pub mod digest;
 mod finding;
 mod hints;
 mod ledger;
+pub use compact::{compact_report_value, to_json_budgeted_value};
+pub use diff::{
+    diff_report_values, finding_by_id_or_handle, finding_slot_in_value, select_findings_value,
+    SelectFilter,
+};
+pub use digest::{digest_numbers, quality_line, render_digest_value};
 pub use finding::*;
 pub use hints::{
     labels_for_finding, resolve_labels, substitute_labels, Cadence, Gloss, GroupContrast,
@@ -664,6 +673,92 @@ impl ProfileReport {
 
     pub fn to_json_pretty(&self) -> String {
         serde_json::to_string_pretty(self).expect("report serialization cannot fail")
+    }
+
+    /// Token-compact JSON rendering for LLM consumption.
+    pub fn to_json_compact(&self) -> String {
+        let v = serde_json::to_value(self).expect("report serialization cannot fail");
+        serde_json::to_string(&compact::compact_report_value(&v))
+            .expect("compact report serialization cannot fail")
+    }
+
+    /// Size-budgeted JSON rendering that never exceeds `max_chars` characters.
+    pub fn to_json_budgeted(&self, max_chars: usize, compact: bool) -> Result<String, String> {
+        let v = serde_json::to_value(self).expect("report serialization cannot fail");
+        compact::to_json_budgeted_value(&v, max_chars, compact)
+    }
+
+    /// Context-budgeted plain-text briefing digest.
+    pub fn to_digest(
+        &self,
+        budget_chars: usize,
+        compact: bool,
+        include_schema: bool,
+        on_request_detectors: &[&str],
+    ) -> String {
+        let v = serde_json::to_value(self).expect("report serialization cannot fail");
+        digest::render_digest_value(
+            &v,
+            budget_chars,
+            compact,
+            include_schema,
+            on_request_detectors,
+        )
+    }
+
+    /// Token-economical LLM brief: schema strip + short `[f1]` handles.
+    pub fn to_brief(&self, budget_chars: usize, on_request_detectors: &[&str]) -> String {
+        self.to_digest(budget_chars, true, true, on_request_detectors)
+    }
+
+    /// Resolve a stable ID or short handle (`"f1"`, `"g1"`) to
+    /// `(is_grouped, index)`.
+    pub fn finding_slot(&self, finding_id: &str) -> Option<(bool, usize)> {
+        if let Some(rest) = finding_id.strip_prefix('f') {
+            if !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()) {
+                if let Ok(n) = rest.parse::<usize>() {
+                    if n >= 1 && n <= self.findings.len() {
+                        return Some((false, n - 1));
+                    }
+                }
+            }
+        } else if let Some(rest) = finding_id.strip_prefix('g') {
+            if !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()) {
+                if let Ok(n) = rest.parse::<usize>() {
+                    if n >= 1 && n <= self.grouped_findings.len() {
+                        return Some((true, n - 1));
+                    }
+                }
+            }
+        }
+        if let Some(i) = self.findings.iter().position(|f| f.id == finding_id) {
+            return Some((false, i));
+        }
+        if let Some(i) = self
+            .grouped_findings
+            .iter()
+            .position(|f| f.id == finding_id)
+        {
+            return Some((true, i));
+        }
+        None
+    }
+
+    /// Look up one finding by stable ID or short handle (`"f1"`, `"g1"`).
+    pub fn finding(&self, finding_id: &str) -> Option<&Finding> {
+        let (is_grouped, idx) = self.finding_slot(finding_id)?;
+        if is_grouped {
+            self.grouped_findings.get(idx)
+        } else {
+            self.findings.get(idx)
+        }
+    }
+
+    /// Diff this report against another report (findings, coverage, columns).
+    pub fn diff(&self, other: &ProfileReport) -> Value {
+        let a = serde_json::to_value(self).expect("report serialization cannot fail");
+        let b = serde_json::to_value(other).expect("report serialization cannot fail");
+        diff::diff_report_values(&a, &b)
     }
 
     /// Compact, deterministic Markdown rendering (agent/human pasteable).

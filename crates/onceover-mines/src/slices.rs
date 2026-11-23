@@ -172,6 +172,10 @@ pub struct SliceConfig {
     /// Cooperative deadline (issue #117, stage 2), polled at slice
     /// boundaries.
     pub deadline: crate::deadline::Deadline,
+    /// Optional designated target column index: prioritized ahead of
+    /// target caps and final finding caps so the caller's target is
+    /// never crowded out on wide tables.
+    pub designated_target: Option<usize>,
 }
 
 impl Default for SliceConfig {
@@ -205,6 +209,7 @@ impl Default for SliceConfig {
             max_per_target: 8,
             work_budget: 300_000_000,
             deadline: crate::deadline::Deadline::none(),
+            designated_target: None,
         }
     }
 }
@@ -745,7 +750,14 @@ pub fn profile_slice_shifts(
         })
         .filter(|(_, n)| *n >= 50)
         .collect();
-    num_rank.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    num_rank.sort_by(|a, b| {
+        let a_des = cfg.designated_target == Some(a.0);
+        let b_des = cfg.designated_target == Some(b.0);
+        b_des
+            .cmp(&a_des)
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| a.0.cmp(&b.0))
+    });
     let num_targets_capped = num_rank.len() > cfg.max_numeric_targets;
     num_rank.truncate(cfg.max_numeric_targets);
     for (col, _) in &num_rank {
@@ -786,11 +798,12 @@ pub fn profile_slice_shifts(
     let mut cat_target_rank: Vec<usize> = cat_cols
         .iter()
         .copied()
-        .filter(|c| capped_cat_cols.contains(c))
+        .filter(|c| capped_cat_cols.contains(c) || cfg.designated_target == Some(*c))
         .collect();
     cat_target_rank.sort_by_key(|&col| {
+        let is_des = cfg.designated_target == Some(col);
         let n_levels = level_rows.iter().filter(|(c, _, _)| *c == col).count();
-        (std::cmp::Reverse(n_levels), col)
+        (std::cmp::Reverse(is_des), std::cmp::Reverse(n_levels), col)
     });
     let cat_targets_capped = cat_target_rank.len() > cfg.max_categorical_targets;
     cat_target_rank.truncate(cfg.max_categorical_targets);
@@ -1193,10 +1206,15 @@ pub fn profile_slice_shifts(
         }
     }
 
-    // ---- restatement demotion --------------------------------------
+    // ---- restatement demotion & zero-lift child pruning ------------
     // A deeper kept slice whose row set is >= 90% the same as a
-    // shallower kept slice for the same target restates it.
+    // shallower kept slice for the same target restates it. Likewise,
+    // a syntactic specialization (parent conditions ⊂ child conditions)
+    // for the same target that adds negligible lift over its parent is
+    // dropped so redundant 2-condition copies do not crowd out distinct
+    // findings.
     let mut demoted: Vec<bool> = vec![false; deduped.len()];
+    let mut redundant_child: Vec<bool> = vec![false; deduped.len()];
     for i in 0..deduped.len() {
         for j in 0..deduped.len() {
             if deduped[j].conds.len() >= deduped[i].conds.len() {
@@ -1204,6 +1222,19 @@ pub fn profile_slice_shifts(
             }
             if deduped[j].target != deduped[i].target {
                 continue;
+            }
+            let is_parent = deduped[j]
+                .conds
+                .iter()
+                .all(|c| deduped[i].conds.contains(c));
+            if is_parent && deduped[j].form == deduped[i].form {
+                let no_effect_gain = deduped[i].effect_norm <= deduped[j].effect_norm + 0.05;
+                let no_rate_gain = deduped[i].form != "rate"
+                    || (deduped[i].rate_full - deduped[j].rate_full).abs() < 0.03;
+                if no_effect_gain && no_rate_gain {
+                    redundant_child[i] = true;
+                    break;
+                }
             }
             let inter: usize = deduped[i]
                 .bits
@@ -1224,13 +1255,29 @@ pub fn profile_slice_shifts(
         }
     }
 
-    // ---- ranking by absolute effect, then support ------------------
-    let mut ranked: Vec<(Candidate, bool)> = deduped.into_iter().zip(demoted).collect();
+    // ---- ranking by target priority, absolute effect, then support --
+    let target_col_of = |t: TargetRef| -> usize {
+        match t {
+            TargetRef::Num(ti) => num_targets[ti].col,
+            TargetRef::Cat(ti, _) => cat_targets[ti].col,
+        }
+    };
+    let mut ranked: Vec<(Candidate, bool)> = deduped
+        .into_iter()
+        .zip(demoted)
+        .zip(redundant_child)
+        .filter(|(_, drop_child)| !*drop_child)
+        .map(|(pair, _)| pair)
+        .collect();
     ranked.sort_by(|a, b| {
-        b.0.effect_norm
-            .total_cmp(&a.0.effect_norm)
-            .then(b.0.n_full.cmp(&a.0.n_full))
-            .then(cond_text(&a.0.conds).cmp(&cond_text(&b.0.conds)))
+        let a_des = cfg.designated_target == Some(target_col_of(a.0.target));
+        let b_des = cfg.designated_target == Some(target_col_of(b.0.target));
+        b_des
+            .cmp(&a_des)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| b.0.effect_norm.total_cmp(&a.0.effect_norm))
+            .then_with(|| b.0.n_full.cmp(&a.0.n_full))
+            .then_with(|| cond_text(&a.0.conds).cmp(&cond_text(&b.0.conds)))
     });
     // Statement caps: at most max_per_target statements about one
     // target column, at most max_findings in all.

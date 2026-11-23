@@ -149,6 +149,21 @@ def test_cli_version(capsys):
     assert onceover.__version__ in capsys.readouterr().out
 
 
+def test_cli_brief_and_compact_json(tmp_path, capsys):
+    csv = tmp_path / "orders.csv"
+    orders_frame().write_csv(csv)
+    assert main([str(csv), "--format", "brief", "--digest", "1500"]) == 0
+    brief = capsys.readouterr().out
+    assert "Schema:" in brief
+    assert "[f" in brief
+    assert len(brief.rstrip("\n")) <= 1500
+
+    assert main([str(csv), "--format", "json", "--compact"]) == 0
+    compact_doc = json.loads(capsys.readouterr().out)
+    assert compact_doc["findings"][0]["handle"] == "f1"
+    assert "skipped_on_request" in compact_doc["coverage"]
+
+
 def test_cli_csv_infers_the_whole_file(tmp_path, capsys):
     csv = tmp_path / "late_decimal.csv"
     values = [str(i) for i in range(100)]

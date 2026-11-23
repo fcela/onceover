@@ -1,6 +1,7 @@
 """Release validation must fail before any registry publication."""
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -34,6 +35,35 @@ def test_mismatched_python_version_is_rejected(monkeypatch):
 def test_missing_release_notes_section_is_rejected(monkeypatch):
     monkeypatch.setattr(release, "release_note_lines", lambda: ["## Unreleased"])
     with pytest.raises(ValueError, match="release notes"):
+        release.check()
+
+
+@pytest.mark.parametrize(("filename", "mutate", "message"), [
+    (
+        "agent_guide.md",
+        lambda text: text.replace("Reviewed for onceover ", "Reviewed for an old release "),
+        "review agent_guide",
+    ),
+    (
+        "capability-manifest.json",
+        lambda text: json.dumps({**json.loads(text), "version": "0.0.0"}),
+        "capability manifest version",
+    ),
+    (
+        "README.md",
+        lambda text: text.replace("onceover.agent_guide()", "an API guide"),
+        "README.md must point",
+    ),
+])
+def test_release_blocks_stale_agent_docs(monkeypatch, filename, mutate, message):
+    original = Path.read_text
+
+    def read(path, **kwargs):
+        content = original(path, **kwargs)
+        return mutate(content) if path.name == filename else content
+
+    monkeypatch.setattr(Path, "read_text", read)
+    with pytest.raises(ValueError, match=message):
         release.check()
 
 

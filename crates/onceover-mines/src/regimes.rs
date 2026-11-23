@@ -77,6 +77,7 @@ pub fn profile_regimes(
     targets: &[TargetResult],
     excluded: &[usize],
     cfg: &RegimesConfig,
+    designated: Option<usize>,
 ) -> (Vec<Finding>, String) {
     let screenable = |r: &TargetResult| {
         !r.is_categorical
@@ -87,7 +88,13 @@ pub fn profile_regimes(
         .iter()
         .filter(|r| screenable(r) && r.metric >= 0.2)
         .collect();
-    candidates.sort_by(|a, b| b.metric.total_cmp(&a.metric).then(a.name.cmp(&b.name)));
+    // Designated target leads so it is never crowded out by target_cap.
+    candidates.sort_by(|a, b| {
+        (Some(b.col) == designated)
+            .cmp(&(Some(a.col) == designated))
+            .then(b.metric.total_cmp(&a.metric))
+            .then(a.name.cmp(&b.name))
+    });
     let eligible = candidates.len();
     let eligible_cols: Vec<usize> = candidates.iter().map(|r| r.col).collect();
     candidates.truncate(cfg.target_cap);
@@ -625,13 +632,14 @@ mod tests {
                     vals: values.iter().copied().map(Some).collect::<Vec<_>>().into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
         let cfg = RegimesConfig {
             row_cap: 600,
             ..Default::default()
         };
-        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &cfg);
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &cfg, None);
         assert_eq!(f.len(), 1, "{cov}");
         assert_eq!(f[0].specification.form.as_deref(), Some("piecewise_linear"));
         assert!(f[0].metrics()["holdout_r2"].as_f64().unwrap() > 0.95);
@@ -642,14 +650,19 @@ mod tests {
         let text = serde_json::to_string(&f).unwrap();
         assert_eq!(
             text,
-            serde_json::to_string(&profile_regimes(&table, &enc, &[target()], &[], &cfg).0)
+            serde_json::to_string(&profile_regimes(&table, &enc, &[target()], &[], &cfg, None).0)
                 .unwrap()
         );
-        assert!(
-            profile_regimes(&table, &enc, &[target()], &[0, 1], &Default::default())
-                .0
-                .is_empty()
-        );
+        assert!(profile_regimes(
+            &table,
+            &enc,
+            &[target()],
+            &[0, 1],
+            &Default::default(),
+            None
+        )
+        .0
+        .is_empty());
     }
 
     #[test]
@@ -683,10 +696,11 @@ mod tests {
                         .into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
         assert!(
-            profile_regimes(&table, &enc, &[target()], &[], &Default::default())
+            profile_regimes(&table, &enc, &[target()], &[], &Default::default(), None)
                 .0
                 .is_empty()
         );
@@ -725,9 +739,10 @@ mod tests {
                     vals: (0..n).map(|i| Some(20000 + i as i32)).collect(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
-        let (f, _) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        let (f, _) = profile_regimes(&table, &enc, &[target()], &[], &Default::default(), None);
         let shift = f
             .iter()
             .find(|f| f.category == onceover_report::Category::Changes)
@@ -769,6 +784,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -784,7 +800,7 @@ mod tests {
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
         let mut below_bar = target();
         below_bar.metric = 0.1;
-        let (f, _) = profile_regimes(&table, &enc, &[below_bar], &[], &Default::default());
+        let (f, _) = profile_regimes(&table, &enc, &[below_bar], &[], &Default::default(), None);
         assert_eq!(f.len(), 1);
         let shift = &f[0];
         assert_eq!(shift.category, onceover_report::Category::Changes);
@@ -800,7 +816,7 @@ mod tests {
         let mut below_bar = target();
         below_bar.metric = 0.1;
         assert!(
-            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default())
+            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default(), None)
                 .0
                 .is_empty()
         );
@@ -815,7 +831,7 @@ mod tests {
         let mut below_bar = target();
         below_bar.metric = 0.1;
         assert!(
-            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default())
+            profile_regimes(&table, &enc, &[below_bar], &[], &Default::default(), None)
                 .0
                 .is_empty()
         );
@@ -862,6 +878,7 @@ mod tests {
                     vals: (0..n).map(|i| Some(20000 + i as i32)).collect(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -871,7 +888,7 @@ mod tests {
         // midpoint: a one-break model captures most of a ramp's variance.
         let table = trend_frame(2000, 0.0, 0.0);
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
-        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default(), None);
         assert!(
             !f.iter()
                 .any(|f| f.finding_type.as_deref() == Some("residual_shift")),
@@ -884,7 +901,7 @@ mod tests {
         // A seasonal wave on top of the trend has no break either.
         let table = trend_frame(2000, 0.0, 0.5);
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
-        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default(), None);
         assert!(
             !f.iter()
                 .any(|f| f.finding_type.as_deref() == Some("residual_shift")),
@@ -898,7 +915,7 @@ mod tests {
         // on top of the trend.
         let table = trend_frame(2000, 5.0, 0.0);
         let (enc, _) = crate::encode::encode(&table, &crate::EncodeConfig::default());
-        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default());
+        let (f, cov) = profile_regimes(&table, &enc, &[target()], &[], &Default::default(), None);
         let shift = f
             .iter()
             .find(|f| f.finding_type.as_deref() == Some("residual_shift"))
