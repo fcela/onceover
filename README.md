@@ -2,27 +2,27 @@
 
 ## TL;DR
 
-Latest change `c1acd5f` (2026-11-22), Merge pull request #465 from fcela/release/0.1.8: compared with `a0527ef`, 8 total metrics better, 0 worse, 5 worse and accepted.
+Latest change `f494748` (2026-11-23), Merge pull request #475 from fcela/fix/adversarial-shootout: compared with `c1acd5f`, 4 total metrics better, 0 worse, 0 worse and accepted.
 
-| measure | latest (`c1acd5f`) | previous (`a0527ef`) | first recorded (`1618886`) |
+| measure | latest (`f494748`) | previous (`c1acd5f`) | first recorded (`1618886`) |
 |---|---:|---:|---:|
 | Must-tier reference facts stated in the 4,000-character digest | 15 of 19 (unchanged) | 15 of 19 | 7 of 11 |
 | Must-tier reference facts stated in the 4,000-character digest, target mode | 17 of 19 (unchanged) | 17 of 19 | 7 of 11 |
-| Should-tier reference facts stated in the 4,000-character digest | 31 of 45 (-1, worse) | 32 of 45 | 7 of 12 |
+| Should-tier reference facts stated in the 4,000-character digest | 33 of 45 (+2, better) | 31 of 45 | 7 of 12 |
 | Should-tier reference facts stated in the 4,000-character digest, target mode | 20 of 45 (unchanged) | 20 of 45 | 8 of 12 |
 | Planted structures stated in the 4,000-character digest | 59 (unchanged) | 59 | 20 |
 | Facts repeated in the 4,000-character digest | 0 (unchanged) | 0 | 4 |
 | Facts repeated in the 4,000-character digest, target mode | 0 (unchanged) | 0 | 3 |
-| Relationship statements in the 4,000-character digest of shuffled tables (all false by construction) | 4 (-17, better) | 21 | 136 |
+| Relationship statements in the 4,000-character digest of shuffled tables (all false by construction) | 4 (unchanged) | 4 | 136 |
 | Statements that fail verification against the data | 0 (unchanged) | 0 | 0 |
 
-Biggest improvements: permuted false full target 16 → 1; permuted false 4k target 9 → 1; permuted false full 38 → 7
+Biggest improvements: Should-tier reference facts stated in the 4,000-character digest 31 → 33; reference should 8k default 34 → 36; redundancy finding permille default 15947 → 16347
 Biggest regressions: none.
-Accepted regressions: invariance noise 31 → 33 (Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md.); Should-tier reference facts stated in the 4,000-character digest 32 → 31 (Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md.); reference should 8k default 35 → 34 (Release 0.1.8: permutation-null calibration in breaks and axisbreaks cuts permuted false positives 82% (38 -> 7 full, 21 -> 4 4k, and 2 -> 0 on daily_regime_break); on daily_regime_break the planted 2023-06-15 spike is still flagged by extreme_value (visits reaches 3344.9), but extreme_value names only [visits] rather than [date, visits]. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md.)
+Accepted regressions: none.
 
 Hard lines: none breached — no statement failed or errored in verification, and no must-tier reference fact was lost from the 4,000-character digest.
 
-43 change(s) recorded. Latest: `c1acd5f` (2026-11-22), onceover 0.1.8, seeds [0].
+44 change(s) recorded. Latest: `f494748` (2026-11-23), onceover 0.1.8, seeds [0].
 
 Each row is one change on main, newest first. A value is followed, in parentheses, by its movement against the change before it, with `better` or `worse` when the metric has a direction. Seconds are compared only between rows produced on the same platform.
 
@@ -40,6 +40,7 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-23 | `f494748` | Merge pull request #475 from fcela/fix/adversarial-shootout | 59 | 15 | 17 | 0 | 4 | 118 | 0 | 0 | 8.234 |
 | 2026-11-22 | `c1acd5f` | Merge pull request #465 from fcela/release/0.1.8 | 59 | 15 | 17 | 0 | 4 (-17, better) | 118 (-12, better) | 0 | 0 | 9.99 |
 | 2026-11-18 | `a0527ef` | Release 0.1.7 with hierarchical entity peers | 59 | 15 | 17 | 0 | 21 | 130 | 0 | 0 | 17.049 (+0.176) |
 | 2026-11-18 | `ad88088` | Merge pull request #459 from fcela/feat/448-weighted-joint-fingerprin… | 59 | 15 | 17 | 0 | 21 | 130 | 0 | 0 | 16.873 |
@@ -84,57 +85,39 @@ Each row is one change on main, newest first. A value is followed, in parenthese
 | 2026-11-15 | `ca275fd` | Merge pull request #323 from fcela/feat/317-gate-history-report | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 13.385 |
 | 2026-11-15 | `1618886` | Merge pull request #320 from fcela/fix/295-agent-token-economy | 20 | 7 | 7 | - | 136 | 408 | 4 | 0 | 6.859 |
 
-## Latest change: `c1acd5f` Merge pull request #465 from fcela/release/0.1.8
+## Latest change: `f494748` Merge pull request #475 from fcela/fix/adversarial-shootout
 
-Compared with `a0527ef`: 8 total metrics better, 0 worse, 5 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
+Compared with `c1acd5f`: 4 total metrics better, 0 worse, 0 worse and accepted. Rows marked `total` sum the gated datasets; the other rows name one dataset.
 
 ### Better
 
 | metric | where | before | after | change |
 |---|---|---:|---:|---:|
-| invariance.reverse | total | 87 | 73 | -14 |
-| invariance.total | total | 130 | 118 | -12 |
-| permuted.false_4k | total | 21 | 4 | -17 |
-| permuted.false_4k_target | total | 9 | 1 | -8 |
-| permuted.false_full | total | 38 | 7 | -31 |
-| permuted.false_full_target | total | 16 | 1 | -15 |
-| planted.found_full | total | 60 | 61 | +1 |
-| redundancy.finding_permille_target | total | 9391 | 9392 | +1 |
-| invariance.reverse | absenteeism-at-work | 26 | 21 | -5 |
-| invariance.reverse | adventureworks | 39 | 33 | -6 |
-| invariance.reverse | metro-interstate-traffic | 4 | 1 | -3 |
-| invariance.total | absenteeism-at-work | 34 | 30 | -4 |
-| invariance.total | adventureworks | 39 | 33 | -6 |
-| invariance.total | metro-interstate-traffic | 6 | 3 | -3 |
-| permuted.false_4k | absenteeism-at-work | 2 | 0 | -2 |
-| permuted.false_4k | adventureworks | 6 | 3 | -3 |
-| permuted.false_4k | bike-sharing-hourly | 2 | 0 | -2 |
-| permuted.false_4k | daily_regime_break | 2 | 0 | -2 |
-| permuted.false_4k | metro-interstate-traffic | 2 | 0 | -2 |
-| permuted.false_4k | state-unemployment | 4 | 0 | -4 |
-| permuted.false_4k | state-unemployment-long | 2 | 0 | -2 |
-| permuted.false_4k_target | absenteeism-at-work | 2 | 0 | -2 |
-| permuted.false_4k_target | bike-sharing-hourly | 2 | 0 | -2 |
-| permuted.false_4k_target | metro-interstate-traffic | 2 | 0 | -2 |
-| permuted.false_4k_target | state-unemployment-long | 2 | 0 | -2 |
-| permuted.false_full | absenteeism-at-work | 5 | 0 | -5 |
-| permuted.false_full | adventureworks | 14 | 6 | -8 |
-| permuted.false_full | bike-sharing-hourly | 3 | 0 | -3 |
-| permuted.false_full | daily_regime_break | 2 | 0 | -2 |
-| permuted.false_full | metro-interstate-traffic | 3 | 0 | -3 |
-| permuted.false_full | state-unemployment | 6 | 0 | -6 |
-| permuted.false_full | state-unemployment-long | 4 | 0 | -4 |
-| permuted.false_full_target | absenteeism-at-work | 5 | 0 | -5 |
-| permuted.false_full_target | bike-sharing-hourly | 3 | 0 | -3 |
-| permuted.false_full_target | metro-interstate-traffic | 3 | 0 | -3 |
-| permuted.false_full_target | state-unemployment-long | 4 | 0 | -4 |
-| planted.found_full | adventureworks | 1 | 2 | +1 |
-| redundancy.finding_permille_default | daily_regime_break | 814 | 815 | +1 |
-| redundancy.finding_permille_default | hospital-dha | 893 | 894 | +1 |
-| redundancy.finding_permille_default | state-unemployment-long | 559 | 578 | +19 |
-| redundancy.finding_permille_target | absenteeism-at-work | 891 | 892 | +1 |
-| redundancy.finding_permille_target | state-unemployment-long | 611 | 625 | +14 |
-| redundancy.finding_permille_target | thyroid | 868 | 869 | +1 |
+| redundancy.finding_permille_default | total | 15947 | 16347 | +400 |
+| redundancy.finding_permille_target | total | 9392 | 9581 | +189 |
+| reference.should_4k_default | total | 31 | 33 | +2 |
+| reference.should_8k_default | total | 34 | 36 | +2 |
+| redundancy.finding_permille_default | adventureworks | 833 | 847 | +14 |
+| redundancy.finding_permille_default | bike-sharing-hourly | 839 | 874 | +35 |
+| redundancy.finding_permille_default | column_order_stress | 951 | 963 | +12 |
+| redundancy.finding_permille_default | daily_level_collapse | 775 | 815 | +40 |
+| redundancy.finding_permille_default | daily_regime_break | 815 | 846 | +31 |
+| redundancy.finding_permille_default | dominant_driver | 871 | 895 | +24 |
+| redundancy.finding_permille_default | hospital-dha | 894 | 905 | +11 |
+| redundancy.finding_permille_default | nab-nyc-taxi | 644 | 706 | +62 |
+| redundancy.finding_permille_default | planted_mix | 904 | 921 | +17 |
+| redundancy.finding_permille_default | state-unemployment | 845 | 856 | +11 |
+| redundancy.finding_permille_default | state-unemployment-long | 578 | 711 | +133 |
+| redundancy.finding_permille_default | thyroid | 877 | 887 | +10 |
+| redundancy.finding_permille_target | bike-sharing-hourly | 834 | 871 | +37 |
+| redundancy.finding_permille_target | dominant_driver | 863 | 886 | +23 |
+| redundancy.finding_permille_target | planted_mix | 895 | 911 | +16 |
+| redundancy.finding_permille_target | state-unemployment-long | 625 | 730 | +105 |
+| redundancy.finding_permille_target | thyroid | 869 | 877 | +8 |
+| reference.should_4k_default | daily_level_collapse | 5 | 6 | +1 |
+| reference.should_4k_default | daily_regime_break | 4 | 5 | +1 |
+| reference.should_8k_default | daily_level_collapse | 5 | 6 | +1 |
+| reference.should_8k_default | daily_regime_break | 4 | 5 | +1 |
 
 ### Worse
 
@@ -142,51 +125,29 @@ None.
 
 ### Worse and accepted
 
-| metric | where | before | after | change | reason |
-|---|---|---:|---:|---:|---|
-| invariance.noise | total | 31 | 33 | +2 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
-| redundancy.finding_permille_default | total | 15952 | 15947 | -5 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| reference.should_4k_default | total | 32 | 31 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_8k_default | total | 35 | 34 | -1 | Release 0.1.8: permutation-null calibration in breaks and axisbreaks cuts permuted false positives 82% (38 -> 7 full, 21 -> 4 4k, and 2 -> 0 on daily_regime_break); on daily_regime_break the planted 2023-06-15 spike is still flagged by extreme_value (visits reaches 3344.9), but extreme_value names only [visits] rather than [date, visits]. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md. |
-| reference.should_full_default | total | 37 | 36 | -1 | Release 0.1.8: same daily_regime_break spike-day calibration trade-off as reference.should_8k_default while permuted false positives fall 38 -> 7. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md. |
-| invariance.noise | absenteeism-at-work | 6 | 7 | +1 | Issue #374 insight follow-up: with vacuous exact dependencies no longer stated, Adult's report fills to its 100-statement cap with substantive candidates (hotspots, associations), so adding a noise column or shuffling rows moves statements across the cap boundary; driver lists also move with one more predictor. Record: docs/benchmarks/2026-11-18-insight-quality.md. |
-| invariance.noise | congressional-voting | 11 | 12 | +1 | Issue #374 step 4: the predictive screen's holdout and fold splits are now seeded from each target column's value histogram instead of its position, so reordering or renaming columns no longer changes the models (invariance.reverse 191 -> 87, rename 0 -> 0, total 319 -> 238). Adding a column or shuffling rows still moves the drivers each model names above 5% of gain; the new seeds draw a different realization of that pre-existing instability. Record: docs/benchmarks/2026-11-18-identity-order.md. |
-| invariance.total | congressional-voting | 13 | 14 | +1 | Release 0.1.8: follows congressional-voting invariance.noise (11 -> 12, already accepted at limit 14), while gate-wide invariance.total improves 130 -> 118. |
-| redundancy.finding_permille_default | adventureworks | 834 | 833 | -1 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_default | column_order_stress | 953 | 951 | -2 | Issue #374 step 4: finding-line character share moves by 1-3 per mille as the predictive statements change (record: docs/benchmarks/2026-11-18-identity-order.md). |
-| redundancy.finding_permille_default | congressional-voting | 910 | 909 | -1 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_default | daily_level_collapse | 787 | 775 | -12 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_default | dominant_driver | 877 | 871 | -6 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_default | planted_mix | 907 | 904 | -3 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_default | state-unemployment | 846 | 845 | -1 | Issue #446 step 2: date_gaps joins the default set; its gap statements take report slots (adventureworks is at its 100-statement cap, so the planted customer_id sentinel moves out of the full report) and add short lines to digests. Record: docs/benchmarks/2026-11-18-defaults-framing.md. |
-| redundancy.finding_permille_target | congressional-voting | 903 | 901 | -2 | Release 0.1.8: calibrated single-logit binary model_failures and native 0/1 binary outcome statements shift digest finding-char density by 0.2% (903 -> 901), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392. |
-| redundancy.finding_permille_target | dominant_driver | 870 | 863 | -7 | Release 0.1.8: calibrated model_failures and outcome statements shift digest finding-char density by 0.8% (870 -> 863), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392. |
-| redundancy.finding_permille_target | planted_mix | 901 | 895 | -6 | Release 0.1.8: calibrated binary model_failures and native 0/1 binary outcome statements shift digest finding-char density by 0.7% (901 -> 895), while gate-wide redundancy.finding_permille_target improves 9391 -> 9392. |
-| reference.should_4k_default | daily_regime_break | 5 | 4 | -1 | Issue #374 step 3: dominant_driver age-weak (above). Record: docs/benchmarks/2026-11-18-null-bars.md. |
-| reference.should_8k_default | daily_regime_break | 5 | 4 | -1 | Release 0.1.8: permutation-null calibration in breaks and axisbreaks cuts permuted false positives 82% (38 -> 7 full, 21 -> 4 4k, and 2 -> 0 on daily_regime_break); on daily_regime_break the planted 2023-06-15 spike is still flagged by extreme_value (visits reaches 3344.9), but extreme_value names only [visits] rather than [date, visits]. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md. |
-| reference.should_full_default | daily_regime_break | 6 | 5 | -1 | Release 0.1.8: same daily_regime_break spike-day calibration trade-off as reference.should_8k_default while permuted false positives fall 38 -> 7. Record: docs/benchmarks/2026-11-22-architecture-performance-precision.md. |
+None.
 
 ## Every total metric, last 8 changes
 
 Oldest on the left. A value in a column is followed by its movement against the column before it.
 
-| metric | reading | `c20279a` | `cb5da2f` | `c22795b` | `0b47836` | `84d830f` | `ad88088` | `a0527ef` | `c1acd5f` |
+| metric | reading | `cb5da2f` | `c22795b` | `0b47836` | `84d830f` | `ad88088` | `a0527ef` | `c1acd5f` | `f494748` |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | planted.planted | information only | 76 | 76 | 76 | 76 | 76 | 76 | 76 | 76 |
-| planted.found_full | higher is better | 60 (+1, better) | 60 | 60 | 60 | 60 | 60 | 60 | 61 (+1, better) |
-| planted.found_4k | higher is better | 59 (+1, better) | 59 | 59 | 59 | 59 | 59 | 59 | 59 |
-| planted.line_sum_4k | information only | 606 (+13) | 606 | 606 | 606 | 606 | 606 | 606 | 604 (-2) |
-| permuted.false_full | lower is better | 38 (-1, better) | 38 | 38 | 38 | 38 | 38 | 38 | 7 (-31, better) |
-| permuted.false_4k | lower is better | 21 (-1, better) | 21 | 21 | 21 | 21 | 21 | 21 | 4 (-17, better) |
-| permuted.false_full_target | lower is better | 16 (-1, better) | 16 | 16 | 16 | 16 | 16 | 16 | 1 (-15, better) |
-| permuted.false_4k_target | lower is better | 9 (-1, better) | 9 | 9 | 9 | 9 | 9 | 9 | 1 (-8, better) |
-| permuted.findings_full | information only | 223 (-1) | 223 | 223 | 223 | 223 | 223 | 223 | 208 (-15) |
-| invariance.reverse | lower is better | 87 (-4, better) | 87 | 87 | 87 | 87 | 87 | 87 | 73 (-14, better) |
-| invariance.row_shuffle | lower is better | 11 (-84, better) | 11 | 11 | 11 | 11 | 11 | 11 | 11 |
+| planted.found_full | higher is better | 60 | 60 | 60 | 60 | 60 | 60 | 61 (+1, better) | 61 |
+| planted.found_4k | higher is better | 59 | 59 | 59 | 59 | 59 | 59 | 59 | 59 |
+| planted.line_sum_4k | information only | 606 | 606 | 606 | 606 | 606 | 606 | 604 (-2) | 605 (+1) |
+| permuted.false_full | lower is better | 38 | 38 | 38 | 38 | 38 | 38 | 7 (-31, better) | 7 |
+| permuted.false_4k | lower is better | 21 | 21 | 21 | 21 | 21 | 21 | 4 (-17, better) | 4 |
+| permuted.false_full_target | lower is better | 16 | 16 | 16 | 16 | 16 | 16 | 1 (-15, better) | 1 |
+| permuted.false_4k_target | lower is better | 9 | 9 | 9 | 9 | 9 | 9 | 1 (-8, better) | 1 |
+| permuted.findings_full | information only | 223 | 223 | 223 | 223 | 223 | 223 | 208 (-15) | 208 |
+| invariance.reverse | lower is better | 87 | 87 | 87 | 87 | 87 | 87 | 73 (-14, better) | 73 |
+| invariance.row_shuffle | lower is better | 11 | 11 | 11 | 11 | 11 | 11 | 11 | 11 |
 | invariance.rename | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| invariance.noise | lower is better | 31 (-21, better) | 31 | 31 | 31 | 31 | 31 | 31 | 33 (+2, worse) |
+| invariance.noise | lower is better | 31 | 31 | 31 | 31 | 31 | 31 | 33 (+2, worse) | 33 |
 | invariance.scale | lower is better | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
-| invariance.total | lower is better | 130 (-109, better) | 130 | 130 | 130 | 130 | 130 | 130 | 118 (-12, better) |
+| invariance.total | lower is better | 130 | 130 | 130 | 130 | 130 | 130 | 118 (-12, better) | 118 |
 | reference.check_failed | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | reference.must_total | information only | 19 | 19 | 19 | 19 | 19 | 19 | 19 | 19 |
 | reference.must_4k_default | higher is better | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
@@ -196,11 +157,11 @@ Oldest on the left. A value in a column is followed by its movement against the 
 | reference.must_8k_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.must_full_target | higher is better | 17 | 17 | 17 | 17 | 17 | 17 | 17 | 17 |
 | reference.should_total | information only | 45 | 45 | 45 | 45 | 45 | 45 | 45 | 45 |
-| reference.should_4k_default | higher is better | 32 (-1, worse) | 32 | 32 | 32 | 32 | 32 | 32 | 31 (-1, worse) |
-| reference.should_8k_default | higher is better | 35 | 35 | 35 | 35 | 35 | 35 | 35 | 34 (-1, worse) |
-| reference.should_full_default | higher is better | 37 | 37 | 37 | 37 | 37 | 37 | 37 | 36 (-1, worse) |
-| reference.should_4k_target | higher is better | 20 (-1, worse) | 20 | 20 | 20 | 20 | 20 | 20 | 20 |
-| reference.should_8k_target | higher is better | 22 (-1, worse) | 22 | 22 | 22 | 22 | 22 | 22 | 22 |
+| reference.should_4k_default | higher is better | 32 | 32 | 32 | 32 | 32 | 32 | 31 (-1, worse) | 33 (+2, better) |
+| reference.should_8k_default | higher is better | 35 | 35 | 35 | 35 | 35 | 35 | 34 (-1, worse) | 36 (+2, better) |
+| reference.should_full_default | higher is better | 37 | 37 | 37 | 37 | 37 | 37 | 36 (-1, worse) | 36 |
+| reference.should_4k_target | higher is better | 20 | 20 | 20 | 20 | 20 | 20 | 20 | 20 |
+| reference.should_8k_target | higher is better | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 |
 | reference.should_full_target | higher is better | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 |
 | reference.must_not_total | information only | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
 | reference.must_not_4k_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -210,20 +171,20 @@ Oldest on the left. A value in a column is followed by its movement against the 
 | reference.must_not_8k_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | reference.must_not_full_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.repeated_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_default | information only | 248 | 248 | 248 | 248 | 248 | 248 | 248 | 246 (-2) |
-| redundancy.finding_permille_default | higher is better | 15952 (+5, better) | 15952 | 15952 | 15952 | 15952 | 15952 | 15952 | 15947 (-5, worse) |
+| redundancy.finding_lines_default | information only | 248 | 248 | 248 | 248 | 248 | 248 | 246 (-2) | 260 (+14) |
+| redundancy.finding_permille_default | higher is better | 15952 | 15952 | 15952 | 15952 | 15952 | 15952 | 15947 (-5, worse) | 16347 (+400, better) |
 | redundancy.long_decimals_default | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | redundancy.repeated_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| redundancy.finding_lines_target | information only | 179 (-2) | 179 | 179 | 179 | 179 | 179 | 179 | 179 |
-| redundancy.finding_permille_target | higher is better | 9391 (+2, better) | 9391 | 9391 | 9391 | 9391 | 9391 | 9391 | 9392 (+1, better) |
+| redundancy.finding_lines_target | information only | 179 | 179 | 179 | 179 | 179 | 179 | 179 | 183 (+4) |
+| redundancy.finding_permille_target | higher is better | 9391 | 9391 | 9391 | 9391 | 9391 | 9391 | 9392 (+1, better) | 9581 (+189, better) |
 | redundancy.long_decimals_target | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.mismatch | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | truth.error | lower is better | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| truth.ok | information only | 870 (+9) | 870 | 870 | 870 | 870 | 870 | 870 | 1090 (+220) |
-| truth.not_checkable | information only | 1359 (+3) | 1359 | 1359 | 1359 | 1359 | 1359 | 1359 | 1225 (-134) |
-| cost.profile_seconds | lower is better | 15.716 (+4.849, worse) | 15.419 (-0.297) | 16.876 | 20.491 (+3.615, worse) | 15.512 | 16.873 | 17.049 (+0.176) | 9.99 |
-| cost.json_chars | information only | 3637758 (-362) | 3637758 | 3637758 | 3640798 (+3040) | 3640798 | 3640798 | 3640798 | 3570148 (-70650) |
-| cost.findings | information only | 1074 (+9) | 1074 | 1074 | 1074 | 1074 | 1074 | 1074 | 1038 (-36) |
+| truth.ok | information only | 870 | 870 | 870 | 870 | 870 | 870 | 1090 (+220) | 1090 |
+| truth.not_checkable | information only | 1359 | 1359 | 1359 | 1359 | 1359 | 1359 | 1225 (-134) | 1225 |
+| cost.profile_seconds | lower is better | 15.419 (-0.297) | 16.876 | 20.491 (+3.615, worse) | 15.512 | 16.873 | 17.049 (+0.176) | 9.99 | 8.234 |
+| cost.json_chars | information only | 3637758 | 3637758 | 3640798 (+3040) | 3640798 | 3640798 | 3640798 | 3570148 (-70650) | 3570096 (-52) |
+| cost.findings | information only | 1074 | 1074 | 1074 | 1074 | 1074 | 1074 | 1038 (-36) | 1038 |
 | weighted.must_total | information only | 4 | 4 | 4 | 4 | 4 | 4 | 4 | 4 |
 | weighted.must_4k | higher is better | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
 | weighted.must_8k | higher is better | 3 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
@@ -238,33 +199,33 @@ Oldest on the left. A value in a column is followed by its movement against the 
 
 | dataset | kind | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 4 | 0 | 0 | 1.358 |
-| bank-marketing | tabular, mixed types | 3 | 1 | 2 | 0 | 0 | 10 | 0 | 0 | 1.72 |
-| abalone | tabular, correlated measures | 5 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0.104 |
-| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0.678 |
-| metro-interstate-traffic | hourly time series | 5 | - | - | - | 0 | 3 | 0 | 0 | 1.507 |
-| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 2 | 0 | 0 | 0.399 |
-| absenteeism-at-work | small business table | 3 | - | - | - | 0 | 30 | 0 | 0 | 0.142 |
-| hospital-dha | wide numeric, 64 columns | 4 | - | - | - | 0 | 6 | 0 | 0 | 0.603 |
-| congressional-voting | categorical votes | 1 | - | - | - | 1 | 14 | 0 | 0 | 0.045 |
-| adventureworks | sales orders | 0 | - | - | - | 3 | 33 | 0 | 0 | 1.688 |
-| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.067 |
-| state-unemployment | wide time series, one column per state | 0 | - | - | - | 0 | 6 | 0 | 0 | 1.151 |
-| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0.104 |
-| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 6 | 0 | 0 | 0.123 |
-| soybean (held out) | categorical agronomy table | 0 | - | - | - | 2 | 23 | 0 | 0 | 0.203 |
-| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 24 | 0 | 0 | 0.186 |
-| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 2 | 32 | 0 | 0 | 0.404 |
+| adult-census-income | tabular, mixed types | 5 | 4 | 4 | 0 | 0 | 4 | 0 | 0 | 1.17 |
+| bank-marketing | tabular, mixed types | 3 | 1 | 2 | 0 | 0 | 10 | 0 | 0 | 1.47 |
+| abalone | tabular, correlated measures | 5 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0.086 |
+| bike-sharing-hourly | hourly series with calendar columns | 4 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0.585 |
+| metro-interstate-traffic | hourly time series | 5 | - | - | - | 0 | 3 | 0 | 0 | 1.072 |
+| thyroid | clinical, many flags and missing values | 1 | - | - | - | 0 | 2 | 0 | 0 | 0.318 |
+| absenteeism-at-work | small business table | 3 | - | - | - | 0 | 30 | 0 | 0 | 0.119 |
+| hospital-dha | wide numeric, 64 columns | 4 | - | - | - | 0 | 6 | 0 | 0 | 0.488 |
+| congressional-voting | categorical votes | 1 | - | - | - | 1 | 14 | 0 | 0 | 0.036 |
+| adventureworks | sales orders | 0 | - | - | - | 3 | 33 | 0 | 0 | 1.455 |
+| nab-nyc-taxi | single time series | 3 | - | - | - | 0 | 0 | 0 | 0 | 0.055 |
+| state-unemployment | wide time series, one column per state | 0 | - | - | - | 0 | 6 | 0 | 0 | 0.939 |
+| state-unemployment-long | panel, long form | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0.087 |
+| south-german-credit (held out) | credit table | 5 | 0 | 0 | 0 | 1 | 6 | 0 | 0 | 0.098 |
+| soybean (held out) | categorical agronomy table | 0 | - | - | - | 2 | 23 | 0 | 0 | 0.16 |
+| lace-satellites (held out) | satellite catalogue | 1 | - | - | - | 4 | 24 | 0 | 0 | 0.149 |
+| sec-edgar-company-facts (held out) | event log, filing events | 2 | 3 | 3 | 0 | 2 | 32 | 0 | 0 | 0.332 |
 | gse15258-expression (held out) | wide table, 86 samples x 5,006 columns | - | 1 | 1 | 0 | - | - | - | - | - |
-| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.139 |
-| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0.116 |
-| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.025 |
-| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.069 |
-| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.015 |
-| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.025 |
-| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0.011 |
-| weighted_noise | generated control: independent noise weight | 4 | - | - | - | 0 | 0 | 0 | 0 | 0.033 |
-| weighted_large_cell | generated control: merely large cell | 4 | - | - | - | 0 | 1 | 0 | 0 | 0.027 |
+| column_order_stress | generated numeric battery, latent factors | 0 | 0 | 0 | 0 | 0 | 7 | 0 | 0 | 0.12 |
+| planted_mix | generated application records with plants | 4 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0.098 |
+| daily_regime_break | generated daily series, planted breaks | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.021 |
+| dominant_driver | generated listings, numeric target | 5 | 2 | 2 | 0 | 0 | 1 | 0 | 0 | 0.056 |
+| daily_level_collapse | generated daily series, planted sustained collapse | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.013 |
+| marginal_ranges (held out) | generated range battery | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0.021 |
+| messy_intake (held out) | generated messy intake records | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0.009 |
+| weighted_noise | generated control: independent noise weight | 4 | - | - | - | 0 | 0 | 0 | 0 | 0.027 |
+| weighted_large_cell | generated control: merely large cell | 4 | - | - | - | 0 | 1 | 0 | 0 | 0.019 |
 
 ## Held-out datasets
 
@@ -272,6 +233,7 @@ These datasets are scored and left out of the pass/fail comparison. A gain on th
 
 | date | commit | change | planted found in 4k digest | must statements in 4k digest | must statements in 4k digest, target mode | restatements in the full report | statements on shuffled tables (4k digest) | facts changed by layout | repeated facts in 4k digest | statement mismatches | profile seconds |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-23 | `f494748` | Merge pull request #475 from fcela/fix/adversarial-shootout | 9 | 5 | 4 | 0 | 9 | 87 | 0 | 0 | 0.769 |
 | 2026-11-22 | `c1acd5f` | Merge pull request #465 from fcela/release/0.1.8 | 9 | 5 (+1, better) | 4 (+1, better) | 0 | 9 (-1, better) | 87 | 0 | 0 | 0.952 |
 | 2026-11-18 | `a0527ef` | Release 0.1.7 with hierarchical entity peers | 9 | 4 | 3 | 0 | 10 | 87 | 0 | 0 | 1.305 (+0.005) |
 | 2026-11-18 | `ad88088` | Merge pull request #459 from fcela/feat/448-weighted-joint-fingerprin… | 9 | 4 | 3 | 0 | 10 | 87 | 0 | 0 | 1.3 |
