@@ -400,6 +400,12 @@ def _check_content(f, m, df) -> list[Triple] | None:
         return [("extreme value", m["extreme"], extreme)]
     if kind == "long_text":
         return [("longest", m["longest"], present.select(c.str.len_chars().max()).item())]
+    if kind == "disguised_missing":
+        listed = count(c.is_in(m["tokens"]))
+        triples: list[Triple] = [("values", m["n"], present.height)]
+        if m["token_rows"] <= listed or len(m["tokens"]) < 5:
+            triples.append(("token rows", m["token_rows"], listed))
+        return triples
     if kind in ("numbers_as_text", "dates_as_text", "booleans_as_text",
                 "email", "url", "uuid", "ipv4"):
         listed = count(c.is_in(m["exception_values"]))
@@ -540,8 +546,61 @@ def _swap_expr(f: dict, m: dict) -> pl.Expr:
     )
 
 
+def _check_order_constraint(f, m, df) -> list[Triple] | None:
+    lower = m.get("lower")
+    upper = m.get("upper")
+    if not lower or not upper or lower not in df.columns or upper not in df.columns:
+        return None
+    complete = df.select(pl.col(lower).alias("_lo"), pl.col(upper).alias("_hi")).drop_nulls()
+    if df.schema[lower].is_numeric() and df.schema[upper].is_numeric():
+        complete = complete.filter(
+            pl.col("_lo").cast(pl.Float64).is_finite()
+            & pl.col("_hi").cast(pl.Float64).is_finite()
+        )
+        viol = complete.filter(pl.col("_lo").cast(pl.Float64) > pl.col("_hi").cast(pl.Float64)).height
+        eq = complete.filter(pl.col("_lo").cast(pl.Float64) == pl.col("_hi").cast(pl.Float64)).height
+    else:
+        viol = complete.filter(pl.col("_lo") > pl.col("_hi")).height
+        eq = complete.filter(pl.col("_lo") == pl.col("_hi")).height
+    out: list[Triple] = [
+        ("evaluated rows", m["n"], complete.height),
+        ("violations", m["violations"], viol),
+    ]
+    if "equal_rows" in m:
+        out.append(("equal rows", m["equal_rows"], eq))
+    return out
+
+
 def _check_swapped(f, m, df) -> list[Triple]:
     return [("swapped rows", m["swapped_rows"], df.filter(_swap_expr(f, m)).height)]
+
+
+def _check_outcome_contrast(f, m, df) -> list[Triple] | None:
+    defn = (f.get("specification") or {}).get("definition") or {}
+    gcol = defn.get("grouping_column") or m.get("grouping_column")
+    target = m.get("target") or f["subject"].get("target")
+    level = defn.get("level") if "level" in defn else m.get("level")
+    if not gcol or gcol not in df.columns or not target or target not in df.columns or level is None:
+        return None
+    sub = df.drop_nulls([gcol, target]).filter(_level_expr(df, gcol, level))
+    if "level_rows" in m and "level_events" in m and "event" in m:
+        ref = m.get("reference_level")
+        if ref is not None:
+            sub = sub.filter(
+                _level_expr(df, target, m["event"]) | _level_expr(df, target, ref)
+            )
+        events = sub.filter(_level_expr(df, target, m["event"])).height
+        return [
+            ("rows in level", m["level_rows"], sub.height),
+            ("event rows in level", m["level_events"], events),
+        ]
+    if "level_rows" in m and "level_median" in m:
+        med = sub.select(pl.col(target).cast(pl.Float64).median()).item()
+        return [
+            ("rows in level", m["level_rows"], sub.height),
+            ("level median", m["level_median"], med),
+        ]
+    return None
 
 
 CHECKS: dict[str, Callable] = {
@@ -569,6 +628,8 @@ CHECKS: dict[str, Callable] = {
     "robust isolation gap vs the subset bulk": _check_extreme,
     "pearson_spearman_chatterjee": _check_correlation,
     "adjacent_value_scan": _check_ordering,
+    "pairwise_order_scan": _check_order_constraint,
+    "per_level_outcome_contrast": _check_outcome_contrast,
     "axis_grid_scan": _check_axis_gap,
 }
 
@@ -659,6 +720,14 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
         return complete.filter(_line_distance(m) > m["ordinary_band"] * (1 + 1e-9))
     if algorithm == "swapped_range_scan":
         return indexed.filter(_swap_expr(f, m))
+    if algorithm == "pairwise_order_scan":
+        lower, upper = m.get("lower"), m.get("upper")
+        if lower and upper and lower in df.columns and upper in df.columns:
+            complete = indexed.drop_nulls([lower, upper])
+            if df.schema[lower].is_numeric() and df.schema[upper].is_numeric():
+                lo, hi = pl.col(lower).cast(pl.Float64), pl.col(upper).cast(pl.Float64)
+                return complete.filter(lo.is_finite() & hi.is_finite() & (lo > hi))
+            return complete.filter(pl.col(lower) > pl.col(upper))
     if algorithm == "near_uniqueness":
         return indexed.drop_nulls(cols).filter(pl.col(cols[0]).is_duplicated())
     if algorithm in ("boundary_mass_scan", "sentinel_window_scan"):
@@ -676,6 +745,8 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
             return indexed.filter(s < 0 if m["sign"] == "negative" else s > 0)
         if kind == "zero_inflation":
             return indexed.filter(s == 0)
+        if kind == "disguised_missing":
+            return indexed.filter(s.is_in(m["tokens"]))
         if kind in ("numbers_as_text", "dates_as_text", "booleans_as_text",
                     "email", "url", "uuid", "ipv4"):
             return indexed.filter(s.is_in(m["exception_values"]))
@@ -685,6 +756,94 @@ def rows_of(f: dict, df: pl.DataFrame) -> pl.DataFrame:
             return indexed.filter(
                 s.is_in([e["value"] for g in m["groups"] for e in g])
             )
+    if algorithm == "partitioned_scatterplot_diagnostics":
+        defn = (f.get("specification") or {}).get("definition") or {}
+        pair = defn.get("pair") or []
+        rule = defn.get("partition") or {}
+        if len(pair) == 2 and rule:
+            x, y = pair
+            complete = indexed.filter(
+                pl.col(x).is_not_null()
+                & pl.col(y).is_not_null()
+                & pl.col(x).cast(pl.Float64).is_finite()
+                & pl.col(y).cast(pl.Float64).is_finite()
+            )
+            groups = ((m.get("partition_scagnostics") or {}).get("validation") or {}).get("groups") or []
+            labels = [g.get("label") or f"group_{i}" for i, g in enumerate(groups)]
+            kind = rule.get("kind")
+            group_expr = None
+            standout_expr = None
+            if kind == "levels":
+                col = rule["column"]
+                lvls = rule["levels"]
+                col_s = pl.col(col).cast(pl.String)
+                fallback = labels[len(lvls)] if len(labels) > len(lvls) else "other"
+                expr = pl.lit(fallback)
+                for idx in range(len(lvls) - 1, -1, -1):
+                    lbl = labels[idx] if idx < len(labels) else lvls[idx]
+                    expr = pl.when(col_s == lvls[idx]).then(pl.lit(lbl)).otherwise(expr)
+                group_expr = expr
+                standout_expr = col_s == lvls[0]
+            elif kind == "threshold":
+                col = rule["column"]
+                val = float(rule["value"])
+                col_f = pl.col(col).cast(pl.Float64)
+                cond = pl.col(col).is_not_null() & col_f.is_finite() & (col_f <= val)
+                l0 = labels[0] if len(labels) > 0 else f"<= {val}"
+                l1 = labels[1] if len(labels) > 1 else f"> {val}"
+                group_expr = pl.when(cond).then(pl.lit(l0)).otherwise(pl.lit(l1))
+                standout_expr = cond
+            elif kind == "cross":
+                c0, c1 = rule["columns"]
+                v0, v1 = rule["levels"]
+                m0 = pl.col(c0).cast(pl.String) == v0
+                m1 = pl.col(c1).cast(pl.String) == v1
+                l0 = labels[0] if len(labels) > 0 else f"{v0} & {v1}"
+                l1 = labels[1] if len(labels) > 1 else f"{v0} & other"
+                l2 = labels[2] if len(labels) > 2 else f"other & {v1}"
+                l3 = labels[3] if len(labels) > 3 else "other & other"
+                group_expr = (
+                    pl.when(m0 & m1).then(pl.lit(l0))
+                    .when(m0 & ~m1).then(pl.lit(l1))
+                    .when(~m0 & m1).then(pl.lit(l2))
+                    .otherwise(pl.lit(l3))
+                )
+                standout_expr = m0 & m1
+            if group_expr is not None:
+                annotated = complete.with_columns(group_expr.alias("__partition_group"))
+                if defn.get("objective") == "standout_subgroup" and standout_expr is not None:
+                    so_idx = (m.get("partition_scagnostics") or {}).get("standout_group") or 0
+                    return annotated.filter(standout_expr if so_idx == 0 else ~standout_expr)
+                return annotated
+    if algorithm in ("cross_fitted_gbm_residual_slice_search", "slice_search_split_sample"):
+        conds = (f.get("specification") or {}).get("conditions") or m.get("conditions") or []
+        exprs = []
+        for p in conds:
+            col = p["column"]
+            op = p.get("operator") or p.get("op")
+            val = p["value"]
+            if op == "eq":
+                exprs.append(_level_expr(df, col, val))
+            elif op == "ne":
+                exprs.append(~_level_expr(df, col, val))
+            elif op in ("lt", "le", "gt", "ge"):
+                ops = {"lt": "__lt__", "le": "__le__", "gt": "__gt__", "ge": "__ge__"}
+                exprs.append(getattr(pl.col(col).cast(pl.Float64), ops[op])(float(val)))
+        if exprs:
+            return indexed.filter(pl.all_horizontal(exprs))
+    if algorithm == "per_level_outcome_contrast":
+        defn = (f.get("specification") or {}).get("definition") or {}
+        gcol = defn.get("grouping_column") or m.get("grouping_column")
+        level = defn.get("level") if "level" in defn else m.get("level")
+        if gcol and gcol in df.columns:
+            if level is not None:
+                return indexed.filter(_level_expr(df, gcol, level))
+            return indexed.filter(pl.col(gcol).is_not_null())
+    if algorithm == "two_population_contrast":
+        gcol = m.get("group_column")
+        gval = m.get("group_value")
+        if gcol and gcol in df.columns and gval is not None:
+            return indexed.filter(_level_expr(df, gcol, gval))
     if f.get("category") == "conditional_rules":
         spec = f.get("specification") or {}
         conditions = spec.get("conditions") or []

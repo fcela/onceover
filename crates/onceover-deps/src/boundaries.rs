@@ -37,8 +37,9 @@
 
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::json;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use onceover_core::{TypedCol, TypedTable};
 
@@ -100,7 +101,74 @@ pub fn boundary_mass(table: &TypedTable) -> Vec<Finding> {
     per_column.into_iter().flatten().collect()
 }
 
+/// Zero-allocation O(n) pre-screen: a column can only emit a boundary pile if
+/// its minimum or maximum repeats at least `MIN_PILE` times, or an interior
+/// mass point if zeros reach `ZERO_INFLATION_SHARE`. Continuous columns fail
+/// immediately without allocating `entries`, hash maps, or sorted buffers.
+fn could_have_boundary_or_interior_mass(col: &TypedCol) -> bool {
+    let mut n = 0usize;
+    let mut min_v = f64::INFINITY;
+    let mut min_c = 0usize;
+    let mut max_v = f64::NEG_INFINITY;
+    let mut max_c = 0usize;
+    let mut zeros = 0usize;
+
+    let mut observe = |v: f64| {
+        n += 1;
+        if v == 0.0 {
+            zeros += 1;
+        }
+        if v < min_v {
+            min_v = v;
+            min_c = 1;
+        } else if v == min_v {
+            min_c += 1;
+        }
+        if v > max_v {
+            max_v = v;
+            max_c = 1;
+        } else if v == max_v {
+            max_c += 1;
+        }
+    };
+
+    match col {
+        TypedCol::F64 { vals } => {
+            for v in vals.iter().flatten() {
+                if v.is_finite() {
+                    observe(*v);
+                }
+            }
+        }
+        TypedCol::I64 { vals } => {
+            for v in vals.iter().flatten() {
+                observe(*v as f64);
+            }
+        }
+        TypedCol::U64 { vals } => {
+            for v in vals.iter().flatten() {
+                observe(*v as f64);
+            }
+        }
+        TypedCol::Decimal { vals, scale } => {
+            let denom = 10f64.powi(*scale as i32);
+            for v in vals.iter().flatten() {
+                observe(*v as f64 / denom);
+            }
+        }
+        _ => return false,
+    }
+
+    if n < MIN_EVALUATED {
+        return false;
+    }
+    min_c >= MIN_PILE || max_c >= MIN_PILE || (zeros as f64) >= ZERO_INFLATION_SHARE * (n as f64)
+}
+
 fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Finding> {
+    if !could_have_boundary_or_interior_mass(col) {
+        return Vec::new();
+    }
     // (row, exact key, value) over the non-null entries, exactly as
     // the sentinel scan reads a column.
     let entries: Vec<(usize, i128, f64)> = match col {
@@ -133,7 +201,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     if n < MIN_EVALUATED {
         return Vec::new();
     }
-    let mut counts: HashMap<i128, usize> = HashMap::new();
+    let mut counts: FxHashMap<i128, usize> = FxHashMap::default();
     for &(_, key, _) in &entries {
         *counts.entry(key).or_default() += 1;
     }
@@ -168,7 +236,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     // Example rows for candidate values only (count >= MIN_PILE):
     // first few and last row index, so the implicated scope is
     // retrievable from the report.
-    let candidate_keys: std::collections::HashSet<i128> = counts
+    let candidate_keys: FxHashSet<i128> = counts
         .iter()
         .filter(|(_, &c)| c >= MIN_PILE)
         .map(|(&k, _)| k)
@@ -182,7 +250,7 @@ fn boundary_mass_column(table: &TypedTable, i: usize, col: &TypedCol) -> Vec<Fin
     // skipped, instead of re-sorting the bulk per candidate.
     let mut sorted_vals: Vec<f64> = entries.iter().map(|&(_, _, x)| x).collect();
     sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mut rows_of: HashMap<i128, (Vec<usize>, usize)> = HashMap::new();
+    let mut rows_of: FxHashMap<i128, (Vec<usize>, usize)> = FxHashMap::default();
     for &(r, key, _) in &entries {
         if candidate_keys.contains(&key) {
             let e = rows_of.entry(key).or_default();

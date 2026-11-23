@@ -13,7 +13,7 @@ from pathlib import Path
 
 import onceover
 
-_FORMATS = ("digest", "json", "markdown", "html")
+_FORMATS = ("digest", "brief", "json", "markdown", "html")
 
 
 def _build_parser():
@@ -43,7 +43,12 @@ def _build_parser():
         type=int,
         metavar="CHARS",
         default=None,
-        help="print the digest budgeted to CHARS characters",
+        help="print the digest or brief budgeted to CHARS characters",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="use compact formatting (short [f1] handles for digest; compact JSON)",
     )
     parser.add_argument(
         "--output",
@@ -125,9 +130,14 @@ def _render_single(path, args, fmt):
         sample_seed=args.sample_seed,
     )
     if fmt == "digest":
-        return report.to_digest(args.digest if args.digest is not None else 4000)
+        return report.to_digest(
+            args.digest if args.digest is not None else 4000,
+            compact=args.compact,
+        )
+    if fmt == "brief":
+        return report.to_brief(args.digest if args.digest is not None else 2500)
     if fmt == "json":
-        return report.to_json()
+        return report.to_json(compact=args.compact)
     if fmt == "markdown":
         return report.to_markdown()
     if fmt == "html":
@@ -178,8 +188,8 @@ def main(argv=None) -> int:
     """Run the `onceover` console script. Returns the exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.digest is not None and args.format not in (None, "digest"):
-        parser.error("--digest applies to the digest format only")
+    if args.digest is not None and args.format not in (None, "digest", "brief"):
+        parser.error("--digest applies to the digest or brief format only")
     fmt = args.format or "digest"
     paths = [Path(f) for f in args.files]
     for path in paths:

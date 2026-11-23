@@ -879,16 +879,28 @@ pub fn screen(
             .count(),
         cfg.max_predictors, cfg.max_model_rows,
     );
-    let excluded_names: Vec<&str> = excluded_targets
+    let excluded_both_names: Vec<&str> = excluded_inputs
         .iter()
         .filter(|i| enc.feat_cols.contains(i))
         .map(|&i| table.names[i].as_str())
         .collect();
-    if !excluded_names.is_empty() {
+    if !excluded_both_names.is_empty() {
         coverage.push_str(&format!(
             "; {} column(s) excluded as targets and predictors by frame role: {}",
-            excluded_names.len(),
-            excluded_names.join(", ")
+            excluded_both_names.len(),
+            excluded_both_names.join(", ")
+        ));
+    }
+    let excluded_targets_only: Vec<&str> = excluded_targets
+        .iter()
+        .filter(|i| inputs_allowed.contains(i) && enc.feat_cols.contains(i))
+        .map(|&i| table.names[i].as_str())
+        .collect();
+    if !excluded_targets_only.is_empty() {
+        coverage.push_str(&format!(
+            "; {} column(s) excluded as targets by frame role (kept as predictors): {}",
+            excluded_targets_only.len(),
+            excluded_targets_only.join(", ")
         ));
     }
     let declared_names: Vec<&str> = declared_excluded
@@ -1392,14 +1404,16 @@ pub struct CrossfitOutcome {
 /// `extra_rows` — rows the caller wants predictions for, such as a
 /// cross-fitting fold's held-out rows — receive the same per-round
 /// score updates the holdout rows receive for evaluation. They are
-/// never fit on. Returns (best holdout accuracy, majority
-/// baseline, rounds at best, scores at best).
+/// Binary logistic boosting for cross-fitted probability residuals:
+/// fits one log-odds ensemble initialized at `logit(p1)` and early-stops
+/// on holdout binary log-loss (cross-entropy), so out-of-fold predicted
+/// probabilities are well-calibrated rather than distorted by 0–1 argmax
+/// early stopping or doubled one-vs-rest log-odds.
 #[allow(clippy::too_many_arguments)]
-fn boost_categorical_scored(
+fn boost_binary_scored(
     n_rows: usize,
     cfg: &ScreenConfig,
     ids: &[u8],
-    k: usize,
     train: &[u32],
     holdout: &[u32],
     extra_rows: &[u32],
@@ -1407,81 +1421,58 @@ fn boost_categorical_scored(
     n_feats: usize,
     own_feat: Option<usize>,
     min_leaf: usize,
-) -> (f64, f64, usize, Vec<Vec<f32>>) {
-    let mut class_count = vec![0u32; k];
-    for &p in train {
-        class_count[ids[p as usize] as usize] += 1;
-    }
-    let prior: Vec<f32> = class_count
-        .iter()
-        .map(|&x| x as f32 / train.len() as f32)
-        .collect();
-    let base: Vec<f32> = prior.iter().map(|&p| (p / (1.0 - p + 1e-9)).ln()).collect();
-    let mut scores = vec![base.clone(); n_rows];
-    let mut best_scores = scores.clone();
-    let baseline = prior.iter().cloned().fold(f32::MIN, f32::max) as f64;
-    let mut best_metric = 0.0f64;
-    let mut best_rounds = 0;
-    let mut stale = 0;
-    let max_rounds = if k > 5 {
-        cfg.max_rounds / 2
-    } else {
-        cfg.max_rounds
-    };
-    for round in 1..=max_rounds {
-        // Class-major sweeps over row-major `scores` (n_rows × k):
-        // the range loop over classes is intentional.
-        #[allow(clippy::needless_range_loop)]
-        for c in 0..k {
-            let mut g = vec![0.0f32; n_rows];
-            let mut h = vec![0.0f32; n_rows];
-            for &p in train {
-                let z = scores[p as usize][c];
-                let pc = 1.0 / (1.0 + (-z).exp());
-                let yc = if ids[p as usize] as usize == c {
-                    1.0
-                } else {
-                    0.0
-                };
-                g[p as usize] = pc - yc;
-                h[p as usize] = pc * (1.0 - pc);
-            }
-            let (root, nodes, _gains) = grow_tree(
-                packed,
-                n_feats,
-                train,
-                &g,
-                &h,
-                own_feat,
-                cfg.lambda,
-                min_leaf,
-                cfg.max_depth,
-            );
-            for &p in train.iter().chain(holdout.iter()).chain(extra_rows.iter()) {
-                scores[p as usize][c] +=
-                    cfg.learning_rate * tree_predict(&nodes, root, packed, n_feats, p as usize);
-            }
+) -> (usize, Vec<f32>) {
+    let n_pos = train.iter().filter(|&&p| ids[p as usize] == 1).count();
+    let p1 = (n_pos as f64 / train.len().max(1) as f64).clamp(1e-6, 1.0 - 1e-6);
+    let base = (p1 / (1.0 - p1)).ln() as f32;
+    let mut logits = vec![base; n_rows];
+    let mut best_logits = logits.clone();
+    let logloss = |rows: &[u32], z_arr: &[f32]| -> f64 {
+        if rows.is_empty() {
+            return f64::INFINITY;
         }
-        // Holdout accuracy (argmax score).
-        let correct = holdout
-            .iter()
-            .filter(|&&p| {
-                let mut best_c = 0usize;
-                let mut best_s = f32::MIN;
-                for (c, s) in scores[p as usize].iter().enumerate() {
-                    if *s > best_s {
-                        best_s = *s;
-                        best_c = c;
-                    }
-                }
-                best_c == ids[p as usize] as usize
-            })
-            .count();
-        let acc = correct as f64 / holdout.len().max(1) as f64;
-        if acc > best_metric + 1e-4 {
-            best_metric = acc;
+        let mut sum = 0.0f64;
+        for &p in rows {
+            let z = z_arr[p as usize] as f64;
+            let y = if ids[p as usize] == 1 { 1.0 } else { 0.0 };
+            // Numerically stable binary cross-entropy: max(z,0) - z*y + ln(1 + exp(-|z|))
+            sum += z.max(0.0) - z * y + (-z.abs()).exp().ln_1p();
+        }
+        sum / rows.len() as f64
+    };
+    let mut best_loss = logloss(holdout, &logits);
+    let mut best_rounds = 0usize;
+    let mut stale = 0usize;
+    for round in 1..=cfg.max_rounds {
+        let mut g = vec![0.0f32; n_rows];
+        let mut h = vec![0.0f32; n_rows];
+        for &p in train {
+            let z = logits[p as usize];
+            let prob = 1.0 / (1.0 + (-z).exp());
+            let y = if ids[p as usize] == 1 { 1.0 } else { 0.0 };
+            g[p as usize] = prob - y;
+            h[p as usize] = (prob * (1.0 - prob)).max(1e-6);
+        }
+        let (root, nodes, _gains) = grow_tree(
+            packed,
+            n_feats,
+            train,
+            &g,
+            &h,
+            own_feat,
+            cfg.lambda,
+            min_leaf,
+            cfg.max_depth,
+        );
+        for &p in train.iter().chain(holdout.iter()).chain(extra_rows.iter()) {
+            logits[p as usize] +=
+                cfg.learning_rate * tree_predict(&nodes, root, packed, n_feats, p as usize);
+        }
+        let loss = logloss(holdout, &logits);
+        if loss + 1e-4 < best_loss {
+            best_loss = loss;
             best_rounds = round;
-            best_scores = scores.clone();
+            best_logits = logits.clone();
             stale = 0;
         } else {
             stale += 1;
@@ -1490,7 +1481,7 @@ fn boost_categorical_scored(
             }
         }
     }
-    (best_metric, baseline, best_rounds, best_scores)
+    (best_rounds, best_logits)
 }
 
 /// Quantile-bin a numeric target into at most 32 bins over its
@@ -1687,12 +1678,12 @@ pub fn crossfit_residuals(
                 }
             }
             TargetKind::Categorical(ids, _) => {
-                let (_acc, _baseline, rounds, scores) = boost_categorical_scored(
-                    enc.n, cfg, ids, 2, &train, &holdout, &test, &packed, n_feats, None, min_leaf,
+                let (rounds, logits) = boost_binary_scored(
+                    enc.n, cfg, ids, &train, &holdout, &test, &packed, n_feats, None, min_leaf,
                 );
                 fold_rounds.push(rounds);
                 for &p in &test {
-                    let z = scores[p as usize][1] as f64 - scores[p as usize][0] as f64;
+                    let z = logits[p as usize] as f64;
                     let p1 = 1.0 / (1.0 + (-z).exp());
                     let y01 = if ids[p as usize] == 1 { 1.0 } else { 0.0 };
                     signed[p as usize] = y01 - p1;

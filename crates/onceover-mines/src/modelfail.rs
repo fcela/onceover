@@ -1038,6 +1038,7 @@ mod tests {
                     vals: NumericValues::from(x),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cf = CrossfitOutcome {
             positions: (0..n as u32).collect(),
@@ -1249,6 +1250,7 @@ mod crossfit_tests {
                 TypedCol::Str { vals: g },
                 TypedCol::Str { vals: y },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let (enc, _) = crate::encode::encode(&table, &crate::encode::EncodeConfig::default());
         let cf = crossfit_residuals(&table, &enc, 2, &ScreenConfig::default(), &[], 5)

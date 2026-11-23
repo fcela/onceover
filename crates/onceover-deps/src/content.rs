@@ -442,6 +442,51 @@ fn text_findings(name: &str, col: &TypedCol, n_rows: usize) -> Vec<Finding> {
     }
     let mut out = Vec::new();
 
+    // Disguised missing-value placeholder tokens stored as literal strings
+    // (e.g. "NULL", "NA", "N/A", "NaN", "Undefined") rather than true nulls.
+    let mut missing_tokens: Vec<(&str, usize)> = counts
+        .iter()
+        .filter(|(v, _)| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "null" | "na" | "n/a" | "#n/a" | "nan" | "undefined"
+            )
+        })
+        .map(|(v, c)| (*v, *c))
+        .collect();
+    if !missing_tokens.is_empty() {
+        missing_tokens.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        let token_rows: usize = missing_tokens.iter().map(|(_, c)| *c).sum();
+        if token_rows > 0 && token_rows < n {
+            let share = token_rows as f64 / n as f64;
+            out.push(statement(
+                name,
+                "disguised_missing",
+                format!(
+                    "column {name} contains {token_rows} of {n} values ({}) stored as missing-value text token{}: {}",
+                    pct(share),
+                    if missing_tokens.len() == 1 { "" } else { "s" },
+                    example_list(&missing_tokens),
+                ),
+                0.76,
+                BTreeMap::from([
+                    ("n".to_string(), json!(n)),
+                    ("token_rows".to_string(), json!(token_rows)),
+                    ("share".to_string(), json!(share)),
+                    (
+                        "tokens".to_string(),
+                        json!(missing_tokens
+                            .iter()
+                            .take(MAX_EXAMPLES)
+                            .map(|(v, _)| *v)
+                            .collect::<Vec<_>>()),
+                    ),
+                ]),
+                "parse these sentinel strings as nulls (or an explicit category) before profiling or modeling",
+            ));
+        }
+    }
+
     let mut typed = false;
     for r in &TEXT_TYPES {
         let (bad_rows, bad) = exceptions(&counts, r.test);

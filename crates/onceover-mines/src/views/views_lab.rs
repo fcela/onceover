@@ -353,6 +353,7 @@ fn plant(name: &str, rows: usize, seed: u64, blocks: &[Block], noise: &[NoiseCol
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         },
         blocks: truth,
         noise: noise_names,
@@ -773,6 +774,7 @@ fn table_from_csv(rows: &[Vec<String>]) -> TypedTable<'static> {
         names: header.clone(),
         dtypes,
         cols,
+        row_keys_cache: std::sync::OnceLock::new(),
     }
 }
 

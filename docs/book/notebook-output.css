@@ -1,0 +1,65 @@
+/* Preserve output line breaks and indentation, then wrap to the reading pane. */
+article pre.myst-jp-stream-output,
+article pre.myst-jp-plain-text-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+article pre.myst-jp-stream-output > code,
+article pre.myst-jp-plain-text-output > code {
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+
+article table :is(th, td),
+article table :is(th, td) code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Great Tables ships its own light palette, including on dark book pages. */
+article .gt_table :is(th, td) {
+  color: var(--myst-color-text) !important;
+  background-color: var(--myst-color-bg) !important;
+  border-color: var(--myst-color-border) !important;
+}
+
+article .gt_table :is(.gt_heading, .gt_col_heading, .gt_striped) {
+  background-color: var(--myst-color-bg-secondary) !important;
+}
+
+@media (max-width: 640px) {
+  /* Keep the headings for assistive technology and label each visible value. */
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)),
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)) :is(thead, tbody, tfoot, tr, th, td) {
+    display: block;
+  }
+
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)) .gt_col_headings {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)) tbody tr:has(td[headers]) {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--myst-color-border);
+  }
+
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)) tbody td[headers] {
+    display: grid;
+    grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
+    gap: 0.5rem;
+    padding: 0.15rem 0.5rem;
+    text-align: left !important;
+    border: 0 !important;
+  }
+
+  article .gt_table:has(.gt_col_headings > th:nth-child(5)) tbody td[headers]::before {
+    content: attr(headers);
+    color: var(--myst-color-text-secondary);
+    font-weight: 600;
+  }
+}

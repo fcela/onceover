@@ -10,6 +10,13 @@ comparison against a base cannot say whether the base itself is good;
 the ceilings in `ceilings.json` are absolute targets that the head
 must meet whatever the base holds (see "Ceilings" below).
 
+Use this comparison to evaluate changes to the recommended detector
+set. On-request registration has its own evidence and coverage review.
+A promotion trial also needs evidence that the new detector's findings
+add value on real or planted data, since the existing references may
+cover only the older detectors.
+
+
     python benchmarks/gate/run.py --out scorecard.json --commit <sha>
     python benchmarks/gate/run.py --out s.json --only abalone --components planted,cost
     python benchmarks/gate/run.py --out s.json --fast        # three small tables

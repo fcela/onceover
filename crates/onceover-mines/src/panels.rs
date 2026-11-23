@@ -707,17 +707,50 @@ fn is_block(count: usize, typical: usize, entities: usize) -> bool {
 
 /// Block periods within one direction's candidate counts:
 /// (period index, count), strongest first, plus the typical
-/// count the blocks were judged against.
-fn find_blocks(counts: &[usize], offset: usize, entities: usize) -> (Vec<(usize, usize)>, usize) {
+/// count the blocks were judged against. Also requires the count
+/// to clear the time-shuffled null expectation so boundary-adjacent
+/// order-statistic decay (min/max over shuffled dates) never reads
+/// as a cohort block.
+fn find_blocks(
+    counts: &[usize],
+    expected: &[f64],
+    offset: usize,
+    entities: usize,
+) -> (Vec<(usize, usize)>, usize) {
     let typical = median_count(counts);
     let mut blocks: Vec<(usize, usize)> = counts
         .iter()
         .enumerate()
-        .filter(|(_, &c)| is_block(c, typical, entities))
+        .filter(|&(i, &c)| {
+            if !is_block(c, typical, entities) {
+                return false;
+            }
+            let exp = expected[i];
+            (c as f64) >= 2.0 * exp && (c as f64 - exp) >= 4.0 * exp.max(1.0).sqrt()
+        })
         .map(|(i, &c)| (i + offset, c))
         .collect();
     blocks.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     (blocks, typical)
+}
+
+/// Exact probability that `r` rows drawn without replacement from
+/// `total` rows all land inside a subset of size `subset_size`.
+fn prob_all_in(subset_size: usize, total: usize, r: usize) -> f64 {
+    if r == 0 {
+        return 1.0;
+    }
+    if r > subset_size || subset_size > total {
+        return 0.0;
+    }
+    if subset_size == total {
+        return 1.0;
+    }
+    let lg = onceover_core::stats::ln_gamma;
+    let log_p =
+        lg((subset_size + 1) as f64) - lg((subset_size - r + 1) as f64) - lg((total + 1) as f64)
+            + lg((total - r + 1) as f64);
+    log_p.exp().clamp(0.0, 1.0)
 }
 
 /// Whether a measure is active on one row: non-zero for a numeric
@@ -741,6 +774,10 @@ struct DynamicsScan {
     without_period: usize,
     entries: Vec<usize>,
     exits: Vec<usize>,
+    /// Null-expected entries and exits per period under a random
+    /// permutation of the time column.
+    expected_entries: Vec<f64>,
+    expected_exits: Vec<f64>,
     /// (entity code, first period, last period) per observed entity.
     spans: Vec<(u32, usize, usize)>,
 }
@@ -753,6 +790,9 @@ fn scan_dynamics(
 ) -> DynamicsScan {
     let mut first: Vec<Option<usize>> = vec![None; distinct];
     let mut last: Vec<Option<usize>> = vec![None; distinct];
+    let mut period_rows: Vec<usize> = vec![0; periods];
+    let mut entity_rows: Vec<usize> = vec![0; distinct];
+    let mut total_rows = 0usize;
     for r in 0..codes.len() {
         let (Some(code), Some(period)) = (codes[r], period_of[r]) else {
             continue;
@@ -760,12 +800,18 @@ fn scan_dynamics(
         let c = code as usize;
         first[c] = Some(first[c].map_or(period, |f| f.min(period)));
         last[c] = Some(last[c].map_or(period, |l| l.max(period)));
+        period_rows[period] += 1;
+        entity_rows[c] += 1;
+        total_rows += 1;
     }
+    let mut row_count_hist: BTreeMap<usize, usize> = BTreeMap::new();
     let mut scan = DynamicsScan {
         entities: 0,
         without_period: 0,
         entries: vec![0; periods],
         exits: vec![0; periods],
+        expected_entries: vec![0.0; periods],
+        expected_exits: vec![0.0; periods],
         spans: Vec::new(),
     };
     for code in 0..distinct {
@@ -774,11 +820,39 @@ fn scan_dynamics(
                 scan.entries[f] += 1;
                 scan.exits[l] += 1;
                 scan.spans.push((code as u32, f, l));
+                *row_count_hist.entry(entity_rows[code]).or_insert(0) += 1;
             }
             _ => scan.without_period += 1,
         }
     }
     scan.entities = scan.spans.len();
+    if total_rows > 0 && !row_count_hist.is_empty() {
+        let mut c_ge = vec![0usize; periods + 1];
+        for p in (0..periods).rev() {
+            c_ge[p] = c_ge[p + 1] + period_rows[p];
+        }
+        let mut c_le = vec![0usize; periods];
+        let mut run = 0usize;
+        for p in 0..periods {
+            run += period_rows[p];
+            c_le[p] = run;
+        }
+        for p in 0..periods {
+            let mut ee = 0.0f64;
+            let mut ex = 0.0f64;
+            let prev_le = if p == 0 { 0 } else { c_le[p - 1] };
+            for (&r, &mult) in &row_count_hist {
+                let p_ge = prob_all_in(c_ge[p], total_rows, r);
+                let p_gt = prob_all_in(c_ge[p + 1], total_rows, r);
+                ee += mult as f64 * (p_ge - p_gt).max(0.0);
+                let p_le = prob_all_in(c_le[p], total_rows, r);
+                let p_lt = prob_all_in(prev_le, total_rows, r);
+                ex += mult as f64 * (p_le - p_lt).max(0.0);
+            }
+            scan.expected_entries[p] = ee;
+            scan.expected_exits[p] = ex;
+        }
+    }
     scan
 }
 
@@ -1145,8 +1219,18 @@ pub fn panel_dynamics(table: &TypedTable, input: &PanelInput) -> (Vec<Finding>, 
         }
         let mut grain_findings: Vec<Finding> = Vec::new();
         let mut block_carriers: Vec<(usize, usize)> = Vec::new(); // (finding index, count)
-        let (entry_blocks, entry_typical) = find_blocks(&scan.entries[1..], 1, scan.entities);
-        let (exit_blocks, exit_typical) = find_blocks(&scan.exits[..periods - 1], 0, scan.entities);
+        let (entry_blocks, entry_typical) = find_blocks(
+            &scan.entries[1..],
+            &scan.expected_entries[1..],
+            1,
+            scan.entities,
+        );
+        let (exit_blocks, exit_typical) = find_blocks(
+            &scan.exits[..periods - 1],
+            &scan.expected_exits[..periods - 1],
+            0,
+            scan.entities,
+        );
         for (period, count) in entry_blocks.iter().take(MAX_BLOCKS_PER_DIRECTION) {
             block_carriers.push((grain_findings.len(), *count));
             grain_findings.push(build_block_finding(
@@ -1631,8 +1715,12 @@ fn scan_measure(
 ) -> (Option<Finding>, Option<Finding>) {
     let mut cells: HashMap<(u32, u32), f64> = HashMap::new();
     let mut totals = vec![0.0f64; distinct];
+    let mut max_vals = vec![0.0f64; distinct];
+    let mut row_counts = vec![0usize; distinct];
     let mut observed = vec![false; distinct];
     let mut rows_used = 0usize;
+    let mut sum_v = 0.0f64;
+    let mut sum_v2 = 0.0f64;
     for r in 0..table.n {
         let (Some(code), Some(period)) = (codes[r], period_of[r]) else {
             continue;
@@ -1641,8 +1729,14 @@ fn scan_measure(
             continue;
         };
         rows_used += 1;
+        sum_v += v;
+        sum_v2 += v * v;
         *cells.entry((code, period as u32)).or_default() += v;
         totals[code as usize] += v;
+        if v > max_vals[code as usize] {
+            max_vals[code as usize] = v;
+        }
+        row_counts[code as usize] += 1;
         observed[code as usize] = true;
     }
     let n_entities = observed.iter().filter(|o| **o).count();
@@ -1653,7 +1747,18 @@ fn scan_measure(
         table, input, entity, measure, labels, &cells, n_entities, n_periods, rows_used,
     );
     let outlier = outlier_finding(
-        table, input, entity, measure, labels, &totals, &observed, rows_used,
+        table,
+        input,
+        entity,
+        measure,
+        labels,
+        &totals,
+        &max_vals,
+        &row_counts,
+        &observed,
+        rows_used,
+        sum_v,
+        sum_v2,
     );
     (concentration, outlier)
 }
@@ -1856,8 +1961,12 @@ fn outlier_finding(
     measure: usize,
     labels: &[String],
     totals: &[f64],
+    max_vals: &[f64],
+    row_counts: &[usize],
     observed: &[bool],
     rows_used: usize,
+    sum_v: f64,
+    sum_v2: f64,
 ) -> Option<Finding> {
     let mut sorted: Vec<f64> = totals
         .iter()
@@ -1879,10 +1988,57 @@ fn outlier_finding(
     if grand <= 0.0 {
         return None;
     }
+    // Guard against unbalanced row counts and single heavy-tailed cells:
+    // an entity whose total is extreme solely because it has 100x more
+    // rows than typical — or because one single random heavy-tailed row
+    // landed on a 2-row entity — does not have an elevated entity level
+    // on this measure. Require:
+    //  1) at least 2 rows, and its leave-one-out mean (dropping the
+    //     single largest row) still exceeds 1.5x the typical entity mean;
+    //  2) its per-row mean clears the Bonferroni-calibrated permutation
+    //     null across all entities (alpha = 0.05 / n_entities, z >= 4.0).
+    let mut entity_means: Vec<f64> = totals
+        .iter()
+        .zip(row_counts.iter())
+        .zip(observed.iter())
+        .filter(|((_, &rc), &o)| o && rc > 0)
+        .map(|((&t, &rc), _)| t / rc as f64)
+        .collect();
+    entity_means.sort_by(f64::total_cmp);
+    let med_mean = crate::dep::quantile_sorted(&entity_means, 0.5);
+    let q3_mean = crate::dep::quantile_sorted(&entity_means, 0.75);
+    let typical_mean = if med_mean > 0.0 { med_mean } else { q3_mean };
+    let grand_mean = sum_v / rows_used.max(1) as f64;
+    let global_var = if rows_used > 1 {
+        ((sum_v2 - sum_v * sum_v / rows_used as f64) / (rows_used - 1) as f64).max(0.0)
+    } else {
+        0.0
+    };
+    let bonf_alpha = 0.05 / n_entities.max(1) as f64;
     let mut outliers: Vec<(u32, f64)> = totals
         .iter()
         .enumerate()
-        .filter(|(i, t)| observed[*i] && **t >= OUTLIER_MULTIPLE * typical && **t > fence)
+        .filter(|&(i, &t)| {
+            if !observed[i] || row_counts[i] < 2 || t < OUTLIER_MULTIPLE * typical || t <= fence {
+                return false;
+            }
+            let n_e = row_counts[i] as f64;
+            let mean_e = t / n_e;
+            let loo_mean = (t - max_vals[i]) / (n_e - 1.0);
+            if typical_mean > 0.0 && (mean_e < 1.5 * typical_mean || loo_mean < 1.5 * typical_mean)
+            {
+                return false;
+            }
+            let fpc = ((rows_used as f64 - n_e) / (rows_used as f64 - 1.0).max(1.0)).max(0.0);
+            let se_perm = (global_var / n_e * fpc).sqrt();
+            if se_perm > 0.0 {
+                let z = (mean_e - grand_mean) / se_perm;
+                if z < 4.0 || crate::dep::norm_sf(z) > bonf_alpha {
+                    return false;
+                }
+            }
+            true
+        })
         .map(|(i, t)| (i as u32, *t))
         .collect();
     if outliers.is_empty() {

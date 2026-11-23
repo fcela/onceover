@@ -52,6 +52,8 @@ use std::collections::BTreeMap;
 use crate::dep::{iqr_sorted, median_sorted, quantile_sorted, rank_sum_p};
 use onceover_core::{dateutil, TypedCol, TypedTable};
 use onceover_report::{EvidenceBasis, Finding, Method, Pattern};
+use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 use serde_json::{json, Value};
 
 /// Most levels a grouping column may have to enter the scan.
@@ -140,46 +142,145 @@ pub(crate) struct Grouping {
 /// Level codes for one column, when it is a low-cardinality
 /// categorical: strings, booleans, and integer columns with
 /// 2..=MAX_LEVELS distinct non-null values.
+///
+/// Bails out immediately on the `(MAX_LEVELS + 1)`-th distinct value
+/// without allocating per-row Strings.
 pub(crate) fn code_levels(
     table: &TypedTable,
     ci: usize,
 ) -> Option<(Vec<Option<u32>>, Vec<String>)> {
-    let mut index: BTreeMap<String, u32> = BTreeMap::new();
-    let mut labels: Vec<String> = Vec::new();
-    let push = |index: &mut BTreeMap<String, u32>, labels: &mut Vec<String>, s: String| {
-        if !index.contains_key(&s) {
-            index.insert(s.clone(), labels.len() as u32);
-            labels.push(s);
+    let n = table.n;
+    match &table.cols[ci] {
+        TypedCol::Str { vals } => {
+            let mut index: FxHashMap<&str, u32> = FxHashMap::default();
+            let mut labels: Vec<String> = Vec::new();
+            let mut codes = Vec::with_capacity(n);
+            for &v in vals {
+                match v {
+                    None => codes.push(None),
+                    Some(s) => {
+                        let code = if let Some(&c) = index.get(s) {
+                            c
+                        } else {
+                            if labels.len() >= MAX_LEVELS {
+                                return None;
+                            }
+                            let c = labels.len() as u32;
+                            index.insert(s, c);
+                            labels.push(s.to_string());
+                            c
+                        };
+                        codes.push(Some(code));
+                    }
+                }
+            }
+            (labels.len() >= 2).then_some((codes, labels))
         }
-    };
-    let raw: Vec<Option<String>> = match &table.cols[ci] {
-        TypedCol::Str { vals } => vals.iter().map(|v| v.map(|s| s.to_string())).collect(),
-        TypedCol::StrOwned { vals } => vals.to_vec(),
-        TypedCol::Bool { vals } => vals
-            .iter()
-            .map(|v| v.map(|b| if b { "true".into() } else { "false".into() }))
-            .collect(),
-        TypedCol::I64 { vals } => vals
-            .iter()
-            .map(|v| v.map(|x| crate::fmt_float(*x as f64)))
-            .collect(),
-        TypedCol::U64 { vals } => vals
-            .iter()
-            .map(|v| v.map(|x| crate::fmt_float(*x as f64)))
-            .collect(),
-        _ => return None,
-    };
-    for v in raw.iter().flatten() {
-        push(&mut index, &mut labels, v.clone());
-        if labels.len() > MAX_LEVELS {
-            return None;
+        TypedCol::StrOwned { vals } => {
+            let mut index: FxHashMap<&str, u32> = FxHashMap::default();
+            let mut labels: Vec<String> = Vec::new();
+            let mut codes = Vec::with_capacity(n);
+            for v in vals {
+                match v.as_deref() {
+                    None => codes.push(None),
+                    Some(s) => {
+                        let code = if let Some(&c) = index.get(s) {
+                            c
+                        } else {
+                            if labels.len() >= MAX_LEVELS {
+                                return None;
+                            }
+                            let c = labels.len() as u32;
+                            index.insert(s, c);
+                            labels.push(s.to_string());
+                            c
+                        };
+                        codes.push(Some(code));
+                    }
+                }
+            }
+            (labels.len() >= 2).then_some((codes, labels))
         }
+        TypedCol::Bool { vals } => {
+            let mut labels: Vec<String> = Vec::new();
+            let mut code_false: Option<u32> = None;
+            let mut code_true: Option<u32> = None;
+            let mut codes = Vec::with_capacity(n);
+            for &v in vals {
+                match v {
+                    None => codes.push(None),
+                    Some(false) => {
+                        let c = *code_false.get_or_insert_with(|| {
+                            let c = labels.len() as u32;
+                            labels.push("false".into());
+                            c
+                        });
+                        codes.push(Some(c));
+                    }
+                    Some(true) => {
+                        let c = *code_true.get_or_insert_with(|| {
+                            let c = labels.len() as u32;
+                            labels.push("true".into());
+                            c
+                        });
+                        codes.push(Some(c));
+                    }
+                }
+            }
+            (labels.len() >= 2).then_some((codes, labels))
+        }
+        TypedCol::I64 { vals } => {
+            let mut index: FxHashMap<i64, u32> = FxHashMap::default();
+            let mut labels: Vec<String> = Vec::new();
+            let mut codes = Vec::with_capacity(n);
+            for v in vals.iter() {
+                match v.copied() {
+                    None => codes.push(None),
+                    Some(x) => {
+                        let code = if let Some(&c) = index.get(&x) {
+                            c
+                        } else {
+                            if labels.len() >= MAX_LEVELS {
+                                return None;
+                            }
+                            let c = labels.len() as u32;
+                            index.insert(x, c);
+                            labels.push(crate::fmt_float(x as f64));
+                            c
+                        };
+                        codes.push(Some(code));
+                    }
+                }
+            }
+            (labels.len() >= 2).then_some((codes, labels))
+        }
+        TypedCol::U64 { vals } => {
+            let mut index: FxHashMap<u64, u32> = FxHashMap::default();
+            let mut labels: Vec<String> = Vec::new();
+            let mut codes = Vec::with_capacity(n);
+            for v in vals.iter() {
+                match v.copied() {
+                    None => codes.push(None),
+                    Some(x) => {
+                        let code = if let Some(&c) = index.get(&x) {
+                            c
+                        } else {
+                            if labels.len() >= MAX_LEVELS {
+                                return None;
+                            }
+                            let c = labels.len() as u32;
+                            index.insert(x, c);
+                            labels.push(crate::fmt_float(x as f64));
+                            c
+                        };
+                        codes.push(Some(code));
+                    }
+                }
+            }
+            (labels.len() >= 2).then_some((codes, labels))
+        }
+        _ => None,
     }
-    if !(2..=MAX_LEVELS).contains(&labels.len()) {
-        return None;
-    }
-    let codes = raw.iter().map(|v| v.as_ref().map(|s| index[s])).collect();
-    Some((codes, labels))
 }
 
 /// Calendar-part groupings derived from the axis ticks.
@@ -482,46 +583,49 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
         })
         .collect();
 
-    let mut candidates: Vec<Candidate> = Vec::new();
-    let mut pvals: Vec<f64> = Vec::new();
-    let mut p_index: Vec<(usize, bool)> = Vec::new(); // (candidate slot, is_location)
-    let mut pairs_examined = 0usize;
+    let mut pair_tasks: Vec<(usize, usize)> = Vec::new();
     let mut pairs_capped = false;
-    // Per-pair standardized shifts, for the "no other level"
-    // sentence: (pair key, level, std shift).
-    let mut pair_shifts: Vec<(usize, usize, usize, f64)> = Vec::new();
-
     'pairs: for (gi, g) in groupings.iter().enumerate() {
         for &mi in &measures {
             if table.names[mi] == g.column && g.calendar_part.is_none() {
                 continue;
             }
-            if pairs_examined >= MAX_PAIRS {
+            if pair_tasks.len() >= MAX_PAIRS {
                 pairs_capped = true;
                 break 'pairs;
             }
-            pairs_examined += 1;
+            pair_tasks.push((gi, mi));
+        }
+    }
+    let pairs_examined = pair_tasks.len();
+
+    type PairShift = (usize, usize, usize, f64);
+    let pair_results: Vec<(Vec<Candidate>, Vec<PairShift>)> = pair_tasks
+        .par_iter()
+        .map(|&(gi, mi)| {
+            let g = &groupings[gi];
             let col = &table.cols[mi];
-            let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); g.labels.len()];
+            let mut sorted_buckets: Vec<Vec<f64>> = vec![Vec::new(); g.labels.len()];
             for (row, &code) in g.codes.iter().enumerate().take(table.n) {
                 if let (Some(code), Some(v)) = (code, col.numeric_at(row)) {
                     if v.is_finite() {
-                        buckets[code as usize].push(v);
+                        sorted_buckets[code as usize].push(v);
                     }
                 }
             }
-            let total: usize = buckets.iter().map(|b| b.len()).sum();
+            let total: usize = sorted_buckets.iter().map(|b| b.len()).sum();
             if total < 2 * MIN_SIDE_VALUES {
-                continue;
+                return (Vec::new(), Vec::new());
             }
             let mut pooled_sorted: Vec<f64> = Vec::with_capacity(total);
-            for b in &buckets {
+            for b in &mut sorted_buckets {
                 pooled_sorted.extend_from_slice(b);
+                b.sort_by(|a, b| a.total_cmp(b));
             }
             pooled_sorted.sort_by(|a, b| a.total_cmp(b));
             let distinct_count = pooled_sorted.windows(2).filter(|w| w[0] != w[1]).count() + 1;
             if distinct_count < 3 {
-                continue;
+                return (Vec::new(), Vec::new());
             }
             let spread = {
                 let s = iqr_sorted(&pooled_sorted);
@@ -538,7 +642,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 }
             };
             if spread <= 0.0 {
-                continue;
+                return (Vec::new(), Vec::new());
             }
             // Per-level sorted values, medians, IQRs, and
             // deviations from each level's own median, computed
@@ -550,14 +654,6 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             // and median-centred deviations inflate whenever
             // one level is shifted, which would make every
             // other level look narrow by comparison.
-            let sorted_buckets: Vec<Vec<f64>> = buckets
-                .iter()
-                .map(|b| {
-                    let mut s = b.clone();
-                    s.sort_by(|a, b| a.total_cmp(b));
-                    s
-                })
-                .collect();
             let level_medians: Vec<f64> = sorted_buckets
                 .iter()
                 .map(|s| if s.is_empty() { 0.0 } else { median_sorted(s) })
@@ -566,19 +662,24 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 .iter()
                 .map(|s| if s.len() >= 2 { iqr_sorted(s) } else { 0.0 })
                 .collect();
+            let mut pooled_dev_sorted: Vec<f64> = Vec::with_capacity(total);
             let dev_buckets: Vec<Vec<f64>> = sorted_buckets
                 .iter()
                 .enumerate()
                 .map(|(j, s)| {
                     let m = level_medians[j];
                     let mut d: Vec<f64> = s.iter().map(|v| (v - m).abs()).collect();
+                    pooled_dev_sorted.extend_from_slice(&d);
                     d.sort_by(|a, b| a.total_cmp(b));
                     d
                 })
                 .collect();
-            let pair_start = candidates.len();
-            for (li, bucket) in buckets.iter().enumerate() {
-                let n_level = bucket.len();
+            pooled_dev_sorted.sort_by(|a, b| a.total_cmp(b));
+
+            let mut local_cands: Vec<Candidate> = Vec::new();
+            let mut local_shifts: Vec<(usize, usize, usize, f64)> = Vec::new();
+            for (li, level_sorted) in sorted_buckets.iter().enumerate() {
+                let n_level = level_sorted.len();
                 let n_rest = total - n_level;
                 if n_level < MIN_SIDE_VALUES || n_rest < MIN_SIDE_VALUES {
                     continue;
@@ -587,41 +688,33 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 {
                     continue;
                 }
-                let level_sorted = sorted_buckets[li].clone();
-                let rest_sorted = rest_of(&pooled_sorted, &level_sorted);
+                let rest_sorted = rest_of(&pooled_sorted, level_sorted);
                 let level_median = level_medians[li];
                 let rest_median = median_sorted(&rest_sorted);
                 let level_iqr = level_iqrs[li];
                 let rest_iqr = {
-                    let others: Vec<f64> = level_iqrs
+                    let mut others: Vec<f64> = level_iqrs
                         .iter()
                         .enumerate()
-                        .filter(|(j, _)| *j != li && buckets[*j].len() >= 2)
+                        .filter(|(j, _)| *j != li && sorted_buckets[*j].len() >= 2)
                         .map(|(_, v)| *v)
                         .collect();
                     if others.is_empty() {
                         iqr_sorted(&rest_sorted)
                     } else {
-                        let mut o = others;
-                        o.sort_by(|a, b| a.total_cmp(b));
-                        median_sorted(&o)
+                        others.sort_by(|a, b| a.total_cmp(b));
+                        median_sorted(&others)
                     }
                 };
                 let shift = level_median - rest_median;
                 let std_shift = shift / spread;
-                pair_shifts.push((gi, mi, li, std_shift));
-                let p_location = rank_sum_p(&level_sorted, &rest_sorted);
+                local_shifts.push((gi, mi, li, std_shift));
+                let p_location = rank_sum_p(level_sorted, &rest_sorted);
                 // Scale: rank-sum over absolute deviations
                 // from each row's own level median.
-                let level_dev = dev_buckets[li].clone();
-                let mut rest_dev: Vec<f64> = Vec::with_capacity(n_rest);
-                for (j, d) in dev_buckets.iter().enumerate() {
-                    if j != li {
-                        rest_dev.extend_from_slice(d);
-                    }
-                }
-                rest_dev.sort_by(|a, b| a.total_cmp(b));
-                let p_scale = rank_sum_p(&level_dev, &rest_dev);
+                let level_dev = &dev_buckets[li];
+                let rest_dev = rest_of(&pooled_dev_sorted, level_dev);
+                let p_scale = rank_sum_p(level_dev, &rest_dev);
                 let ratio = if rest_iqr > 0.0 {
                     level_iqr / rest_iqr
                 } else if level_iqr > 0.0 {
@@ -633,19 +726,16 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                 // must sit on one side of zero for quotients
                 // to mean anything.
                 let multiple = {
-                    let deciles: Vec<f64> = (1..=9)
-                        .map(|k| quantile_sorted(&rest_sorted, k as f64 / 10.0))
-                        .collect();
+                    let deciles: [f64; 9] = std::array::from_fn(|k| {
+                        quantile_sorted(&rest_sorted, (k + 1) as f64 / 10.0)
+                    });
                     let one_sided =
                         deciles.iter().all(|d| *d > 0.0) || deciles.iter().all(|d| *d < 0.0);
                     if one_sided && rest_median != 0.0 {
-                        let quotients: Vec<f64> = (1..=9)
-                            .map(|k| {
-                                quantile_sorted(&level_sorted, k as f64 / 10.0)
-                                    / quantile_sorted(&rest_sorted, k as f64 / 10.0)
-                            })
-                            .collect();
-                        let mut qs = quotients.clone();
+                        let quotients: [f64; 9] = std::array::from_fn(|k| {
+                            quantile_sorted(level_sorted, (k + 1) as f64 / 10.0) / deciles[k]
+                        });
+                        let mut qs = quotients;
                         qs.sort_by(|a, b| a.total_cmp(b));
                         let k_hat = median_sorted(&qs);
                         if k_hat > 0.0 && (k_hat.ln().abs() >= MULTIPLE_MIN.ln()) {
@@ -666,12 +756,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         None
                     }
                 };
-                let slot = candidates.len();
-                p_index.push((slot, true));
-                pvals.push(p_location);
-                p_index.push((slot, false));
-                pvals.push(p_scale);
-                candidates.push(Candidate {
+                local_cands.push(Candidate {
                     grouping: gi,
                     measure: mi,
                     level: li,
@@ -701,25 +786,23 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
             // recomputed against the rest without the primary,
             // so a contrast the primary explains can be
             // recognized at decision time.
-            if candidates.len() > pair_start {
-                let primary = (pair_start..candidates.len())
+            if !local_cands.is_empty() {
+                let primary = (0..local_cands.len())
                     .max_by(|&a, &b| {
-                        candidates[a]
+                        local_cands[a]
                             .std_shift
                             .abs()
-                            .total_cmp(&candidates[b].std_shift.abs())
+                            .total_cmp(&local_cands[b].std_shift.abs())
                     })
                     .unwrap();
-                let primary_level = candidates[primary].level;
-                for (slot, cand) in candidates.iter_mut().enumerate().skip(pair_start) {
+                let primary_level = local_cands[primary].level;
+                let without_primary = rest_of(&pooled_sorted, &sorted_buckets[primary_level]);
+                for (slot, cand) in local_cands.iter_mut().enumerate() {
                     if slot == primary {
                         continue;
                     }
                     let li = cand.level;
-                    let reduced = rest_of(
-                        &rest_of(&pooled_sorted, &sorted_buckets[primary_level]),
-                        &sorted_buckets[li],
-                    );
+                    let reduced = rest_of(&without_primary, &sorted_buckets[li]);
                     if reduced.len() >= MIN_SIDE_VALUES {
                         let s = (level_medians[li] - median_sorted(&reduced)) / spread;
                         cand.std_shift_without_primary = Some(s);
@@ -738,13 +821,13 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         c.ratio.ln().abs()
                     }
                 };
-                let primary_scale = (pair_start..candidates.len())
+                let primary_scale = (0..local_cands.len())
                     .max_by(|&a, &b| {
-                        scale_key(&candidates[a]).total_cmp(&scale_key(&candidates[b]))
+                        scale_key(&local_cands[a]).total_cmp(&scale_key(&local_cands[b]))
                     })
                     .unwrap();
-                let primary_scale_level = candidates[primary_scale].level;
-                for (slot, cand) in candidates.iter_mut().enumerate().skip(pair_start) {
+                let primary_scale_level = local_cands[primary_scale].level;
+                for (slot, cand) in local_cands.iter_mut().enumerate() {
                     if slot == primary_scale {
                         continue;
                     }
@@ -753,7 +836,7 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                         .iter()
                         .enumerate()
                         .filter(|(j, _)| {
-                            *j != li && *j != primary_scale_level && buckets[*j].len() >= 2
+                            *j != li && *j != primary_scale_level && sorted_buckets[*j].len() >= 2
                         })
                         .map(|(_, v)| *v)
                         .collect();
@@ -772,6 +855,23 @@ pub fn profile_level_contrasts(table: &TypedTable, input: &LevelContrastInput) -
                     cand.ratio_without_primary = Some(r);
                 }
             }
+            (local_cands, local_shifts)
+        })
+        .collect();
+
+    let mut candidates: Vec<Candidate> = Vec::new();
+    let mut pvals: Vec<f64> = Vec::new();
+    let mut p_index: Vec<(usize, bool)> = Vec::new(); // (candidate slot, is_location)
+    let mut pair_shifts: Vec<(usize, usize, usize, f64)> = Vec::new();
+    for (local_cands, local_shifts) in pair_results {
+        pair_shifts.extend(local_shifts);
+        for c in local_cands {
+            let slot = candidates.len();
+            p_index.push((slot, true));
+            pvals.push(c.p_location);
+            p_index.push((slot, false));
+            pvals.push(c.p_scale);
+            candidates.push(c);
         }
     }
 

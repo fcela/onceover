@@ -11,6 +11,8 @@ likewise be disclosed with counts, never applied silently.
 """
 
 import datetime as dt
+import inspect
+import random
 
 import polars as pl
 
@@ -30,6 +32,7 @@ ON_REQUEST = [
     "interactions",
     # Hint-triggered and on request: it runs only when named.
     "entity_fingerprints",
+    "partition_scagnostics",
 ]
 
 
@@ -46,7 +49,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_membership_trigger_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 46
+    assert len(registry) == 47
     on_request = sorted(
         d["id"] for d in registry.values() if d["membership"] == "on_request"
     )
@@ -85,6 +88,58 @@ def test_registry_membership_trigger_partition():
         if d["membership"] == "default_set" and d["trigger"] == "always"
     ]
     assert len(default_always) == 29
+
+
+def test_signature_shows_the_recommended_registry_ids():
+    recommended = [d["id"] for d in onceover.available_detectors() if d["membership"] == "default_set"]
+    default = inspect.signature(onceover.profile).parameters["detectors"].default
+    assert default is onceover.RECOMMENDED_DETECTORS
+    assert list(default) == recommended
+    assert repr(default) == repr(recommended)
+    assert onceover.profile(_frame(), target="amount").data == onceover.profile(
+        _frame(), target="amount", detectors=None,
+    ).data
+
+
+def test_every_registry_id_runs_when_selected_on_an_eligible_frame():
+    rng = random.Random(47)
+    rows = []
+    for step in range(36):
+        for i in range(24):
+            x = rng.gauss(0, 1)
+            sign = 1 if i < 12 else -1
+            rows.append((
+                dt.date(2024, 1, 1) + dt.timedelta(days=step),
+                f"E{i:02}", "A" if sign == 1 else "B", step,
+                x, sign * x + 0.1 * rng.gauss(0, 1), float(rng.randrange(2)), x > 0,
+            ))
+    df = pl.DataFrame(
+        rows,
+        schema=["day", "entity", "group", "step", "x", "y", "amount", "flag"],
+        orient="row",
+    )
+    hints = {
+        "time": "day",
+        "entity": "entity",
+        "order_by": ["day"],
+        "contrast": {"column": "group", "value": "A"},
+    }
+    coverage_keys = {
+        "column_profile": "column_cards",
+        "covering_rules": "prism_rules",
+        "identities": "arithmetic_identities",
+        "numeric_dependence": "dependence_screen",
+        "predictability": "predictability_screen",
+    }
+    assert onceover.ALL_DETECTORS == tuple(d["id"] for d in onceover.available_detectors())
+    for detector in onceover.ALL_DETECTORS:
+        report = onceover.profile(df, detectors=[detector], hints=hints, target="y")
+        entry = report.coverage[coverage_keys.get(detector, detector)]
+        assert entry["status"] in {"ran_exact", "ran_sampled", "capped"}, (detector, entry)
+
+    combined = onceover.profile(df, detectors=onceover.ALL_DETECTORS, hints=hints, target="y")
+    assert combined.coverage["partition_scagnostics"]["status"] == "ran_exact"
+    assert combined.select(type="partitioned_shape")
 
 
 def test_default_run_discloses_on_request_passes_as_skipped():

@@ -35,6 +35,28 @@ def release_note_lines():
     ]
 
 
+def check_agent_docs(version):
+    guide = (ROOT / "python/onceover/agent_guide.md").read_text(encoding="utf-8")
+    review_line = f"Reviewed for onceover {version}."
+    if review_line not in guide.splitlines():
+        raise ValueError(
+            f"review agent_guide.md for {version}, update the instructions and examples, "
+            f"and set its review line to {review_line!r}"
+        )
+    if len(guide.encode("utf-8")) > 4000:
+        raise ValueError("agent_guide.md exceeds its 4,000-byte quickstart budget")
+    manifest = json.loads((ROOT / "docs/capability-manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("version") != version:
+        raise ValueError(
+            f"capability manifest version must match {version}; "
+            "regenerate it with python scripts/capability_manifest.py"
+        )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    for api in ("onceover.agent_guide()", "onceover.capabilities()"):
+        if api not in readme:
+            raise ValueError(f"README.md must point agents to {api}")
+
+
 def check(tag=""):
     workspace = read_toml(ROOT / "Cargo.toml")["workspace"]
     version = workspace["package"]["version"]
@@ -67,7 +89,8 @@ def check(tag=""):
             f"release notes have no '## Version {version}' section; move the "
             "Unreleased entries under the new version heading before tagging"
         )
-    print(f"Release metadata matches {version}", flush=True)
+    check_agent_docs(version)
+    print(f"Release metadata and agent docs match {version}", flush=True)
     return version, workspace["package"]["repository"]
 
 

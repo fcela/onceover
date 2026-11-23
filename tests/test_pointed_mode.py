@@ -79,11 +79,14 @@ def test_metadata_keys_are_carried_and_accounted():
     assert declarations["units"] == {"x_num": "widgets"}
     entry = _coverage(report, "declarations")
     assert entry["status"].startswith("ran")
-    # y is numeric in this fixture, so the declared event names
-    # no level: the accounting states the refusal, not a check.
-    assert "event: 1 refused" in entry["detail"]
+    # y is a binary 0/1 integer flag, so event=1 names a valid level.
+    assert "event: '1' checked" in entry["detail"]
     assert "entity: 'strong' checked" in entry["detail"]
     assert "gloss: 1 column meaning(s) carried unchecked" in entry["detail"]
+
+    # On a continuous float target, event=1 is still refused.
+    cont_report = onceover.profile(df, target="x_num", hints={"event": 1})
+    assert "event: 1 refused" in _coverage(cont_report, "declarations")["detail"]
 
 
 def test_no_metadata_means_no_declarations():

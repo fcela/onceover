@@ -221,6 +221,12 @@ ENTRIES = {
         "states": "A pooled association reverses direction, or vanishes, within every usable level of a third column — a Simpson pattern.",
         "example": "The association between x and y reverses within every level of group: pooled Pearson r -0.714, within-level Pearson r from +0.946 to +0.950 (combined +0.948). The pooled direction is an artefact of the group mix.",
     },
+    "partitioned_shape": {
+        "question": "goes_with",
+        "detector": "partition_scagnostics",
+        "states": "A partition on other columns reveals stronger monotonicity or striation in a scatterplot, confirmed on held-out rows.",
+        "example": "x × y is more monotonic across protocol = \"A\" versus the remainder. Held-out Spearman ρ is -0.03 pooled and +1.00, -1.00 within groups.",
+    },
     "period_association": {
         "question": "goes_with",
         "detector": "period_associations",

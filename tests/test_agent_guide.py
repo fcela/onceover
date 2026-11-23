@@ -50,6 +50,36 @@ def test_agent_guide_within_the_size_cap():
     assert len(guide.encode("utf-8")) <= 4000
 
 
+def test_wheel_guide_matches_reviewed_source():
+    root = Path(__file__).resolve().parents[1]
+    source = root / "python" / "onceover" / "agent_guide.md"
+    guide = onceover.agent_guide()
+    assert guide == source.read_text(encoding="utf-8")
+    assert f"Reviewed for onceover {onceover.__version__}." in guide.splitlines()
+
+
+def test_packaged_hierarchy_example_discovers_and_uses_peers():
+    df = pl.DataFrame(
+        [
+            (f"H{i:02}", f"S{i // 6}", f"P{i // 12}", "featured" if i == 0 else "simple")
+            for i in range(24) for _ in range(100)
+        ],
+        schema=["host", "program_session", "program", "kit"],
+        orient="row",
+    )
+    hierarchy_section = onceover.agent_guide().split("**Peer hierarchies.**", 1)[1]
+    example = hierarchy_section.split("```python\n", 1)[1].split("```", 1)[0]
+    scope = {"df": df, "onceover": onceover}
+    exec(compile(example, "onceover/agent_guide.md", "exec"), scope)
+    assert ["host", "program_session", "program"] in [
+        path["levels"] for path in scope["spec"]["hierarchy_candidates"]
+    ]
+    [finding] = scope["report"].select(type="entity_misfits")
+    [hit] = finding["evidence"][0]["metrics"]["misfits"]
+    assert hit["entity"] == "H00"
+    assert hit["peer_group"] == {"column": "program_session", "value": "S0", "entities": 5}
+
+
 def test_agent_guide_teaches_in_order():
     guide = onceover.agent_guide()
     sections = [

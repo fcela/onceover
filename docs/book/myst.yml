@@ -23,6 +23,7 @@ project:
         - file: usage/serialization.ipynb
         - file: usage/cli.ipynb
         - file: usage/api.ipynb
+        - file: usage/find_partitioned_shapes.ipynb
     - title: Part II — Case studies
       children:
         - file: case_studies/vendor_extract.ipynb
@@ -31,6 +32,9 @@ project:
         - file: case_studies/delivery_drift.ipynb
         - file: case_studies/unemployment_panel.ipynb
         - file: case_studies/library_craft_kits.ipynb
+        - file: case_studies/partition_scagnostics_cases.ipynb
+        - file: case_studies/ames_housing_agent_eda.ipynb
+        - file: case_studies/hotel_bookings_agent_eda.ipynb
     - title: Part III — Methodology
       children:
         - file: methodology/evidence.ipynb
@@ -50,6 +54,7 @@ project:
         - file: methodology/associations.ipynb
         - file: methodology/tested_associations.ipynb
         - file: methodology/dependence_measures.ipynb
+        - file: methodology/partition_scagnostics.ipynb
         - file: methodology/target_shapes.ipynb
         - file: methodology/outcome_contrasts.ipynb
         - file: methodology/interactions.ipynb
@@ -88,3 +93,4 @@ site:
   template: https://github.com/jupyter-book/myst-theme/releases/download/myst-to-react%401.4.1/book-theme.zip
   options:
     hide_search: false
+    style: notebook-output.css

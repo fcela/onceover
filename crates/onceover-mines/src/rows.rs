@@ -102,10 +102,22 @@ fn value_hash(col: &TypedCol, r: usize, salt: u64) -> u64 {
     x ^ (x >> 31)
 }
 
+fn distinct_count_buf(buf: &mut [u64]) -> usize {
+    if buf.is_empty() {
+        return 0;
+    }
+    buf.sort_unstable();
+    let mut d = 1usize;
+    for i in 1..buf.len() {
+        if buf[i] != buf[i - 1] {
+            d += 1;
+        }
+    }
+    d
+}
+
 fn distinct_count(mut keys: Vec<u64>) -> usize {
-    keys.sort_unstable();
-    keys.dedup();
-    keys.len()
+    distinct_count_buf(&mut keys)
 }
 
 fn salt_of(c: usize) -> u64 {
@@ -153,19 +165,28 @@ fn chance_pairs(table: &TypedTable, left_out: usize, probs: &[(usize, f64)]) -> 
         .collect();
     order.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut keys = vec![0u64; table.n];
+    let mut with = vec![0u64; table.n];
+    let mut sort_buf = vec![0u64; table.n];
     let mut distinct = 1usize;
     let n = table.n as f64;
     let mut chance = n * (n - 1.0) / 2.0;
     for &(c, p) in order.iter().take(MAX_RESOLUTION_TESTS) {
+        // Once distinct * (1 + REDUNDANT_SHARE) + 1 >= n, no subsequent
+        // column can raise distinct_with above that threshold (since
+        // distinct_with <= n always).
+        let threshold = distinct as f64 * (1.0 + REDUNDANT_SHARE) + 1.0;
+        if threshold >= n {
+            break;
+        }
         let salt = salt_of(c);
-        let with: Vec<u64> = keys
-            .iter()
-            .enumerate()
-            .map(|(r, k)| k.wrapping_add(value_hash(&table.cols[c], r, salt)))
-            .collect();
-        let distinct_with = distinct_count(with.clone());
-        if distinct_with as f64 > distinct as f64 * (1.0 + REDUNDANT_SHARE) + 1.0 {
-            keys = with;
+        let col = &table.cols[c];
+        for r in 0..table.n {
+            with[r] = keys[r].wrapping_add(value_hash(col, r, salt));
+        }
+        sort_buf.copy_from_slice(&with);
+        let distinct_with = distinct_count_buf(&mut sort_buf);
+        if distinct_with as f64 > threshold {
+            std::mem::swap(&mut keys, &mut with);
             distinct = distinct_with;
             chance *= p;
         }

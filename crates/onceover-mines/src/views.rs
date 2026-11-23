@@ -2252,6 +2252,7 @@ mod tests {
             cols: vec![TypedCol::F64 {
                 vals: NumericValues::Owned(vals),
             }],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let view = ViewState {
             cols: vec![0],
@@ -2368,6 +2369,7 @@ mod tests {
                     vals: NumericValues::Owned(noise),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -2413,6 +2415,7 @@ mod tests {
             names,
             dtypes: vec!["float64".to_string(); 70],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2477,6 +2480,7 @@ mod tests {
             names,
             dtypes: vec!["float64".to_string(); 70],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2553,6 +2557,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2610,6 +2615,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2644,6 +2650,7 @@ mod tests {
             names,
             dtypes: vec!["float64".to_string(); 6],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2708,6 +2715,7 @@ mod tests {
             names,
             dtypes,
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2818,6 +2826,7 @@ mod tests {
                     vals: NumericValues::Owned(b),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2852,6 +2861,7 @@ mod tests {
                     vals: NumericValues::Owned(vec![Some(3.0); 500]),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,
@@ -2915,6 +2925,7 @@ mod tests {
             cols: vec![TypedCol::F64 {
                 vals: NumericValues::Owned(temp),
             }],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         let cfg = ViewsConfig {
             row_cap: 1000,

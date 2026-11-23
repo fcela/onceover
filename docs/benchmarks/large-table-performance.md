@@ -64,6 +64,10 @@ settings, coverage, selection counts, and individual check outcomes:
 
 The installed macOS arm64 wheel passed all 9 checks on 200,000 rows × 200 columns, using Python 3.13.7, Polars 2.0.0, four Rayon threads, and the standard budget. This included both exact cardinalities and all planted relationships in the final columns. Profiling took 78.93 seconds and peak process RSS was 1.16 GiB. This used the same seed and column layout as the large fixture, with one tenth of the rows. A full-size run was active on the same host, so the timing is a release check and is unsuitable for direct comparison with the table above. See the [0.1.7 record](../../benchmarks/results/200k-200-0.1.7.json).
 
+## Constrained-executor benchmark (post-0.1.7)
+
+After optimizing column extraction, exact counting, quantile sorting, boundary checks, category encoding, and shared table encoding/sampling for 2-core / 8 GiB executors, the same 200,000 × 200 fixture (`standard` budget, seed `20241024`) ran on **2 Rayon threads** in **17.17 seconds** (4.6× faster than 0.1.7's 78.93 s on 4 threads) with **1.05 GiB peak process RSS** (`0.680 GiB` increase over pre-profile RSS), passing all **9 / 9** checks with **0** noise targets reported predictable. See the full write-up and precision-gate comparison in [2026-11-22-architecture-performance-precision.md](2026-11-22-architecture-performance-precision.md).
+
 ## Reproducing the benchmark
 
 From a checkout of the version to measure, install its package and benchmark

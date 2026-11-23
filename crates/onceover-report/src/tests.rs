@@ -506,6 +506,7 @@ fn facets_derive_the_stated_category_for_every_pattern() {
         (PeriodAssociation, Category::Associations),
         (GroupContrast, Category::Associations),
         (ConditionedAssociation, Category::Associations),
+        (PartitionedShape, Category::Associations),
         (LevelContrast, Category::Associations),
         (SliceShift, Category::Associations),
         (AxisShape, Category::Associations),
@@ -1827,11 +1828,11 @@ fn pressure_detector_caps_bind_under_pressure() {
 
 #[test]
 fn pattern_taxonomy_is_complete_and_self_consistent() {
-    // 71 patterns, including the two views-pass patterns
+    // 72 patterns, including the two views-pass patterns
     // (modal_share, spike_cells) that Finding::from_statement
     // callers name directly, and the four entity-fingerprint
     // patterns.
-    assert_eq!(Pattern::ALL.len(), 71);
+    assert_eq!(Pattern::ALL.len(), 72);
     let mut pairs = std::collections::BTreeSet::new();
     for pattern in Pattern::ALL {
         let facets = Facets::for_pattern(
@@ -1848,9 +1849,9 @@ fn pattern_taxonomy_is_complete_and_self_consistent() {
         );
         pairs.insert((category, pattern.subtype()));
     }
-    // 70 distinct (category, type) pairs: "predictive" is shared
+    // 71 distinct (category, type) pairs: "predictive" is shared
     // by two patterns; every other pattern carries its own type.
-    assert_eq!(pairs.len(), 70);
+    assert_eq!(pairs.len(), 71);
 }
 
 #[test]
@@ -1887,6 +1888,7 @@ fn derived_type_lists_match_the_taxonomy() {
             "period_association",
             "group_contrast",
             "conditioned_association",
+            "partitioned_shape",
             "slice_shift",
             "axis_shape",
             "level_contrast",

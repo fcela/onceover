@@ -213,6 +213,7 @@ mod tests {
             names: vec!["x".into()],
             dtypes: vec!["null".into()],
             cols: vec![TypedCol::Null { n: 4 }],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         assert!(find_duplicate_rows(&t).is_none());
     }

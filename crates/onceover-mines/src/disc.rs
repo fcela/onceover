@@ -1392,7 +1392,28 @@ fn screen_target(
         return out;
     }
 
-    // Diagonal units.
+    // Diagonal units: require at least 3 distinct finite values per axis
+    // so binary 0/1 flags do not form degenerate linear hyperplanes.
+    let non_binary_axis = |c: usize| -> bool {
+        let nc = &values[pos_map[c]];
+        let mut seen: [u64; 3] = [0; 3];
+        let mut k = 0usize;
+        for r in 0..nc.n {
+            if let Some(v) = nc.col.numeric_at(r) {
+                if v.is_finite() {
+                    let b = v.to_bits();
+                    if !seen[..k].contains(&b) {
+                        if k == 2 {
+                            return true;
+                        }
+                        seen[k] = b;
+                        k += 1;
+                    }
+                }
+            }
+        }
+        false
+    };
     let pair_axes: Vec<usize> = if !cfg.diagonals {
         Vec::new()
     } else if axes.len() > cfg.all_pairs_max_cols {
@@ -1400,11 +1421,15 @@ fn screen_target(
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         ranked
             .iter()
+            .filter(|(c, _)| non_binary_axis(*c))
             .take(cfg.fallback_top_axes)
             .map(|(c, _)| *c)
             .collect()
     } else {
-        axes.clone()
+        axes.iter()
+            .copied()
+            .filter(|&c| non_binary_axis(c))
+            .collect()
     };
     'pairs: for ai in 0..pair_axes.len() {
         for bi in (ai + 1)..pair_axes.len() {
@@ -2237,6 +2262,7 @@ mod tests {
                     vals: y_diag.into(),
                 },
             ],
+            row_keys_cache: std::sync::OnceLock::new(),
         };
         for cfg in [
             DiscConfig::default(),
@@ -2306,6 +2332,7 @@ mod tests {
             names: (0..8).map(|j| format!("c{j}")).collect(),
             dtypes: vec!["float64".to_string(); 8],
             cols,
+            row_keys_cache: std::sync::OnceLock::new(),
         }
     }
 

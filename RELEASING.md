@@ -63,12 +63,22 @@ the registry configuration exactly.
    version X.Y.Z, not yet tagged.`). The date is the planned tag date.
    `python scripts/release.py check` fails until the new version's
    section exists.
-3. Run `cargo check --workspace` to update `Cargo.lock`, then
-   `python scripts/release.py check` and the test suites. Build and install the
-   release wheel, execute `python scripts/check_notebook.py`, and run the
-   [scale benchmark](benchmarks/README.md) against that wheel. Check exact key
-   counts and recovery of the relationships in the final columns before tagging.
-4. Commit, push, and tag the same version:
+3. Review the [packaged agent guide](python/onceover/agent_guide.md) against
+   the changes since the previous tag. Update changed workflows, examples, and
+   activation rules. Set its review line to `Reviewed for onceover X.Y.Z.`
+   after reviewing the text. Keep the guide and capability entry points visible
+   in the README, which also supplies the Python package description.
+4. Run `cargo check --workspace` to update `Cargo.lock`. Build and install the
+   release wheel, run `python scripts/capability_manifest.py` to regenerate the
+   manifest, and run `python scripts/release.py check --tag vX.Y.Z` and the test
+   suites. The metadata check requires the review line and manifest version to
+   match. Wheel CI checks the full manifest against the installed registry and
+   runs the packaged guide's hierarchy example.
+5. Execute `python scripts/check_notebook.py` and run the
+   [scale benchmark](benchmarks/README.md) against the release wheel. Check exact
+   key counts and recovery of the relationships in the final columns before
+   tagging.
+6. Commit, push, and tag the same version:
 
    ```bash
    git push origin main

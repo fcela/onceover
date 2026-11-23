@@ -73,7 +73,7 @@ path.
 | `anomalies` | `row_inconsistency`, `interval_variation`, `extreme_value`, `categorical_outlier`, `entity_misfits` |
 | `dependencies` | `functional`, `affine`, `arithmetic_identity`, `predictive`, `leakage_signature`, `order_constraint`, `order_violation`, `model_failure`, `outcome_contrast` |
 | `conditional_rules` | `if_then` |
-| `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift`, `entity_groups`, `entity_continuum` |
+| `associations` | `statistical`, `period_association`, `axis_shape`, `group_contrast`, `conditioned_association`, `partitioned_shape`, `level_contrast`, `slice_shift`, `entity_groups`, `entity_continuum` |
 | `gaps` | `gap`, `sequence_gap`, `missing_combinations`, `partial_period` |
 | `ordering` | `column_ordering` |
 <!-- /generated:taxonomy-index -->
@@ -336,7 +336,7 @@ Facets by finding type (a dash is an absent `quality_dimension`):
 | `axis_shape` | `columns` | `relation` | `approximate` | `unconditional` | `ordered` | — | `regularity` |
 | `ordered_partition` | `sequence` | `temporal_behaviour` | `model_based` | `segment_conditioned` | `change_across_segments` | — | `regularity` |
 | `one_way_flag`, `entry_block`, `exit_block`, `first_activity` | `columns` | `temporal_behaviour` | `exact` | `unconditional` | `ordered` | — | `regularity` |
-| `group_contrast`, `conditioned_association`, `level_contrast`, `slice_shift`, `outcome_contrast` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
+| `group_contrast`, `conditioned_association`, `partitioned_shape`, `level_contrast`, `slice_shift`, `outcome_contrast` | `columns` | `relation` | `approximate` | `segment_conditioned` | `atemporal` | — | `regularity` |
 | `concentration_over_time`, `outlier_entity`, `entity_specialists` | `columns` | `distribution` | `exact` | `unconditional` | `atemporal` | — | `regularity` |
 | `entity_misfits` | `columns` | `distribution` | `approximate` | `unconditional` | `atemporal` | — | `deviation` |
 <!-- /generated:facets-by-type -->
@@ -626,6 +626,18 @@ The same ledger is available in four forms:
   record's `basis`, and `detector_interestingness`, in report order.
   It is an index for sorting and
   filtering; the measurements themselves stay in the JSON findings.
+
+### Partitioned scatterplot shapes
+
+Select `detectors=["partition_scagnostics"]` for `partitioned_shape`
+findings. Each identifies the two plotted columns and the columns in
+the partition rule. Read `evidence[0].metrics.partition_scagnostics`
+for separate discovery and validation scores and group counts, plus
+the adjusted permutation p-value. For squared Spearman, signed
+correlations distinguish increasing and decreasing groups. Coverage
+states how many rows, pairs and candidate rules the pass examined.
+See the [methodology chapter](book/methodology/partition_scagnostics.ipynb)
+for the scoring and assumptions.
 
 ### Tested associations
 
@@ -1455,7 +1467,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 31 of the 46 registered detectors; the other 15 run only when named in `detectors`.
+The default set has 31 of the 47 registered detectors; the other 16 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1501,6 +1513,7 @@ The default set has 31 of the 46 registered detectors; the other 15 run only whe
 | `association_rules` | `conditional_rules`, `associations` | `default_set` | `always` | — | Pairwise nominal rules with train and diagnostic evidence |
 | `hotspots` | `concentration` | `default_set` | `always` | — | Combinations concentrated beyond their marginal frequencies, in rows or in a declared weight |
 | `numeric_dependence` | `associations` | `default_set` | `always` | — | Pearson, Spearman, and both directions of Chatterjee's xi |
+| `partition_scagnostics` | `associations` | `on_request` | `always` | — | Scatterplot structure that strengthens within an observed partition, confirmed on held-out rows |
 | `identities` | `dependencies` | `default_set` | `always` | `numeric_dependence` | Affine and small multi-term arithmetic relationships |
 | `period_associations` | `associations` | `on_request` | `always` | `numeric_dependence` | Changes in pairwise correlation across calendar or year periods |
 | `row_clusters` | `associations`, `changes`, `concentration`, `gaps` | `on_request` | `always` | — | Experimental shared row partitions, cluster differences, and density findings |

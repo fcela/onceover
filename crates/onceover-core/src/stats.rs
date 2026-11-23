@@ -44,12 +44,22 @@ pub fn median_sorted(sorted: &[f64]) -> f64 {
     quantile_sorted(sorted, 0.5)
 }
 
-/// The median of unsorted values (sorted with `total_cmp`). NaN when
-/// empty.
+/// The median of unsorted values (using O(n) selection with `total_cmp`).
+/// NaN when empty.
 pub fn median(values: &[f64]) -> f64 {
+    let n = values.len();
+    if n == 0 {
+        return f64::NAN;
+    }
     let mut v = values.to_vec();
-    v.sort_by(f64::total_cmp);
-    median_sorted(&v)
+    let mid = (n - 1) / 2;
+    let (_, &mut lo, right) = v.select_nth_unstable_by(mid, f64::total_cmp);
+    if n % 2 == 1 {
+        lo
+    } else {
+        let hi = right.iter().copied().fold(f64::INFINITY, f64::min);
+        0.5 * lo + 0.5 * hi
+    }
 }
 
 /// The interquartile range of ascending-sorted values.

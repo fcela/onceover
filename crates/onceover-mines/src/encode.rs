@@ -64,9 +64,148 @@ impl Default for EncodeConfig {
 }
 
 pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String) {
-    let all_keys = onceover_core::row_keys(table);
+    use rayon::prelude::*;
+
+    let all_keys = table.row_keys();
     let rows = all_keys.sample(cfg.row_cap);
     let m = rows.len();
+
+    enum EncCol {
+        Encoded {
+            ci: usize,
+            name: String,
+            nominal: bool,
+            bins: Vec<u8>,
+            n_bins: usize,
+            edges: Vec<f64>,
+            levels: Vec<String>,
+            is_calendar_axis: bool,
+        },
+        Skipped,
+        Excluded,
+    }
+
+    let encoded_cols: Vec<EncCol> = table
+        .cols
+        .par_iter()
+        .enumerate()
+        .map(|(ci, col)| {
+            if cfg.skip_columns.contains(&ci) {
+                return EncCol::Excluded;
+            }
+            match col {
+                TypedCol::I64 { .. }
+                | TypedCol::U64 { .. }
+                | TypedCol::F64 { .. }
+                | TypedCol::Decimal { .. } => {
+                    let vals: Vec<Option<f64>> =
+                        (0..m).map(|j| col.numeric_at(rows[j] as usize)).collect();
+                    if let Some((bins, edges)) = bin_numeric(&vals) {
+                        EncCol::Encoded {
+                            ci,
+                            name: table.names[ci].clone(),
+                            nominal: false,
+                            n_bins: edges.len() + 1,
+                            bins,
+                            edges,
+                            levels: Vec::new(),
+                            is_calendar_axis: false,
+                        }
+                    } else {
+                        EncCol::Skipped
+                    }
+                }
+                TypedCol::Date { .. } | TypedCol::Datetime { .. } => {
+                    let vals: Vec<Option<f64>> =
+                        (0..m).map(|j| days_at(col, rows[j] as usize)).collect();
+                    if let Some((bins, edges)) = bin_numeric(&vals) {
+                        EncCol::Encoded {
+                            ci,
+                            name: table.names[ci].clone(),
+                            nominal: false,
+                            n_bins: edges.len() + 1,
+                            bins,
+                            edges,
+                            levels: Vec::new(),
+                            is_calendar_axis: cfg.calendar_axis == Some(ci),
+                        }
+                    } else {
+                        EncCol::Skipped
+                    }
+                }
+                TypedCol::Bool { vals } => {
+                    let mut bins = vec![MISSING; m];
+                    for (j, &r) in rows.iter().enumerate() {
+                        match vals[r as usize] {
+                            Some(true) => bins[j] = 1,
+                            Some(false) => bins[j] = 0,
+                            None => {}
+                        }
+                    }
+                    EncCol::Encoded {
+                        ci,
+                        name: table.names[ci].clone(),
+                        nominal: true,
+                        bins,
+                        n_bins: 2,
+                        edges: Vec::new(),
+                        levels: vec!["false".into(), "true".into()],
+                        is_calendar_axis: false,
+                    }
+                }
+                TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
+                    // Count levels over the subsample using borrowed &str keys
+                    // (avoids per-row String heap allocation).
+                    let mut counts: FxHashMap<&str, u32> = FxHashMap::default();
+                    let mut too_many = false;
+                    for &r in &rows {
+                        if let Some(v) = col.str_at(r as usize) {
+                            if let Some(c) = counts.get_mut(v) {
+                                *c += 1;
+                            } else if counts.len() >= cfg.nominal_max_levels {
+                                too_many = true;
+                                break;
+                            } else {
+                                counts.insert(v, 1);
+                            }
+                        }
+                    }
+                    if too_many || counts.is_empty() {
+                        return EncCol::Skipped;
+                    }
+                    let mut levels: Vec<(&str, u32)> = counts.into_iter().collect();
+                    levels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+                    let code_of: FxHashMap<&str, u8> = levels
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(v, _))| (v, i as u8))
+                        .collect();
+                    let mut bins = vec![MISSING; m];
+                    for (j, &r) in rows.iter().enumerate() {
+                        if let Some(v) = col.str_at(r as usize) {
+                            if let Some(&c) = code_of.get(v) {
+                                bins[j] = c;
+                            }
+                        }
+                    }
+                    let labels: Vec<String> =
+                        levels.into_iter().map(|(v, _)| v.to_string()).collect();
+                    EncCol::Encoded {
+                        ci,
+                        name: table.names[ci].clone(),
+                        nominal: true,
+                        n_bins: labels.len(),
+                        bins,
+                        edges: Vec::new(),
+                        levels: labels,
+                        is_calendar_axis: false,
+                    }
+                }
+                TypedCol::Null { .. } | TypedCol::Other { .. } => EncCol::Skipped,
+            }
+        })
+        .collect();
+
     let mut out = EncodedMatrix {
         row_keys: all_keys.subset(&rows),
         rows,
@@ -83,108 +222,42 @@ pub fn encode(table: &TypedTable, cfg: &EncodeConfig) -> (EncodedMatrix, String)
     };
     let mut skipped = 0usize;
 
-    for (ci, col) in table.cols.iter().enumerate() {
-        if cfg.skip_columns.contains(&ci) {
-            continue;
-        }
-        match col {
-            TypedCol::I64 { .. }
-            | TypedCol::U64 { .. }
-            | TypedCol::F64 { .. }
-            | TypedCol::Decimal { .. } => {
-                let vals: Vec<Option<f64>> = (0..m)
-                    .map(|j| col.numeric_at(out.rows[j] as usize))
-                    .collect();
-                if let Some((bins, edges)) = bin_numeric(&vals) {
-                    out.feat_cols.push(ci);
-                    out.feat_names.push(table.names[ci].clone());
-                    out.feat_nominal.push(false);
-                    out.bins.push(bins);
-                    out.n_bins.push(edges.len() + 1);
-                    out.edges.push(edges);
-                    out.levels.push(Vec::new());
-                    out.calendar_part.push(None);
-                } else {
-                    skipped += 1;
-                }
-            }
-            TypedCol::Date { .. } | TypedCol::Datetime { .. } => {
-                let vals: Vec<Option<f64>> =
-                    (0..m).map(|j| days_at(col, out.rows[j] as usize)).collect();
-                if let Some((bins, edges)) = bin_numeric(&vals) {
-                    out.feat_cols.push(ci);
-                    out.feat_names.push(table.names[ci].clone());
-                    out.feat_nominal.push(false);
-                    out.bins.push(bins);
-                    out.n_bins.push(edges.len() + 1);
-                    out.edges.push(edges);
-                    out.levels.push(Vec::new());
-                    out.calendar_part.push(None);
-                } else {
-                    skipped += 1;
-                }
-                if cfg.calendar_axis == Some(ci) {
+    for (ci, res) in encoded_cols.into_iter().enumerate() {
+        match res {
+            EncCol::Encoded {
+                ci,
+                name,
+                nominal,
+                bins,
+                n_bins,
+                edges,
+                levels,
+                is_calendar_axis,
+            } => {
+                out.feat_cols.push(ci);
+                out.feat_names.push(name);
+                out.feat_nominal.push(nominal);
+                out.bins.push(bins);
+                out.n_bins.push(n_bins);
+                out.edges.push(edges);
+                out.levels.push(levels);
+                out.calendar_part.push(None);
+                if is_calendar_axis {
                     push_calendar_parts(&mut out, table, ci);
                 }
             }
-            TypedCol::Bool { vals } => {
-                let mut bins = vec![MISSING; m];
-                for (j, &r) in out.rows.iter().enumerate() {
-                    match vals[r as usize] {
-                        Some(true) => bins[j] = 1,
-                        Some(false) => bins[j] = 0,
-                        None => {}
-                    }
-                }
-                out.feat_cols.push(ci);
-                out.feat_names.push(table.names[ci].clone());
-                out.feat_nominal.push(true);
-                out.bins.push(bins);
-                out.n_bins.push(2);
-                out.edges.push(Vec::new());
-                out.levels.push(vec!["false".into(), "true".into()]);
-                out.calendar_part.push(None);
-            }
-            TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
-                // Count levels over the subsample.
-                let mut counts: FxHashMap<String, u32> = FxHashMap::default();
-                for &r in &out.rows {
-                    if let Some(v) = col.str_at(r as usize) {
-                        *counts.entry(v.to_string()).or_insert(0) += 1;
-                    }
-                }
-                if counts.is_empty() || counts.len() > cfg.nominal_max_levels {
-                    skipped += 1;
-                    continue;
-                }
-                let mut levels: Vec<(String, u32)> = counts.into_iter().collect();
-                levels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-                let labels: Vec<String> = levels.iter().map(|(v, _)| v.clone()).collect();
-                let code_of: FxHashMap<&str, u8> = labels
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| (v.as_str(), i as u8))
-                    .collect();
-                let mut bins = vec![MISSING; m];
-                for (j, &r) in out.rows.iter().enumerate() {
-                    if let Some(v) = col.str_at(r as usize) {
-                        if let Some(&c) = code_of.get(v) {
-                            bins[j] = c;
-                        }
-                    }
-                }
-                out.feat_cols.push(ci);
-                out.feat_names.push(table.names[ci].clone());
-                out.feat_nominal.push(true);
-                out.bins.push(bins);
-                out.n_bins.push(labels.len());
-                out.edges.push(Vec::new());
-                out.levels.push(labels);
-                out.calendar_part.push(None);
-            }
-            TypedCol::Null { .. } | TypedCol::Other { .. } => {
+            EncCol::Skipped => {
                 skipped += 1;
+                if cfg.calendar_axis == Some(ci)
+                    && matches!(
+                        table.cols[ci],
+                        TypedCol::Date { .. } | TypedCol::Datetime { .. }
+                    )
+                {
+                    push_calendar_parts(&mut out, table, ci);
+                }
             }
+            EncCol::Excluded => {}
         }
     }
 

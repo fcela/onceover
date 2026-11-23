@@ -17,9 +17,14 @@ df = pl.read_csv(
     infer_schema_length=None,
 )
 report = onceover.profile(df)
-print(report.to_digest(4_000))
+print(report.to_brief(2_500))      # schema strip + short [f1] handles
+print(report.to_digest(4_000))     # full-ID briefing
 print(report.data["selection"])
 ```
+
+Short handles (`"f1"`, `"g1"`) printed by `to_brief()` and
+`to_digest(..., compact=True)` can be passed directly to
+`report.finding("f1")` and `report.rows("f1", df)`.
 
 The recorded report selects 100 findings from 117 candidates and 102
 distinct statements. Those counts describe this package version and

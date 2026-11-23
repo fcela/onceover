@@ -166,6 +166,7 @@ pub enum Pattern {
     /// of the stratifier's mix; the conditioned statement is
     /// the fact about the pair.
     ConditionedAssociation,
+    PartitionedShape,
     /// One level of a categorical column against the pooled rest
     /// on a numeric measure: the level's median and interquartile
     /// range against the rest's, stated when the location shift
@@ -291,6 +292,7 @@ impl Pattern {
             Self::PeriodAssociation => "period_association",
             Self::GroupContrast => "group_contrast",
             Self::ConditionedAssociation => "conditioned_association",
+            Self::PartitionedShape => "partitioned_shape",
             Self::LevelContrast => "level_contrast",
             Self::SliceShift => "slice_shift",
             Self::Gap => "gap",
@@ -396,6 +398,7 @@ impl Pattern {
         Pattern::FirstActivity,
         Pattern::GroupContrast,
         Pattern::ConditionedAssociation,
+        Pattern::PartitionedShape,
         Pattern::LevelContrast,
         Pattern::SliceShift,
         Pattern::ConcentrationOverTime,
@@ -1175,7 +1178,7 @@ impl Facets {
                 None,
                 S::Regularity,
             ),
-            Pattern::ConditionedAssociation | Pattern::SliceShift => (
+            Pattern::ConditionedAssociation | Pattern::PartitionedShape | Pattern::SliceShift => (
                 Sc::Columns,
                 O::Relation,
                 E::Approximate,
@@ -1464,6 +1467,7 @@ impl Facets {
             (Category::Associations, Some("conditioned_association")) => {
                 Pattern::ConditionedAssociation
             }
+            (Category::Associations, Some("partitioned_shape")) => Pattern::PartitionedShape,
             (Category::Associations, Some("level_contrast")) => Pattern::LevelContrast,
             (Category::Associations, Some("slice_shift")) => Pattern::SliceShift,
             (Category::Associations, Some("axis_shape")) => Pattern::AxisShape,

@@ -68,48 +68,156 @@ fn pct(x: f64) -> String {
     format!("{:.1}%", 100.0 * x)
 }
 
-fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
-    (!sorted.is_empty()).then(|| crate::stats::quantile_sorted(sorted, q))
+/// Compute `(q25, q50, q75)` in O(n) via partial selection, matching
+/// `stats::quantile_sorted` (Hyndman-Fan type 7) exactly.
+fn quartiles_unsorted(vals: &mut [f64]) -> (Option<f64>, Option<f64>, Option<f64>) {
+    let n = vals.len();
+    if n == 0 {
+        return (None, None, None);
+    }
+    if n == 1 {
+        let v = vals[0];
+        return (Some(v), Some(v), Some(v));
+    }
+    let interp = |slice: &mut [f64], pos: f64| -> (usize, f64) {
+        let lo_idx = pos.floor() as usize;
+        let hi_idx = (lo_idx + 1).min(slice.len() - 1);
+        let frac = pos - lo_idx as f64;
+        let (_, &mut lo_val, right) = slice.select_nth_unstable_by(lo_idx, f64::total_cmp);
+        let hi_val = if hi_idx == lo_idx {
+            lo_val
+        } else {
+            right.iter().copied().fold(f64::INFINITY, f64::min)
+        };
+        (lo_idx, lo_val * (1.0 - frac) + hi_val * frac)
+    };
+
+    // Partition at q50 first so q25 lives strictly in the left partition
+    // (or touches lo50) and q75 lives in the right partition.
+    let pos50 = 0.50 * (n - 1) as f64;
+    let lo50 = pos50.floor() as usize;
+    let hi50 = (lo50 + 1).min(n - 1);
+    let frac50 = pos50 - lo50 as f64;
+    let (left, &mut v_lo50, right) = vals.select_nth_unstable_by(lo50, f64::total_cmp);
+    let v_hi50 = if hi50 == lo50 {
+        v_lo50
+    } else {
+        right.iter().copied().fold(f64::INFINITY, f64::min)
+    };
+    let q50 = v_lo50 * (1.0 - frac50) + v_hi50 * frac50;
+
+    let pos25 = 0.25 * (n - 1) as f64;
+    let lo25 = pos25.floor() as usize;
+    let hi25 = (lo25 + 1).min(n - 1);
+    let frac25 = pos25 - lo25 as f64;
+    let q25 = if lo25 < lo50 {
+        let (_, &mut v_lo25, lright) = left.select_nth_unstable_by(lo25, f64::total_cmp);
+        let v_hi25 = if hi25 == lo25 {
+            v_lo25
+        } else if hi25 == lo50 {
+            v_lo50
+        } else {
+            lright.iter().copied().fold(f64::INFINITY, f64::min)
+        };
+        v_lo25 * (1.0 - frac25) + v_hi25 * frac25
+    } else {
+        // n == 2 or 3 where lo25 == lo50
+        v_lo50 * (1.0 - frac25) + v_hi50 * frac25
+    };
+
+    let pos75 = 0.75 * (n - 1) as f64;
+    let lo75 = pos75.floor() as usize;
+    let q75 = if lo75 > lo50 {
+        let (_, q) = interp(right, pos75 - (lo50 + 1) as f64);
+        q
+    } else {
+        // n == 2 where lo75 == lo50 == 0
+        let frac75 = pos75 - lo75 as f64;
+        v_lo50 * (1.0 - frac75) + v_hi50 * frac75
+    };
+
+    (Some(q25), Some(q50), Some(q75))
 }
 
-fn numeric_stats_f64(vals: Vec<f64>, integral_forced: bool) -> NumericStats {
-    let mut sorted = vals;
-    sorted.sort_unstable_by(|a, b| a.total_cmp(b));
-    let vals = &sorted;
+fn numeric_stats_f64(mut vals: Vec<f64>, integral_forced: bool) -> NumericStats {
     let n = vals.len();
-    let mean = if n > 0 {
-        Some(vals.iter().sum::<f64>() / n as f64)
-    } else {
-        None
-    };
-    let std = match (n, mean) {
-        (0, _) | (_, None) => None,
-        (n, Some(m)) => {
-            let var = vals.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / n as f64;
-            Some(var.sqrt())
+    if n == 0 {
+        return NumericStats {
+            min: None,
+            max: None,
+            mean: None,
+            std: None,
+            q25: None,
+            q50: None,
+            q75: None,
+            zeros: 0,
+            negatives: 0,
+            integral: true,
+        };
+    }
+
+    let mut min_v = vals[0];
+    let mut max_v = vals[0];
+    let mut sum = 0.0f64;
+    let mut sum_c = 0.0f64;
+    let mut zeros = 0usize;
+    let mut negatives = 0usize;
+    let mut integral = true;
+
+    for &v in &vals {
+        if v < min_v {
+            min_v = v;
         }
-    };
+        if v > max_v {
+            max_v = v;
+        }
+        // Kahan summation for numerical stability without sorting.
+        let y = v - sum_c;
+        let t = sum + y;
+        sum_c = (t - sum) - y;
+        sum = t;
+        if v == 0.0 {
+            zeros += 1;
+        }
+        if v < 0.0 {
+            negatives += 1;
+        }
+        if !integral_forced && integral && (v.abs() > 9.007_199_254_740_992e15 || v != v.trunc()) {
+            integral = false;
+        }
+    }
+
+    let mean = sum / n as f64;
+    let mut var_sum = 0.0f64;
+    let mut var_c = 0.0f64;
+    for &v in &vals {
+        let d = v - mean;
+        let y = d * d - var_c;
+        let t = var_sum + y;
+        var_c = (t - var_sum) - y;
+        var_sum = t;
+    }
+    let std = (var_sum / n as f64).max(0.0).sqrt();
+    let (q25, q50, q75) = quartiles_unsorted(&mut vals);
+
     NumericStats {
-        min: sorted.first().copied(),
-        max: sorted.last().copied(),
-        mean,
-        std,
-        q25: quantile(&sorted, 0.25),
-        q50: quantile(&sorted, 0.50),
-        q75: quantile(&sorted, 0.75),
-        zeros: vals.iter().filter(|v| **v == 0.0).count(),
-        negatives: vals.iter().filter(|v| **v < 0.0).count(),
-        integral: integral_forced
-            || vals
-                .iter()
-                .all(|v| v.abs() <= 9.007_199_254_740_992e15 && *v == v.trunc()),
+        min: Some(min_v),
+        max: Some(max_v),
+        mean: Some(mean),
+        std: Some(std),
+        q25,
+        q50,
+        q75,
+        zeros,
+        negatives,
+        integral,
     }
 }
 
 /// Format-signature mapping for a string: digits -> '#', lowercase -> 'a',
 /// uppercase -> 'A', other chars kept. Truncated at 24 chars (marked '~').
-fn format_pattern(s: &str) -> Box<str> {
-    let mut out = String::with_capacity(s.len().min(24));
+fn write_format_pattern(s: &str, out: &mut String) {
+    out.clear();
     for (i, ch) in s.chars().enumerate() {
         if i >= 24 {
             out.push('~');
@@ -125,7 +233,6 @@ fn format_pattern(s: &str) -> Box<str> {
             out.push(ch);
         }
     }
-    Box::from(out.as_str())
 }
 
 /// Whether two format signatures are a real format difference. Run length
@@ -233,58 +340,82 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
             numeric_stats = Some(numeric_stats_f64(f, false));
         }
         TypedCol::Str { .. } | TypedCol::StrOwned { .. } => {
-            let mut lens: Vec<usize> = Vec::new();
+            let mut min_len = usize::MAX;
+            let mut max_len = 0usize;
+            let mut sum_len = 0usize;
+            let mut n_str = 0usize;
+            let mut n_empty = 0usize;
             for i in 0..col.len() {
                 if let Some(v) = col.str_at(i) {
-                    lens.push(v.chars().count());
+                    n_str += 1;
+                    if v.is_empty() {
+                        n_empty += 1;
+                        min_len = 0;
+                    } else {
+                        let len = if v.is_ascii() {
+                            v.len()
+                        } else {
+                            v.chars().count()
+                        };
+                        if len < min_len {
+                            min_len = len;
+                        }
+                        if len > max_len {
+                            max_len = len;
+                        }
+                        sum_len += len;
+                    }
                 }
             }
-            lens.sort_unstable();
-            let n_str = lens.len();
             string_stats = Some(StringStats {
-                min_len: lens.first().copied().unwrap_or(0),
-                max_len: lens.last().copied().unwrap_or(0),
+                min_len: if n_str > 0 { min_len } else { 0 },
+                max_len,
                 mean_len: if n_str > 0 {
-                    lens.iter().sum::<usize>() as f64 / n_str as f64
+                    sum_len as f64 / n_str as f64
                 } else {
                     0.0
                 },
-                n_empty: (0..col.len())
-                    .filter(|i| col.str_at(*i) == Some(""))
-                    .count(),
+                n_empty,
             });
         }
         TypedCol::Bool { vals } => {
-            bool_stats = Some(BoolStats {
-                trues: vals.iter().flatten().filter(|b| **b).count(),
-                falses: vals.iter().flatten().filter(|b| !**b).count(),
-            });
+            let mut trues = 0usize;
+            let mut falses = 0usize;
+            for b in vals.iter().flatten() {
+                if *b {
+                    trues += 1;
+                } else {
+                    falses += 1;
+                }
+            }
+            bool_stats = Some(BoolStats { trues, falses });
         }
         TypedCol::Date { vals } => {
-            let ds: Vec<i32> = vals.iter().flatten().copied().collect();
-            let bounds = [ds.iter().min().copied(), ds.iter().max().copied()];
-            let ds: Vec<i32> = bounds.into_iter().flatten().collect();
+            let mut min_d: Option<i32> = None;
+            let mut max_d: Option<i32> = None;
+            for &v in vals.iter().flatten() {
+                min_d = Some(min_d.map_or(v, |m| m.min(v)));
+                max_d = Some(max_d.map_or(v, |m| m.max(v)));
+            }
             temporal_stats = Some(TemporalStats {
-                min: ds.first().map(|d| iso_date(*d as i64)),
-                max: ds.last().map(|d| iso_date(*d as i64)),
-                span_days: ds
-                    .first()
-                    .zip(ds.last())
-                    .map(|(a, b)| (*b as i64) - (*a as i64)),
+                min: min_d.map(|d| iso_date(d as i64)),
+                max: max_d.map(|d| iso_date(d as i64)),
+                span_days: min_d.zip(max_d).map(|(a, b)| (b as i64) - (a as i64)),
                 modal_interval_days: None, // filled by the date pass
             });
         }
         TypedCol::Datetime { vals, unit } => {
-            let ds: Vec<i64> = vals.iter().flatten().copied().collect();
-            let bounds = [ds.iter().min().copied(), ds.iter().max().copied()];
-            let ds: Vec<i64> = bounds.into_iter().flatten().collect();
+            let mut min_t: Option<i64> = None;
+            let mut max_t: Option<i64> = None;
+            for &v in vals.iter().flatten() {
+                min_t = Some(min_t.map_or(v, |m| m.min(v)));
+                max_t = Some(max_t.map_or(v, |m| m.max(v)));
+            }
             temporal_stats = Some(TemporalStats {
-                min: ds
-                    .first()
-                    .map(|v| crate::dateutil::iso_timestamp(*v, *unit)),
-                max: ds.last().map(|v| crate::dateutil::iso_timestamp(*v, *unit)),
-                span_days: ds.first().zip(ds.last()).map(|(a, b)| {
-                    (((*b as i128) - (*a as i128))
+                min: min_t.map(|v| crate::dateutil::iso_timestamp(v, *unit)),
+                max: max_t.map(|v| crate::dateutil::iso_timestamp(v, *unit)),
+                span_days: min_t.zip(max_t).map(|(a, b)| {
+                    (((b as i128) - (a as i128))
                         .div_euclid(86_400 * crate::dateutil::ticks_per_second(*unit) as i128))
                         as i64
                 }),
@@ -311,19 +442,27 @@ pub fn column_card(name: &str, dtype: &str, col: &TypedCol) -> CardOut {
     if col.is_string() {
         let mut pats: FxHashMap<Box<str>, (u64, Option<String>)> = FxHashMap::default();
         let mut n_str: usize = 0;
+        let mut pat_buf = String::with_capacity(28);
         for i in 0..col.len() {
             if let Some(v) = col.str_at(i) {
                 n_str += 1;
-                let p = format_pattern(v);
-                let entry = pats.entry(p).or_insert((0, None));
-                entry.0 += 1;
-                if entry.1.is_none() && v.len() <= 40 {
-                    entry.1 = Some(v.to_string());
+                write_format_pattern(v, &mut pat_buf);
+                if let Some(entry) = pats.get_mut(pat_buf.as_str()) {
+                    entry.0 += 1;
+                    if entry.1.is_none() && v.len() <= 40 {
+                        entry.1 = Some(v.to_string());
+                    }
+                } else {
+                    let example = (v.len() <= 40).then(|| v.to_string());
+                    pats.insert(Box::from(pat_buf.as_str()), (1, example));
                 }
                 if pats.len() > 32 {
                     // Too many patterns: bucket the rest as "other".
-                    let entry = pats.entry(Box::from("*")).or_insert((0, None));
-                    entry.0 += 1;
+                    if let Some(entry) = pats.get_mut("*") {
+                        entry.0 += 1;
+                    } else {
+                        pats.insert(Box::from("*"), (1, None));
+                    }
                 }
             }
         }
@@ -611,5 +750,33 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.category == onceover_report::Category::Formats));
+    }
+
+    #[test]
+    fn quartiles_unsorted_matches_sorted_exactly() {
+        for n in [1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 1001] {
+            let orig: Vec<f64> = (0..n)
+                .map(|i| ((i * 37 + 13) % (n + 5)) as f64 * 0.37 - 4.0)
+                .collect();
+            let mut sorted = orig.clone();
+            sorted.sort_unstable_by(f64::total_cmp);
+            let mut copy = orig.clone();
+            let (q25, q50, q75) = quartiles_unsorted(&mut copy);
+            assert_eq!(
+                q25,
+                Some(crate::stats::quantile_sorted(&sorted, 0.25)),
+                "n={n} q25"
+            );
+            assert_eq!(
+                q50,
+                Some(crate::stats::quantile_sorted(&sorted, 0.50)),
+                "n={n} q50"
+            );
+            assert_eq!(
+                q75,
+                Some(crate::stats::quantile_sorted(&sorted, 0.75)),
+                "n={n} q75"
+            );
+        }
     }
 }
