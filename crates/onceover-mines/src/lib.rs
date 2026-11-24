@@ -13,6 +13,7 @@ pub mod dates;
 pub mod deadline;
 pub mod dep;
 pub mod disc;
+pub mod distribution_slices;
 pub mod drift;
 pub mod dtable;
 pub mod encode;

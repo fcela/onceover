@@ -480,6 +480,9 @@ pub const FORMS: &[FormSpec] = &[
     FormSpec { form: "isolation_gap", finding_type: "extreme_value", definition: "The value is separated from the rest of the column by a wide empty gap." },
     FormSpec { form: "tail_shift", finding_type: "slice_shift", definition: "The slice's rows sit in the target's upper tail at a higher rate than the table's rows." },
     FormSpec { form: "median_shift", finding_type: "slice_shift", definition: "The slice's median of the target against the table-wide median." },
+    FormSpec { form: "marginal_distribution_shift", finding_type: "slice_shift", definition: "A numeric target has a different empirical distribution inside the slice than in its complement." },
+    FormSpec { form: "categorical_distribution_shift", finding_type: "slice_shift", definition: "A set of categorical levels accounts for a different share inside the slice than in its complement." },
+    FormSpec { form: "rare_level_shift", finding_type: "slice_shift", definition: "A rare categorical level changes by at least twofold inside a slice relative to its complement." },
     FormSpec { form: "level_share", finding_type: "slice_shift", definition: "The slice's share of one level of a categorical target against its share of rows." },
     FormSpec { form: "level_shares", finding_type: "outcome_distribution", definition: "The share of the designated outcome's rows at each of its levels, with the declared event's rate over the whole file and on the event basis when an event is declared." },
     FormSpec { form: "center_spread_range", finding_type: "outcome_distribution", definition: "The designated numeric outcome's center (mean and median), spread (the middle half), and range, in the outcome's own units." },
@@ -2073,6 +2076,16 @@ impl Finding {
                 if let Some(v) = metrics.get("form").and_then(Value::as_str) {
                     spec.form = Some(v.to_owned());
                 }
+                let distribution_target = match spec.form.as_deref() {
+                    Some("marginal_distribution_shift") => Some("numeric_target"),
+                    Some("categorical_distribution_shift" | "rare_level_shift") => {
+                        Some("categorical_target")
+                    }
+                    _ => None,
+                };
+                if let (Some(key), Some(target)) = (distribution_target, string("column")) {
+                    spec.definition.insert(key.into(), json!(target));
+                }
                 if let Some(conds) = raw.get("conditions").and_then(Value::as_array) {
                     for c in conds {
                         let (Some(column), Some(op), Some(value)) = (
@@ -2085,6 +2098,7 @@ impl Finding {
                         let operator = match op {
                             "eq" => Operator::Eq,
                             "gt" => Operator::Gt,
+                            "le" => Operator::Le,
                             _ => continue,
                         };
                         let mut p = Predicate {
@@ -2104,7 +2118,13 @@ impl Finding {
                 }
                 spec.definition.insert(
                     "missing_values".into(),
-                    json!("rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive"),
+                    if distribution_target == Some("categorical_target") {
+                        json!("null targets excluded; missing conditions are outside the slice")
+                    } else if distribution_target.is_some() {
+                        json!("non-finite or missing targets excluded; missing conditions are outside the slice")
+                    } else {
+                        json!("rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive")
+                    },
                 );
             }
             Pattern::LevelContrast => {

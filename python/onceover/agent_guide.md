@@ -1,8 +1,7 @@
 # Agent guide: profiling a table with onceover
 
-Reviewed for onceover 0.1.9.
-`onceover.capabilities()` lists every detector, its purpose,
-requirements, and activation rules.
+Reviewed for onceover 0.1.10.
+`onceover.capabilities()` lists detector purposes, requirements, and triggers.
 
 ## 1. Hand over what you know before the call
 
@@ -15,7 +14,7 @@ requirements, and activation rules.
 `units` names the units, and `labels` changes display names.
 `recorded_after` lists columns recorded after the outcome for the
 leakage screen. `purpose` and `questions` describe the task.
-Coverage accounts for the declarations and identifies refusals.
+Coverage records accepted and refused declarations.
 
 **Structure.** `roles` overrides semantic roles. The `expectations`
 pass checks `order_by`, `no_gaps`, `cadence`, `hierarchies` (finest
@@ -52,8 +51,7 @@ for a worked audit.
 
 `profile(df)` accepts a Polars frame, LazyFrame, or file path.
 Lazy or file inputs above 200,000 rows are sampled unless
-`exact=True`; `source` states the basis. Edit a spec and pass it
-as `spec=...` to hold the interpretation.
+`exact=True`; `source` states the basis. Pass an edited spec via `spec=`.
 
 Budgets: `quick`, `standard`, `deep`.
 
@@ -77,12 +75,12 @@ silence only speaks for work that ran.
 `profile_many({...})` checks foreign keys across tables.
 `detectors=["partition_scagnostics"]` adds group shapes; standalone
 `partition_scagnostics(df)` returns a `dict`.
+`detectors=["distribution_slices"]` finds and confirms distribution shifts.
 `report.diff(other)` compares runs; `report.to_checks()` exports
 constraints; `report.to_html()` (`html` extra) renders HTML.
 
 ## 4. Detector selection
 
-The recommended set runs 31 of the 47 registered detectors.
-Pass `detectors=[...]` (or `onceover.ALL_DETECTORS`) to focus a
-wide table if `selection` caps findings. `entity_fingerprints`
+The default set runs 31 of 48 registered detectors.
+Use `detectors=[...]` to focus a run or `onceover.ALL_DETECTORS` for all. `entity_fingerprints`
 compares entity mixes by rows or weights along an axis.

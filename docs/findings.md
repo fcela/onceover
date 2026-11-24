@@ -100,7 +100,7 @@ path.
 | `associations` | Type `period_association`; period column, period labels, statistic | A numeric association whose strength changes between periods |
 | `associations` | Type `group_contrast`; group column and value, group and rest row counts in the evidence | A declared subset of the rows against the rest of the table on one column, from the `group_contrast` detector (in the default set, triggered by `hints.contrast`): means and medians with Cohen's d for numeric columns, level shares for categorical columns, the true share for boolean columns; reported only at the stated bars (below, "Group contrast") |
 | `associations` | Type `conditioned_association`; the pair, the stratifier, the pooled and within-level effects, and the `simpson` payload in the evidence | A pooled association that does not survive conditioning on a categorical column, from the Simpson check in the `numeric_dependence` and `association_rules` screens: form `reversal` when the direction reverses within every usable level of the stratifier, form `vanishing` when the association is absent within every usable level and the combined within effect is certified near zero (below, "Tested associations") |
-| `associations` | Type `slice_shift`; the slice's conditions as structured predicates in the statement definition, the form (`tail_shift`, `median_shift`, or `level_share`) in the statement form, search-half, held-out-half and full-sample statistics in the evidence | A searched subset of the rows — a conjunction of categorical levels and numeric thresholds — under which a target column's distribution differs from the table-wide one, from the on-request `slice_shifts` detector: the share of the slice's rows above the target's 95th percentile, or the slice median's shift in IQR units, for numeric targets; a level's share within the slice against its table-wide rate, for categorical targets. A slice is stated only when the shift clears the search bars on one half of a deterministic split of the shared sample and reappears at the confirmation bars on the held-out half, with Benjamini–Hochberg q ≤ 0.05 over the confirmation family; slices with identical row sets are stated once, and the coverage entry states how many slice × target candidates were searched (below, "Slice shifts") |
+| `associations` | Type `slice_shift`; the slice's conditions as structured predicates in the statement definition, the form (`tail_shift`, `median_shift`, `level_share`, `marginal_distribution_shift`, `categorical_distribution_shift`, or `rare_level_shift`) in the statement form, search-half, held-out-half and full-sample statistics in the evidence | A searched subset of the rows — a conjunction of categorical levels and numeric thresholds — under which a target column's distribution differs from the table-wide one, from the on-request `slice_shifts` detector: the share of the slice's rows above the target's 95th percentile, or the slice median's shift in IQR units, for numeric targets; a level's share within the slice against its table-wide rate, for categorical targets. A slice is stated only when the shift clears the search bars on one half of a deterministic split of the shared sample and reappears at the confirmation bars on the held-out half, with Benjamini–Hochberg q ≤ 0.05 over the confirmation family; slices with identical row sets are stated once, and the coverage entry states how many slice × target candidates were searched. The `distribution_slices` detector compares numeric or categorical distributions inside the slice with its complement and confirms a discovery-selected contrast on held-out rows (below, “Distribution slices”) |
 | `associations` | Type `level_contrast`; grouping column, level, measure column, form, level and pooled-rest medians and IQRs, the shift in pooled IQRs, the IQR ratio, rank-sum p- and q-values in the evidence | One level of a low-cardinality categorical against the pooled rest of the rows on one numeric measure, from the `level_contrasts` detector: form `location` when the level's median clears 0.5 pooled IQRs from the rest's, form `scale` when its IQR ratio clears 1.5 or 2/3 with medians in agreement, form `location_scale` when both clear, and form `constant_multiple` when the level's nine decile quotients against the rest concentrate at one quotient at least 1.25x from 1 — the unit-error shape. Calendar parts of the frame's date axis (day of week, month of year, hour of day) enter as groupings of the same scan (below, "Per-level contrasts") |
 | `associations` | Type `axis_shape`; `shape_form`, axis and response, Spearman rho and isotonic improvement in the evidence; form `saturating` adds the located knee, the two segment slopes and their ratio, and the bootstrap stability shares | The shape of a numeric response along an ordered axis, from the `ordered_axis` detector: `monotone` when the Spearman correlation and the isotonic fit over 20 equal-frequency bin medians both clear their bars, `monotone_with_reversal_blocks` when named adjacent bin-median moves against the trend exceed a quarter of the response's interquartile range (the blocks are the `reversal_blocks` payload), `non_monotone_reversal` when a block exceeds half the interquartile range, and `saturating` (or the weaker `rises_then_flattens` with no located knee) when a continuous two-segment fit on the bin medians bends to a post-knee slope at most 0.35 of the pre-knee slope and the bend is stable under row bootstrap. Any numeric column can be the axis; the statement is about the typical response, not a fitted model of individual rows |
 
@@ -160,6 +160,9 @@ upgrades a statement to an exact constraint.
 | `isolation_gap` | `extreme_value` | The value is separated from the rest of the column by a wide empty gap. |
 | `tail_shift` | `slice_shift` | The slice's rows sit in the target's upper tail at a higher rate than the table's rows. |
 | `median_shift` | `slice_shift` | The slice's median of the target against the table-wide median. |
+| `marginal_distribution_shift` | `slice_shift` | A numeric target has a different empirical distribution inside the slice than in its complement. |
+| `categorical_distribution_shift` | `slice_shift` | A set of categorical levels accounts for a different share inside the slice than in its complement. |
+| `rare_level_shift` | `slice_shift` | A rare categorical level changes by at least twofold inside a slice relative to its complement. |
 | `level_share` | `slice_shift` | The slice's share of one level of a categorical target against its share of rows. |
 | `level_shares` | `outcome_distribution` | The share of the designated outcome's rows at each of its levels, with the declared event's rate over the whole file and on the event basis when an event is declared. |
 | `center_spread_range` | `outcome_distribution` | The designated numeric outcome's center (mean and median), spread (the middle half), and range, in the outcome's own units. |
@@ -963,6 +966,79 @@ and why: on an undeclared run a null would fire on any flat
 grouping, including groupings whose flatness carries no
 information for a reader who declared nothing.
 
+### Distribution slices
+
+`profile(df, detectors=["distribution_slices"])` searches for numeric
+and categorical targets whose distribution changes inside a region of
+the table. It emits `associations` findings of type `slice_shift`. The
+forms are `marginal_distribution_shift` for numeric targets and
+`categorical_distribution_shift` or `rare_level_shift` for categorical
+targets. Use `target=` to prioritize a column. Strings, Booleans, and Polars categorical and
+enum columns use the categorical comparison. Numeric counts use the
+ordered comparison. Cast unordered numeric codes to strings to search
+them as categories.
+
+The pass takes a deterministic, position-based sample, split into
+discovery and holdout halves independently of the values. On discovery
+rows it builds conditions from supported categorical levels (up to 25
+levels per column) and both sides of the numeric 12.5th, 25th, 50th, 75th
+and 87.5th percentiles. It searches single conditions and conjunctions of
+two conditions from different columns, including two numeric conditions
+and interactions with no effect for either condition alone. The target
+cannot appear in the rule. Identifier and scaffold exclusions from the
+frame model apply to the automatic scan. Missing condition values are
+outside the region. Missing and non-finite target values are excluded.
+
+For each eligible numeric column, the score is the mean squared gap
+between the region and complement empirical CDFs at up to 33 pooled
+discovery quantiles, multiplied by the product of the two groups' shares.
+For categorical columns, total variation is the sum of the positive
+differences in level shares. The levels with those positive differences
+form the set whose combined share rises most inside the slice. The
+discovery score is the squared gap for that set multiplied by the
+product of the two groups' shares. Several modest changes in the same
+direction can therefore combine into a finding. [Total variation, Proposition 4.2](https://pages.uoregon.edu/dlevin/MARKOV/markovmixing.pdf)
+
+Both groups need at least 25 eligible discovery values and at least 1%
+of the discovery sample each. The largest CDF gap or categorical share
+gap must reach 12 percentage points. Up to eight unique distribution
+comparisons per target advance, with identical and complementary
+discovery memberships counted once.
+
+The rare-level comparison can advance up to four additional single-level
+proposals per categorical target. In discovery it considers levels with
+a gap below 12 points whose pooled share is at most 5%. The higher share
+must be at least twice the lower share and have at least eight
+occurrences. The lower share may be zero. Discovery ranks these proposals
+by squared phi, which scales the squared share gap by group support and
+the pooled Bernoulli variance.
+
+Each proposal freezes its rule, target threshold, level set or single
+level, and direction. On holdout it must reproduce the direction and
+clear the corresponding effect floor, either a 12-point gap or the
+rare-level rarity, ratio and occurrence requirements. Both need at
+least 25 eligible values on each side. A one-sided Fisher exact test
+and Holm correction across all proposals use a family-wise level of 0.05 under row
+exchangeability. Repeated entities or serial dependence can weaken
+this calibration. Numeric evidence carries both groups' quantiles
+(10%, 25%, 50%, 75%, and 90%). Categorical evidence carries the
+selected levels, their combined shares, and each discovery level's
+holdout counts. New levels seen only on holdout count toward the
+denominators and are reported separately in the level-set evidence.
+The rare-level evidence gives the frozen `target_level`, both groups'
+shares and occurrence counts, the percentage-point gap, the pooled
+share and the high-to-low ratio. The ratio is null when the lower
+share is zero. `report.rows(id, df)` extracts the region's rows with
+eligible target values.
+
+The standard and deep budgets use up to 20,000 and 50,000 rows by
+default. The pass examines at most 12 categorical context columns,
+12 numeric context columns, 24 numeric targets, and 8 categorical
+targets with at most 25 observed discovery levels apiece. It can state
+up to 20 findings. A work cap and cooperative deadline bound the scan.
+Coverage gives the sample size, rules and rule × target comparisons
+examined, held-out proposals and caps reached.
+
 ### Slice shifts
 
 A slice shift (`associations` category, type `slice_shift`)
@@ -1467,7 +1543,7 @@ and two activation fields: `membership` — `default_set` or `on_request` —
 and `trigger` — `always`, `hints`, or `target`.
 
 <!-- generated:detectors -->
-The default set has 31 of the 47 registered detectors; the other 16 run only when named in `detectors`.
+The default set has 31 of the 48 registered detectors; the other 17 run only when named in `detectors`.
 
 | Detector | Categories | Membership | Trigger | Requires | Purpose |
 |---|---|---|---|---|---|
@@ -1508,6 +1584,7 @@ The default set has 31 of the 47 registered detectors; the other 16 run only whe
 | `discontinuities` | `changes` | `default_set` | `always` | — | Axis-aligned and diagonal threshold jumps |
 | `drift` | `changes` | `on_request` | `always` | `predictability` | Reference-period model-routing changes along a declared time axis |
 | `distribution_change` | `changes` | `on_request` | `always` | — | Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection |
+| `distribution_slices` | `associations` | `on_request` | `always` | — | Searched regions with shifted numeric or categorical marginal distributions, confirmed on held-out rows |
 | `slice_shifts` | `associations` | `on_request` | `always` | — | Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows |
 | `ordered_axis` | `changes`, `associations` | `default_set` | `always` | — | Shape of a response along an ordered axis (monotonicity, reversal blocks, saturation) and located level, trend, slope, regime, and spike events along it, including inside one categorical level |
 | `association_rules` | `conditional_rules`, `associations` | `default_set` | `always` | — | Pairwise nominal rules with train and diagnostic evidence |

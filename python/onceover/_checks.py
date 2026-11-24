@@ -1031,7 +1031,17 @@ def rows_of(
                     so_idx = (m.get("partition_scagnostics") or {}).get("standout_group") or 0
                     return annotated.filter(standout_expr if so_idx == 0 else ~standout_expr)
                 return annotated
-    if algorithm in ("cross_fitted_gbm_residual_slice_search", "slice_search_split_sample"):
+    if algorithm in (
+        "cross_fitted_gbm_residual_slice_search", "slice_search_split_sample",
+        "quantile_grid_cdf_slices", "total_variation_slices", "rare_level_slices",
+    ):
+        distribution = algorithm in ("quantile_grid_cdf_slices", "total_variation_slices", "rare_level_slices")
+        if algorithm == "quantile_grid_cdf_slices":
+            target = f["specification"]["definition"]["numeric_target"]
+            indexed = indexed.filter(pl.col(target).cast(pl.Float64).is_finite())
+        elif algorithm in ("total_variation_slices", "rare_level_slices"):
+            target = f["specification"]["definition"]["categorical_target"]
+            indexed = indexed.filter(pl.col(target).is_not_null())
         conds = (f.get("specification") or {}).get("conditions") or m.get("conditions") or []
         exprs = []
         for p in conds:
@@ -1044,7 +1054,9 @@ def rows_of(
                 exprs.append(~_level_expr(df, col, val))
             elif op in ("lt", "le", "gt", "ge"):
                 ops = {"lt": "__lt__", "le": "__le__", "gt": "__gt__", "ge": "__ge__"}
-                exprs.append(getattr(pl.col(col).cast(pl.Float64), ops[op])(float(val)))
+                numeric = pl.col(col).cast(pl.Float64)
+                predicate = getattr(numeric, ops[op])(float(val))
+                exprs.append(predicate & numeric.is_finite() if distribution else predicate)
         if exprs:
             return indexed.filter(pl.all_horizontal(exprs))
     if algorithm == "per_level_outcome_contrast":

@@ -1,6 +1,6 @@
 {
  "library": "onceover",
- "version": "0.1.9",
+ "version": "0.1.10",
  "generated_by": "scripts/capability_manifest.py",
  "detectors": [
   {
@@ -393,6 +393,16 @@
    "membership": "on_request",
    "trigger": "always",
    "purpose": "Distribution changes in the measures jointly along the time axis, from classifier-based changepoint detection"
+  },
+  {
+   "id": "distribution_slices",
+   "categories": [
+    "associations"
+   ],
+   "requires": [],
+   "membership": "on_request",
+   "trigger": "always",
+   "purpose": "Searched regions with shifted numeric or categorical marginal distributions, confirmed on held-out rows"
   },
   {
    "id": "slice_shifts",

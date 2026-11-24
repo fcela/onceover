@@ -39,7 +39,7 @@ from onceover._spec import (  # noqa: F401
     infer_spec,
 )
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
 __all__ = [
     "profile",
     "ALL_DETECTORS",
@@ -132,7 +132,7 @@ def profile(
     `capabilities()` returns its compact machine-readable companion.
 
     By default `detectors` selects `RECOMMENDED_DETECTORS` (31 of the
-    47 registered detectors); pass `detectors=ALL_DETECTORS` to request
+    48 registered detectors); pass `detectors=ALL_DETECTORS` to request
     every registered detector, or a list of detector IDs from
     `available_detectors()`.
     """

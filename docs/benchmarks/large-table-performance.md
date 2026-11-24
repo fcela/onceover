@@ -68,6 +68,16 @@ The installed macOS arm64 wheel passed all 9 checks on 200,000 rows × 200 colum
 
 After optimizing column extraction, exact counting, quantile sorting, boundary checks, category encoding, and shared table encoding/sampling for 2-core / 8 GiB executors, the same 200,000 × 200 fixture (`standard` budget, seed `20241024`) ran on **2 Rayon threads** in **17.17 seconds** (4.6× faster than 0.1.7's 78.93 s on 4 threads) with **1.05 GiB peak process RSS** (`0.680 GiB` increase over pre-profile RSS), passing all **9 / 9** checks with **0** noise targets reported predictable. See the full write-up and precision-gate comparison in [2026-11-22-architecture-performance-precision.md](2026-11-22-architecture-performance-precision.md).
 
+## Release check for 0.1.10
+
+The macOS arm64 release wheel passed all nine checks on 2,000,000 rows
+and 200 columns with the standard budget. This included both exact key
+cardinalities and all planted late-column relationships. The run reported
+zero independent noise targets as predictable. On macOS 26.3 with
+Python 3.13.7, Polars 2.0.0, and four Rayon threads, profiling took
+125.90 seconds and peak RSS was 6.37 GiB, 3.30 GiB above the
+pre-profile reading. [Run record](../../benchmarks/results/2m-200-0.1.10.json)
+
 ## Reproducing the benchmark
 
 From a checkout of the version to measure, install its package and benchmark

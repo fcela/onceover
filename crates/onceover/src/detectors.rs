@@ -202,6 +202,7 @@ pub fn builtin_detectors() -> Vec<DetectorDescriptor> {
         // family, candidate count in coverage) is part of the
         // pass. Same cost and inference class as row_clusters and
         // distribution_change: explicit selection.
+        make("distribution_slices", vec![Associations], &[], OnRequest, Always, "Searched regions with shifted numeric or categorical marginal distributions, confirmed on held-out rows"),
         make("slice_shifts", vec![Associations], &[], OnRequest, Always, "Searched conjunctions of conditions under which a target column's distribution shifts, confirmed on held-out rows"),
         // The ordered-axis battery (#273, #277): shape statements
         // along any ordered axis and located breaks in a
@@ -258,7 +259,7 @@ pub fn active_detectors(selected: Option<&BTreeSet<String>>) -> BTreeSet<String>
         // (expectations, group_contrast), which engage only when
         // hints declare their structure. On-request detectors
         // (row_clusters, date_gaps, pivot, period_associations,
-        // drift, granularity, distribution_change, slice_shifts,
+        // drift, granularity, distribution_change, distribution_slices, slice_shifts,
         // decision_tables, interactions)
         // run only when explicitly requested via detectors=[...];
         // the target-triggered detectors (outcome_account,
@@ -305,11 +306,11 @@ mod tests {
     #[test]
     fn default_set_is_the_31_measured_detectors() {
         let active = active_detectors(None);
-        // 47 registered: 31 in the default set (29 always-triggered
+        // 48 registered: 31 in the default set (29 always-triggered
         // plus the hint-triggered expectations and group_contrast),
-        // 16 on request (10 always-triggered, 5 target-triggered, and
+        // 17 on request (11 always-triggered, 5 target-triggered, and
         // entity_fingerprints, hint-triggered).
-        assert_eq!(builtin_detectors().len(), 47);
+        assert_eq!(builtin_detectors().len(), 48);
         assert_eq!(active.len(), 31);
         for id in [
             "row_clusters",
@@ -319,6 +320,7 @@ mod tests {
             "granularity",
             "distribution_change",
             "slice_shifts",
+            "distribution_slices",
             "decision_tables",
             "interactions",
             "outcome_account",
@@ -354,8 +356,8 @@ mod tests {
             *trigger.entry(format!("{:?}", d.trigger)).or_insert(0) += 1;
         }
         assert_eq!(membership.get("DefaultSet"), Some(&31));
-        assert_eq!(membership.get("OnRequest"), Some(&16));
-        assert_eq!(trigger.get("Always"), Some(&40));
+        assert_eq!(membership.get("OnRequest"), Some(&17));
+        assert_eq!(trigger.get("Always"), Some(&41));
         assert_eq!(trigger.get("Hints"), Some(&2));
         assert_eq!(trigger.get("Target"), Some(&5));
     }

@@ -248,7 +248,7 @@ ENTRIES = {
     "slice_shift": {
         "question": "goes_with",
         "detector": "slice_shifts",
-        "states": "Under a searched conjunction of conditions, a target column's distribution shifts from the table-wide one; the shift must reappear on held-out rows.",
+        "states": "A target column shifts under a searched conjunction of conditions. The distribution_slices detector compares full numeric and categorical distributions against the remaining rows and confirms the contrast on held-out rows.",
         "example": "within education = 'Masters' (1050 rows), 100.0% of rows have education_num = '14', against 5.2% overall (19.047619x)",
     },
     "predictive": {

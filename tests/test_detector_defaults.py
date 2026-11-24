@@ -26,6 +26,7 @@ ON_REQUEST = [
     "granularity",
     "distribution_change",
     "slice_shifts",
+    "distribution_slices",
     # On request since the 2026-11-16 per-detector audit
     # (docs/benchmarks/2026-11-16-detector-audit.md).
     "decision_tables",
@@ -49,7 +50,7 @@ def _frame() -> pl.DataFrame:
 
 def test_registry_membership_trigger_partition():
     registry = {d["id"]: d for d in onceover.available_detectors()}
-    assert len(registry) == 47
+    assert len(registry) == 48
     on_request = sorted(
         d["id"] for d in registry.values() if d["membership"] == "on_request"
     )

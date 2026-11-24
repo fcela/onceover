@@ -96,6 +96,30 @@ pub(super) fn run_model_passes(
         });
     }
 
+    if state.enabled("distribution_slices") && !state.check_deadline("distribution_slices") {
+        if state.cfg.budget == Budget::Quick {
+            state.stamp("distribution_slices", PassInfo::skipped("quick tier"));
+        } else {
+            let target = state
+                .cfg
+                .target
+                .as_deref()
+                .and_then(|name| table.names.iter().position(|n| n == name));
+            let (findings, mut info) =
+                onceover_mines::distribution_slices::profile_distribution_slices(
+                    table,
+                    &prep.scaffold_excluded,
+                    target,
+                    state.tier.slices.row_cap,
+                    state.cfg.budget == Budget::Deep,
+                    state.pass_deadline,
+                );
+            info.detail.push_str(&prep.exclusion_note);
+            state.stamp("distribution_slices", info);
+            state.findings.extend(findings);
+        }
+    }
+
     if state.enabled("partition_scagnostics") && !state.check_deadline("partition_scagnostics") {
         let (shapes, info) =
             crate::partition_scagnostics::profile_pass(state, table, prep, model_basis);

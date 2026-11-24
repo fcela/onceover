@@ -109,6 +109,19 @@ artifacts; `report.rows(id, df)` extracts the annotated partition rows. Read `fi
 for the rules and labeled per-group effects and `coverage` for sampling,
 caps, and validation outcomes.
 
+## Distribution slices
+
+`profile(df, detectors=["distribution_slices"])` searches one- and
+two-condition regions for changes in numeric and categorical target
+distributions. Numeric targets use empirical CDFs. For categorical
+targets it discovers the set of levels whose combined share increases
+and can confirm large relative shifts in a single rare level.
+Both compare a region with the remaining rows and confirm the contrast
+on holdout. Use `target=` to prioritize a column and `report.rows(id, df)`
+to extract the region. Findings have type `slice_shift` and form
+`marginal_distribution_shift`, `categorical_distribution_shift`, or
+`rare_level_shift`. Coverage describes the search bounds.
+
 ## Getting findings back out
 
 The guide covers `report.finding(id)` (accepts full ids or short
@@ -181,7 +194,7 @@ categories each produces and each detector's `membership`
 or `target`) (also frozen in `docs/capability-manifest.json`).
 `detectors=[...]` restricts a run to named detectors.
 `onceover.RECOMMENDED_DETECTORS` is the default selection, with 31 of
-the 47 registered detectors. Pass `detectors=onceover.ALL_DETECTORS`
+the 48 registered detectors. Pass `detectors=onceover.ALL_DETECTORS`
 to request every registered detector. Eligibility still depends on
 the budget, hints, target, and data. With the default selection, a
 designated target also activates target-triggered detectors. The full

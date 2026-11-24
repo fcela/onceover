@@ -53,6 +53,7 @@ pub(super) fn finalize_report(
                 "level_contrasts"=>"rows missing the grouping value or the measure are excluded from that pair's comparison",
                 "breaks"=>"rows with a missing date or value are excluded from each series",
                 "distribution_change"=>"rows missing the axis value or any measure value are excluded",
+                "distribution_slices"=>f.specification.definition.get("missing_values").and_then(serde_json::Value::as_str).unwrap_or(evidence.scope.missing_values.as_str()),
                 "slice_shifts"=>"rows missing a condition value are outside the slice; rows missing the target count as not extreme and not positive",
                 "ordered_axis"=>"rows missing the axis or the response are excluded from each series and pair; series aggregate rows sharing an axis value by their mean",
                 "boundary_mass"=>"missing values excluded from the scan; a null is never a boundary value",
